@@ -44,20 +44,21 @@ https://github.com/user-attachments/assets/ae4c19a0-4c73-46a0-95bd-909734da2a42
 
     ```plaintext
     .
-    ├── fake_vel_transform                  # 虚拟速度参考坐标系，以应对云台扫描模式自旋，详见子仓库 README
-    ├── ign_sim_pointcloud_tool             # 仿真器点云处理工具
-    ├── livox_ros_driver2                   # Livox 驱动
-    ├── loam_interface                      # point_lio 等里程计算法接口
-    ├── pb_teleop_twist_joy                 # 手柄控制
-    ├── pb2025_nav_bringup                  # 启动文件
-    ├── pb2025_sentry_nav                   # 本仓库功能包描述文件
-    ├── pb_omni_pid_pursuit_controller      # 路径跟踪控制器
-    ├── point_lio                           # 里程计
-    ├── pointcloud_to_laserscan             # 将 terrain_map 转换为 laserScan 类型以表示障碍物（仅 SLAM 模式启动）
-    ├── sensor_scan_generation              # 点云相关坐标变换
-    ├── small_gicp_relocalization           # 重定位
-    ├── terrain_analysis                    # 距车体 4m 范围内地形分析，将障碍物离地高度写入 PointCloud intensity
-    └── terrain_analysis_ext                # 车体 4m 范围外地形分析，将障碍物离地高度写入 PointCloud intensity
+    └── src
+        ├── fake_vel_transform              # 虚拟速度参考坐标系，以应对云台扫描模式自旋，详见子仓库 README
+        ├── ign_sim_pointcloud_tool         # 仿真器点云处理工具
+        ├── livox_ros_driver2               # Livox 驱动
+        ├── loam_interface                  # point_lio 等里程计算法接口
+        ├── pb_teleop_twist_joy             # 手柄控制
+        ├── pb2025_nav_bringup              # 启动文件
+        ├── pb2025_sentry_nav               # 本仓库功能包描述文件
+        ├── pb_omni_pid_pursuit_controller  # 路径跟踪控制器
+        ├── point_lio                       # 里程计
+        ├── pointcloud_to_laserscan         # 将 terrain_map 转换为 laserScan 类型以表示障碍物（仅 SLAM 模式启动）
+        ├── sensor_scan_generation          # 点云相关坐标变换
+        ├── small_gicp_relocalization       # 重定位
+        ├── terrain_analysis                # 距车体 4m 范围内地形分析，将障碍物离地高度写入 PointCloud intensity
+        └── terrain_analysis_ext            # 车体 4m 范围外地形分析，将障碍物离地高度写入 PointCloud intensity
     ```
 
 ## 2. Quick Start
@@ -208,13 +209,13 @@ use_robot_state_pub:=True
 |-|-|-|-|-|
 | 🤖 🖥️ | `namespace` | 顶级命名空间 | string | "red_standard_robot1" |
 | 🤖🖥️ | `use_sim_time` | 如果为 True，则使用仿真（Gazebo）时钟 | bool | 仿真: True; 实车: False |
-| 🤖 🖥️ | `slam` | 是否启用建图模式。如果为 True，则禁用 small_gicp 并发送静态 tf（map->odom）。然后自动保存 pcd 文件到 [./point_lio/PCD/](./point_lio/PCD/)| bool | False |
+| 🤖 🖥️ | `slam` | 是否启用建图模式。如果为 True，则禁用 small_gicp 并发送静态 tf（map->odom）。然后自动保存 pcd 文件到 [PCD](./src/point_lio/PCD/)| bool | False |
 | 🤖 🖥️ | `world` | 在仿真模式，可用选项为 `rmul_2024` 或 `rmuc_2024` 或 `rmul_2025` 或 `rmuc_2025` | string | "rmuc_2025" |
 |  |  | 在实车模式，`world` 参数名称与栅格地图和先验点云图的文件名称相同 | string | "" |
-| 🤖 🖥️ | `map` | 要加载的地图文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [rmuc_2025.yaml](./pb2025_nav_bringup/map/simulation/rmuc_2025.yaml); 实车: 自动填充 |
-| 🤖 🖥️ | `prior_pcd_file` | 要加载的先验 pcd 文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [rmuc_2025.pcd](./pb2025_nav_bringup//pcd/reality/); 实车: 自动填充 |
-| 🤖 🖥️ | `params_file` | 用于所有启动节点的 ROS2 参数文件的完整路径 | string | 仿真: [nav2_params.yaml](./pb2025_nav_bringup/config/simulation/nav2_params.yaml); 实车: [nav2_params.yaml](./pb2025_nav_bringup/config/reality/nav2_params.yaml) |
-| 🤖🖥️ | `rviz_config_file` | 要使用的 RViz 配置文件的完整路径 | string | [nav2_default_view.rviz](./pb2025_nav_bringup/rviz/nav2_default_view.rviz) |
+| 🤖 🖥️ | `map` | 要加载的地图文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [rmuc_2025.yaml](./src/pb2025_nav_bringup/map/simulation/rmuc_2025.yaml); 实车: 自动填充 |
+| 🤖 🖥️ | `prior_pcd_file` | 要加载的先验 pcd 文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [rmuc_2025.pcd](./src/pb2025_nav_bringup/pcd/reality/); 实车: 自动填充 |
+| 🤖 🖥️ | `params_file` | 用于所有启动节点的 ROS2 参数文件的完整路径 | string | 仿真: [nav2_params.yaml](./src/pb2025_nav_bringup/config/simulation/nav2_params.yaml); 实车: [nav2_params.yaml](./src/pb2025_nav_bringup/config/reality/nav2_params.yaml) |
+| 🤖🖥️ | `rviz_config_file` | 要使用的 RViz 配置文件的完整路径 | string | [nav2_default_view.rviz](./src/pb2025_nav_bringup/rviz/nav2_default_view.rviz) |
 | 🤖 🖥️ | `autostart` | 自动启动 nav2 栈 | bool | True |
 | 🤖 🖥️ | `use_composition` | 是否使用 Composable Node 形式启动 | bool | True |
 | 🤖 🖥️ | `use_respawn` | 如果节点崩溃，是否重新启动。本参数仅 `use_composition:=False` 时有效 | bool | False |
@@ -226,6 +227,6 @@ use_robot_state_pub:=True
 
 ### 2.5 手柄控制
 
-默认情况下，PS4 手柄控制已开启。键位映射关系详见 [nav2_params.yaml](./pb2025_nav_bringup/config/simulation/nav2_params.yaml) 中的 `teleop_twist_joy_node` 部分。
+默认情况下，PS4 手柄控制已开启。键位映射关系详见 [nav2_params.yaml](./src/pb2025_nav_bringup/config/simulation/nav2_params.yaml) 中的 `teleop_twist_joy_node` 部分。
 
 ![teleop_twist_joy.gif](https://raw.githubusercontent.com/LihanChen2004/picx-images-hosting/master/teleop_twist_joy.5j4aav3v3p.gif)
