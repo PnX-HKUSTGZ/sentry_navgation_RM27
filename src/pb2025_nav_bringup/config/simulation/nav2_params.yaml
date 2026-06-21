@@ -1,13 +1,15 @@
 ign_sim_pointcloud_tool:
   ros__parameters:
+    use_sim_time: True
     pcd_topic: livox/lidar
     n_scan: 32
     horizon_scan: 1875
-    ang_bottom: 7.0
-    ang_res_y: 1.84375  # (7+52) / 32
+    ang_bottom: 7.22
+    ang_res_y: 2.01419  # (55.22 + 7.22) / (32 - 1)
 
 point_lio:
   ros__parameters:
+    use_sim_time: True
     use_imu_as_input: False                             # Change to True to use IMU as input of Point-LIO
     prop_at_freq_of_imu: True
     check_satu: True
@@ -37,13 +39,13 @@ point_lio:
     preprocess:
       lidar_type: 2                                     # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR
       scan_line: 32
-      timestamp_unit: 2                                 # the unit of time/t field in the PointCloud2 rostopic: 0-second, 1-milisecond, 2-microsecond, 3-nanosecond.
+      timestamp_unit: 0                                 # ign_sim_pointcloud_tool publishes per-point time in seconds.
       blind: 0.5
 
     mapping:
       imu_en: True
       extrinsic_est_en: False                           # for aggressive motion, set this variable False
-      imu_time_inte: 0.005                              # = 1 / frequency of IMU
+      imu_time_inte: 0.01                               # Gazebo IMU update_rate is 100 Hz
       lidar_time_inte: 0.1
       satu_acc: 30.0                                    # the saturation value of IMU's acceleration. not related to the units
       satu_gyro: 35.0                                   # the saturation value of IMU's angular velocity. not related to the units
@@ -60,9 +62,9 @@ point_lio:
       plane_thr: 0.1                                    # 0.05, the threshold for plane criteria, the smaller, the flatter a plane
       match_s: 81.0
       ivox_grid_resolution: 0.5
-      gravity: [ 0.0, -4.9, -8.487047153776548 ]        # gravity to be aligned # rpy = [0, pi/6, 0]
-      gravity_init: [ 0.0, -4.9, -8.487047153776548 ]   # preknown gravity in the first IMU body frame, use when imu_en is False or start from a non-stationary state
-      extrinsic_T: [ 0.0, 0.0, 0.0 ]
+      gravity: [ 0.0, 0.0, -9.81 ]                      # Simulated logical MID360 frame has roll already compensated
+      gravity_init: [ 0.0, 0.0, -9.81 ]                 # preknown gravity in the first IMU body frame
+      extrinsic_T: [ 0.0, 0.0, 0.0 ]                    # Simulated IMU and LiDAR frames share the same mounting pose
       extrinsic_R: [ 1.0, 0.0, 0.0,
                      0.0, 1.0, 0.0,
                      0.0, 0.0, 1.0 ]
@@ -88,12 +90,12 @@ loam_interface:
     registered_scan_topic: "cloud_registered"
     odom_frame: "odom"
     base_frame: "base_footprint"
-    lidar_frame: "front_mid360"
+    lidar_frame: "left_mid360"
 
 sensor_scan_generation:
   ros__parameters:
     use_sim_time: True
-    lidar_frame: "front_mid360"
+    lidar_frame: "left_mid360"
     base_frame: "base_footprint"
     robot_base_frame: "gimbal_yaw"
 
@@ -169,8 +171,10 @@ small_gicp_relocalization:
     odom_frame: "odom"
     base_frame: "base_footprint"
     robot_base_frame: "gimbal_yaw"
-    lidar_frame: "front_mid360"
-    init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
+    lidar_frame: "left_mid360"
+    init_pose: [-11.7, 2.9, 0.0, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
+    prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
+    transform_prior_map_with_lidar_offset: False # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
     # prior_pcd_file: ""
 
@@ -415,7 +419,7 @@ local_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: <robot_namespace>/terrain_map
-          sensor_frame: front_mid360
+          sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
           obstacle_max_range: 5.0
@@ -462,7 +466,7 @@ global_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: <robot_namespace>/terrain_map_ext
-          sensor_frame: front_mid360
+          sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
           obstacle_max_range: 10.0
@@ -570,39 +574,3 @@ velocity_smoother:
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
-
-pb_teleop_twist_joy_node:
-  ros__parameters:
-    use_sim_time: True
-    robot_base_frame: gimbal_yaw
-    control_mode: auto_control    # Option: auto_control, manual_control
-
-    require_enable_button: true
-    enable_button: 4              # L1 shoulder button
-    enable_turbo_button: 5        # R1 shoulder button
-
-    axis_chassis:
-      x: 1                        # Left thumb stick vertical
-      y: 0                        # Left thumb stick horizontal
-      yaw: 6                      # button_left and button_right
-    scale_chassis:
-      x: 2.5
-      y: 2.5
-      yaw: 3.0
-    scale_chassis_turbo:
-      x: 4.0
-      y: 4.0
-      yaw: 6.0
-
-    axis_gimbal:
-      roll: -1                    # Disable
-      pitch: 4                    # Right thumb stick vertical
-      yaw: 3                      # Right thumb stick horizontal
-    scale_gimbal:
-      roll: 0.0
-      pitch: -1.0
-      yaw: 2.5
-    scale_gimbal_turbo:
-      roll: 0.0
-      pitch: -1.5
-      yaw: 3.5

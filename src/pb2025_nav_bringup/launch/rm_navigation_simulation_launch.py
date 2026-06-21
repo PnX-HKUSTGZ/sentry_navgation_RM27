@@ -58,8 +58,11 @@ def generate_launch_description():
     # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
         "namespace",
-        default_value="red_standard_robot1",
-        description="Top-level namespace",
+        default_value="",
+        description=(
+            "Top-level namespace. Keep empty for the current single-robot Gazebo "
+            "simulation because Gazebo publishes sensor and cmd_vel topics globally."
+        ),
     )
 
     declare_slam_cmd = DeclareLaunchArgument(
@@ -70,8 +73,11 @@ def generate_launch_description():
 
     declare_world_cmd = DeclareLaunchArgument(
         "world",
-        default_value="rmuc_2025",
-        description="Select world: 'rmul_2024' or 'rmuc_2024' or 'rmul_2025' or 'rmuc_2025' (map file share the same name as the this parameter)",
+        default_value="RMUC2026",
+        description=(
+            "Navigation map/PCD key. RMUC2026 is the default validated RM27 "
+            "simulation target."
+        ),
     )
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
@@ -116,7 +122,7 @@ def generate_launch_description():
 
     declare_use_composition_cmd = DeclareLaunchArgument(
         "use_composition",
-        default_value="True",
+        default_value="False",
         description="Whether to use composed bringup",
     )
 
@@ -170,15 +176,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    joy_teleop_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(launch_dir, "joy_teleop_launch.py")),
-        launch_arguments={
-            "namespace": namespace,
-            "use_sim_time": use_sim_time,
-            "joy_config_file": params_file,
-        }.items(),
-    )
-
     ld = LaunchDescription()
 
     # Declare the launch options
@@ -198,7 +195,6 @@ def generate_launch_description():
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_velodyne_convert_tool)
     ld.add_action(bringup_cmd)
-    ld.add_action(joy_teleop_cmd)
     ld.add_action(rviz_cmd)
 
     return ld

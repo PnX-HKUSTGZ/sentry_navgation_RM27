@@ -22,7 +22,7 @@ This project is based on the [NAV2 Navigation Framework](https://github.com/ros-
 
     This project has optimized coordinate transformation logic significantly, considering the implicit transformation between the radar origin `lidar_odom` and the chassis origin `odom`.
 
-    The Livox mid360 is mounted at an incline on the chassis and uses the [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) as odometry, [small_gicp](https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization) for localization, and [loam_interface](./loam_interface/) will transform PointCloud from `lidar_odom` frame to `odom` frame. The [sensor_scan_generation](./sensor_scan_generation/) transform PointCloud from `odom` frame to `front_mid360` frame and publishes the transform `odom -> chassis`.
+    The left Livox Mid360 is compensated in the Livox driver and exposed as `left_mid360`. It uses [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) as odometry, [small_gicp](https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization) for localization, and [loam_interface](./loam_interface/) will transform PointCloud from `lidar_odom` frame to `odom` frame. The [sensor_scan_generation](./sensor_scan_generation/) transform PointCloud from `odom` frame to `left_mid360` frame and publishes the transform `odom -> chassis`.
 
     ![frames_2025_03_26](https://raw.githubusercontent.com/LihanChen2004/picx-images-hosting/master/frames_2025_03_26.67xmq3djvx.webp)
 
@@ -32,11 +32,11 @@ This project is based on the [NAV2 Navigation Framework](https://github.com/ros-
 
 - Namespace:
 
-    To facilitate the expansion to multi-robot systems, this project uses namespaces. ROS-related nodes, topics, actions, etc., are prefixed with namespaces. To view the TF tree, use the command `ros2 run rqt_tf_tree rqt_tf_tree --ros-args -r /tf:=tf -r /tf_static:=tf_static -r __ns:=/red_standard_robot1`.
+    The current RM27 setup is maintained as a single-robot system and keeps the namespace empty by default. If multi-robot support is added later, Gazebo plugins, Point-LIO, Nav2, TF, and topic remaps must be updated together.
 
 - LiDAR:
 
-    The Livox mid360 is mounted at an incline on the chassis.
+    The Livox Mid360 is mounted 0.18 m to the left and 0.28 m above `base_link`. The physical `roll=-45 deg` mounting is compensated in the Livox driver, while TF exposes the compensated logical sensor frame as `left_mid360` with zero roll.
 
     Note: In the simulation environment, the point cloud pattern is actually of the Velodyne-style mechanical scan. Additionally, the simulator's output point cloud lacks some fields, preventing point_lio from estimating the state correctly. Thus, the simulator’s output point cloud is processed by [ign_sim_pointcloud_tool](./ign_sim_pointcloud_tool/) to add the `time` field.
 
@@ -140,14 +140,14 @@ You can start the project with the following commands. Use the `Nav2 Goal` plugi
 
 #### 2.3.1 Simulation
 
-Single Robot:
-
 Navigation mode：
 
 ```bash
-ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \
-world:=rmuc_2025 \
-slam:=False
+ros2 launch rm_27_stimulation sim_with_nav.launch.py \
+world:=RMUC2026 \
+slam:=False \
+gui:=true \
+use_rviz:=true
 ```
 
 SLAM mode：
@@ -157,22 +157,7 @@ ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \
 slam:=True
 ```
 
-Save map：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>  --ros-args -r __ns:=/red_standard_robot1`
-
-Navigation mode:
-
-Multi Robots (Experimental) :
-
-The specified initial pose is currently invalid. TODO: Add transform and initialization for `map` -> `odom`.
-
-```bash
-ros2 launch pb2025_nav_bringup rm_multi_navigation_simulation_launch.py \
-world:=rmul_2024 \
-robots:=" \
-red_standard_robot1={x: 0.0, y: 0.0, yaw: 0.0}; \
-blue_standard_robot1={x: 5.6, y: 1.4, yaw: 3.14}; \
-"
-```
+Save map：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
 
 #### 2.3.2 Physical Robot
 
@@ -181,10 +166,10 @@ SLAM mode：
 ```bash
 ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
 slam:=True \
-use_robot_state_pub:=True
+use_robot_state_pub:=False
 ```
 
-Save map：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>  --ros-args -r __ns:=/red_standard_robot1`
+Save map：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
 
 Navigation mode:
 
@@ -194,7 +179,7 @@ Remember to change the `world` parameter to the actual map name.
 ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
 world:=<YOUR_WORLD_NAME> \
 slam:=False \
-use_robot_state_pub:=True
+use_robot_state_pub:=False
 ```
 
 ### 2.4 Launch Arguments
@@ -208,20 +193,20 @@ Launch arguments are largely common to both simulation and physical robot. Howev
 
 | Available | Argument | Description | Type  | Default |
 |-|-|-|-|-|
-| 🤖 🖥️ | `namespace` | Top-level namespace | string | "red_standard_robot1" |
+| 🤖 🖥️ | `namespace` | Top-level namespace. Keep empty for the current single-robot setup. | string | Simulation: ""; Reality: "" |
 | 🤖🖥️ | `use_sim_time` | Use simulation (Gazebo) clock if True | bool | Simulation: True; Reality: False |
 | 🤖 🖥️ | `slam` | Whether run a SLAM. If True, it will disable small_gicp and send static tf (map->odom). Then automatically save the pcd_file in [./point_lio/PCD/](./point_lio/PCD/)| bool | False |
-| 🤖 🖥️ | `world` | In simulation, available options are `rmul_2024` or `rmuc_2024` or `rmul_2025` or `rmuc_2025` | string | "rmuc_2025" |
+| 🤖 🖥️ | `world` | In simulation, `RMUC2026` is the currently verified world. Older worlds require matching mesh/map/PCD checks before use. | string | Simulation: "RMUC2026" |
 |  |  | In reality, the `world` parameter name is the same as the file names of the grid map and prior pointcloud map | string | "" |
-| 🤖 🖥️ | `map` | Full path to map file to load. The path is constructed based on the `world` parameter | string | Simulation: [rmuc_2025.yaml](./pb2025_nav_bringup/map/simulation/rmuc_2025.yaml); Reality: AUTO_FILL |
-| 🤖 🖥️ | `prior_pcd_file` | Full path to prior pcd file to load. The path is constructed based on the `world` parameter | string | Simulation: [rmuc_2025.pcd](./pb2025_nav_bringup//pcd/reality/); Reality: AUTO_FILL |
-| 🤖 🖥️ | `params_file` | Full path to the ROS2 parameters file to use for all launched nodes | string | Simulation: [nav2_params.yaml](./pb2025_nav_bringup/config/simulation/nav2_params.yaml); Reality: [nav2_params.yaml](./pb2025_nav_bringup/config/reality/nav2_params.yaml) |
-| 🤖🖥️ | `rviz_config_file` | Full path to the RViz config file to use | string | [nav2_default_view.rviz](./pb2025_nav_bringup/rviz/nav2_default_view.rviz) |
+| 🤖 🖥️ | `map` | Full path to map file to load. The path is constructed based on the `world` parameter | string | Simulation: [RMUC2026.yaml](./src/pb2025_nav_bringup/map/simulation/RMUC2026.yaml); Reality: AUTO_FILL |
+| 🤖 🖥️ | `prior_pcd_file` | Full path to prior pcd file to load. The path is constructed based on the `world` parameter | string | Simulation: [RMUC2026.pcd](./src/pb2025_nav_bringup/pcd/simulation/RMUC2026.pcd); Reality: AUTO_FILL |
+| 🤖 🖥️ | `params_file` | Full path to the ROS2 parameters file to use for all launched nodes | string | Simulation: [nav2_params.yaml](./src/pb2025_nav_bringup/config/simulation/nav2_params.yaml); Reality: [nav2_params.yaml](./src/pb2025_nav_bringup/config/reality/nav2_params.yaml) |
+| 🤖🖥️ | `rviz_config_file` | Full path to the RViz config file to use | string | [nav2_default_view.rviz](./src/pb2025_nav_bringup/rviz/nav2_default_view.rviz) |
 | 🤖 🖥️ | `autostart` | Automatically startup the nav2 stack | bool | True |
-| 🤖 🖥️ | `use_composition` | Whether to use composed bringup | bool | True |
+| 🤖 🖥️ | `use_composition` | Whether to use composed bringup | bool | False |
 | 🤖 🖥️ | `use_respawn` | Whether to respawn if a node crashes. Applied when composition is disabled. | bool | False |
 | 🤖🖥️ | `use_rviz` | Whether to start RViz | bool | True |
-| 🤖 | `use_robot_state_pub` | Whether to start the robot state publisher <br> 1. In simulation, since the supporting Gazebo simulator already publishes the robot's TF information, there is no need to publish it again. <br> 2. In reality, it is **recommended** to use an independent package to publish the robot's TF information. For example, the `gimbal_yaw` and `gimbal_pitch` joint poses are provided by the serial communication module [standard_robot_pp_ros2](https://github.com/SMBU-PolarBear-Robotics-Team/standard_robot_pp_ros2), in which case `use_robot_state_pub` should be set to False. <br> If there is no complete robot system or only the navigation module (this repo) is tested, `use_robot_state_pub` can be set to True. In this case, the navigation module will publish static robot joint pose data to maintain the TF tree. <br> *Note: It is necessary to clone and compile [pb2025_robot_description](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_robot_description.git) additionally* | bool | False |
+| 🤖 | `use_robot_state_pub` | Whether to start `robot_state_publisher`. The `rm_27_stimulation` simulator starts its own robot description in `spawn_robot.launch.py`; on the physical robot, TF should be provided by the complete robot system or an RM27-specific description package. Keep this disabled until the physical robot description is explicitly wired to RM27 frames. | bool | False |
 
 > [!TIP]
 > For more details about this project and the deployment guide for the physical robot, please visit the [Wiki](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav/wiki).

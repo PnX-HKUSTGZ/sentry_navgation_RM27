@@ -87,7 +87,9 @@ def generate_launch_description():
     colorized_output_envvar = SetEnvironmentVariable("RCUTILS_COLORIZED_OUTPUT", "1")
 
     declare_namespace_cmd = DeclareLaunchArgument(
-        "namespace", default_value="", description="Top-level namespace"
+        "namespace",
+        default_value="",
+        description="Top-level namespace. Keep empty for the current single-robot setup.",
     )
 
     declare_slam_cmd = DeclareLaunchArgument(
@@ -122,7 +124,7 @@ def generate_launch_description():
 
     declare_use_composition_cmd = DeclareLaunchArgument(
         "use_composition",
-        default_value="True",
+        default_value="False",
         description="Whether to use composed bringup",
     )
 

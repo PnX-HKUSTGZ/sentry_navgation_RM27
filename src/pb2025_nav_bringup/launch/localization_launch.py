@@ -63,7 +63,9 @@ def generate_launch_description():
     colorized_output_envvar = SetEnvironmentVariable("RCUTILS_COLORIZED_OUTPUT", "1")
 
     declare_namespace_cmd = DeclareLaunchArgument(
-        "namespace", default_value="", description="Top-level namespace"
+        "namespace",
+        default_value="",
+        description="Top-level namespace. Keep empty for the current single-robot setup.",
     )
 
     declare_map_yaml_cmd = DeclareLaunchArgument(

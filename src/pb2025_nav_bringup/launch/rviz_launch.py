@@ -37,8 +37,8 @@ def generate_launch_description():
         "namespace",
         default_value="",
         description=(
-            "Top-level namespace. The value will be used to replace the "
-            "<robot_namespace> keyword on the RViz config file."
+            "Top-level namespace. Keep empty for the current single-robot setup; "
+            "non-empty values replace the <robot_namespace> keyword in RViz configs."
         ),
     )
 

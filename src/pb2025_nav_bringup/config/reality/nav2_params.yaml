@@ -5,7 +5,7 @@ livox_ros_driver2:
     data_src: 0                                         # 0-lidar, others-Invalid data src
     publish_freq: 20.0                                  # frequency of publish, 5.0, 10.0, 20.0, 50.0, etc.
     output_data_type: 0
-    frame_id: front_mid360
+    frame_id: left_mid360
     user_config_path: $(find-pkg-share pb2025_nav_bringup)/config/reality/mid360_user_config.json
     cmdline_input_bd_code: livox0000000001
     lvx_file_path: ""
@@ -64,9 +64,9 @@ point_lio:
       plane_thr: 0.1                                    # 0.05, the threshold for plane criteria, the smaller, the flatter a plane
       match_s: 81.0
       ivox_grid_resolution: 0.5
-      gravity: [0.0, 0.5305473804473877, -0.8383715748786926]            # gravity to be aligned
-      gravity_init: [0.0, 0.5305473804473877, -0.8383715748786926]       # preknown gravity in the first IMU body frame, use when imu_en is False or start from a non-stationary state
-      extrinsic_T: [ -0.011, -0.02329, 0.04412 ]
+      gravity: [ 0.0, 0.0, -1.0 ]                       # Livox driver compensates the physical -45 deg roll
+      gravity_init: [ 0.0, 0.0, -1.0 ]                  # acc_norm is 1.0 on the real MID360 path
+      extrinsic_T: [ -0.011, -0.02329, 0.04412 ]        # MID360 internal LiDAR pose in IMU frame, not base_link mounting
       extrinsic_R: [ 1.0, 0.0, 0.0,
                      0.0, 1.0, 0.0,
                      0.0, 0.0, 1.0 ]
@@ -92,12 +92,12 @@ loam_interface:
     registered_scan_topic: "cloud_registered"
     odom_frame: "odom"
     base_frame: "base_footprint"
-    lidar_frame: "front_mid360"
+    lidar_frame: "left_mid360"
 
 sensor_scan_generation:
   ros__parameters:
     use_sim_time: False
-    lidar_frame: "front_mid360"
+    lidar_frame: "left_mid360"
     base_frame: "base_footprint"
     robot_base_frame: "gimbal_yaw"
 
@@ -173,8 +173,10 @@ small_gicp_relocalization:
     odom_frame: "odom"
     base_frame: "base_footprint"
     robot_base_frame: "gimbal_yaw"
-    lidar_frame: "front_mid360"
+    lidar_frame: "left_mid360"
     init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
+    prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
+    transform_prior_map_with_lidar_offset: False # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
     # prior_pcd_file: ""
 
@@ -418,7 +420,7 @@ local_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: <robot_namespace>/terrain_map
-          sensor_frame: front_mid360
+          sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
           obstacle_max_range: 5.0
@@ -466,7 +468,7 @@ global_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: <robot_namespace>/terrain_map_ext
-          sensor_frame: front_mid360
+          sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
           obstacle_max_range: 10.0
@@ -574,39 +576,3 @@ velocity_smoother:
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
-
-pb_teleop_twist_joy_node:
-  ros__parameters:
-    use_sim_time: False
-    robot_base_frame: gimbal_yaw
-    control_mode: auto_control    # Option: auto_control, manual_control
-
-    require_enable_button: true
-    enable_button: 4              # L1 shoulder button
-    enable_turbo_button: 5        # R1 shoulder button
-
-    axis_chassis:
-      x: 1                        # Left thumb stick vertical
-      y: 0                        # Left thumb stick horizontal
-      yaw: 6                      # button_left and button_right
-    scale_chassis:
-      x: 2.5
-      y: 2.5
-      yaw: 3.0
-    scale_chassis_turbo:
-      x: 4.0
-      y: 4.0
-      yaw: 6.0
-
-    axis_gimbal:
-      roll: -1                    # Disable
-      pitch: 4                    # Right thumb stick vertical
-      yaw: 3                      # Right thumb stick horizontal
-    scale_gimbal:
-      roll: 0.0
-      pitch: -1.0
-      yaw: 2.5
-    scale_gimbal_turbo:
-      roll: 0.0
-      pitch: -1.5
-      yaw: 3.5

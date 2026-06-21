@@ -50,7 +50,7 @@ def generate_launch_description():
     declare_namespace_cmd = DeclareLaunchArgument(
         "namespace",
         default_value="",
-        description="Top-level namespace",
+        description="Top-level namespace. Keep empty for the current single-robot setup.",
     )
 
     declare_slam_cmd = DeclareLaunchArgument(
@@ -107,7 +107,7 @@ def generate_launch_description():
 
     declare_use_composition_cmd = DeclareLaunchArgument(
         "use_composition",
-        default_value="True",
+        default_value="False",
         description="Whether to use composed bringup",
     )
 
@@ -191,15 +191,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    joy_teleop_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(launch_dir, "joy_teleop_launch.py")),
-        launch_arguments={
-            "namespace": namespace,
-            "use_sim_time": use_sim_time,
-            "joy_config_file": params_file,
-        }.items(),
-    )
-
     ld = LaunchDescription()
 
     # Declare the launch options
@@ -221,7 +212,6 @@ def generate_launch_description():
     ld.add_action(start_robot_state_publisher_cmd)
     ld.add_action(start_livox_ros_driver2_node)
     ld.add_action(bringup_cmd)
-    ld.add_action(joy_teleop_cmd)
     ld.add_action(rviz_cmd)
 
     return ld

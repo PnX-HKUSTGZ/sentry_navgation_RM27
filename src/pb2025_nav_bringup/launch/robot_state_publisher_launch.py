@@ -41,7 +41,7 @@ def generate_launch_description():
     declare_namespace_cmd = DeclareLaunchArgument(
         "namespace",
         default_value="",
-        description="Top-level namespace",
+        description="Top-level namespace. Keep empty for the current single-robot setup.",
     )
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(

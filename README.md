@@ -1,20 +1,9 @@
-# pb2025_sentry_nav
-
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build and Test](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav/actions/workflows/build_and_test.yml)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
-
-深圳北理莫斯科大学 北极熊战队 2025 赛季哨兵导航仿真/实车包
-
-![PolarBear Logo](https://raw.githubusercontent.com/SMBU-PolarBear-Robotics-Team/.github/main/.docs/image/polarbear_logo_text.png)
-
-[BiliBili: 谁说在家不能调车！？更适合新手宝宝的 RM 导航仿真](https://www.bilibili.com/video/BV12qcXeHETR)
-
-https://github.com/user-attachments/assets/d9e778e0-fa43-40c2-96c2-e71eaf7737d4
-
-https://github.com/user-attachments/assets/ae4c19a0-4c73-46a0-95bd-909734da2a42
 
 ## 1. Overview
+
+哨兵导航RM-27赛季主仓（ROS 2 Humble / Livox MID360 / Nav2）
+
+基于PB25导航框架
 
 本项目基于 [NAV2 导航框架](https://github.com/ros-navigation/navigation2) 并参考学习了 [autonomous_exploration_development_environment](https://github.com/HongbiaoZ/autonomous_exploration_development_environment/tree/humble) 的设计。
 
@@ -22,7 +11,7 @@ https://github.com/user-attachments/assets/ae4c19a0-4c73-46a0-95bd-909734da2a42
 
     本项目大幅优化了坐标变换逻辑，考虑雷达原点 `lidar_odom` 与 底盘原点 `odom` 之间的隐式变换。
 
-    mid360 倾斜侧放在底盘上，使用 [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) 里程计，[small_gicp](https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization) 重定位，[loam_interface](./loam_interface/) 会将 point_lio 输出的 `/cloud_registered` 从 `lidar_odom` 系转换到 `odom` 系，[sensor_scan_generation](./sensor_scan_generation/) 将 `odom` 系的点云转换到 `front_mid360` 系，并发布变换 `odom -> chassis`。
+    Mid360 逻辑坐标系按 `base_link -> left_mid360` 为 `xyz="0.0 0.18 0.28"`、`rpy="0 0 0"` 维护，实车物理 `roll=-45°` 在 Livox driver 层补偿。系统使用 [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) 里程计，[small_gicp](https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization) 重定位，[loam_interface](./src/loam_interface/) 会将 point_lio 输出的 `/cloud_registered` 从 `lidar_odom` 系转换到 `odom` 系，[sensor_scan_generation](./src/sensor_scan_generation/) 将 `odom` 系的点云转换到 `left_mid360` 系，并发布变换 `odom -> chassis`。
 
     ![frames_2025_03_26](https://raw.githubusercontent.com/LihanChen2004/picx-images-hosting/master/frames_2025_03_26.67xmq3djvx.webp)
 
@@ -32,13 +21,13 @@ https://github.com/user-attachments/assets/ae4c19a0-4c73-46a0-95bd-909734da2a42
 
 - namespace：
 
-    为了后续拓展多机器人，本项目引入 namespace 的设计，与 ROS 相关的 node, topic, action 等都加入了 namespace 前缀。如需查看 tf tree，请使用命令 `ros2 run rqt_tf_tree rqt_tf_tree --ros-args -r /tf:=tf -r /tf_static:=tf_static -r  __ns:=/red_standard_robot1`
+    当前 RM27 单机器人仿真默认使用空 namespace，因为 `rm_27_stimulation` 中的 Gazebo 插件发布 `/livox/lidar`、`/livox/imu` 并订阅 `/cmd_vel`。如后续要扩展多机器人，需要统一改 Gazebo 插件、点云转换、Point-LIO、Nav2 和 TF 的 namespace/remap。
 
 - LiDAR:
 
-    Livox mid360 倾斜侧放在底盘上。
+    Livox Mid360 位于 `base_link` 左侧 0.18 m、上方 0.28 m。RM27 采用旧工程同款坐标方案：TF 中的 `left_mid360` 是 roll 补偿后的逻辑雷达 frame，实车物理 `roll=-45°` 写在 Livox driver 的 `extrinsic_parameter.roll`，不要再在 TF 里重复 roll。
 
-    注：仿真环境中，实际上 point pattern 为 velodyne 样式的机械式扫描。此外，由于仿真器中输出的 PointCloud 缺少部分 field，导致 point_lio 无法正常估计状态，故仿真器输出的点云经过 [ign_sim_pointcloud_tool](./ign_sim_pointcloud_tool/) 处理添加 `time` field。
+    注：仿真环境中，Gazebo Mid360 插件先发布 `/livox/lidar`，再由 [ign_sim_pointcloud_tool](./src/ign_sim_pointcloud_tool/) 转为带 `ring/time` 字段的 `/velodyne_points` 供 Point-LIO 使用。
 
 - 文件结构
 
@@ -55,6 +44,7 @@ https://github.com/user-attachments/assets/ae4c19a0-4c73-46a0-95bd-909734da2a42
         ├── pb_omni_pid_pursuit_controller  # 路径跟踪控制器
         ├── point_lio                       # 里程计
         ├── pointcloud_to_laserscan         # 将 terrain_map 转换为 laserScan 类型以表示障碍物（仅 SLAM 模式启动）
+        ├── rm_27_stimulation               # RM27 Gazebo Classic 独立仿真包
         ├── sensor_scan_generation          # 点云相关坐标变换
         ├── small_gicp_relocalization       # 重定位
         ├── terrain_analysis                # 距车体 4m 范围内地形分析，将障碍物离地高度写入 PointCloud intensity
@@ -92,7 +82,7 @@ docker run -it --rm --name pb2025_sentry_nav \
 
 - Ubuntu 22.04
 - ROS: [Humble](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html)
-- 配套仿真包（Option）：[rmu_gazebo_simulator](https://github.com/SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator)
+- Gazebo Classic 仿真依赖：本仓库内置 `src/rm_27_stimulation`，当前不依赖 `rmu_gazebo_simulator`。
 - Install [small_icp](https://github.com/koide3/small_gicp):
 
     ```bash
@@ -143,35 +133,38 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 单机器人：
 
-导航模式：
+推荐一键启动 Gazebo、机器人和 RM27 导航：
+
+```bash
+ros2 launch rm_27_stimulation sim_with_nav.launch.py \
+world:=RMUC2026 \
+slam:=False \
+gui:=false \
+use_rviz:=true
+```
+
+如果 Gazebo 和机器人已经单独启动，也可以只启动导航：
 
 ```bash
 ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \
-world:=rmuc_2025 \
-slam:=False
+world:=RMUC2026 \
+slam:=False \
+namespace:=
 ```
 
 建图模式：
 
 ```bash
-ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \
-slam:=True
+ros2 launch rm_27_stimulation sim_with_nav.launch.py \
+world:=RMUC2026 \
+slam:=True \
+gui:=false \
+use_rviz:=true
 ```
 
-保存栅格地图：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>  --ros-args -r __ns:=/red_standard_robot1`
+保存栅格地图：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
 
-多机器人 (实验性功能) :
-
-当前指定的初始位姿实际上是无效的。TODO: 加入 `map` -> `odom` 的变换和初始化
-
-```bash
-ros2 launch pb2025_nav_bringup rm_multi_navigation_simulation_launch.py \
-world:=rmul_2024 \
-robots:=" \
-red_standard_robot1={x: 0.0, y: 0.0, yaw: 0.0}; \
-blue_standard_robot1={x: 5.6, y: 1.4, yaw: 3.14}; \
-"
-```
+当前 RM27 仿真和实车启动链均按单机器人维护，默认保持空 namespace；多机器人启动入口暂不作为当前稳定版本使用。
 
 #### 2.3.2 实车
 
@@ -179,11 +172,10 @@ blue_standard_robot1={x: 5.6, y: 1.4, yaw: 3.14}; \
 
 ```bash
 ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
-slam:=True \
-use_robot_state_pub:=True
+slam:=True
 ```
 
-保存栅格地图：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>  --ros-args -r __ns:=/red_standard_robot1`
+保存栅格地图：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
 
 导航模式：
 
@@ -192,8 +184,7 @@ use_robot_state_pub:=True
 ```bash
 ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
 world:=<YOUR_WORLD_NAME> \
-slam:=False \
-use_robot_state_pub:=True
+slam:=False
 ```
 
 ### 2.4 Launch Arguments
@@ -207,20 +198,20 @@ use_robot_state_pub:=True
 
 | 可用性 | 参数 | 描述 | 类型  | 默认值 |
 |-|-|-|-|-|
-| 🤖 🖥️ | `namespace` | 顶级命名空间 | string | "red_standard_robot1" |
+| 🤖 🖥️ | `namespace` | 顶级命名空间；当前单机器人仿真保持空值 | string | 仿真: ""; 实车: "" |
 | 🤖🖥️ | `use_sim_time` | 如果为 True，则使用仿真（Gazebo）时钟 | bool | 仿真: True; 实车: False |
 | 🤖 🖥️ | `slam` | 是否启用建图模式。如果为 True，则禁用 small_gicp 并发送静态 tf（map->odom）。然后自动保存 pcd 文件到 [PCD](./src/point_lio/PCD/)| bool | False |
-| 🤖 🖥️ | `world` | 在仿真模式，可用选项为 `rmul_2024` 或 `rmuc_2024` 或 `rmul_2025` 或 `rmuc_2025` | string | "rmuc_2025" |
+| 🤖 🖥️ | `world` | 在仿真模式，当前优先验证 `RMUC2026`；其他旧 world 需要确认 mesh/map/pcd 是否齐全 | string | 仿真: "RMUC2026" |
 |  |  | 在实车模式，`world` 参数名称与栅格地图和先验点云图的文件名称相同 | string | "" |
-| 🤖 🖥️ | `map` | 要加载的地图文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [rmuc_2025.yaml](./src/pb2025_nav_bringup/map/simulation/rmuc_2025.yaml); 实车: 自动填充 |
-| 🤖 🖥️ | `prior_pcd_file` | 要加载的先验 pcd 文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [rmuc_2025.pcd](./src/pb2025_nav_bringup/pcd/reality/); 实车: 自动填充 |
+| 🤖 🖥️ | `map` | 要加载的地图文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [RMUC2026.yaml](./src/pb2025_nav_bringup/map/simulation/RMUC2026.yaml); 实车: 自动填充 |
+| 🤖 🖥️ | `prior_pcd_file` | 要加载的先验 pcd 文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [RMUC2026.pcd](./src/pb2025_nav_bringup/pcd/simulation/RMUC2026.pcd); 实车: 自动填充 |
 | 🤖 🖥️ | `params_file` | 用于所有启动节点的 ROS2 参数文件的完整路径 | string | 仿真: [nav2_params.yaml](./src/pb2025_nav_bringup/config/simulation/nav2_params.yaml); 实车: [nav2_params.yaml](./src/pb2025_nav_bringup/config/reality/nav2_params.yaml) |
 | 🤖🖥️ | `rviz_config_file` | 要使用的 RViz 配置文件的完整路径 | string | [nav2_default_view.rviz](./src/pb2025_nav_bringup/rviz/nav2_default_view.rviz) |
 | 🤖 🖥️ | `autostart` | 自动启动 nav2 栈 | bool | True |
-| 🤖 🖥️ | `use_composition` | 是否使用 Composable Node 形式启动 | bool | True |
+| 🤖 🖥️ | `use_composition` | 是否使用 Composable Node 形式启动 | bool | False |
 | 🤖 🖥️ | `use_respawn` | 如果节点崩溃，是否重新启动。本参数仅 `use_composition:=False` 时有效 | bool | False |
 | 🤖🖥️ | `use_rviz` | 是否启动 RViz | bool | True |
-| 🤖 | `use_robot_state_pub` | 是 是否使用 `robot_state_publisher` 发布机器人的 TF 信息 <br> 1. 在仿真中，由于支持的 Gazebo 仿真器已经发布了机器人的 TF 信息，因此不需要再次发布。 <br> 2. 在实车中，**推荐**使用独立的包发布机器人的 TF 信息。例如，`gimbal_yaw` 和 `gimbal_pitch` 关节位姿由串口模块 [standard_robot_pp_ros2](https://github.com/SMBU-PolarBear-Robotics-Team/standard_robot_pp_ros2) 提供，此时应将 `use_robot_state_pub` 设置为 False。 <br> 如果没有完整的机器人系统或仅测试导航模块（此仓库）时，可将 `use_robot_state_pub` 设置为 True。此时，导航模块将发布静态的机器人关节位姿数据以维护 TF 树。 <br> *注意：需额外克隆并编译 [pb2025_robot_description](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_robot_description.git)* | bool | False |
+| 🤖 | `use_robot_state_pub` | 是否使用 `robot_state_publisher` 发布机器人的 TF 信息。当前 `rm_27_stimulation` 仿真包会在 `spawn_robot.launch.py` 中启动自己的机器人描述；实车建议由完整机器人系统或 RM27 专用描述包维护 TF。只有确认实车描述文件已经按 `left_mid360`、`gimbal_yaw` 等 RM27 frame 接好后才设为 True。 | bool | False |
 
 > [!TIP]
 > 关于本项目更多细节与实车部署指南，请前往 [Wiki](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav/wiki)

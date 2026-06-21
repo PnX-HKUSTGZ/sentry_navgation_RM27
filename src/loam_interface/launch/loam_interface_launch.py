@@ -31,7 +31,9 @@ def generate_launch_description():
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
 
     declare_namespace = DeclareLaunchArgument(
-        "namespace", default_value="", description="Namespace for the node"
+        "namespace",
+        default_value="",
+        description="Namespace for the node. Keep empty for the current single-robot setup.",
     )
 
     start_loam_interface = Node(
@@ -47,7 +49,7 @@ def generate_launch_description():
                 "registered_scan_topic": "cloud_registered",
                 "odom_frame": "odom",
                 "base_frame": "gimbal_yaw",
-                "lidar_frame": "front_mid360",
+                "lidar_frame": "left_mid360",
             }
         ],
     )
