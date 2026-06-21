@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 
 import os
+import shlex
 
 import yaml
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, OpaqueFunction
 from launch.actions.append_environment_variable import AppendEnvironmentVariable
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from scripts import GazeboRosPaths
 
 
 def _load_yaml(path):
@@ -57,10 +58,45 @@ def _launch_gzserver(context, *args, **kwargs):
     ]
 
 
+def _as_bool(value):
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _launch_gzclient(context, *args, **kwargs):
+    del args, kwargs
+
+    if not _as_bool(LaunchConfiguration("gui").perform(context)):
+        return []
+
+    cmd = ["gzclient"]
+    if _as_bool(LaunchConfiguration("verbose").perform(context)):
+        cmd.append("--verbose")
+
+    extra_args = LaunchConfiguration("extra_gazebo_args").perform(context).strip()
+    if extra_args:
+        cmd.extend(shlex.split(extra_args))
+
+    model, plugin, media = GazeboRosPaths.get_paths()
+    resource_paths = [path for path in (media, "/usr/share/gazebo-11", os.environ.get("GAZEBO_RESOURCE_PATH", "")) if path]
+    model_paths = [path for path in (model, os.environ.get("GAZEBO_MODEL_PATH", "")) if path]
+    plugin_paths = [path for path in (plugin, os.environ.get("GAZEBO_PLUGIN_PATH", "")) if path]
+
+    return [
+        ExecuteProcess(
+            cmd=cmd,
+            output="screen",
+            additional_env={
+                "GAZEBO_MODEL_PATH": os.pathsep.join(model_paths),
+                "GAZEBO_PLUGIN_PATH": os.pathsep.join(plugin_paths),
+                "GAZEBO_RESOURCE_PATH": os.pathsep.join(resource_paths),
+            },
+        )
+    ]
+
+
 def generate_launch_description():
     package_share = get_package_share_directory("rm_27_stimulation")
     package_prefix = get_package_prefix("rm_27_stimulation")
-    pkg_gazebo_ros = get_package_share_directory("gazebo_ros")
     gazebo_ros_prefix = get_package_prefix("gazebo_ros")
 
     return LaunchDescription(
@@ -101,15 +137,6 @@ def generate_launch_description():
             AppendEnvironmentVariable("GAZEBO_PLUGIN_PATH", os.path.join(package_prefix, "lib")),
             AppendEnvironmentVariable("GAZEBO_PLUGIN_PATH", os.path.join(gazebo_ros_prefix, "lib")),
             OpaqueFunction(function=_launch_gzserver),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(pkg_gazebo_ros, "launch", "gzclient.launch.py")
-                ),
-                condition=IfCondition(LaunchConfiguration("gui")),
-                launch_arguments={
-                    "verbose": LaunchConfiguration("verbose"),
-                    "extra_gazebo_args": LaunchConfiguration("extra_gazebo_args"),
-                }.items(),
-            ),
+            OpaqueFunction(function=_launch_gzclient),
         ]
     )
