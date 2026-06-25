@@ -1,0 +1,241 @@
+digraph NavigationTopics {
+  graph [
+    rankdir=LR,
+    bgcolor="white",
+    pad=0.35,
+    nodesep=0.55,
+    ranksep=0.95,
+    splines=ortho,
+    overlap=false,
+    fontname="Noto Sans CJK SC",
+    label="sentry-navigation-RM27 navigation topic graph\\nsolid = normal topic flow, dashed = optional/mode-specific/action/service style relation",
+    labelloc=t,
+    fontsize=24
+  ];
+
+  node [fontname="Noto Sans CJK SC", fontsize=12, margin="0.08,0.05"];
+  edge [fontname="Noto Sans CJK SC", fontsize=10, color="#475569", arrowsize=0.75];
+
+  // Node styles
+  node [shape=box, style="rounded,filled", fillcolor="#e0f2fe", color="#0369a1"];
+  gazebo [label="Gazebo / rm_27_stimulation\\nlivox_points_plugin\\n(sim optional)"];
+  ign [label="ign_sim_pointcloud_tool\\npoint_cloud_converter\\n(sim entry)"];
+  livox [label="livox_ros_driver2\\n(reality entry)"];
+  point_lio [label="point_lio\\npointlio_mapping"];
+  loam [label="loam_interface"];
+  small_gicp [label="relocalization_manager"];
+  sensor_scan [label="sensor_scan_generation"];
+  terrain [label="terrain_analysis"];
+  terrain_ext [label="terrain_analysis_ext"];
+  p2l [label="pointcloud_to_laserscan\\n(SLAM mode)"];
+  slam_toolbox [label="slam_toolbox\\n(SLAM mode)"];
+  map_server [label="nav2_map_server\\nmap_server"];
+  map_saver [label="nav2_map_server\\nmap_saver_server\\n(SLAM mode)"];
+  rviz_user [label="RViz / user / teleop clients"];
+  teleop [label="pb_teleop_twist_joy\\n(optional)"];
+  controller [label="nav2_controller\\ncontroller_server\\n+ pb_omni_pid_pursuit_controller"];
+  smoother [label="nav2_smoother\\nsmoother_server"];
+  planner [label="nav2_planner\\nplanner_server"];
+  behavior [label="nav2_behaviors\\nbehavior_server\\n+ pb_nav2_behaviors"];
+  bt [label="nav2_bt_navigator"];
+  waypoint [label="nav2_waypoint_follower"];
+  vel_smoother [label="nav2_velocity_smoother"];
+  fake_vel [label="fake_vel_transform"];
+  chassis [label="base / chassis controller\\n(external consumer)"];
+  costmap_local [label="Nav2 local_costmap\\ninside controller_server"];
+  costmap_global [label="Nav2 global_costmap\\ninside planner/controller stack"];
+  lifecycle_loc [label="lifecycle_manager_localization"];
+  lifecycle_nav [label="lifecycle_manager_navigation"];
+
+  node [shape=ellipse, style="filled", fillcolor="#fef3c7", color="#b45309"];
+  livox_lidar [label="/livox/lidar\\nPointCloud2 or Livox CustomMsg"];
+  livox_lidar_pc2 [label="/livox/lidar/pointcloud\\nPointCloud2 when xfer_format=AllMsg"];
+  livox_imu [label="/livox/imu\\nImu"];
+  velodyne_points [label="/velodyne_points\\nPointCloud2 with ring/time"];
+  cloud_registered [label="/cloud_registered\\nPointCloud2, Point-LIO world/camera_init"];
+  cloud_registered_body [label="/cloud_registered_body\\nPointCloud2, optional"];
+  cloud_effected [label="/cloud_effected\\nPointCloud2"];
+  laser_map [label="/Laser_map\\nPointCloud2"];
+  aft_mapped [label="/aft_mapped_to_init\\nOdometry, camera_init -> body pose"];
+  pointlio_path [label="/path\\nPath, optional"];
+  registered_scan [label="/registered_scan\\nPointCloud2 transformed to odom"];
+  lidar_odom [label="/lidar_odometry\\nOdometry in odom -> left_mid360"];
+  sensor_scan_topic [label="/sensor_scan\\nPointCloud2 in lidar frame"];
+  odometry [label="/odometry\\nOdometry, odom -> gimbal_yaw"];
+  initialpose [label="/initialpose\\nPoseWithCovarianceStamped"];
+  terrain_map [label="/terrain_map\\nPointCloud2, odom"];
+  terrain_map_ext [label="/terrain_map_ext\\nPointCloud2, odom"];
+  joy [label="/joy\\nJoy"];
+  map_clearing [label="/map_clearing\\nFloat32"];
+  cloud_clearing [label="/cloud_clearing\\nFloat32"];
+  map_topic [label="/map\\nOccupancyGrid"];
+  map_meta [label="/map_metadata\\nMapMetaData"];
+  map_updates [label="/map_updates\\nOccupancyGridUpdate"];
+  obstacle_scan [label="/obstacle_scan\\nLaserScan"];
+  local_costmap_raw [label="/local_costmap/costmap_raw\\nOccupancyGrid"];
+  global_costmap_raw [label="/global_costmap/costmap_raw\\nOccupancyGrid"];
+  local_footprint [label="/local_costmap/published_footprint\\nPolygonStamped"];
+  global_footprint [label="/global_costmap/published_footprint\\nPolygonStamped"];
+  local_plan [label="/local_plan\\nPath"];
+  lookahead [label="/lookahead_point\\nPointStamped"];
+  curvature_markers [label="/curvature_points_marker_array\\nMarkerArray"];
+  cmd_vel_controller [label="/cmd_vel_controller\\nTwist, raw controller output"];
+  cmd_vel_nav2_result [label="/cmd_vel_nav2_result\\nTwist, smoothed Nav2 output"];
+  cmd_vel [label="/cmd_vel\\nTwist, chassis command"];
+  cmd_spin [label="/cmd_spin\\nFloat32"];
+  cmd_gimbal [label="/cmd_gimbal_joint\\nJointState"];
+  cmd_shoot [label="/cmd_shoot\\nUInt8"];
+  backup_markers [label="/back_up_free_space_markers\\nMarkerArray, optional"];
+  voxel_grid [label="/voxel_grid\\nVoxelGrid, optional debug"];
+  tf_topic [label="/tf\\nTFMessage"];
+  tf_static_topic [label="/tf_static\\nTFMessage"];
+
+  node [shape=note, style="filled", fillcolor="#f1f5f9", color="#64748b"];
+  prior_pcd [label="prior_pcd_file\\nPCD map from launch"];
+  yaml_map [label="map yaml/pgm\\nfrom launch"];
+
+  // Sensor sources
+  gazebo -> livox_lidar [label="publishes sim lidar"];
+  gazebo -> livox_imu [label="publishes sim IMU", style=dashed];
+  gazebo -> livox_lidar [label="also /livox/lidar/custom", style=dashed, color="#94a3b8"];
+  livox -> livox_lidar [label="publishes CustomMsg when xfer_format=AllMsg/reality"];
+  livox -> livox_lidar_pc2 [label="publishes PointCloud2 when xfer_format=AllMsg", style=dashed];
+  livox -> livox_imu [label="publishes IMU"];
+
+  // Simulation conversion
+  livox_lidar -> ign [label="sub pcd_topic=livox/lidar (sim)"];
+  ign -> velodyne_points [label="pub converted PC2"];
+
+  // Point-LIO input/output
+  velodyne_points -> point_lio [label="sub lid_topic in simulation"];
+  livox_lidar -> point_lio [label="sub lid_topic in reality"];
+  livox_imu -> point_lio [label="sub imu_topic"];
+  point_lio -> cloud_registered [label="pub"];
+  point_lio -> cloud_registered_body [label="pub if scan_bodyframe_pub_en"];
+  point_lio -> cloud_effected [label="pub"];
+  point_lio -> laser_map [label="pub"];
+  point_lio -> aft_mapped [label="pub"];
+  point_lio -> pointlio_path [label="pub if path_en"];
+  point_lio -> tf_topic [label="camera_init -> aft_mapped if tf_send_en", style=dashed];
+
+  // LOAM interface and localization
+  cloud_registered -> loam [label="sub registered_scan_topic"];
+  aft_mapped -> loam [label="sub state_estimation_topic"];
+  tf_topic -> loam [label="lookup base_frame -> lidar_frame"];
+  loam -> registered_scan [label="pub"];
+  loam -> lidar_odom [label="pub"];
+
+  registered_scan -> small_gicp [label="sub input_cloud_topic default"];
+  initialpose -> small_gicp [label="sub"];
+  prior_pcd -> small_gicp [label="load"];
+  tf_topic -> small_gicp [label="lookup robot_base_frame/current_scan_frame", style=dashed];
+  small_gicp -> tf_topic [label="pub map -> odom"];
+
+  // Chassis odometry and sensor scan
+  registered_scan -> sensor_scan [label="sync sub"];
+  lidar_odom -> sensor_scan [label="sync sub"];
+  tf_topic -> sensor_scan [label="lookup left_mid360 -> base/gimbal"];
+  sensor_scan -> sensor_scan_topic [label="pub"];
+  sensor_scan -> odometry [label="pub"];
+  sensor_scan -> tf_topic [label="pub odom -> base_footprint"];
+
+  // Terrain maps
+  registered_scan -> terrain [label="sub"];
+  lidar_odom -> terrain [label="sub"];
+  joy -> terrain [label="sub"];
+  map_clearing -> terrain [label="sub"];
+  terrain -> terrain_map [label="pub"];
+
+  registered_scan -> terrain_ext [label="sub"];
+  lidar_odom -> terrain_ext [label="sub"];
+  joy -> terrain_ext [label="sub"];
+  cloud_clearing -> terrain_ext [label="sub"];
+  terrain_map -> terrain_ext [label="sub local terrain"];
+  terrain_ext -> terrain_map_ext [label="pub"];
+
+  // Map and SLAM
+  yaml_map -> map_server [label="load"];
+  map_server -> map_topic [label="pub"];
+  map_server -> map_meta [label="pub"];
+  terrain_map_ext -> p2l [label="sub cloud_in, SLAM mode", style=dashed];
+  p2l -> obstacle_scan [label="pub scan, SLAM mode", style=dashed];
+  obstacle_scan -> slam_toolbox [label="sub scan_topic, SLAM mode", style=dashed];
+  slam_toolbox -> map_topic [label="pub map, SLAM mode", style=dashed];
+  slam_toolbox -> map_meta [label="pub metadata, SLAM mode", style=dashed];
+  slam_toolbox -> map_updates [label="pub updates, SLAM mode", style=dashed];
+  map_topic -> map_saver [label="sub save map, SLAM mode", style=dashed];
+
+  // Costmaps and Nav2
+  map_topic -> costmap_local [label="static_layer sub"];
+  map_topic -> costmap_global [label="static_layer sub"];
+  terrain_map -> costmap_local [label="intensity_voxel_layer sub"];
+  terrain_map_ext -> costmap_global [label="intensity_voxel_layer sub"];
+  costmap_local -> local_costmap_raw [label="pub"];
+  costmap_global -> global_costmap_raw [label="pub"];
+  costmap_local -> local_footprint [label="pub"];
+  costmap_global -> global_footprint [label="pub"];
+  costmap_local -> voxel_grid [label="pub if publish_voxel_map", style=dashed];
+  costmap_global -> voxel_grid [label="pub if publish_voxel_map", style=dashed];
+
+  rviz_user -> initialpose [label="pub 2D Pose Estimate"];
+  rviz_user -> bt [label="NavigateToPose / NavigateThroughPoses actions", style=dashed];
+  rviz_user -> joy [label="pub joystick via joy_node", style=dashed];
+  joy -> teleop [label="sub"];
+  tf_topic -> teleop [label="lookup map -> robot_base_frame"];
+  teleop -> cmd_vel [label="pub if teleop enabled"];
+  teleop -> cmd_spin [label="pub"];
+  teleop -> cmd_gimbal [label="pub"];
+  teleop -> cmd_shoot [label="pub"];
+
+  bt -> planner [label="ComputePath action", style=dashed];
+  bt -> smoother [label="SmoothPath action", style=dashed];
+  bt -> controller [label="FollowPath action", style=dashed];
+  bt -> behavior [label="Spin/Backup/etc actions", style=dashed];
+  waypoint -> bt [label="NavigateToPose action", style=dashed];
+  odometry -> bt [label="sub odom_topic"];
+  odometry -> controller [label="sub odom_topic"];
+  odometry -> vel_smoother [label="sub odom_topic"];
+  tf_topic -> bt [label="uses TF map/odom/base"];
+  tf_topic -> controller [label="uses TF"];
+  tf_topic -> planner [label="uses TF"];
+  tf_topic -> behavior [label="uses TF"];
+
+  controller -> local_plan [label="pub by controller plugin"];
+  controller -> lookahead [label="pub"];
+  controller -> curvature_markers [label="pub"];
+  controller -> cmd_vel_controller [label="pub cmd_vel remapped"];
+  cmd_vel_controller -> vel_smoother [label="sub cmd_vel remapped"];
+  vel_smoother -> cmd_vel_nav2_result [label="pub cmd_vel_smoothed remapped"];
+  cmd_vel_nav2_result -> fake_vel [label="sub input_cmd_vel_topic"];
+  odometry -> fake_vel [label="sub odom_topic"];
+  local_plan -> fake_vel [label="sync sub"];
+  cmd_spin -> fake_vel [label="sub"];
+  fake_vel -> cmd_vel [label="pub output_cmd_vel_topic"];
+  cmd_vel -> chassis [label="consume by chassis/robot"];
+
+  local_costmap_raw -> behavior [label="sub local_costmap_topic"];
+  global_costmap_raw -> behavior [label="sub global_costmap_topic"];
+  local_footprint -> behavior [label="sub local_footprint_topic"];
+  global_footprint -> behavior [label="sub global_footprint_topic"];
+  behavior -> cmd_vel [label="pub cmd_vel in non-composed launch", style=dashed];
+  behavior -> cmd_vel_nav2_result [label="pub cmd_vel remapped only in composed launch", style=dashed];
+  behavior -> backup_markers [label="pub if visualize=true", style=dashed];
+  behavior -> costmap_global [label="GetCostmap service: global_costmap/get_costmap", style=dashed];
+
+  lifecycle_loc -> map_server [label="manage lifecycle", style=dashed];
+  lifecycle_nav -> controller [label="manage lifecycle", style=dashed];
+  lifecycle_nav -> smoother [label="manage lifecycle", style=dashed];
+  lifecycle_nav -> planner [label="manage lifecycle", style=dashed];
+  lifecycle_nav -> behavior [label="manage lifecycle", style=dashed];
+  lifecycle_nav -> bt [label="manage lifecycle", style=dashed];
+  lifecycle_nav -> waypoint [label="manage lifecycle", style=dashed];
+  lifecycle_nav -> vel_smoother [label="manage lifecycle", style=dashed];
+
+  // Invisible rank helpers
+  { rank=same; gazebo; livox; rviz_user; }
+  { rank=same; livox_lidar; livox_imu; velodyne_points; }
+  { rank=same; point_lio; map_server; }
+  { rank=same; loam; small_gicp; sensor_scan; }
+  { rank=same; terrain; terrain_ext; }
+  { rank=same; costmap_local; costmap_global; planner; controller; }
+}

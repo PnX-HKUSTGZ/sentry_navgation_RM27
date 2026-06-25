@@ -22,7 +22,7 @@ This project is based on the [NAV2 Navigation Framework](https://github.com/ros-
 
     This project has optimized coordinate transformation logic significantly, considering the implicit transformation between the radar origin `lidar_odom` and the chassis origin `odom`.
 
-    The left Livox Mid360 is compensated in the Livox driver and exposed as `left_mid360`. It uses [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) as odometry, [small_gicp](https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization) for localization, and [loam_interface](./loam_interface/) will transform PointCloud from `lidar_odom` frame to `odom` frame. The [sensor_scan_generation](./sensor_scan_generation/) transform PointCloud from `odom` frame to `left_mid360` frame and publishes the transform `odom -> chassis`.
+    The left Livox Mid360 is compensated in the Livox driver and exposed as `left_mid360`. It uses [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) as odometry, [relocalization_manager](./src/relocalization_manager/) to manage relocalization while using small_gicp internally for point cloud verification, and [loam_interface](./loam_interface/) will transform PointCloud from `lidar_odom` frame to `odom` frame. The [sensor_scan_generation](./sensor_scan_generation/) transform PointCloud from `odom` frame to `left_mid360` frame and publishes the transform `odom -> chassis`.
 
     ![frames_2025_03_26](https://raw.githubusercontent.com/LihanChen2004/picx-images-hosting/master/frames_2025_03_26.67xmq3djvx.webp)
 
@@ -55,7 +55,7 @@ This project is based on the [NAV2 Navigation Framework](https://github.com/ros-
     ├── point_lio                           # Odometry
     ├── pointcloud_to_laserscan             # Convert terrain_map to LaserScan type to represent obstacles (only launched in SLAM mode)
     ├── sensor_scan_generation              # Point cloud related coordinate transformation
-    ├── small_gicp_relocalization           # Localization
+    ├── relocalization_manager              # Relocalization manager; uses small_gicp for verification and publishes map -> odom
     ├── terrain_analysis                    # Terrain analysis within a 4m range of the vehicle, writing obstacle height above ground into the PointCloud intensity field.
     └── terrain_analysis_ext                # Terrain analysis beyond a 4m range of the vehicle, writing obstacle height above ground into the PointCloud intensity field.
     ```

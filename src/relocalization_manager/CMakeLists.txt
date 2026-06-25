@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.11)
-project(small_gicp_relocalization)
+project(relocalization_manager)
 
 ## Use C++14
 set(CMAKE_CXX_STANDARD 14)
@@ -40,7 +40,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
 target_link_libraries(${PROJECT_NAME} OpenMP::OpenMP_CXX small_gicp)
 
 rclcpp_components_register_node(${PROJECT_NAME}
-  PLUGIN small_gicp_relocalization::SmallGicpRelocalizationNode
+  PLUGIN relocalization_manager::RelocalizationManagerNode
   EXECUTABLE ${PROJECT_NAME}_node
 )
 

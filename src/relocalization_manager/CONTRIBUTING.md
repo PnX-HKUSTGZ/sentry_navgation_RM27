@@ -1,6 +1,6 @@
 # Contributing Guidelines
 
-Thank you for your interest in contributing to `small_gicp_relocalization`.
+Thank you for your interest in contributing to `relocalization_manager`.
 Whether it's a bug report, new feature, correction, or additional
 documentation, we greatly value feedback and contributions from our community.
 
@@ -58,6 +58,6 @@ be under the Apache 2 License, as dictated by that
    with Licensor regarding such Contributions.
 ~~~
 
-[issues]: https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization/issues
-[closed-issues]: https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aclosed%20
-[help-wanted]: https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22
+[issues]: https://github.com/SMBU-PolarBear-Robotics-Team/relocalization_manager/issues
+[closed-issues]: https://github.com/SMBU-PolarBear-Robotics-Team/relocalization_manager/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aclosed%20
+[help-wanted]: https://github.com/SMBU-PolarBear-Robotics-Team/relocalization_manager/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22

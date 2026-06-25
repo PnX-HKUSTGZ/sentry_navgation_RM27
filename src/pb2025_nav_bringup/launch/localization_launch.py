@@ -146,9 +146,9 @@ def generate_launch_description():
                 arguments=["--ros-args", "--log-level", log_level],
             ),
             Node(
-                package="small_gicp_relocalization",
-                executable="small_gicp_relocalization_node",
-                name="small_gicp_relocalization",
+                package="relocalization_manager",
+                executable="relocalization_manager_node",
+                name="relocalization_manager",
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
@@ -181,9 +181,9 @@ def generate_launch_description():
                 parameters=[configured_params],
             ),
             ComposableNode(
-                package="small_gicp_relocalization",
-                plugin="small_gicp_relocalization::SmallGicpRelocalizationNode",
-                name="small_gicp_relocalization",
+                package="relocalization_manager",
+                plugin="relocalization_manager::RelocalizationManagerNode",
+                name="relocalization_manager",
                 parameters=[configured_params, {"prior_pcd_file": prior_pcd_file}],
             ),
             ComposableNode(

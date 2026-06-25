@@ -1,0 +1,96 @@
+digraph NavigationTF {
+  graph [
+    rankdir=TB,
+    bgcolor="white",
+    pad=0.35,
+    nodesep=0.85,
+    ranksep=0.9,
+    splines=ortho,
+    overlap=false,
+    fontname="Noto Sans CJK SC",
+    label="sentry-navigation-RM27 TF transform ownership\\nsolid = transform broadcast in normal localization/navigation; dashed = optional, external, or lookup-only dependency",
+    labelloc=t,
+    fontsize=24
+  ];
+
+  node [fontname="Noto Sans CJK SC", fontsize=13, margin="0.08,0.05"];
+  edge [fontname="Noto Sans CJK SC", fontsize=11, color="#475569", arrowsize=0.8];
+
+  node [shape=ellipse, style="filled", fillcolor="#fef3c7", color="#b45309"];
+  map [label="map"];
+  odom [label="odom"];
+  camera_init [label="camera_init\\nPoint-LIO odom/map frame"];
+  aft_mapped [label="aft_mapped\\nPoint-LIO TF child when enabled"];
+  body [label="body\\nPoint-LIO odometry child_frame"];
+  base_footprint [label="base_footprint"];
+  gimbal_yaw [label="gimbal_yaw\\nrobot_base_frame"];
+  gimbal_yaw_fake [label="gimbal_yaw_fake\\nNav2 robot_base_frame"];
+  left_mid360 [label="left_mid360\\nlidar_frame"];
+  robot_links [label="other robot links\\nURDF tree"];
+  livox_frame [label="livox_frame / sensor frame\\nfrom driver or sim"];
+
+  node [shape=box, style="rounded,filled", fillcolor="#e0f2fe", color="#0369a1"];
+  small_gicp [label="relocalization_manager\\nBroadcasts map -> odom\\n20 Hz timer"];
+  static_map_odom [label="tf2_ros static_transform_publisher\\nSLAM mode only\\nmap -> odom identity"];
+  point_lio [label="point_lio\\nPublishes odometry aft_mapped_to_init\\nOptional TF camera_init -> aft_mapped if tf_send_en"];
+  loam [label="loam_interface\\nNo TF broadcast\\nUses base_frame -> lidar_frame lookup\\nPublishes lidar_odometry topic"];
+  sensor_scan [label="sensor_scan_generation\\nBroadcasts odom -> base_footprint\\nPublishes odometry odom -> gimbal_yaw"];
+  fake_vel [label="fake_vel_transform\\nBroadcasts gimbal_yaw -> gimbal_yaw_fake"];
+  robot_state_pub [label="robot_state_publisher / robot_description\\nExternal or optional standalone\\nPublishes static/dynamic robot link TF"];
+  nav2 [label="Nav2 nodes\\ncontroller/planner/bt/behavior/costmaps\\nConsume TF, do not own these transforms"];
+  p2l [label="pointcloud_to_laserscan\\nConsumes TF if target_frame is set"];
+  teleop [label="pb_teleop_twist_joy\\nConsumes TF map -> robot_base_frame"];
+  slam_toolbox [label="slam_toolbox in this config\\ntransform_publish_period=0.0\\nDoes not publish odom TF"];
+
+  // Broadcast transforms
+  small_gicp -> odom [label="broadcast child"];
+  map -> small_gicp [label="parent"];
+  map -> odom [label="TF: map -> odom\\nlocalization mode", color="#0369a1", penwidth=2.2];
+
+  static_map_odom -> odom [label="broadcast child", style=dashed];
+  map -> static_map_odom [label="parent", style=dashed];
+  map -> odom [label="TF: map -> odom identity\\nSLAM mode only", style=dashed, color="#94a3b8"];
+
+  point_lio -> aft_mapped [label="optional TF child", style=dashed];
+  camera_init -> point_lio [label="parent", style=dashed];
+  camera_init -> aft_mapped [label="TF: camera_init -> aft_mapped\\nonly if point_lio.publish.tf_send_en=true", style=dashed, color="#94a3b8"];
+  camera_init -> body [label="Odometry message frame only:\\n/aft_mapped_to_init header=camera_init child=body", style=dotted, color="#64748b"];
+
+  sensor_scan -> base_footprint [label="broadcast child"];
+  odom -> sensor_scan [label="parent"];
+  odom -> base_footprint [label="TF: odom -> base_footprint\\ncomputed from lidar_odometry + lidar->base static TF", color="#0369a1", penwidth=2.0];
+  odom -> gimbal_yaw [label="Odometry topic only:\\n/odometry header=odom child=gimbal_yaw", style=dotted, color="#64748b"];
+
+  fake_vel -> gimbal_yaw_fake [label="broadcast child"];
+  gimbal_yaw -> fake_vel [label="parent"];
+  gimbal_yaw -> gimbal_yaw_fake [label="TF: gimbal_yaw -> gimbal_yaw_fake\\nyaw compensation for Nav2 control", color="#0369a1", penwidth=2.0];
+
+  robot_state_pub -> robot_links [label="broadcast URDF TF tree", style=dashed];
+  robot_links -> base_footprint [label="includes base frame chain", style=dashed];
+  robot_links -> gimbal_yaw [label="includes gimbal yaw frame", style=dashed];
+  robot_links -> left_mid360 [label="includes lidar mounting frame", style=dashed];
+  livox_frame -> left_mid360 [label="driver/sim frame should match or be bridged by robot TF", style=dashed, color="#94a3b8"];
+
+  // Lookup-only dependencies
+  base_footprint -> left_mid360 [label="lookup by loam_interface\\nbase_frame -> lidar_frame", style=dashed, color="#64748b"];
+  left_mid360 -> base_footprint [label="lookup by sensor_scan_generation\\nlidar_frame -> base_frame", style=dashed, color="#64748b"];
+  left_mid360 -> gimbal_yaw [label="lookup by sensor_scan_generation\\nlidar_frame -> robot_base_frame", style=dashed, color="#64748b"];
+  gimbal_yaw -> left_mid360 [label="lookup by small_gicp initialpose path\\nrobot_base_frame -> current_scan_frame", style=dashed, color="#64748b"];
+  map -> gimbal_yaw_fake [label="consumed by Nav2 via map->odom->base->fake chain", style=dashed, color="#64748b"];
+  map -> gimbal_yaw [label="lookup by teleop for goal/heading helpers", style=dashed, color="#64748b"];
+  base_footprint -> p2l [label="pointcloud_to_laserscan target_frame=base_footprint", style=dashed, color="#64748b"];
+
+  // Consumers
+  odom -> nav2 [label="TF input"];
+  map -> nav2 [label="TF input"];
+  gimbal_yaw_fake -> nav2 [label="configured robot_base_frame"];
+  slam_toolbox -> map [label="mapping uses map frame; no TF output in current params", style=dashed];
+  p2l -> slam_toolbox [label="SLAM scan chain uses TF", style=dashed];
+  teleop -> nav2 [label="optional user commands/actions", style=dashed];
+
+  // Ranks
+  { rank=same; map; small_gicp; static_map_odom; }
+  { rank=same; odom; sensor_scan; }
+  { rank=same; base_footprint; gimbal_yaw; fake_vel; }
+  { rank=same; gimbal_yaw_fake; left_mid360; robot_links; }
+}

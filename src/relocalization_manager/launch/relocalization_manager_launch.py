@@ -26,8 +26,9 @@ def generate_launch_description():
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
 
     node = Node(
-        package="small_gicp_relocalization",
-        executable="small_gicp_relocalization_node",
+        package="relocalization_manager",
+        executable="relocalization_manager_node",
+        name="relocalization_manager",
         namespace="",
         output="screen",
         remappings=remappings,
@@ -35,15 +36,21 @@ def generate_launch_description():
             {
                 "num_threads": 4,
                 "num_neighbors": 10,
+                "max_iterations": 10,
                 "global_leaf_size": 0.25,
                 "registered_leaf_size": 0.25,
                 "max_dist_sq": 1.0,
                 "map_frame": "map",
                 "odom_frame": "odom",
                 "base_frame": "",
+                "robot_base_frame": "",
                 "lidar_frame": "",
                 "prior_pcd_file": "",
+                "init_pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                "prior_pcd_transform": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                 "input_cloud_topic": "cloud_registered",
+                "initial_pose_topic": "initialpose",
+                "transform_prior_map_with_lidar_offset": False,
             }
         ],
     )

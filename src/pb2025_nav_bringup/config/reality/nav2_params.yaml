@@ -161,11 +161,12 @@ fake_vel_transform:
     cmd_spin_topic: "cmd_spin"
     init_spin_speed: 3.14
 
-small_gicp_relocalization:
+relocalization_manager:
   ros__parameters:
     use_sim_time: False
     num_threads: 4
     num_neighbors: 20
+    max_iterations: 30
     global_leaf_size: 0.1
     registered_leaf_size: 0.05
     max_dist_sq: 3.0
@@ -174,6 +175,8 @@ small_gicp_relocalization:
     base_frame: "base_footprint"
     robot_base_frame: "gimbal_yaw"
     lidar_frame: "left_mid360"
+    input_cloud_topic: "registered_scan"
+    initial_pose_topic: "initialpose"
     init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
     prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
     transform_prior_map_with_lidar_offset: False # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上

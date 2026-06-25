@@ -11,7 +11,7 @@
 
     本项目大幅优化了坐标变换逻辑，考虑雷达原点 `lidar_odom` 与 底盘原点 `odom` 之间的隐式变换。
 
-    Mid360 逻辑坐标系按 `base_link -> left_mid360` 为 `xyz="0.0 0.18 0.28"`、`rpy="0 0 0"` 维护，实车物理 `roll=-45°` 在 Livox driver 层补偿。系统使用 [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) 里程计，[small_gicp](https://github.com/SMBU-PolarBear-Robotics-Team/small_gicp_relocalization) 重定位，[loam_interface](./src/loam_interface/) 会将 point_lio 输出的 `/cloud_registered` 从 `lidar_odom` 系转换到 `odom` 系，[sensor_scan_generation](./src/sensor_scan_generation/) 将 `odom` 系的点云转换到 `left_mid360` 系，并发布变换 `odom -> chassis`。
+    Mid360 逻辑坐标系按 `base_link -> left_mid360` 为 `xyz="0.0 0.18 0.28"`、`rpy="0 0 0"` 维护，实车物理 `roll=-45°` 在 Livox driver 层补偿。系统使用 [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) 里程计，[relocalization_manager](./src/relocalization_manager/) 管理重定位并在内部使用 small_gicp 做点云匹配验证，[loam_interface](./src/loam_interface/) 会将 point_lio 输出的 `/cloud_registered` 从 `lidar_odom` 系转换到 `odom` 系，[sensor_scan_generation](./src/sensor_scan_generation/) 将 `odom` 系的点云转换到 `left_mid360` 系，并发布变换 `odom -> chassis`。
 
     ![frames_2025_03_26](https://raw.githubusercontent.com/LihanChen2004/picx-images-hosting/master/frames_2025_03_26.67xmq3djvx.webp)
 
@@ -46,7 +46,7 @@
         ├── pointcloud_to_laserscan         # 将 terrain_map 转换为 laserScan 类型以表示障碍物（仅 SLAM 模式启动）
         ├── rm_27_stimulation               # RM27 Gazebo Classic 独立仿真包
         ├── sensor_scan_generation          # 点云相关坐标变换
-        ├── small_gicp_relocalization       # 重定位
+        ├── relocalization_manager          # 重定位管理，内部使用 small_gicp 验证并由 manager 发布 map -> odom
         ├── terrain_analysis                # 距车体 4m 范围内地形分析，将障碍物离地高度写入 PointCloud intensity
         └── terrain_analysis_ext            # 车体 4m 范围外地形分析，将障碍物离地高度写入 PointCloud intensity
     ```
