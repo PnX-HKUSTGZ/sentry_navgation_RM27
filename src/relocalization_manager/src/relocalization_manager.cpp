@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <rclcpp/logging.hpp>
 
 #include "pcl/common/common.h"
 #include "pcl/common/transforms.h"
@@ -28,7 +29,7 @@ namespace relocalization_manager
 {
 namespace
 {
-
+//把配置里的prior_pcd_transform转成Eigen变换，再作用到整张先验PCD地图上
 Eigen::Affine3d poseVectorToAffine(const std::vector<double> & pose)
 {
   Eigen::Affine3d transform = Eigen::Affine3d::Identity();
@@ -45,6 +46,7 @@ Eigen::Affine3d poseVectorToAffine(const std::vector<double> & pose)
   return transform;
 }
 
+//判断一个 pose vector 是否近似为单位变换。
 bool isIdentityPoseVector(const std::vector<double> & pose)
 {
   if (pose.size() < 6) {
@@ -55,6 +57,7 @@ bool isIdentityPoseVector(const std::vector<double> & pose)
     pose.begin(), pose.begin() + 6, [](double value) { return std::abs(value) < 1e-9; });
 }
 
+//打印一份点云的点数和 x/y/z 空间范围，主要用于调试先验 PCD 地图是否加载正确，以及经prior_pcd_transform变换后是否符合预期
 void logCloudBounds(
   const rclcpp::Logger & logger, const std::string & label,
   const pcl::PointCloud<pcl::PointXYZ> & cloud)
@@ -72,6 +75,7 @@ void logCloudBounds(
     label.c_str(), cloud.size(), min_pt.x, max_pt.x, min_pt.y, max_pt.y, min_pt.z, max_pt.z);
 }
 
+//把配置里的prior_pcd_transform转成Eigen::Isometry3d
 Eigen::Isometry3d poseVectorToIsometry(const std::vector<double> & pose)
 {
   Eigen::Isometry3d transform = Eigen::Isometry3d::Identity();
@@ -111,9 +115,9 @@ bool SmallGicpVerifier::loadGlobalMap(const std::string & file_name)
                  << prior_pcd_transform_[0] << ", " << prior_pcd_transform_[1] << ", "
                  << prior_pcd_transform_[2] << ", " << prior_pcd_transform_[3] << ", "
                  << prior_pcd_transform_[4] << ", " << prior_pcd_transform_[5] << "]");
+  } else{
+     prepareTarget();
   }
-
-  prepareTarget();
   return true;
 }
 
@@ -157,6 +161,11 @@ VerificationResult SmallGicpVerifier::verify(
     pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
     accumulated_cloud, params_.registered_leaf_size);
 
+  if (!source || source->empty()) {
+    RCLCPP_WARN(logger_, "Downsampled source cloud is empty.");
+    return verification;
+  }
+
   pcl::PointXYZ source_min_pt;
   pcl::PointXYZ source_max_pt;
   pcl::getMinMax3D(accumulated_cloud, source_min_pt, source_max_pt);
@@ -170,26 +179,36 @@ VerificationResult SmallGicpVerifier::verify(
 
   small_gicp::estimate_covariances_omp(*source, params_.num_neighbors, params_.num_threads);
 
-  auto source_tree = std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(
-    source, small_gicp::KdTreeBuilderOMP(params_.num_threads));
-
-  if (!source || !source_tree) {
-    return verification;
-  }
-
   register_->reduction.num_threads = params_.num_threads;
   register_->rejector.max_dist_sq = params_.max_dist_sq;
   register_->optimizer.max_iterations = params_.max_iterations;
 
   const auto result = register_->align(*target_, *source, *target_tree_, initial_guess);
+
+  const double inlier_ratio =
+    source->empty() ? 0.0 : static_cast<double>(result.num_inliers) / source->size();  //内点比列，越高越好
+  const double mean_error =
+    result.num_inliers == 0 ? std::numeric_limits<double>::infinity()
+                          : result.error / result.num_inliers;  //平均误差
   if (!result.converged) {
-    RCLCPP_WARN(logger_, "GICP verification did not converge.");
+  RCLCPP_WARN(
+    logger_,
+    "GICP did not converge: iterations=%zu error=%.6f mean_error=%.6f "
+    "inliers_ratio=%zu/%zu ratio=%.3f",
+    result.iterations, result.error, mean_error, result.num_inliers, source->size(),
+    inlier_ratio);
+  return verification;
+}
+  
+  else{
+    RCLCPP_INFO(
+    logger_,
+    "GICP did not converge: iterations=%zu error=%.6f mean_error=%.6f "
+    "inliers_ratio=%zu/%zu ratio=%.3f",
+    result.iterations, result.error, mean_error, result.num_inliers, source->size(),
+    inlier_ratio);
     return verification;
   }
-
-  verification.accepted = true;
-  verification.transform = result.T_target_source;
-  return verification;
 }
 
 RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions & options)
@@ -317,7 +336,7 @@ void RelocalizationManagerNode::performRegistration()
 {
   const VerificationResult verification =
     small_gicp_verifier_->verify(*accumulated_cloud_, previous_map_to_odom_);
-
+  
   if (verification.accepted) {
     current_map_to_odom_ = verification.transform;
     previous_map_to_odom_ = verification.transform;
