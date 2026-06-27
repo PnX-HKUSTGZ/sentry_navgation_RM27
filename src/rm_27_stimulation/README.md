@@ -41,7 +41,7 @@ ros2 launch rm_27_stimulation spawn_robot.launch.py sim_world:=RMUC2026
 一键启动 Gazebo、机器人和 RM27 导航：
 
 ```bash
-ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False gui:=false use_rviz:=true
+ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False gui:=true use_rviz:=true
 ```
 
 当前默认 world 是 `RMUC2026`，并且已有对应的地图和 PCD。使用 small_gicp 重定位模式：

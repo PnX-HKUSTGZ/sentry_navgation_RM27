@@ -45,6 +45,9 @@ struct SmallGicpParams
   float global_leaf_size{0.25F};
   float registered_leaf_size{0.25F};
   float max_dist_sq{1.0F};
+  double max_delta_xy{0.25};
+  double max_delta_z{0.15};
+  double max_delta_yaw{0.17453292519943295};
 };
 
 struct VerificationResult

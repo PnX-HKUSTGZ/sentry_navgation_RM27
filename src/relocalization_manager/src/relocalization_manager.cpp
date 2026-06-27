@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <rclcpp/logging.hpp>
 
 #include "pcl/common/common.h"
@@ -83,6 +84,24 @@ Eigen::Isometry3d poseVectorToIsometry(const std::vector<double> & pose)
   transform.translation() = affine.translation();
   transform.linear() = affine.linear();
   return transform;
+}
+
+double normalizeAngle(double angle)
+{
+  constexpr double pi = 3.14159265358979323846;
+  while (angle > pi) {
+    angle -= 2.0 * pi;
+  }
+  while (angle < -pi) {
+    angle += 2.0 * pi;
+  }
+  return angle;
+}
+
+double yawFromIsometry(const Eigen::Isometry3d & transform)
+{
+  const Eigen::Matrix3d rotation = transform.rotation();
+  return std::atan2(rotation(1, 0), rotation(0, 0));
 }
 
 }  // namespace
@@ -191,24 +210,46 @@ VerificationResult SmallGicpVerifier::verify(
     result.num_inliers == 0 ? std::numeric_limits<double>::infinity()
                           : result.error / result.num_inliers;  //平均误差
   if (!result.converged) {
-  RCLCPP_WARN(
-    logger_,
-    "GICP did not converge: iterations=%zu error=%.6f mean_error=%.6f "
-    "inliers_ratio=%zu/%zu ratio=%.3f",
-    result.iterations, result.error, mean_error, result.num_inliers, source->size(),
-    inlier_ratio);
-  return verification;
-}
-  
-  else{
-    RCLCPP_INFO(
-    logger_,
-    "GICP did not converge: iterations=%zu error=%.6f mean_error=%.6f "
-    "inliers_ratio=%zu/%zu ratio=%.3f",
-    result.iterations, result.error, mean_error, result.num_inliers, source->size(),
-    inlier_ratio);
+    RCLCPP_WARN(
+      logger_,
+      "GICP did not converge: iterations=%zu error=%.6f mean_error=%.6f "
+      "inliers_ratio=%zu/%zu ratio=%.3f",
+      result.iterations, result.error, mean_error, result.num_inliers, source->size(),
+      inlier_ratio);
     return verification;
   }
+
+  const Eigen::Vector3d delta_translation =
+    result.T_target_source.translation() - initial_guess.translation();
+  const double delta_yaw =
+    normalizeAngle(yawFromIsometry(result.T_target_source) - yawFromIsometry(initial_guess));
+
+  if (
+    std::abs(delta_translation.x()) > params_.max_delta_xy ||
+    std::abs(delta_translation.y()) > params_.max_delta_xy ||
+    std::abs(delta_translation.z()) > params_.max_delta_z ||
+    std::abs(delta_yaw) > params_.max_delta_yaw)
+  {
+    RCLCPP_WARN(
+      logger_,
+      "GICP converged but rejected by pose jump gate: iterations=%zu error=%.6f "
+      "mean_error=%.6f inliers_ratio=%zu/%zu ratio=%.3f "
+      "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] ",
+      result.iterations, result.error, mean_error, result.num_inliers, source->size(), inlier_ratio,
+      delta_translation.x(), delta_translation.y(), delta_translation.z(), delta_yaw);
+    return verification;
+  }
+
+  RCLCPP_INFO(
+    logger_,
+    "GICP converge successfully!: iterations=%zu error=%.6f mean_error=%.6f "
+    "inliers_ratio=%zu/%zu ratio=%.3f "
+    "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f]",
+    result.iterations, result.error, mean_error, result.num_inliers, source->size(),
+    inlier_ratio, delta_translation.x(), delta_translation.y(), delta_translation.z(), delta_yaw);
+  verification.accepted = true;
+  verification.transform = result.T_target_source;
+  return verification;
 }
 
 RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions & options)
@@ -222,6 +263,9 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("global_leaf_size", 0.25);
   this->declare_parameter("registered_leaf_size", 0.25);
   this->declare_parameter("max_dist_sq", 1.0);
+  this->declare_parameter("max_delta_xy", 0.25);
+  this->declare_parameter("max_delta_z", 0.15);
+  this->declare_parameter("max_delta_yaw", 0.17453292519943295);
   this->declare_parameter("map_frame", "map");
   this->declare_parameter("odom_frame", "odom");
   this->declare_parameter("base_frame", "");
@@ -240,6 +284,9 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("global_leaf_size", small_gicp_params_.global_leaf_size);
   this->get_parameter("registered_leaf_size", small_gicp_params_.registered_leaf_size);
   this->get_parameter("max_dist_sq", small_gicp_params_.max_dist_sq);
+  this->get_parameter("max_delta_xy", small_gicp_params_.max_delta_xy);
+  this->get_parameter("max_delta_z", small_gicp_params_.max_delta_z);
+  this->get_parameter("max_delta_yaw", small_gicp_params_.max_delta_yaw);
   this->get_parameter("map_frame", map_frame_);
   this->get_parameter("odom_frame", odom_frame_);
   this->get_parameter("base_frame", base_frame_);
