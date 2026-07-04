@@ -18,6 +18,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(ament_cmake_auto REQUIRED)
 find_package(OpenMP REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FLANN REQUIRED IMPORTED_TARGET flann)
 ament_auto_find_build_dependencies()
 
 # Add small_gicp dependency
@@ -37,7 +39,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   DIRECTORY src
 )
 
-target_link_libraries(${PROJECT_NAME} OpenMP::OpenMP_CXX small_gicp)
+target_link_libraries(${PROJECT_NAME} OpenMP::OpenMP_CXX small_gicp PkgConfig::FLANN)
 
 rclcpp_components_register_node(${PROJECT_NAME}
   PLUGIN relocalization_manager::RelocalizationManagerNode

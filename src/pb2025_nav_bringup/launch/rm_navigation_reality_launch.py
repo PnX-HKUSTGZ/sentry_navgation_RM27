@@ -37,6 +37,7 @@ def generate_launch_description():
     world = LaunchConfiguration("world")
     map_yaml_file = LaunchConfiguration("map")
     prior_pcd_file = LaunchConfiguration("prior_pcd_file")
+    scan_context_database_path = LaunchConfiguration("scan_context_database_path")
     use_sim_time = LaunchConfiguration("use_sim_time")
     params_file = LaunchConfiguration("params_file")
     autostart = LaunchConfiguration("autostart")
@@ -57,8 +58,8 @@ def generate_launch_description():
         "slam",
         default_value="False",
         description=(
-            "Whether run a SLAM. If True, it will disable relocalization_manager "
-            "and send static tf (map->odom)"
+            "Whether run a SLAM. If True, Scan Context database build is only "
+            "started when relocalization_manager.scan_context_mode is 'build'."
         ),
     )
 
@@ -86,6 +87,18 @@ def generate_launch_description():
             TextSubstitution(text=".pcd"),
         ],
         description="Full path to prior pcd file to load",
+    )
+
+    declare_scan_context_database_path_cmd = DeclareLaunchArgument(
+        "scan_context_database_path",
+        default_value=[
+            TextSubstitution(
+                text=os.path.join(bringup_dir, "scan_context", "reality", "")
+            ),
+            world,
+            TextSubstitution(text=".scdb"),
+        ],
+        description="Full path to Scan Context database file",
     )
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
@@ -186,6 +199,7 @@ def generate_launch_description():
             "slam": slam,
             "map": map_yaml_file,
             "prior_pcd_file": prior_pcd_file,
+            "scan_context_database_path": scan_context_database_path,
             "use_sim_time": use_sim_time,
             "params_file": params_file,
             "autostart": autostart,
@@ -202,6 +216,7 @@ def generate_launch_description():
     ld.add_action(declare_world_cmd)
     ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_prior_pcd_file_cmd)
+    ld.add_action(declare_scan_context_database_path_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)

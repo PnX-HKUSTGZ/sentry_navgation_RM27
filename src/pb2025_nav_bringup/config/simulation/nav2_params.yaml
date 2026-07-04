@@ -181,6 +181,29 @@ relocalization_manager:
     init_pose: [-11.7, 2.9, 0.26, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
     prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
     transform_prior_map_with_lidar_offset: False # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上
+    scan_context_mode: "off" # off / build / query
+    scan_context_database_path: ""
+    scan_context_input_frame: "base_footprint"
+    scan_context_build_source: "prior_pcd" # live / prior_pcd
+    scan_context_update_interval: 0.1
+    scan_context_num_rings: 20
+    scan_context_num_sectors: 60
+    scan_context_max_radius: 25.0
+    scan_context_min_height: -1.0
+    scan_context_max_height: 3.0
+    scan_context_num_candidates: 10
+    scan_context_score_threshold: 0.20
+    scan_context_keyframe_min_translation: 1.0
+    scan_context_keyframe_min_yaw: 0.1745329252
+    scan_context_keyframe_min_interval: 1.0
+    scan_context_min_points: 500
+    scan_context_prior_sample_resolution: 1.0
+    scan_context_prior_leaf_size: 0.25
+    scan_context_query_on_startup: true
+    scan_context_query_on_gicp_failure: true
+    scan_context_failure_trigger_count: 3
+    scan_context_max_gicp_candidates: 5
+    scan_context_yaw_delta_sign: 1.0
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
     # prior_pcd_file: ""
 

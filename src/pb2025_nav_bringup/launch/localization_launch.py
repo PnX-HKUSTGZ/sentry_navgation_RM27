@@ -34,6 +34,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
     prior_pcd_file = LaunchConfiguration("prior_pcd_file")
+    scan_context_database_path = LaunchConfiguration("scan_context_database_path")
     params_file = LaunchConfiguration("params_file")
     use_composition = LaunchConfiguration("use_composition")
     container_name = LaunchConfiguration("container_name")
@@ -82,6 +83,12 @@ def generate_launch_description():
         "prior_pcd_file",
         default_value="",
         description="Full path to prior PCD file to load",
+    )
+
+    declare_scan_context_database_path_cmd = DeclareLaunchArgument(
+        "scan_context_database_path",
+        default_value="",
+        description="Full path to Scan Context database file",
     )
 
     declare_params_file_cmd = DeclareLaunchArgument(
@@ -152,7 +159,11 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params, {"prior_pcd_file": prior_pcd_file}],
+                parameters=[
+                    configured_params,
+                    {"prior_pcd_file": prior_pcd_file},
+                    {"scan_context_database_path": scan_context_database_path},
+                ],
                 arguments=["--ros-args", "--log-level", log_level],
             ),
             Node(
@@ -184,7 +195,11 @@ def generate_launch_description():
                 package="relocalization_manager",
                 plugin="relocalization_manager::RelocalizationManagerNode",
                 name="relocalization_manager",
-                parameters=[configured_params, {"prior_pcd_file": prior_pcd_file}],
+                parameters=[
+                    configured_params,
+                    {"prior_pcd_file": prior_pcd_file},
+                    {"scan_context_database_path": scan_context_database_path},
+                ],
             ),
             ComposableNode(
                 package="nav2_lifecycle_manager",
@@ -213,6 +228,7 @@ def generate_launch_description():
     ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_prior_pcd_file_cmd)
+    ld.add_action(declare_scan_context_database_path_cmd)
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)
     ld.add_action(declare_use_composition_cmd)
