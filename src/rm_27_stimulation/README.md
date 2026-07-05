@@ -92,4 +92,4 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False
 - 仿真 Point-LIO 参数按当前 URDF 配置：Gazebo IMU 为 100Hz，仿真直接输出 roll
   补偿后的逻辑雷达/IMU frame，重力为 `[0.0, 0.0, -9.81]`。如果后续改 IMU 与雷达之间的相对位姿，需要同步更新
   `pb2025_nav_bringup/config/simulation/nav2_params.yaml`。
-- 这个包不包含射击、官方 RMOSS/GZ 仿真器或 `pb2025_robot_description` 依赖。
+- 这个包不包含射击、官方 RMOSS/GZ 仿真器或 `sentry_robot_description` 依赖。

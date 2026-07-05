@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<robot name="sentry_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="base_to_gimbal_xyz" default="0 0 0.12"/>
+  <xacro:arg name="base_to_gimbal_rpy" default="0 0 0"/>
+  <xacro:arg name="base_to_lidar_xyz" default="0.0 0.18 0.28"/>
+  <xacro:arg name="base_to_lidar_rpy" default="0 0 0"/>
+  <xacro:arg name="base_to_imu_xyz" default="$(arg base_to_lidar_xyz)"/>
+  <xacro:arg name="base_to_imu_rpy" default="$(arg base_to_lidar_rpy)"/>
+
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.30 0.20 0.10"/>
+      </geometry>
+      <material name="body_gray">
+        <color rgba="0.45 0.45 0.45 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="gimbal_yaw"/>
+
+  <joint name="gimbal_yaw_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gimbal_yaw"/>
+    <origin xyz="$(arg base_to_gimbal_xyz)" rpy="$(arg base_to_gimbal_rpy)"/>
+  </joint>
+
+  <link name="left_mid360">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.05 0.05 0.05"/>
+      </geometry>
+      <material name="lidar_green">
+        <color rgba="0.0 0.8 0.2 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="left_mid360_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="left_mid360"/>
+    <origin xyz="$(arg base_to_lidar_xyz)" rpy="$(arg base_to_lidar_rpy)"/>
+  </joint>
+
+  <link name="imu_link"/>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="$(arg base_to_imu_xyz)" rpy="$(arg base_to_imu_rpy)"/>
+  </joint>
+</robot>

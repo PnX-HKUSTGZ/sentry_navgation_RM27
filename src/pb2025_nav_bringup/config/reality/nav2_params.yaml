@@ -3,7 +3,7 @@ livox_ros_driver2:
     xfer_format: 4                                      # 0-PointCloud2Msg(PointXYZRTL), 1-LivoxCustomMsg, 2-PclPxyziMsg, 3-LivoxImuMsg, 4-AllMsg
     multi_topic: 0                                      # 0-All LiDARs share the same topic, 1-One LiDAR one topic
     data_src: 0                                         # 0-lidar, others-Invalid data src
-    publish_freq: 20.0                                  # frequency of publish, 5.0, 10.0, 20.0, 50.0, etc.
+    publish_freq: 10.0                                  # frequency of publish, 5.0, 10.0, 20.0, 50.0, etc.
     output_data_type: 0
     frame_id: left_mid360
     user_config_path: $(find-pkg-share pb2025_nav_bringup)/config/reality/mid360_user_config.json
@@ -439,7 +439,7 @@ local_costmap:
         unknown_threshold: 5
         z_resolution: 0.05
         z_voxels: 16
-        min_obstacle_height: 0.0
+        min_obstacle_height: 0.10
         max_obstacle_height: 2.0
         min_obstacle_intensity: 0.1
         max_obstacle_intensity: 2.0
@@ -460,7 +460,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
-        inflation_radius: 0.7
+        inflation_radius: 0.5
       always_send_full_costmap: False
 
 global_costmap:

@@ -21,21 +21,22 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import PushRosNamespace, SetRemap
+from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.substitutions import Command, LaunchConfiguration
+from launch_ros.actions import Node, PushRosNamespace, SetRemap
 
 
 def generate_launch_description():
-    # Get the launch directory
-    pkg_pb2025_robot_description_dir = get_package_share_directory(
-        "pb2025_robot_description"
+    default_robot_description_file = os.path.join(
+        get_package_share_directory("sentry_robot_description"),
+        "urdf",
+        "sentry_robot.urdf.xacro",
     )
 
     namespace = LaunchConfiguration("namespace")
     use_sim_time = LaunchConfiguration("use_sim_time")
-    robot_name = LaunchConfiguration("robot_name")
+    robot_description_file = LaunchConfiguration("robot_description_file")
+    robot_description = Command(["xacro ", robot_description_file])
 
     # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -50,10 +51,10 @@ def generate_launch_description():
         description="Use simulation (Gazebo) clock if true",
     )
 
-    declare_robot_name_cmd = DeclareLaunchArgument(
-        "robot_name",
-        default_value="pb2025_sentry_robot",
-        description="The file name of the robot xmacro to be used",
+    declare_robot_description_file_cmd = DeclareLaunchArgument(
+        "robot_description_file",
+        default_value=default_robot_description_file,
+        description="Full path to the robot xacro file to publish",
     )
 
     bringup_cmd_group = GroupAction(
@@ -61,20 +62,17 @@ def generate_launch_description():
             PushRosNamespace(namespace=namespace),
             SetRemap("/tf", "tf"),
             SetRemap("/tf_static", "tf_static"),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(
-                        pkg_pb2025_robot_description_dir,
-                        "launch",
-                        "robot_description_launch.py",
-                    )
-                ),
-                launch_arguments={
-                    "namespace": namespace,
-                    "use_sim_time": use_sim_time,
-                    "robot_name": robot_name,
-                    "use_rviz": "False",
-                }.items(),
+            Node(
+                package="robot_state_publisher",
+                executable="robot_state_publisher",
+                name="robot_state_publisher",
+                output="screen",
+                parameters=[
+                    {
+                        "use_sim_time": use_sim_time,
+                        "robot_description": robot_description,
+                    }
+                ],
             ),
         ]
     )
@@ -85,7 +83,7 @@ def generate_launch_description():
     # Declare the launch options
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_use_sim_time_cmd)
-    ld.add_action(declare_robot_name_cmd)
+    ld.add_action(declare_robot_description_file_cmd)
 
     # Add the actions to launch all nodes
     ld.add_action(bringup_cmd_group)
