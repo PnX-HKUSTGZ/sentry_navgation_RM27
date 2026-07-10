@@ -79,6 +79,7 @@ public:
 
   bool loadGlobalMap(const std::string & file_name);
   void transformGlobalMap(const Eigen::Affine3d & transform, const std::string & label);
+  const pcl::PointCloud<pcl::PointXYZ> & globalMap() const;
   VerificationResult verify(
     const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud,
     const Eigen::Isometry3d & initial_guess);
@@ -109,6 +110,7 @@ private:
   void publishTransform();
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void maybeApplyLidarOffsetToPriorMap();
+  void publishPriorPcdMap(const pcl::PointCloud<pcl::PointXYZ> & prior_cloud);
   void configureScanContext();
   void buildScanContextDatabaseFromPriorPcd();
   void queueScanContextInput(
@@ -153,6 +155,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr save_scan_context_database_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr trigger_scan_context_relocalization_service_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_pcd_map_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr scan_context_candidates_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr scan_context_best_pose_pub_;
 

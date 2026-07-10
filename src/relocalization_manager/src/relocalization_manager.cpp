@@ -233,6 +233,8 @@ void SmallGicpVerifier::transformGlobalMap(
   prepareTarget();
 }
 
+const pcl::PointCloud<pcl::PointXYZ> & SmallGicpVerifier::globalMap() const { return *global_map_; }
+
 void SmallGicpVerifier::prepareTarget()
 {
   target_ = small_gicp::voxelgrid_sampling_omp<
@@ -465,6 +467,8 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+  prior_pcd_map_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+    "prior_pcd_map", rclcpp::QoS(1).transient_local().reliable());
 
   configureScanContext();
 
@@ -475,8 +479,10 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   if (!scan_context_build_mode) {
     small_gicp_verifier_ = std::make_unique<SmallGicpVerifier>(
       this->get_logger(), small_gicp_params_, prior_pcd_transform_);
-    small_gicp_verifier_->loadGlobalMap(prior_pcd_file_);
-    maybeApplyLidarOffsetToPriorMap();
+    if (small_gicp_verifier_->loadGlobalMap(prior_pcd_file_)) {
+      maybeApplyLidarOffsetToPriorMap();
+      publishPriorPcdMap(small_gicp_verifier_->globalMap());
+    }
   } else {
     save_scan_context_database_service_ = this->create_service<std_srvs::srv::Trigger>(
       "save_scan_context_database", std::bind(
@@ -634,6 +640,29 @@ void RelocalizationManagerNode::configureScanContext()
   }
 }
 
+void RelocalizationManagerNode::publishPriorPcdMap(
+  const pcl::PointCloud<pcl::PointXYZ> & prior_cloud)
+{
+  if (!prior_pcd_map_pub_) {
+    return;
+  }
+
+  if (prior_cloud.empty()) {
+    RCLCPP_WARN(this->get_logger(), "Cannot publish prior_pcd_map because prior cloud is empty.");
+    return;
+  }
+
+  sensor_msgs::msg::PointCloud2 msg;
+  pcl::toROSMsg(prior_cloud, msg);
+  msg.header.stamp = this->now();
+  msg.header.frame_id = map_frame_;
+  prior_pcd_map_pub_->publish(msg);
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Published transformed prior PCD map: topic=prior_pcd_map frame=%s points=%zu",
+    map_frame_.c_str(), prior_cloud.size());
+}
+
 void RelocalizationManagerNode::buildScanContextDatabaseFromPriorPcd()
 {
   if (!scan_context_manager_) {
@@ -662,6 +691,7 @@ void RelocalizationManagerNode::buildScanContextDatabaseFromPriorPcd()
   if (!isIdentityPoseVector(prior_pcd_transform_)) {
     pcl::transformPointCloud(*prior_cloud, *prior_cloud, poseVectorToAffine(prior_pcd_transform_));
   }
+  publishPriorPcdMap(*prior_cloud);
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr sampled_cloud(new pcl::PointCloud<pcl::PointXYZ>());
   if (scan_context_params_.prior_leaf_size > 0.0) {
