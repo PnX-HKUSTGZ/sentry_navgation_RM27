@@ -52,6 +52,9 @@ struct SmallGicpParams
   float global_leaf_size{0.25F};
   float registered_leaf_size{0.25F};
   float max_dist_sq{1.0F};
+  double max_mean_error{0.30};
+  double min_inlier_ratio{0.75};
+  int min_inliers{1000};
   double max_delta_xy{0.25};
   double max_delta_z{0.15};
   double max_delta_yaw{0.17453292519943295};
@@ -69,6 +72,8 @@ struct VerificationResult
   std::size_t source_points{0};
   std::size_t iterations{0};
 };
+
+enum class LocalizationState { LOCALIZING, LOCALIZED };
 
 class SmallGicpVerifier
 {
@@ -150,6 +155,11 @@ private:
     const std::vector<Eigen::Isometry3d> & map_to_base_estimates, const rclcpp::Time & stamp);
   void publishAcceptedScanContextPose(
     const Eigen::Isometry3d & map_to_base_estimate, const rclcpp::Time & stamp);
+  const char * localizationStateName(LocalizationState state) const;
+  std::string localizationStateLogLabel(LocalizationState state) const;
+  bool isLocalized() const;
+  void setLocalizationState(LocalizationState state, const std::string & reason);
+  void logLocalizationState();
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
@@ -197,6 +207,7 @@ private:
   std::atomic_bool force_scan_context_query_once_{false};
   std::atomic_bool scan_context_startup_query_pending_{false};
   int consecutive_gicp_failures_{0};
+  LocalizationState localization_state_{LocalizationState::LOCALIZING};
   bool has_last_scan_context_keyframe_{false};
   Eigen::Isometry3d last_scan_context_keyframe_pose_{Eigen::Isometry3d::Identity()};
   rclcpp::Time last_scan_context_keyframe_stamp_;
@@ -206,6 +217,7 @@ private:
   rclcpp::TimerBase::SharedPtr transform_timer_;
   rclcpp::TimerBase::SharedPtr register_timer_;
   rclcpp::TimerBase::SharedPtr scan_context_timer_;
+  rclcpp::TimerBase::SharedPtr state_log_timer_;
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;

@@ -314,6 +314,19 @@ VerificationResult SmallGicpVerifier::verify(
     return verification;
   }
 
+  if (
+    mean_error > params_.max_mean_error || inlier_ratio < params_.min_inlier_ratio ||
+    result.num_inliers < static_cast<std::size_t>(params_.min_inliers)) {
+    RCLCPP_WARN(
+      logger_,
+      "GICP converged but rejected by quality gate: iterations=%zu error=%.6f "
+      "mean_error=%.6f max_mean_error=%.6f inliers_ratio=%zu/%zu ratio=%.3f "
+      "min_inlier_ratio=%.3f min_inliers=%d",
+      result.iterations, result.error, mean_error, params_.max_mean_error, result.num_inliers,
+      source->size(), inlier_ratio, params_.min_inlier_ratio, params_.min_inliers);
+    return verification;
+  }
+
   const Eigen::Vector3d delta_translation =
     result.T_target_source.translation() - initial_guess.translation();
   const double delta_yaw =
@@ -346,6 +359,61 @@ VerificationResult SmallGicpVerifier::verify(
   return verification;
 }
 
+const char * RelocalizationManagerNode::localizationStateName(LocalizationState state) const
+{
+  switch (state) {
+    case LocalizationState::LOCALIZING:
+      return "LOCALIZING";
+    case LocalizationState::LOCALIZED:
+      return "LOCALIZED";
+  }
+
+  return "UNKNOWN";
+}
+
+std::string RelocalizationManagerNode::localizationStateLogLabel(LocalizationState state) const
+{
+  switch (state) {
+    case LocalizationState::LOCALIZING:
+      return "\033[1;33mLOCALIZING\033[0m";
+    case LocalizationState::LOCALIZED:
+      return "\033[1;32mLOCALIZED\033[0m";
+  }
+
+  return "\033[1;31mUNKNOWN\033[0m";
+}
+
+bool RelocalizationManagerNode::isLocalized() const
+{
+  return localization_state_ == LocalizationState::LOCALIZED;
+}
+
+void RelocalizationManagerNode::setLocalizationState(
+  LocalizationState state, const std::string & reason)
+{
+  if (localization_state_ == state) {
+    RCLCPP_DEBUG(
+      this->get_logger(), "Localization state remains %s: %s",
+      localizationStateLogLabel(localization_state_).c_str(), reason.c_str());
+    return;
+  }
+
+  const LocalizationState previous_state = localization_state_;
+  localization_state_ = state;
+  const std::string previous_label = localizationStateLogLabel(previous_state);
+  const std::string current_label = localizationStateLogLabel(localization_state_);
+  RCLCPP_INFO(
+    this->get_logger(), "Localization state transition: %s -> %s (%s)", previous_label.c_str(),
+    current_label.c_str(), reason.c_str());
+}
+
+void RelocalizationManagerNode::logLocalizationState()
+{
+  const std::string state_label = localizationStateLogLabel(localization_state_);
+
+  RCLCPP_INFO(this->get_logger(), "Localization state: %s", state_label.c_str());
+}
+
 RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions & options)
 : Node("relocalization_manager", options),
   current_map_to_odom_(Eigen::Isometry3d::Identity()),
@@ -357,6 +425,9 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("global_leaf_size", 0.25);
   this->declare_parameter("registered_leaf_size", 0.25);
   this->declare_parameter("max_dist_sq", 1.0);
+  this->declare_parameter("max_mean_error", 0.30);
+  this->declare_parameter("min_inlier_ratio", 0.75);
+  this->declare_parameter("min_inliers", 1000);
   this->declare_parameter("max_delta_xy", 0.25);
   this->declare_parameter("max_delta_z", 0.15);
   this->declare_parameter("max_delta_yaw", 0.17453292519943295);
@@ -401,9 +472,13 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("global_leaf_size", small_gicp_params_.global_leaf_size);
   this->get_parameter("registered_leaf_size", small_gicp_params_.registered_leaf_size);
   this->get_parameter("max_dist_sq", small_gicp_params_.max_dist_sq);
+  this->get_parameter("max_mean_error", small_gicp_params_.max_mean_error);
+  this->get_parameter("min_inlier_ratio", small_gicp_params_.min_inlier_ratio);
+  this->get_parameter("min_inliers", small_gicp_params_.min_inliers);
   this->get_parameter("max_delta_xy", small_gicp_params_.max_delta_xy);
   this->get_parameter("max_delta_z", small_gicp_params_.max_delta_z);
   this->get_parameter("max_delta_yaw", small_gicp_params_.max_delta_yaw);
+  small_gicp_params_.min_inliers = std::max(0, small_gicp_params_.min_inliers);
   this->get_parameter("map_frame", map_frame_);
   this->get_parameter("odom_frame", odom_frame_);
   this->get_parameter("base_frame", base_frame_);
@@ -469,6 +544,8 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
   prior_pcd_map_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
     "prior_pcd_map", rclcpp::QoS(1).transient_local().reliable());
+  state_log_timer_ = this->create_wall_timer(
+    std::chrono::seconds(5), std::bind(&RelocalizationManagerNode::logLocalizationState, this));
 
   configureScanContext();
 
@@ -1389,6 +1466,12 @@ void RelocalizationManagerNode::performRegistration()
       current_map_to_odom_ = scan_context_verification.transform;
       previous_map_to_odom_ = scan_context_verification.transform;
       consecutive_gicp_failures_ = 0;
+      setLocalizationState(
+        LocalizationState::LOCALIZED, std::string("Scan Context accepted: ") + reason);
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Localization accepted from Scan Context (%s); periodic GICP refinement is disabled.",
+        reason.c_str());
       accumulated_cloud_->clear();
       return;
     }
@@ -1405,6 +1488,14 @@ void RelocalizationManagerNode::performRegistration()
     }
   }
 
+  if (isLocalized()) {
+    RCLCPP_DEBUG_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Already localized; skipping periodic GICP refinement to keep map->odom stable.");
+    accumulated_cloud_->clear();
+    return;
+  }
+
   const VerificationResult verification =
     small_gicp_verifier_->verify(*accumulated_cloud_, previous_map_to_odom_);
 
@@ -1412,6 +1503,10 @@ void RelocalizationManagerNode::performRegistration()
     current_map_to_odom_ = verification.transform;
     previous_map_to_odom_ = verification.transform;
     consecutive_gicp_failures_ = 0;
+    setLocalizationState(LocalizationState::LOCALIZED, "local GICP accepted");
+    RCLCPP_INFO(
+      this->get_logger(),
+      "Localization accepted from local GICP; periodic GICP refinement is disabled.");
     accumulated_cloud_->clear();
     return;
   }
@@ -1426,6 +1521,10 @@ void RelocalizationManagerNode::performRegistration()
       current_map_to_odom_ = scan_context_verification.transform;
       previous_map_to_odom_ = scan_context_verification.transform;
       consecutive_gicp_failures_ = 0;
+      setLocalizationState(LocalizationState::LOCALIZED, "Scan Context recovery accepted");
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Localization accepted from Scan Context recovery; periodic GICP refinement is disabled.");
     }
   }
 
@@ -1479,6 +1578,11 @@ void RelocalizationManagerNode::initialPoseCallback(
     const Eigen::Isometry3d map_to_odom = map_to_robot_base * robot_base_to_odom;
 
     previous_map_to_odom_ = current_map_to_odom_ = map_to_odom;
+    consecutive_gicp_failures_ = 0;
+    setLocalizationState(LocalizationState::LOCALIZING, "initial pose reset");
+    RCLCPP_INFO(
+      this->get_logger(),
+      "Initial pose reset localization state; the next registration cycle may refine map->odom.");
   } catch (tf2::TransformException & ex) {
     RCLCPP_WARN(
       this->get_logger(), "Could not transform initial pose from %s to %s: %s",
