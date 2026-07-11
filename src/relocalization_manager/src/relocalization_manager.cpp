@@ -197,6 +197,8 @@ SmallGicpVerifier::SmallGicpVerifier(
 : logger_(logger), params_(params), prior_pcd_transform_(prior_pcd_transform)
 {
   global_map_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+  prior_filter_map_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+  prior_kdtree_ = std::make_shared<pcl::KdTreeFLANN<pcl::PointXYZ>>();
   register_ = std::make_shared<
     small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>();
 }
@@ -235,8 +237,95 @@ void SmallGicpVerifier::transformGlobalMap(
 
 const pcl::PointCloud<pcl::PointXYZ> & SmallGicpVerifier::globalMap() const { return *global_map_; }
 
+void SmallGicpVerifier::updatePriorBounds()
+{
+  has_prior_bounds_ = false;
+  if (!global_map_ || global_map_->empty()) {
+    return;
+  }
+
+  pcl::getMinMax3D(*global_map_, prior_min_pt_, prior_max_pt_);
+  has_prior_bounds_ = true;
+}
+
+void SmallGicpVerifier::filterSourceByPriorMap(
+  const pcl::PointCloud<pcl::PointXYZ> & source, const Eigen::Isometry3d & map_to_odom_guess,
+  pcl::PointCloud<pcl::PointXYZ> & filtered_source) const
+{
+  filtered_source.clear();
+  filtered_source.header = source.header;
+
+  if (!has_prior_bounds_) {
+    filtered_source = source;
+    return;
+  }
+
+  if (!map_to_odom_guess.matrix().allFinite()) {
+    filtered_source = source;
+    return;
+  }
+
+  const bool filter_by_prior_neighbor =
+    prior_kdtree_ && std::isfinite(params_.prior_neighbor_max_distance) &&
+    params_.prior_neighbor_max_distance > 0.0;
+  const double max_neighbor_distance_sq =
+    params_.prior_neighbor_max_distance * params_.prior_neighbor_max_distance;
+  std::vector<int> nearest_indices(1);
+  std::vector<float> nearest_distances_sq(1);
+
+  filtered_source.reserve(source.size());
+  for (const auto & point : source.points) {
+    if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+      continue;
+    }
+
+    const Eigen::Vector3d point_in_map =
+      map_to_odom_guess * Eigen::Vector3d(point.x, point.y, point.z);
+    if (!point_in_map.allFinite()) {
+      continue;
+    }
+
+    if (
+      point_in_map.x() < prior_min_pt_.x || point_in_map.x() > prior_max_pt_.x ||
+      point_in_map.y() < prior_min_pt_.y || point_in_map.y() > prior_max_pt_.y) {
+      continue;
+    }
+
+    if (filter_by_prior_neighbor) {
+      pcl::PointXYZ point_in_map_pcl;
+      point_in_map_pcl.x = point_in_map.x();
+      point_in_map_pcl.y = point_in_map.y();
+      point_in_map_pcl.z = point_in_map.z();
+      if (
+        prior_kdtree_->nearestKSearch(point_in_map_pcl, 1, nearest_indices, nearest_distances_sq) <=
+          0 ||
+        nearest_distances_sq.front() > max_neighbor_distance_sq) {
+        continue;
+      }
+    }
+
+    filtered_source.push_back(point);
+  }
+
+  filtered_source.width = filtered_source.size();
+  filtered_source.height = 1;
+  filtered_source.is_dense = false;
+}
+
 void SmallGicpVerifier::prepareTarget()
 {
+  updatePriorBounds();
+  prior_filter_map_->clear();
+  pcl::VoxelGrid<pcl::PointXYZ> prior_filter;
+  prior_filter.setInputCloud(global_map_);
+  prior_filter.setLeafSize(
+    params_.global_leaf_size, params_.global_leaf_size, params_.global_leaf_size);
+  prior_filter.filter(*prior_filter_map_);
+
+  const pcl::PointCloud<pcl::PointXYZ>::ConstPtr prior_kdtree_cloud =
+    prior_filter_map_->empty() ? global_map_ : prior_filter_map_;
+  prior_kdtree_->setInputCloud(prior_kdtree_cloud);
+
   target_ = small_gicp::voxelgrid_sampling_omp<
     pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
     *global_map_, params_.global_leaf_size);
@@ -263,9 +352,12 @@ VerificationResult SmallGicpVerifier::verify(
     return verification;
   }
 
+  pcl::PointCloud<pcl::PointXYZ> filtered_cloud;
+  filterSourceByPriorMap(accumulated_cloud, initial_guess, filtered_cloud);
+
   auto source = small_gicp::voxelgrid_sampling_omp<
     pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
-    accumulated_cloud, params_.registered_leaf_size);
+    filtered_cloud, params_.registered_leaf_size);
 
   if (!source || source->empty()) {
     RCLCPP_WARN(logger_, "Downsampled source cloud is empty.");
@@ -274,14 +366,14 @@ VerificationResult SmallGicpVerifier::verify(
 
   pcl::PointXYZ source_min_pt;
   pcl::PointXYZ source_max_pt;
-  pcl::getMinMax3D(accumulated_cloud, source_min_pt, source_max_pt);
+  pcl::getMinMax3D(filtered_cloud, source_min_pt, source_max_pt);
   RCLCPP_INFO(
     logger_,
-    "Verifying accumulated cloud: raw_points=%zu downsampled_points=%zu "
+    "Verifying GICP source: source_points=%zu downsampled_points=%zu "
     "bbox x=[%.3f, %.3f] y=[%.3f, %.3f] z=[%.3f, %.3f] init_xyz=[%.3f, %.3f, %.3f]",
-    accumulated_cloud.size(), source->size(), source_min_pt.x, source_max_pt.x, source_min_pt.y,
-    source_max_pt.y, source_min_pt.z, source_max_pt.z, initial_guess.translation().x(),
-    initial_guess.translation().y(), initial_guess.translation().z());
+    filtered_cloud.size(), source->size(), source_min_pt.x, source_max_pt.x, source_min_pt.y,
+    source_max_pt.y, source_min_pt.z, source_max_pt.z,
+    initial_guess.translation().x(), initial_guess.translation().y(), initial_guess.translation().z());
 
   small_gicp::estimate_covariances_omp(*source, params_.num_neighbors, params_.num_threads);
 
@@ -307,7 +399,7 @@ VerificationResult SmallGicpVerifier::verify(
   if (!result.converged) {
     RCLCPP_WARN(
       logger_,
-      "GICP did not converge: iterations=%zu error=%.6f mean_error=%.6f "
+      "GICP did not converge: iterations=%zu error=%.2f mean_error=%.2f "
       "inliers_ratio=%zu/%zu ratio=%.3f",
       result.iterations, result.error, mean_error, result.num_inliers, source->size(),
       inlier_ratio);
@@ -319,8 +411,8 @@ VerificationResult SmallGicpVerifier::verify(
     result.num_inliers < static_cast<std::size_t>(params_.min_inliers)) {
     RCLCPP_WARN(
       logger_,
-      "GICP converged but rejected by quality gate: iterations=%zu error=%.6f "
-      "mean_error=%.6f max_mean_error=%.6f inliers_ratio=%zu/%zu ratio=%.3f "
+      "GICP converged but rejected by quality gate: iterations=%zu error=%.2f "
+      "mean_error=%.2f max_mean_error=%.2f inliers_ratio=%zu/%zu ratio=%.3f "
       "min_inlier_ratio=%.3f min_inliers=%d",
       result.iterations, result.error, mean_error, params_.max_mean_error, result.num_inliers,
       source->size(), inlier_ratio, params_.min_inlier_ratio, params_.min_inliers);
@@ -339,8 +431,8 @@ VerificationResult SmallGicpVerifier::verify(
     std::abs(delta_yaw) > params_.max_delta_yaw) {
     RCLCPP_WARN(
       logger_,
-      "GICP converged but rejected by pose jump gate: iterations=%zu error=%.6f "
-      "mean_error=%.6f inliers_ratio=%zu/%zu ratio=%.3f "
+      "GICP converged but rejected by pose jump gate: iterations=%zu error=%.2f "
+      "mean_error=%.2f inliers_ratio=%zu/%zu ratio=%.3f "
       "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] ",
       result.iterations, result.error, mean_error, result.num_inliers, source->size(), inlier_ratio,
       delta_translation.x(), delta_translation.y(), delta_translation.z(), delta_yaw);
@@ -349,7 +441,7 @@ VerificationResult SmallGicpVerifier::verify(
 
   RCLCPP_INFO(
     logger_,
-    "GICP converge successfully!: iterations=%zu error=%.6f mean_error=%.6f "
+    "GICP converge successfully!: iterations=%zu error=%.2f mean_error=%.2f "
     "inliers_ratio=%zu/%zu ratio=%.3f "
     "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f]",
     result.iterations, result.error, mean_error, result.num_inliers, source->size(), inlier_ratio,
@@ -414,6 +506,23 @@ void RelocalizationManagerNode::logLocalizationState()
   RCLCPP_INFO(this->get_logger(), "Localization state: %s", state_label.c_str());
 }
 
+void RelocalizationManagerNode::recordAcceptedGicpVerification(const std::string & reason)
+{
+  if (consecutive_gicp_acceptances_ < required_consecutive_gicp_acceptances_) {
+    ++consecutive_gicp_acceptances_;
+  }
+
+  if (consecutive_gicp_acceptances_ >= required_consecutive_gicp_acceptances_) {
+    setLocalizationState(
+      LocalizationState::LOCALIZED, reason + " after required GICP verification streak");
+  }
+}
+
+void RelocalizationManagerNode::resetAcceptedGicpVerificationStreak()
+{
+  consecutive_gicp_acceptances_ = 0;
+}
+
 RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions & options)
 : Node("relocalization_manager", options),
   current_map_to_odom_(Eigen::Isometry3d::Identity()),
@@ -428,6 +537,7 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("max_mean_error", 0.30);
   this->declare_parameter("min_inlier_ratio", 0.75);
   this->declare_parameter("min_inliers", 1000);
+  this->declare_parameter("prior_neighbor_max_distance", 0.5);
   this->declare_parameter("max_delta_xy", 0.25);
   this->declare_parameter("max_delta_z", 0.15);
   this->declare_parameter("max_delta_yaw", 0.17453292519943295);
@@ -475,10 +585,16 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("max_mean_error", small_gicp_params_.max_mean_error);
   this->get_parameter("min_inlier_ratio", small_gicp_params_.min_inlier_ratio);
   this->get_parameter("min_inliers", small_gicp_params_.min_inliers);
+  this->get_parameter("prior_neighbor_max_distance", small_gicp_params_.prior_neighbor_max_distance);
   this->get_parameter("max_delta_xy", small_gicp_params_.max_delta_xy);
   this->get_parameter("max_delta_z", small_gicp_params_.max_delta_z);
   this->get_parameter("max_delta_yaw", small_gicp_params_.max_delta_yaw);
   small_gicp_params_.min_inliers = std::max(0, small_gicp_params_.min_inliers);
+  if (
+    !std::isfinite(small_gicp_params_.prior_neighbor_max_distance) ||
+    small_gicp_params_.prior_neighbor_max_distance < 0.0) {
+    small_gicp_params_.prior_neighbor_max_distance = 0.5;
+  }
   this->get_parameter("map_frame", map_frame_);
   this->get_parameter("odom_frame", odom_frame_);
   this->get_parameter("base_frame", base_frame_);
@@ -1466,12 +1582,7 @@ void RelocalizationManagerNode::performRegistration()
       current_map_to_odom_ = scan_context_verification.transform;
       previous_map_to_odom_ = scan_context_verification.transform;
       consecutive_gicp_failures_ = 0;
-      setLocalizationState(
-        LocalizationState::LOCALIZED, std::string("Scan Context accepted: ") + reason);
-      RCLCPP_INFO(
-        this->get_logger(),
-        "Localization accepted from Scan Context (%s); periodic GICP refinement is disabled.",
-        reason.c_str());
+      recordAcceptedGicpVerification(std::string("Scan Context accepted: ") + reason);
       accumulated_cloud_->clear();
       return;
     }
@@ -1503,14 +1614,12 @@ void RelocalizationManagerNode::performRegistration()
     current_map_to_odom_ = verification.transform;
     previous_map_to_odom_ = verification.transform;
     consecutive_gicp_failures_ = 0;
-    setLocalizationState(LocalizationState::LOCALIZED, "local GICP accepted");
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Localization accepted from local GICP; periodic GICP refinement is disabled.");
+    recordAcceptedGicpVerification("local GICP accepted");
     accumulated_cloud_->clear();
     return;
   }
 
+  resetAcceptedGicpVerificationStreak();
   ++consecutive_gicp_failures_;
   if (
     scan_context_query_on_gicp_failure_ && isScanContextQueryMode(scan_context_params_) &&
@@ -1521,10 +1630,7 @@ void RelocalizationManagerNode::performRegistration()
       current_map_to_odom_ = scan_context_verification.transform;
       previous_map_to_odom_ = scan_context_verification.transform;
       consecutive_gicp_failures_ = 0;
-      setLocalizationState(LocalizationState::LOCALIZED, "Scan Context recovery accepted");
-      RCLCPP_INFO(
-        this->get_logger(),
-        "Localization accepted from Scan Context recovery; periodic GICP refinement is disabled.");
+      recordAcceptedGicpVerification("Scan Context recovery accepted");
     }
   }
 
@@ -1579,6 +1685,7 @@ void RelocalizationManagerNode::initialPoseCallback(
 
     previous_map_to_odom_ = current_map_to_odom_ = map_to_odom;
     consecutive_gicp_failures_ = 0;
+    resetAcceptedGicpVerificationStreak();
     setLocalizationState(LocalizationState::LOCALIZING, "initial pose reset");
     RCLCPP_INFO(
       this->get_logger(),

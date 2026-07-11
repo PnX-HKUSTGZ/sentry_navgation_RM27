@@ -170,9 +170,10 @@ relocalization_manager:
     max_dist_sq: 3.0
     max_mean_error: 0.30
     min_inlier_ratio: 0.75
-    min_inliers: 1000
-    max_delta_xy: 0.25
-    max_delta_z: 0.15
+    min_inliers: 400
+    prior_neighbor_max_distance: 0.5
+    max_delta_xy: 0.60
+    max_delta_z: 0.25
     max_delta_yaw: 0.1745329252 # 10 deg
     map_frame: "map"
     odom_frame: "odom"
@@ -204,7 +205,7 @@ relocalization_manager:
     scan_context_prior_leaf_size: 0.25
     scan_context_query_on_startup: true
     scan_context_query_on_gicp_failure: true
-    scan_context_failure_trigger_count: 3
+    scan_context_failure_trigger_count: 5
     scan_context_max_gicp_candidates: 5
     scan_context_yaw_delta_sign: 1.0
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.

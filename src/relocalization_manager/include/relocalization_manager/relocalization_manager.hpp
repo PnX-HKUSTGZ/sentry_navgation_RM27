@@ -27,6 +27,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "pcl/io/pcd_io.h"
+#include "pcl/kdtree/kdtree_flann.h"
 #include "rclcpp/rclcpp.hpp"
 #include "scan_context/scan_context_manager.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
@@ -55,6 +56,7 @@ struct SmallGicpParams
   double max_mean_error{0.30};
   double min_inlier_ratio{0.75};
   int min_inliers{1000};
+  double prior_neighbor_max_distance{0.5};
   double max_delta_xy{0.25};
   double max_delta_z{0.15};
   double max_delta_yaw{0.17453292519943295};
@@ -91,12 +93,21 @@ public:
 
 private:
   void prepareTarget();
+  void updatePriorBounds();
+  void filterSourceByPriorMap(
+    const pcl::PointCloud<pcl::PointXYZ> & source, const Eigen::Isometry3d & map_to_odom_guess,
+    pcl::PointCloud<pcl::PointXYZ> & filtered_source) const;
 
   rclcpp::Logger logger_;
   SmallGicpParams params_;
   std::vector<double> prior_pcd_transform_;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr global_map_;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr prior_filter_map_;
+  bool has_prior_bounds_{false};
+  pcl::PointXYZ prior_min_pt_;
+  pcl::PointXYZ prior_max_pt_;
+  pcl::KdTreeFLANN<pcl::PointXYZ>::Ptr prior_kdtree_;
   pcl::PointCloud<pcl::PointCovariance>::Ptr target_;
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> target_tree_;
   std::shared_ptr<
@@ -160,6 +171,8 @@ private:
   bool isLocalized() const;
   void setLocalizationState(LocalizationState state, const std::string & reason);
   void logLocalizationState();
+  void recordAcceptedGicpVerification(const std::string & reason);
+  void resetAcceptedGicpVerificationStreak();
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
@@ -207,6 +220,8 @@ private:
   std::atomic_bool force_scan_context_query_once_{false};
   std::atomic_bool scan_context_startup_query_pending_{false};
   int consecutive_gicp_failures_{0};
+  int consecutive_gicp_acceptances_{0};
+  int required_consecutive_gicp_acceptances_{5};
   LocalizationState localization_state_{LocalizationState::LOCALIZING};
   bool has_last_scan_context_keyframe_{false};
   Eigen::Isometry3d last_scan_context_keyframe_pose_{Eigen::Isometry3d::Identity()};
