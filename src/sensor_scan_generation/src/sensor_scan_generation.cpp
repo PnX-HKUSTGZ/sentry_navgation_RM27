@@ -128,31 +128,28 @@ void SensorScanGenerationNode::publishOdometry(
   out.pose.pose.position.z = origin.z();
   out.pose.pose.orientation = tf2::toMsg(transform.getRotation());
 
-  static tf2::Transform previous_transform;
-  static auto previous_time = std::chrono::steady_clock::now();
-  const auto current_time = std::chrono::steady_clock::now();
+  if (has_previous_odometry_) {
+    const double dt = (stamp - previous_odometry_stamp_).seconds();
+    if (dt > 1e-6) {
+      const auto linear_velocity =
+        (transform.getOrigin() - previous_odometry_transform_.getOrigin()) / dt;
 
-  const double dt =
-    std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - previous_time).count() *
-    1e-9;
+      const tf2::Quaternion q_diff =
+        transform.getRotation() * previous_odometry_transform_.getRotation().inverse();
+      const auto angular_velocity = q_diff.getAxis() * q_diff.getAngle() / dt;
 
-  if (dt > 0) {
-    const auto linear_velocity = (transform.getOrigin() - previous_transform.getOrigin()) / dt;
-
-    const tf2::Quaternion q_diff =
-      transform.getRotation() * previous_transform.getRotation().inverse();
-    const auto angular_velocity = q_diff.getAxis() * q_diff.getAngle() / dt;
-
-    out.twist.twist.linear.x = linear_velocity.x();
-    out.twist.twist.linear.y = linear_velocity.y();
-    out.twist.twist.linear.z = linear_velocity.z();
-    out.twist.twist.angular.x = angular_velocity.x();
-    out.twist.twist.angular.y = angular_velocity.y();
-    out.twist.twist.angular.z = angular_velocity.z();
+      out.twist.twist.linear.x = linear_velocity.x();
+      out.twist.twist.linear.y = linear_velocity.y();
+      out.twist.twist.linear.z = linear_velocity.z();
+      out.twist.twist.angular.x = angular_velocity.x();
+      out.twist.twist.angular.y = angular_velocity.y();
+      out.twist.twist.angular.z = angular_velocity.z();
+    }
   }
 
-  previous_transform = transform;
-  previous_time = current_time;
+  previous_odometry_transform_ = transform;
+  previous_odometry_stamp_ = stamp;
+  has_previous_odometry_ = true;
 
   pub_chassis_odometry_->publish(out);
 }

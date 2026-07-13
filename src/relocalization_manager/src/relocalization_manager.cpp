@@ -18,8 +18,10 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include <rclcpp/logging.hpp>
+#include <sstream>
 
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "pcl/common/common.h"
@@ -480,6 +482,58 @@ bool RelocalizationManagerNode::isLocalized() const
   return localization_state_ == LocalizationState::LOCALIZED;
 }
 
+bool RelocalizationManagerNode::isRobotMoving() const
+{
+  return robot_moving_.load();
+}
+
+void RelocalizationManagerNode::motionCommandCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+  {
+    std::lock_guard<std::mutex> lock(motion_command_mutex_);
+    last_motion_command_time_ = this->now();
+    has_motion_command_ = true;
+  }
+
+  const auto & linear_velocity = msg->linear;
+  const double linear_speed = std::hypot(linear_velocity.x, linear_velocity.y);
+  const bool moving =
+    std::isfinite(linear_speed) && linear_speed > moving_linear_speed_threshold_;
+  const bool was_moving = robot_moving_.exchange(moving);
+
+  if (moving && !was_moving) {
+    resetAcceptedGicpVerificationStreak();
+    reset_accumulated_cloud_.store(true);
+    std::ostringstream reason;
+    reason << "commanded linear motion detected: linear_speed=" << std::fixed
+           << std::setprecision(3) << linear_speed << " threshold="
+           << moving_linear_speed_threshold_ << " topic=" << motion_command_topic_;
+    setLocalizationState(LocalizationState::LOCALIZING, reason.str());
+  } else if (!moving && was_moving) {
+    resetAcceptedGicpVerificationStreak();
+    reset_accumulated_cloud_.store(true);
+  }
+}
+
+void RelocalizationManagerNode::expireStaleMotionCommand()
+{
+  bool command_is_stale = false;
+  {
+    std::lock_guard<std::mutex> lock(motion_command_mutex_);
+    if (!has_motion_command_ || !robot_moving_.load()) {
+      return;
+    }
+
+    const double elapsed = (this->now() - last_motion_command_time_).seconds();
+    command_is_stale = std::isfinite(elapsed) && elapsed > motion_command_timeout_;
+  }
+
+  if (command_is_stale && robot_moving_.exchange(false)) {
+    resetAcceptedGicpVerificationStreak();
+    reset_accumulated_cloud_.store(true);
+  }
+}
+
 void RelocalizationManagerNode::setLocalizationState(
   LocalizationState state, const std::string & reason)
 {
@@ -508,6 +562,11 @@ void RelocalizationManagerNode::logLocalizationState()
 
 void RelocalizationManagerNode::recordAcceptedGicpVerification(const std::string & reason)
 {
+  if (isRobotMoving()) {
+    resetAcceptedGicpVerificationStreak();
+    return;
+  }
+
   if (consecutive_gicp_acceptances_ < required_consecutive_gicp_acceptances_) {
     ++consecutive_gicp_acceptances_;
   }
@@ -551,6 +610,10 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("prior_pcd_transform", std::vector<double>{0., 0., 0., 0., 0., 0.});
   this->declare_parameter("input_cloud_topic", "registered_scan");
   this->declare_parameter("initial_pose_topic", "initialpose");
+  this->declare_parameter("motion_command_topic", "cmd_vel");
+  this->declare_parameter("moving_linear_speed_threshold", 0.05);
+  this->declare_parameter("motion_command_timeout", 0.5);
+  this->declare_parameter("required_consecutive_gicp_acceptances", 5);
   this->declare_parameter("transform_prior_map_with_lidar_offset", false);
   this->declare_parameter("scan_context_mode", "off");
   this->declare_parameter("scan_context_database_path", "");
@@ -605,6 +668,11 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("prior_pcd_transform", prior_pcd_transform_);
   this->get_parameter("input_cloud_topic", input_cloud_topic_);
   this->get_parameter("initial_pose_topic", initial_pose_topic_);
+  this->get_parameter("motion_command_topic", motion_command_topic_);
+  this->get_parameter("moving_linear_speed_threshold", moving_linear_speed_threshold_);
+  this->get_parameter("motion_command_timeout", motion_command_timeout_);
+  this->get_parameter(
+    "required_consecutive_gicp_acceptances", required_consecutive_gicp_acceptances_);
   this->get_parameter(
     "transform_prior_map_with_lidar_offset", transform_prior_map_with_lidar_offset_);
   this->get_parameter("scan_context_mode", scan_context_params_.mode);
@@ -638,6 +706,15 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   scan_context_params_.build_source = lowerCopy(scan_context_params_.build_source);
   scan_context_failure_trigger_count_ = std::max(1, scan_context_failure_trigger_count_);
   scan_context_max_gicp_candidates_ = std::max(1, scan_context_max_gicp_candidates_);
+  required_consecutive_gicp_acceptances_ =
+    std::max(1, required_consecutive_gicp_acceptances_);
+  if (
+    !std::isfinite(moving_linear_speed_threshold_) || moving_linear_speed_threshold_ < 0.0) {
+    moving_linear_speed_threshold_ = 0.05;
+  }
+  if (!std::isfinite(motion_command_timeout_) || motion_command_timeout_ <= 0.0) {
+    motion_command_timeout_ = 0.5;
+  }
   if (!std::isfinite(scan_context_yaw_delta_sign_) || scan_context_yaw_delta_sign_ == 0.0) {
     scan_context_yaw_delta_sign_ = 1.0;
   }
@@ -724,6 +801,10 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   }
 
   if (!scan_context_build_mode) {
+    motion_command_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      motion_command_topic_, rclcpp::QoS(10),
+      std::bind(&RelocalizationManagerNode::motionCommandCallback, this, std::placeholders::_1));
+
     initial_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
       initial_pose_topic_, 10,
       std::bind(&RelocalizationManagerNode::initialPoseCallback, this, std::placeholders::_1));
@@ -1551,6 +1632,8 @@ bool RelocalizationManagerNode::verifyWithScanContextCandidates(
 void RelocalizationManagerNode::registeredPcdCallback(
   const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+  expireStaleMotionCommand();
+
   last_scan_time_ = msg->header.stamp;
   current_scan_frame_id_ = msg->header.frame_id;
 
@@ -1558,13 +1641,33 @@ void RelocalizationManagerNode::registeredPcdCallback(
   pcl::fromROSMsg(*msg, *scan);
   queueScanContextInput(msg->header, scan);
   if (small_gicp_verifier_) {
-    *accumulated_cloud_ += *scan;
+    if (reset_accumulated_cloud_.exchange(false)) {
+      accumulated_cloud_->clear();
+    }
+    if (!isRobotMoving()) {
+      *accumulated_cloud_ += *scan;
+    }
   }
 }
 
 void RelocalizationManagerNode::performRegistration()
 {
   if (!small_gicp_verifier_) {
+    return;
+  }
+
+  expireStaleMotionCommand();
+
+  if (reset_accumulated_cloud_.exchange(false)) {
+    accumulated_cloud_->clear();
+  }
+
+  if (isRobotMoving()) {
+    resetAcceptedGicpVerificationStreak();
+    accumulated_cloud_->clear();
+    if (isLocalized()) {
+      setLocalizationState(LocalizationState::LOCALIZING, "commanded linear motion detected");
+    }
     return;
   }
 
@@ -1579,6 +1682,11 @@ void RelocalizationManagerNode::performRegistration()
     VerificationResult scan_context_verification;
     const std::string reason = manual_scan_context_query ? "manual_trigger" : "startup";
     if (verifyWithScanContextCandidates(*accumulated_cloud_, reason, scan_context_verification)) {
+      if (isRobotMoving()) {
+        resetAcceptedGicpVerificationStreak();
+        accumulated_cloud_->clear();
+        return;
+      }
       current_map_to_odom_ = scan_context_verification.transform;
       previous_map_to_odom_ = scan_context_verification.transform;
       consecutive_gicp_failures_ = 0;
@@ -1611,6 +1719,11 @@ void RelocalizationManagerNode::performRegistration()
     small_gicp_verifier_->verify(*accumulated_cloud_, previous_map_to_odom_);
 
   if (verification.accepted) {
+    if (isRobotMoving()) {
+      resetAcceptedGicpVerificationStreak();
+      accumulated_cloud_->clear();
+      return;
+    }
     current_map_to_odom_ = verification.transform;
     previous_map_to_odom_ = verification.transform;
     consecutive_gicp_failures_ = 0;
@@ -1627,6 +1740,11 @@ void RelocalizationManagerNode::performRegistration()
     VerificationResult scan_context_verification;
     if (verifyWithScanContextCandidates(
           *accumulated_cloud_, "gicp_failure", scan_context_verification)) {
+      if (isRobotMoving()) {
+        resetAcceptedGicpVerificationStreak();
+        accumulated_cloud_->clear();
+        return;
+      }
       current_map_to_odom_ = scan_context_verification.transform;
       previous_map_to_odom_ = scan_context_verification.transform;
       consecutive_gicp_failures_ = 0;

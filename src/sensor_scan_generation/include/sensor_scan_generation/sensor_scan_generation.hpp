@@ -71,6 +71,9 @@ private:
   std::unique_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
 
   tf2::Transform tf_lidar_to_robot_base_;
+  tf2::Transform previous_odometry_transform_;
+  rclcpp::Time previous_odometry_stamp_;
+  bool has_previous_odometry_{false};
 };
 
 }  // namespace sensor_scan_generation

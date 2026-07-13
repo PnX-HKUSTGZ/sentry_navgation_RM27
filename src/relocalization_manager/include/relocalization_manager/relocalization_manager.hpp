@@ -26,6 +26,7 @@
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "pcl/io/pcd_io.h"
 #include "pcl/kdtree/kdtree_flann.h"
 #include "rclcpp/rclcpp.hpp"
@@ -122,6 +123,7 @@ public:
 
 private:
   void registeredPcdCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+  void motionCommandCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void performRegistration();
   void publishTransform();
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
@@ -169,12 +171,15 @@ private:
   const char * localizationStateName(LocalizationState state) const;
   std::string localizationStateLogLabel(LocalizationState state) const;
   bool isLocalized() const;
+  bool isRobotMoving() const;
+  void expireStaleMotionCommand();
   void setLocalizationState(LocalizationState state, const std::string & reason);
   void logLocalizationState();
   void recordAcceptedGicpVerification(const std::string & reason);
   void resetAcceptedGicpVerificationStreak();
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr motion_command_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr save_scan_context_database_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr trigger_scan_context_relocalization_service_;
@@ -201,7 +206,10 @@ private:
   std::string current_scan_frame_id_;
   std::string input_cloud_topic_;
   std::string initial_pose_topic_;
+  std::string motion_command_topic_;
   bool transform_prior_map_with_lidar_offset_;
+  double moving_linear_speed_threshold_{0.05};
+  double motion_command_timeout_{0.5};
   rclcpp::Time last_scan_time_;
   Eigen::Isometry3d current_map_to_odom_;
   Eigen::Isometry3d previous_map_to_odom_;
@@ -216,9 +224,14 @@ private:
   bool has_pending_scan_context_cloud_{false};
   std::mutex scan_context_mutex_;
   std::mutex scan_context_database_mutex_;
+  std::mutex motion_command_mutex_;
   bool scan_context_database_dirty_{false};
   std::atomic_bool force_scan_context_query_once_{false};
   std::atomic_bool scan_context_startup_query_pending_{false};
+  std::atomic_bool robot_moving_{false};
+  std::atomic_bool reset_accumulated_cloud_{false};
+  bool has_motion_command_{false};
+  rclcpp::Time last_motion_command_time_;
   int consecutive_gicp_failures_{0};
   int consecutive_gicp_acceptances_{0};
   int required_consecutive_gicp_acceptances_{5};

@@ -87,6 +87,9 @@ void FakeVelTransform::cmdSpinCallback(const example_interfaces::msg::Float32::S
 
 void FakeVelTransform::odometryCallback(const nav_msgs::msg::Odometry::ConstSharedPtr & msg)
 {
+  latest_odom_stamp_ = msg->header.stamp;
+  has_latest_odom_stamp_ = true;
+
   // NOTE: Haven't synced with local_plan
   if ((this->now() - last_controller_activate_time_).seconds() > CONTROLLER_TIMEOUT) {
     current_robot_base_angle_ = tf2::getYaw(msg->pose.pose.orientation);
@@ -128,6 +131,8 @@ void FakeVelTransform::syncCallback(
     current_cmd_vel = latest_cmd_vel_;
   }
 
+  latest_odom_stamp_ = odom_msg->header.stamp;
+  has_latest_odom_stamp_ = true;
   current_robot_base_angle_ = tf2::getYaw(odom_msg->pose.pose.orientation);
   float yaw_diff = current_robot_base_angle_;
   geometry_msgs::msg::Twist aft_tf_vel = transformVelocity(current_cmd_vel, yaw_diff);
@@ -137,8 +142,12 @@ void FakeVelTransform::syncCallback(
 
 void FakeVelTransform::publishTransform()
 {
+  if (!has_latest_odom_stamp_) {
+    return;
+  }
+
   geometry_msgs::msg::TransformStamped t;
-  t.header.stamp = this->get_clock()->now();
+  t.header.stamp = latest_odom_stamp_;
   t.header.frame_id = robot_base_frame_;
   t.child_frame_id = fake_robot_base_frame_;
   tf2::Quaternion q;

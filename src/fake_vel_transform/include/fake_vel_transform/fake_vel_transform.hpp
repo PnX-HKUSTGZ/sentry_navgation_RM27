@@ -75,6 +75,8 @@ private:
   std::mutex cmd_vel_mutex_;
   geometry_msgs::msg::Twist::SharedPtr latest_cmd_vel_;
   double current_robot_base_angle_;
+  rclcpp::Time latest_odom_stamp_;
+  bool has_latest_odom_stamp_{false};
   rclcpp::Time last_controller_activate_time_;
 };
 
