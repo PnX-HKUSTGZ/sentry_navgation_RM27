@@ -151,6 +151,14 @@ std::string lowerCopy(std::string value)
   return value;
 }
 
+std::string normalizedFrameId(std::string frame_id)
+{
+  while (!frame_id.empty() && frame_id.front() == '/') {
+    frame_id.erase(frame_id.begin());
+  }
+  return frame_id;
+}
+
 bool isScanContextBuildMode(const scan_context::ScanContextParams & params)
 {
   return params.mode == "build";
@@ -341,6 +349,18 @@ void SmallGicpVerifier::prepareTarget()
 VerificationResult SmallGicpVerifier::verify(
   const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud, const Eigen::Isometry3d & initial_guess)
 {
+  GicpDeltaGate delta_gate;
+  delta_gate.max_delta_xy = params_.max_delta_xy;
+  delta_gate.max_delta_z = params_.max_delta_z;
+  delta_gate.max_delta_yaw = params_.max_delta_yaw;
+  return verify(accumulated_cloud, initial_guess, delta_gate, "local");
+}
+
+VerificationResult SmallGicpVerifier::verify(
+  const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud,
+  const Eigen::Isometry3d & initial_guess, const GicpDeltaGate & delta_gate,
+  const std::string & delta_gate_label)
+{
   VerificationResult verification;
   verification.transform = initial_guess;
 
@@ -427,27 +447,33 @@ VerificationResult SmallGicpVerifier::verify(
     normalizeAngle(yawFromIsometry(result.T_target_source) - yawFromIsometry(initial_guess));
 
   if (
-    std::abs(delta_translation.x()) > params_.max_delta_xy ||
-    std::abs(delta_translation.y()) > params_.max_delta_xy ||
-    std::abs(delta_translation.z()) > params_.max_delta_z ||
-    std::abs(delta_yaw) > params_.max_delta_yaw) {
+    std::abs(delta_translation.x()) > delta_gate.max_delta_xy ||
+    std::abs(delta_translation.y()) > delta_gate.max_delta_xy ||
+    std::abs(delta_translation.z()) > delta_gate.max_delta_z ||
+    std::abs(delta_yaw) > delta_gate.max_delta_yaw) {
     RCLCPP_WARN(
       logger_,
-      "GICP converged but rejected by pose jump gate: iterations=%zu error=%.2f "
+      "GICP converged but rejected by %s pose delta gate: iterations=%zu error=%.2f "
       "mean_error=%.2f inliers_ratio=%zu/%zu ratio=%.3f "
-      "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] ",
-      result.iterations, result.error, mean_error, result.num_inliers, source->size(), inlier_ratio,
-      delta_translation.x(), delta_translation.y(), delta_translation.z(), delta_yaw);
+      "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] "
+      "limit=[xy=%.3f, z=%.3f, yaw=%.3f]",
+      delta_gate_label.c_str(), result.iterations, result.error, mean_error, result.num_inliers,
+      source->size(), inlier_ratio, delta_translation.x(), delta_translation.y(),
+      delta_translation.z(), delta_yaw, delta_gate.max_delta_xy, delta_gate.max_delta_z,
+      delta_gate.max_delta_yaw);
     return verification;
   }
 
   RCLCPP_INFO(
     logger_,
-    "GICP converge successfully!: iterations=%zu error=%.2f mean_error=%.2f "
+    "GICP converge successfully with %s pose delta gate!: iterations=%zu error=%.2f mean_error=%.2f "
     "inliers_ratio=%zu/%zu ratio=%.3f "
-    "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f]",
-    result.iterations, result.error, mean_error, result.num_inliers, source->size(), inlier_ratio,
-    delta_translation.x(), delta_translation.y(), delta_translation.z(), delta_yaw);
+    "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] "
+    "limit=[xy=%.3f, z=%.3f, yaw=%.3f]",
+    delta_gate_label.c_str(), result.iterations, result.error, mean_error, result.num_inliers,
+    source->size(), inlier_ratio, delta_translation.x(), delta_translation.y(),
+    delta_translation.z(), delta_yaw, delta_gate.max_delta_xy, delta_gate.max_delta_z,
+    delta_gate.max_delta_yaw);
   verification.accepted = true;
   verification.transform = result.T_target_source;
   return verification;
@@ -638,6 +664,14 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("scan_context_failure_trigger_count", 3);
   this->declare_parameter("scan_context_max_gicp_candidates", 5);
   this->declare_parameter("scan_context_yaw_delta_sign", 1.0);
+  this->declare_parameter("scan_context_max_delta_xy", 1.0);
+  this->declare_parameter("scan_context_max_delta_z", 0.30);
+  this->declare_parameter("scan_context_max_delta_yaw", 0.35);
+  this->declare_parameter("scan_context_free_space_check", true);
+  this->declare_parameter("scan_context_free_space_topic", "map");
+  this->declare_parameter("scan_context_free_space_occupied_threshold", 65);
+  this->declare_parameter("scan_context_free_space_reject_unknown", true);
+  this->declare_parameter("scan_context_free_space_radius", 0.20);
 
   this->get_parameter("num_threads", small_gicp_params_.num_threads);
   this->get_parameter("num_neighbors", small_gicp_params_.num_neighbors);
@@ -701,6 +735,17 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("scan_context_failure_trigger_count", scan_context_failure_trigger_count_);
   this->get_parameter("scan_context_max_gicp_candidates", scan_context_max_gicp_candidates_);
   this->get_parameter("scan_context_yaw_delta_sign", scan_context_yaw_delta_sign_);
+  this->get_parameter("scan_context_max_delta_xy", scan_context_max_delta_xy_);
+  this->get_parameter("scan_context_max_delta_z", scan_context_max_delta_z_);
+  this->get_parameter("scan_context_max_delta_yaw", scan_context_max_delta_yaw_);
+  this->get_parameter("scan_context_free_space_check", scan_context_free_space_check_);
+  this->get_parameter("scan_context_free_space_topic", scan_context_free_space_topic_);
+  this->get_parameter(
+    "scan_context_free_space_occupied_threshold",
+    scan_context_free_space_occupied_threshold_);
+  this->get_parameter(
+    "scan_context_free_space_reject_unknown", scan_context_free_space_reject_unknown_);
+  this->get_parameter("scan_context_free_space_radius", scan_context_free_space_radius_);
 
   scan_context_params_.mode = lowerCopy(scan_context_params_.mode);
   scan_context_params_.build_source = lowerCopy(scan_context_params_.build_source);
@@ -719,6 +764,23 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
     scan_context_yaw_delta_sign_ = 1.0;
   }
   scan_context_yaw_delta_sign_ = scan_context_yaw_delta_sign_ > 0.0 ? 1.0 : -1.0;
+  if (!std::isfinite(scan_context_max_delta_xy_) || scan_context_max_delta_xy_ < 0.0) {
+    scan_context_max_delta_xy_ = 1.0;
+  }
+  if (!std::isfinite(scan_context_max_delta_z_) || scan_context_max_delta_z_ < 0.0) {
+    scan_context_max_delta_z_ = 0.30;
+  }
+  if (!std::isfinite(scan_context_max_delta_yaw_) || scan_context_max_delta_yaw_ < 0.0) {
+    scan_context_max_delta_yaw_ = 0.35;
+  }
+  if (scan_context_free_space_topic_.empty()) {
+    scan_context_free_space_topic_ = "map";
+  }
+  scan_context_free_space_occupied_threshold_ =
+    std::max(0, std::min(100, scan_context_free_space_occupied_threshold_));
+  if (!std::isfinite(scan_context_free_space_radius_) || scan_context_free_space_radius_ < 0.0) {
+    scan_context_free_space_radius_ = 0.20;
+  }
 
   if (scan_context_params_.database_path.empty()) {
     scan_context_params_.database_path = scanContextDatabasePathFromPriorPcd(prior_pcd_file_);
@@ -774,14 +836,24 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
       this->create_publisher<geometry_msgs::msg::PoseArray>("scan_context_candidates", 10);
     scan_context_best_pose_pub_ =
       this->create_publisher<geometry_msgs::msg::PoseStamped>("scan_context_best_pose", 10);
+    if (scan_context_free_space_check_) {
+      occupancy_map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+        scan_context_free_space_topic_, rclcpp::QoS(1).transient_local().reliable(),
+        std::bind(&RelocalizationManagerNode::occupancyMapCallback, this, std::placeholders::_1));
+    }
     scan_context_startup_query_pending_.store(scan_context_query_on_startup_);
     RCLCPP_INFO(
       this->get_logger(),
       "Scan Context query mode is active: query_on_startup=%s query_on_gicp_failure=%s "
-      "failure_trigger_count=%d max_gicp_candidates=%d yaw_delta_sign=%.0f",
+      "failure_trigger_count=%d max_gicp_candidates=%d yaw_delta_sign=%.0f "
+      "delta_gate=[xy=%.3f, z=%.3f, yaw=%.3f] "
+      "free_space_check=%s free_space_topic=%s free_space_radius=%.3f",
       scan_context_query_on_startup_ ? "true" : "false",
       scan_context_query_on_gicp_failure_ ? "true" : "false", scan_context_failure_trigger_count_,
-      scan_context_max_gicp_candidates_, scan_context_yaw_delta_sign_);
+      scan_context_max_gicp_candidates_, scan_context_yaw_delta_sign_,
+      scan_context_max_delta_xy_, scan_context_max_delta_z_, scan_context_max_delta_yaw_,
+      scan_context_free_space_check_ ? "true" : "false",
+      scan_context_free_space_topic_.c_str(), scan_context_free_space_radius_);
   }
 
   if (scan_context_prior_build_mode) {
@@ -1409,6 +1481,32 @@ void RelocalizationManagerNode::triggerScanContextRelocalizationCallback(
   response->message = "Scan Context relocalization will be attempted on the next GICP cycle.";
 }
 
+void RelocalizationManagerNode::occupancyMapCallback(
+  const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
+{
+  if (!msg) {
+    return;
+  }
+
+  const std::size_t expected_size =
+    static_cast<std::size_t>(msg->info.width) * static_cast<std::size_t>(msg->info.height);
+  if (
+    msg->info.width == 0 || msg->info.height == 0 ||
+    !std::isfinite(static_cast<double>(msg->info.resolution)) || msg->info.resolution <= 0.0 ||
+    msg->data.size() != expected_size) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Ignoring invalid occupancy map for Scan Context free-space check: frame=%s "
+      "width=%u height=%u resolution=%.6f data=%zu expected=%zu",
+      msg->header.frame_id.c_str(), msg->info.width, msg->info.height, msg->info.resolution,
+      msg->data.size(), expected_size);
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(occupancy_map_mutex_);
+  latest_occupancy_map_ = msg;
+}
+
 bool RelocalizationManagerNode::getLatestScanContextCloud(
   pcl::PointCloud<pcl::PointXYZ> & cloud_in_scan_context_frame, rclcpp::Time & stamp)
 {
@@ -1436,22 +1534,14 @@ bool RelocalizationManagerNode::makeMapToBaseEstimateFromScanContextCandidate(
   return map_to_base.matrix().allFinite();
 }
 
-bool RelocalizationManagerNode::makeMapToOdomGuessFromScanContextCandidate(
-  const ::scan_context::ScanContextCandidate & candidate, const rclcpp::Time & stamp,
-  Eigen::Isometry3d & map_to_odom_guess, Eigen::Isometry3d & map_to_base_estimate)
+bool RelocalizationManagerNode::lookupScanContextOdomToBase(
+  const rclcpp::Time & stamp, Eigen::Isometry3d & odom_to_base)
 {
   if (odom_frame_.empty() || scan_context_params_.input_frame.empty()) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
       "Cannot make Scan Context GICP guess because odom_frame or scan_context_input_frame is "
       "empty.");
-    return false;
-  }
-
-  if (!makeMapToBaseEstimateFromScanContextCandidate(candidate, map_to_base_estimate)) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Scan Context candidate produced a non-finite map->base estimate.");
     return false;
   }
 
@@ -1477,9 +1567,136 @@ bool RelocalizationManagerNode::makeMapToOdomGuessFromScanContextCandidate(
     }
   }
 
-  const Eigen::Isometry3d odom_to_base = tf2::transformToEigen(odom_to_base_msg.transform);
-  map_to_odom_guess = map_to_base_estimate * odom_to_base.inverse();
-  return map_to_odom_guess.matrix().allFinite();
+  odom_to_base = tf2::transformToEigen(odom_to_base_msg.transform);
+  return odom_to_base.matrix().allFinite();
+}
+
+bool RelocalizationManagerNode::isScanContextFreeSpaceMapReady() const
+{
+  if (!scan_context_free_space_check_) {
+    return true;
+  }
+
+  std::lock_guard<std::mutex> lock(occupancy_map_mutex_);
+  return static_cast<bool>(latest_occupancy_map_);
+}
+
+bool RelocalizationManagerNode::isScanContextCandidateInFreeSpace(
+  const Eigen::Isometry3d & map_to_base_estimate, std::string & reject_reason) const
+{
+  if (!scan_context_free_space_check_) {
+    return true;
+  }
+
+  if (!map_to_base_estimate.matrix().allFinite()) {
+    reject_reason = "non_finite_candidate_pose";
+    return false;
+  }
+
+  nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_map;
+  {
+    std::lock_guard<std::mutex> lock(occupancy_map_mutex_);
+    occupancy_map = latest_occupancy_map_;
+  }
+
+  if (!occupancy_map) {
+    reject_reason = "map_unavailable";
+    return false;
+  }
+
+  const std::string map_header_frame = normalizedFrameId(occupancy_map->header.frame_id);
+  const std::string configured_map_frame = normalizedFrameId(map_frame_);
+  if (
+    !map_header_frame.empty() && !configured_map_frame.empty() &&
+    map_header_frame != configured_map_frame) {
+    reject_reason = "map_frame_mismatch";
+    return false;
+  }
+
+  const auto & info = occupancy_map->info;
+  const std::size_t expected_size =
+    static_cast<std::size_t>(info.width) * static_cast<std::size_t>(info.height);
+  if (
+    info.width == 0 || info.height == 0 || !std::isfinite(static_cast<double>(info.resolution)) ||
+    info.resolution <= 0.0 || occupancy_map->data.size() != expected_size) {
+    reject_reason = "invalid_map";
+    return false;
+  }
+
+  const auto & origin = info.origin;
+  const Eigen::Vector3d origin_translation(
+    origin.position.x, origin.position.y, origin.position.z);
+  Eigen::Quaterniond origin_rotation(
+    origin.orientation.w, origin.orientation.x, origin.orientation.y, origin.orientation.z);
+  if (
+    !origin_translation.allFinite() || !std::isfinite(origin_rotation.w()) ||
+    !std::isfinite(origin_rotation.x()) || !std::isfinite(origin_rotation.y()) ||
+    !std::isfinite(origin_rotation.z()) || origin_rotation.norm() < 1e-9) {
+    reject_reason = "invalid_map_origin";
+    return false;
+  }
+  origin_rotation.normalize();
+
+  Eigen::Isometry3d map_origin = Eigen::Isometry3d::Identity();
+  map_origin.translation() = origin_translation;
+  map_origin.linear() = origin_rotation.toRotationMatrix();
+
+  const Eigen::Vector3d candidate_position = map_to_base_estimate.translation();
+  const Eigen::Vector3d grid_position = map_origin.inverse() * candidate_position;
+  if (!grid_position.allFinite()) {
+    reject_reason = "non_finite_grid_position";
+    return false;
+  }
+
+  const double resolution = static_cast<double>(info.resolution);
+  const int center_x = static_cast<int>(std::floor(grid_position.x() / resolution));
+  const int center_y = static_cast<int>(std::floor(grid_position.y() / resolution));
+  const int width = static_cast<int>(info.width);
+  const int height = static_cast<int>(info.height);
+
+  const auto cell_is_free = [&](int x, int y) {
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+      reject_reason = "outside_map";
+      return false;
+    }
+
+    const std::size_t index =
+      static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
+      static_cast<std::size_t>(x);
+    const int occupancy = static_cast<int>(occupancy_map->data[index]);
+    if (occupancy < 0) {
+      if (scan_context_free_space_reject_unknown_) {
+        reject_reason = "unknown_cell";
+        return false;
+      }
+      return true;
+    }
+
+    if (occupancy >= scan_context_free_space_occupied_threshold_) {
+      reject_reason = "occupied_cell";
+      return false;
+    }
+    return true;
+  };
+
+  const int radius_cells =
+    static_cast<int>(std::ceil(scan_context_free_space_radius_ / resolution));
+  const double radius_sq = scan_context_free_space_radius_ * scan_context_free_space_radius_;
+  for (int dy = -radius_cells; dy <= radius_cells; ++dy) {
+    for (int dx = -radius_cells; dx <= radius_cells; ++dx) {
+      const double distance_sq =
+        static_cast<double>(dx * dx + dy * dy) * resolution * resolution;
+      if (distance_sq > radius_sq) {
+        continue;
+      }
+
+      if (!cell_is_free(center_x + dx, center_y + dy)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 void RelocalizationManagerNode::publishScanContextCandidates(
@@ -1525,6 +1742,15 @@ bool RelocalizationManagerNode::verifyWithScanContextCandidates(
     return false;
   }
 
+  if (!isScanContextFreeSpaceMapReady()) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(), *this->get_clock(), 5000,
+      "Scan Context relocalization skipped: free-space map is not available yet. reason=%s "
+      "topic=%s",
+      reason.c_str(), scan_context_free_space_topic_.c_str());
+    return false;
+  }
+
   processPendingScanContext();
 
   pcl::PointCloud<pcl::PointXYZ> cloud_in_scan_context_frame;
@@ -1561,18 +1787,56 @@ bool RelocalizationManagerNode::verifyWithScanContextCandidates(
   VerificationResult best_candidate_verification;
   Eigen::Isometry3d best_map_to_base_estimate = Eigen::Isometry3d::Identity();
   int best_candidate_index = -1;
+  int free_space_rejected_candidates = 0;
+  std::string first_free_space_reject_reason;
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Trying Scan Context relocalization: reason=%s candidates=%zu max_gicp_candidates=%d",
-    reason.c_str(), candidates.size(), max_candidates);
+    "Trying Scan Context relocalization: reason=%s candidates=%zu max_gicp_candidates=%d "
+    "free_space_check=%s",
+    reason.c_str(), candidates.size(), max_candidates,
+    scan_context_free_space_check_ ? "true" : "false");
+
+  Eigen::Isometry3d odom_to_base = Eigen::Isometry3d::Identity();
+  if (!lookupScanContextOdomToBase(stamp, odom_to_base)) {
+    return false;
+  }
+  const Eigen::Isometry3d base_to_odom = odom_to_base.inverse();
+  GicpDeltaGate scan_context_delta_gate;
+  scan_context_delta_gate.max_delta_xy = scan_context_max_delta_xy_;
+  scan_context_delta_gate.max_delta_z = scan_context_max_delta_z_;
+  scan_context_delta_gate.max_delta_yaw = scan_context_max_delta_yaw_;
 
   for (int i = 0; i < max_candidates; ++i) {
     const auto & candidate = candidates[static_cast<std::size_t>(i)];
     Eigen::Isometry3d map_to_base_estimate = Eigen::Isometry3d::Identity();
-    Eigen::Isometry3d map_to_odom_guess = Eigen::Isometry3d::Identity();
-    if (!makeMapToOdomGuessFromScanContextCandidate(
-          candidate, stamp, map_to_odom_guess, map_to_base_estimate)) {
+    if (!makeMapToBaseEstimateFromScanContextCandidate(candidate, map_to_base_estimate)) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 5000,
+        "Scan Context candidate produced a non-finite map->base estimate.");
+      continue;
+    }
+
+    std::string free_space_reject_reason;
+    if (!isScanContextCandidateInFreeSpace(map_to_base_estimate, free_space_reject_reason)) {
+      ++free_space_rejected_candidates;
+      if (first_free_space_reject_reason.empty()) {
+        first_free_space_reject_reason = free_space_reject_reason;
+      }
+      RCLCPP_DEBUG(
+        this->get_logger(),
+        "Scan Context candidate[%d] rejected by free-space check: keyframe_id=%d reason=%s "
+        "map_base_xy=[%.3f, %.3f]",
+        i, candidate.keyframe_id, free_space_reject_reason.c_str(),
+        map_to_base_estimate.translation().x(), map_to_base_estimate.translation().y());
+      continue;
+    }
+
+    const Eigen::Isometry3d map_to_odom_guess = map_to_base_estimate * base_to_odom;
+    if (!map_to_odom_guess.matrix().allFinite()) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 5000,
+        "Scan Context candidate produced a non-finite map->odom guess.");
       continue;
     }
 
@@ -1588,8 +1852,8 @@ bool RelocalizationManagerNode::verifyWithScanContextCandidates(
       map_to_base_estimate.translation().z(), map_to_odom_guess.translation().x(),
       map_to_odom_guess.translation().y(), map_to_odom_guess.translation().z());
 
-    const VerificationResult verification =
-      small_gicp_verifier_->verify(accumulated_cloud, map_to_odom_guess);
+    const VerificationResult verification = small_gicp_verifier_->verify(
+      accumulated_cloud, map_to_odom_guess, scan_context_delta_gate, "scan_context");
     if (!verification.accepted) {
       continue;
     }
@@ -1612,8 +1876,9 @@ bool RelocalizationManagerNode::verifyWithScanContextCandidates(
     RCLCPP_WARN(
       this->get_logger(),
       "Scan Context relocalization did not produce an accepted GICP result: reason=%s "
-      "valid_candidates=%zu",
-      reason.c_str(), valid_candidates.size());
+      "valid_candidates=%zu free_space_rejected=%d first_free_space_reject_reason=%s",
+      reason.c_str(), valid_candidates.size(), free_space_rejected_candidates,
+      first_free_space_reject_reason.empty() ? "none" : first_free_space_reject_reason.c_str());
     return false;
   }
 
@@ -1679,30 +1944,44 @@ void RelocalizationManagerNode::performRegistration()
   const bool startup_scan_context_query = scan_context_startup_query_pending_.exchange(false);
   const bool force_scan_context_query = manual_scan_context_query || startup_scan_context_query;
   if (force_scan_context_query) {
-    VerificationResult scan_context_verification;
-    const std::string reason = manual_scan_context_query ? "manual_trigger" : "startup";
-    if (verifyWithScanContextCandidates(*accumulated_cloud_, reason, scan_context_verification)) {
-      if (isRobotMoving()) {
-        resetAcceptedGicpVerificationStreak();
+    if (!isScanContextFreeSpaceMapReady()) {
+      if (manual_scan_context_query) {
+        force_scan_context_query_once_.store(true);
+      }
+      if (startup_scan_context_query) {
+        scan_context_startup_query_pending_.store(true);
+      }
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 5000,
+        "Scan Context query is still pending because free-space map is not available yet. "
+        "topic=%s",
+        scan_context_free_space_topic_.c_str());
+    } else {
+      VerificationResult scan_context_verification;
+      const std::string reason = manual_scan_context_query ? "manual_trigger" : "startup";
+      if (verifyWithScanContextCandidates(*accumulated_cloud_, reason, scan_context_verification)) {
+        if (isRobotMoving()) {
+          resetAcceptedGicpVerificationStreak();
+          accumulated_cloud_->clear();
+          return;
+        }
+        current_map_to_odom_ = scan_context_verification.transform;
+        previous_map_to_odom_ = scan_context_verification.transform;
+        consecutive_gicp_failures_ = 0;
+        recordAcceptedGicpVerification(std::string("Scan Context accepted: ") + reason);
         accumulated_cloud_->clear();
         return;
       }
-      current_map_to_odom_ = scan_context_verification.transform;
-      previous_map_to_odom_ = scan_context_verification.transform;
-      consecutive_gicp_failures_ = 0;
-      recordAcceptedGicpVerification(std::string("Scan Context accepted: ") + reason);
-      accumulated_cloud_->clear();
-      return;
-    }
 
-    if (startup_scan_context_query) {
-      pcl::PointCloud<pcl::PointXYZ> latest_cloud;
-      rclcpp::Time latest_stamp;
-      if (!getLatestScanContextCloud(latest_cloud, latest_stamp)) {
-        scan_context_startup_query_pending_.store(true);
-        RCLCPP_DEBUG_THROTTLE(
-          this->get_logger(), *this->get_clock(), 5000,
-          "Startup Scan Context query is still pending because no descriptor is ready yet.");
+      if (startup_scan_context_query) {
+        pcl::PointCloud<pcl::PointXYZ> latest_cloud;
+        rclcpp::Time latest_stamp;
+        if (!getLatestScanContextCloud(latest_cloud, latest_stamp)) {
+          scan_context_startup_query_pending_.store(true);
+          RCLCPP_DEBUG_THROTTLE(
+            this->get_logger(), *this->get_clock(), 5000,
+            "Startup Scan Context query is still pending because no descriptor is ready yet.");
+        }
       }
     }
   }

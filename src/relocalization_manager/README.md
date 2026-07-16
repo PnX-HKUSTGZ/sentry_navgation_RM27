@@ -94,7 +94,7 @@ Scan Context 用于从当前点云中提取全局描述子，并在数据库中�
     ```zsh
     source install/setup.bash
     ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-      world:=RMUC2026 slam:=True gui:=false use_rviz:=false
+      world:=RMUC2026  gui:=false use_rviz:=false
     ```
 
     如果只启动导航 bringup，也可以使用：

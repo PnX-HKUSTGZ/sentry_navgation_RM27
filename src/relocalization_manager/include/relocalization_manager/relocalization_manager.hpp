@@ -27,6 +27,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 #include "pcl/io/pcd_io.h"
 #include "pcl/kdtree/kdtree_flann.h"
 #include "rclcpp/rclcpp.hpp"
@@ -76,6 +77,13 @@ struct VerificationResult
   std::size_t iterations{0};
 };
 
+struct GicpDeltaGate
+{
+  double max_delta_xy{0.25};
+  double max_delta_z{0.15};
+  double max_delta_yaw{0.17453292519943295};
+};
+
 enum class LocalizationState { LOCALIZING, LOCALIZED };
 
 class SmallGicpVerifier
@@ -91,6 +99,10 @@ public:
   VerificationResult verify(
     const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud,
     const Eigen::Isometry3d & initial_guess);
+  VerificationResult verify(
+    const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud,
+    const Eigen::Isometry3d & initial_guess, const GicpDeltaGate & delta_gate,
+    const std::string & delta_gate_label);
 
 private:
   void prepareTarget();
@@ -153,13 +165,16 @@ private:
   void triggerScanContextRelocalizationCallback(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
     std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  void occupancyMapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   bool getLatestScanContextCloud(
     pcl::PointCloud<pcl::PointXYZ> & cloud_in_scan_context_frame, rclcpp::Time & stamp);
   bool makeMapToBaseEstimateFromScanContextCandidate(
     const ::scan_context::ScanContextCandidate & candidate, Eigen::Isometry3d & map_to_base);
-  bool makeMapToOdomGuessFromScanContextCandidate(
-    const ::scan_context::ScanContextCandidate & candidate, const rclcpp::Time & stamp,
-    Eigen::Isometry3d & map_to_odom_guess, Eigen::Isometry3d & map_to_base_estimate);
+  bool lookupScanContextOdomToBase(
+    const rclcpp::Time & stamp, Eigen::Isometry3d & odom_to_base);
+  bool isScanContextFreeSpaceMapReady() const;
+  bool isScanContextCandidateInFreeSpace(
+    const Eigen::Isometry3d & map_to_base_estimate, std::string & reject_reason) const;
   bool verifyWithScanContextCandidates(
     const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud, const std::string & reason,
     VerificationResult & best_verification);
@@ -181,6 +196,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr motion_command_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr occupancy_map_sub_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr save_scan_context_database_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr trigger_scan_context_relocalization_service_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_pcd_map_pub_;
@@ -194,6 +210,14 @@ private:
   int scan_context_failure_trigger_count_{3};
   int scan_context_max_gicp_candidates_{5};
   double scan_context_yaw_delta_sign_{1.0};
+  double scan_context_max_delta_xy_{1.0};
+  double scan_context_max_delta_z_{0.30};
+  double scan_context_max_delta_yaw_{0.35};
+  bool scan_context_free_space_check_{true};
+  std::string scan_context_free_space_topic_{"map"};
+  int scan_context_free_space_occupied_threshold_{65};
+  bool scan_context_free_space_reject_unknown_{true};
+  double scan_context_free_space_radius_{0.20};
   std::vector<double> init_pose_;
   std::vector<double> prior_pcd_transform_;
 
@@ -225,6 +249,8 @@ private:
   std::mutex scan_context_mutex_;
   std::mutex scan_context_database_mutex_;
   std::mutex motion_command_mutex_;
+  mutable std::mutex occupancy_map_mutex_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr latest_occupancy_map_;
   bool scan_context_database_dirty_{false};
   std::atomic_bool force_scan_context_query_once_{false};
   std::atomic_bool scan_context_startup_query_pending_{false};
