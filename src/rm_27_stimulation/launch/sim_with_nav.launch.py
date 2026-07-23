@@ -38,6 +38,15 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "or add nav_world to config/worlds.yaml."
             )
 
+    scan_context_database_path = LaunchConfiguration("scan_context_database_path").perform(context)
+    if scan_context_database_path in ("", "auto"):
+        source_bringup_dir = os.path.abspath(
+            os.path.join(bringup_share, "..", "..", "..", "..", "src", "pb2025_nav_bringup")
+        )
+        scan_context_database_path = os.path.join(
+            source_bringup_dir, "scan_context", "simulation", f"{nav_world}.scdb"
+        )
+
     nav_launch = os.path.join(
         bringup_share, "launch", "rm_navigation_simulation_launch.py"
     )
@@ -71,6 +80,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                         "world": nav_world,
                         "use_sim_time": LaunchConfiguration("use_sim_time"),
                         "params_file": LaunchConfiguration("params_file"),
+                        "scan_context_database_path": scan_context_database_path,
                         "autostart": LaunchConfiguration("autostart"),
                         "use_composition": LaunchConfiguration("use_composition"),
                         "use_respawn": LaunchConfiguration("use_respawn"),
@@ -137,6 +147,14 @@ def generate_launch_description():
                     bringup_share, "config", "simulation", "nav2_params.yaml"
                 ),
                 description="RM27 navigation parameter file",
+            ),
+            DeclareLaunchArgument(
+                "scan_context_database_path",
+                default_value="auto",
+                description=(
+                    "Scan Context database path. Use auto to store under "
+                    "src/pb2025_nav_bringup/scan_context/simulation/<nav_world>.scdb."
+                ),
             ),
             DeclareLaunchArgument(
                 "autostart",

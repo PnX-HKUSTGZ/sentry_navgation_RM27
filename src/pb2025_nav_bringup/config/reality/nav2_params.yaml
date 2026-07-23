@@ -104,7 +104,7 @@ sensor_scan_generation:
 terrain_analysis:
   ros__parameters:
     scanVoxelSize: 0.05                 # 点云下采样
-    decayTime: 0.5                      # 点云时间差阈值 大于则不会被处理
+    decayTime: 0.3                      # 点云时间差阈值 大于则不会被处理；实车短一点可减少瞬时幽灵点残留
     noDecayDis: 0.0                     # 点云距离阈值 小于该阈值不考虑时间差
     clearingDis: 0.0                    # 该距离外的点会被清除
     useSorting: True                    # 这个参数开起来就能上坡了；如果 use_sorting,那么就以周围点中的分位点作为地面点，否则以最低点作为地面点；周围其余点相对于地面点的高度作为通过代价，所以对于坡面，有的点的代价是正，有的是负，就相互抵消了；不要与 consider_drop 同时开启，计算上会有冲突
@@ -122,10 +122,10 @@ terrain_analysis:
     minDyObsPointNum: 1
     noDataObstacle: False               # treat no data as obstacle
     noDataBlockSkipNum: 0
-    minBlockPointNum: 10
+    minBlockPointNum: 15                # 提高局部平面栅格最少点数，过滤稀疏孤立噪点
     vehicleHeight: 0.5                  # 小于车辆高度的点才会进行处理
     voxelPointUpdateThre: 100
-    voxelTimeUpdateThre: 1.0
+    voxelTimeUpdateThre: 0.5            # 更频繁清理过期点，避免假障碍在 terrain_map 里拖尾
     minRelZ: -1.5                       # min_rel_z 以及 max_rel_z 限制了有效点云点的Z值范围，用于对天花板和地板进行处理
     maxRelZ: 0.5
     disRatioZ: 0.2                      # Z 值的最大最小范围由这两个值决定，但是并不等于这两个值，是有一个比例关系的，距离机器人越远，限定范围就越大，这其中考虑了坡度
@@ -140,7 +140,7 @@ terrain_analysis_ext:
     quantileZ: 0.2
     vehicleHeight: 1.0
     voxelPointUpdateThre: 100
-    voxelTimeUpdateThre: 2.0
+    voxelTimeUpdateThre: 0.8            # global terrain map 也缩短过期点清理周期
     lowerBoundZ: -1.5
     upperBoundZ: 0.5
     disRatioZ: 0.2
@@ -159,7 +159,7 @@ fake_vel_transform:
     input_cmd_vel_topic: "cmd_vel_nav2_result"
     output_cmd_vel_topic: "cmd_vel"
     cmd_spin_topic: "cmd_spin"
-    init_spin_speed: 1.57
+    init_spin_speed: 0.0
 
 relocalization_manager:
   ros__parameters:
@@ -188,12 +188,12 @@ relocalization_manager:
     motion_command_timeout: 0.5
     required_consecutive_gicp_acceptances: 3
     init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
-    prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
+    prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
     transform_prior_map_with_lidar_offset: False # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上
-    scan_context_mode: "off" # off / build / query
+    scan_context_mode: "query" # off / build / query
     scan_context_database_path: ""
     scan_context_input_frame: "base_footprint"
-    scan_context_build_source: "live" # live / prior_pcd
+    scan_context_build_source: "prior_pcd" # live / prior_pcd
     scan_context_update_interval: 0.1
     scan_context_num_rings: 20
     scan_context_num_sectors: 60
@@ -208,14 +208,16 @@ relocalization_manager:
     scan_context_min_points: 500
     scan_context_prior_sample_resolution: 1.0
     scan_context_prior_leaf_size: 0.25
-    scan_context_query_on_startup: true
+    scan_context_query_on_startup: false
     scan_context_query_on_gicp_failure: true
     scan_context_failure_trigger_count: 5
     scan_context_max_gicp_candidates: 5
+    scan_context_max_iterations: 40
     scan_context_yaw_delta_sign: 1.0
     scan_context_max_delta_xy: 1.0
     scan_context_max_delta_z: 0.30
     scan_context_max_delta_yaw: 0.35
+    scan_context_tf_lookup_timeout: 0.15
     scan_context_free_space_radius: 0.20
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
     # prior_pcd_file: ""
@@ -413,8 +415,8 @@ controller_server:
       use_rotate_to_heading_treshold: 0.1
       min_approach_linear_velocity: 0.05
       approach_velocity_scaling_dist: 1.0
-      v_linear_min: -2.5
-      v_linear_max: 2.5
+      v_linear_min: -1.5
+      v_linear_max: 1.5
       v_angular_min: -1.5
       v_angular_max: 1.5
       curvature_min: 0.4                                # 低曲率阈值，低于此值不减速。
@@ -445,14 +447,14 @@ local_costmap:
         footprint_clearing_enabled: true
         publish_voxel_map: false
         combination_method: 1
-        mark_threshold: 0
+        mark_threshold: 1               # 同一 xy 柱至少命中 2 个 z voxel 才标障碍，抑制单点幽灵障碍
         origin_z: 0.0
         unknown_threshold: 5
         z_resolution: 0.05
         z_voxels: 16
         min_obstacle_height: 0.10
         max_obstacle_height: 2.0
-        min_obstacle_intensity: 0.1
+        min_obstacle_intensity: 0.15    # terrain_map intensity 是离地高度；提高阈值可过滤地面起伏/反光残差
         max_obstacle_intensity: 2.0
         observation_sources: terrain_map
         terrain_map:
@@ -470,8 +472,8 @@ local_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 4.0
-        inflation_radius: 0.5
+        cost_scaling_factor: 6.0         # 数值越大，膨胀代价衰减越快
+        inflation_radius: 0.45           # 缩小局部障碍膨胀半径
       always_send_full_costmap: False
 
 global_costmap:
@@ -493,14 +495,14 @@ global_costmap:
         footprint_clearing_enabled: true
         publish_voxel_map: false
         combination_method: 1
-        mark_threshold: 0
+        mark_threshold: 1               # 抑制 global costmap 中单帧/单点假障碍导致的路径重规划抖动
         origin_z: 0.0
         unknown_threshold: 5
         z_resolution: 0.05
         z_voxels: 16
         min_obstacle_height: 0.0
         max_obstacle_height: 2.0
-        min_obstacle_intensity: 0.1
+        min_obstacle_intensity: 0.15
         max_obstacle_intensity: 2.0
         observation_sources: terrain_map_ext
         terrain_map_ext:
@@ -511,15 +513,15 @@ global_costmap:
           sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
-          obstacle_max_range: 10.0
+          obstacle_max_range: 8.0       # 降低远距离稀疏噪点对全局路径的影响
           obstacle_min_range: 0.2
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 4.0
-        inflation_radius: 0.7
+        cost_scaling_factor: 6.0         # 数值越大，膨胀代价衰减越快
+        inflation_radius: 0.45           # 缩小全局障碍膨胀半径
       always_send_full_costmap: False
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.

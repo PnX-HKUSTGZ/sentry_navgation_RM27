@@ -353,13 +353,13 @@ VerificationResult SmallGicpVerifier::verify(
   delta_gate.max_delta_xy = params_.max_delta_xy;
   delta_gate.max_delta_z = params_.max_delta_z;
   delta_gate.max_delta_yaw = params_.max_delta_yaw;
-  return verify(accumulated_cloud, initial_guess, delta_gate, "local");
+  return verify(accumulated_cloud, initial_guess, delta_gate, "local", params_.max_iterations);
 }
 
 VerificationResult SmallGicpVerifier::verify(
   const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud,
   const Eigen::Isometry3d & initial_guess, const GicpDeltaGate & delta_gate,
-  const std::string & delta_gate_label)
+  const std::string & delta_gate_label, int max_iterations)
 {
   VerificationResult verification;
   verification.transform = initial_guess;
@@ -401,7 +401,8 @@ VerificationResult SmallGicpVerifier::verify(
 
   register_->reduction.num_threads = params_.num_threads;
   register_->rejector.max_dist_sq = params_.max_dist_sq;
-  register_->optimizer.max_iterations = params_.max_iterations;
+  const int bounded_max_iterations = std::max(1, max_iterations);
+  register_->optimizer.max_iterations = bounded_max_iterations;
 
   const auto result = register_->align(*target_, *source, *target_tree_, initial_guess);
 
@@ -418,13 +419,20 @@ VerificationResult SmallGicpVerifier::verify(
   verification.source_points = source->size();
   verification.iterations = result.iterations;
 
+  const Eigen::Vector3d delta_translation =
+    result.T_target_source.translation() - initial_guess.translation();
+  const double delta_yaw =
+    normalizeAngle(yawFromIsometry(result.T_target_source) - yawFromIsometry(initial_guess));
+
   if (!result.converged) {
     RCLCPP_WARN(
       logger_,
       "GICP did not converge: iterations=%zu error=%.2f mean_error=%.2f "
-      "inliers_ratio=%zu/%zu ratio=%.3f",
+      "inliers_ratio=%zu/%zu ratio=%.3f max_iterations=%d "
+      "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f]",
       result.iterations, result.error, mean_error, result.num_inliers, source->size(),
-      inlier_ratio);
+      inlier_ratio, bounded_max_iterations, delta_translation.x(), delta_translation.y(),
+      delta_translation.z(), delta_yaw);
     return verification;
   }
 
@@ -441,11 +449,6 @@ VerificationResult SmallGicpVerifier::verify(
     return verification;
   }
 
-  const Eigen::Vector3d delta_translation =
-    result.T_target_source.translation() - initial_guess.translation();
-  const double delta_yaw =
-    normalizeAngle(yawFromIsometry(result.T_target_source) - yawFromIsometry(initial_guess));
-
   if (
     std::abs(delta_translation.x()) > delta_gate.max_delta_xy ||
     std::abs(delta_translation.y()) > delta_gate.max_delta_xy ||
@@ -455,10 +458,10 @@ VerificationResult SmallGicpVerifier::verify(
       logger_,
       "GICP converged but rejected by %s pose delta gate: iterations=%zu error=%.2f "
       "mean_error=%.2f inliers_ratio=%zu/%zu ratio=%.3f "
-      "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] "
+      "max_iterations=%d delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] "
       "limit=[xy=%.3f, z=%.3f, yaw=%.3f]",
       delta_gate_label.c_str(), result.iterations, result.error, mean_error, result.num_inliers,
-      source->size(), inlier_ratio, delta_translation.x(), delta_translation.y(),
+      source->size(), inlier_ratio, bounded_max_iterations, delta_translation.x(), delta_translation.y(),
       delta_translation.z(), delta_yaw, delta_gate.max_delta_xy, delta_gate.max_delta_z,
       delta_gate.max_delta_yaw);
     return verification;
@@ -468,10 +471,10 @@ VerificationResult SmallGicpVerifier::verify(
     logger_,
     "GICP converge successfully with %s pose delta gate!: iterations=%zu error=%.2f mean_error=%.2f "
     "inliers_ratio=%zu/%zu ratio=%.3f "
-    "delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] "
+    "max_iterations=%d delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] "
     "limit=[xy=%.3f, z=%.3f, yaw=%.3f]",
     delta_gate_label.c_str(), result.iterations, result.error, mean_error, result.num_inliers,
-    source->size(), inlier_ratio, delta_translation.x(), delta_translation.y(),
+    source->size(), inlier_ratio, bounded_max_iterations, delta_translation.x(), delta_translation.y(),
     delta_translation.z(), delta_yaw, delta_gate.max_delta_xy, delta_gate.max_delta_z,
     delta_gate.max_delta_yaw);
   verification.accepted = true;
@@ -663,10 +666,12 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("scan_context_query_on_gicp_failure", true);
   this->declare_parameter("scan_context_failure_trigger_count", 3);
   this->declare_parameter("scan_context_max_gicp_candidates", 5);
+  this->declare_parameter("scan_context_max_iterations", 60);
   this->declare_parameter("scan_context_yaw_delta_sign", 1.0);
   this->declare_parameter("scan_context_max_delta_xy", 1.0);
   this->declare_parameter("scan_context_max_delta_z", 0.30);
   this->declare_parameter("scan_context_max_delta_yaw", 0.35);
+  this->declare_parameter("scan_context_tf_lookup_timeout", 0.15);
   this->declare_parameter("scan_context_free_space_check", true);
   this->declare_parameter("scan_context_free_space_topic", "map");
   this->declare_parameter("scan_context_free_space_occupied_threshold", 65);
@@ -734,10 +739,12 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("scan_context_query_on_gicp_failure", scan_context_query_on_gicp_failure_);
   this->get_parameter("scan_context_failure_trigger_count", scan_context_failure_trigger_count_);
   this->get_parameter("scan_context_max_gicp_candidates", scan_context_max_gicp_candidates_);
+  this->get_parameter("scan_context_max_iterations", scan_context_max_iterations_);
   this->get_parameter("scan_context_yaw_delta_sign", scan_context_yaw_delta_sign_);
   this->get_parameter("scan_context_max_delta_xy", scan_context_max_delta_xy_);
   this->get_parameter("scan_context_max_delta_z", scan_context_max_delta_z_);
   this->get_parameter("scan_context_max_delta_yaw", scan_context_max_delta_yaw_);
+  this->get_parameter("scan_context_tf_lookup_timeout", scan_context_tf_lookup_timeout_);
   this->get_parameter("scan_context_free_space_check", scan_context_free_space_check_);
   this->get_parameter("scan_context_free_space_topic", scan_context_free_space_topic_);
   this->get_parameter(
@@ -751,6 +758,7 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   scan_context_params_.build_source = lowerCopy(scan_context_params_.build_source);
   scan_context_failure_trigger_count_ = std::max(1, scan_context_failure_trigger_count_);
   scan_context_max_gicp_candidates_ = std::max(1, scan_context_max_gicp_candidates_);
+  scan_context_max_iterations_ = std::max(1, scan_context_max_iterations_);
   required_consecutive_gicp_acceptances_ =
     std::max(1, required_consecutive_gicp_acceptances_);
   if (
@@ -772,6 +780,9 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   }
   if (!std::isfinite(scan_context_max_delta_yaw_) || scan_context_max_delta_yaw_ < 0.0) {
     scan_context_max_delta_yaw_ = 0.35;
+  }
+  if (!std::isfinite(scan_context_tf_lookup_timeout_) || scan_context_tf_lookup_timeout_ < 0.0) {
+    scan_context_tf_lookup_timeout_ = 0.15;
   }
   if (scan_context_free_space_topic_.empty()) {
     scan_context_free_space_topic_ = "map";
@@ -845,13 +856,14 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
     RCLCPP_INFO(
       this->get_logger(),
       "Scan Context query mode is active: query_on_startup=%s query_on_gicp_failure=%s "
-      "failure_trigger_count=%d max_gicp_candidates=%d yaw_delta_sign=%.0f "
-      "delta_gate=[xy=%.3f, z=%.3f, yaw=%.3f] "
+      "failure_trigger_count=%d max_gicp_candidates=%d max_iterations=%d yaw_delta_sign=%.0f "
+      "delta_gate=[xy=%.3f, z=%.3f, yaw=%.3f] tf_lookup_timeout=%.3f "
       "free_space_check=%s free_space_topic=%s free_space_radius=%.3f",
       scan_context_query_on_startup_ ? "true" : "false",
       scan_context_query_on_gicp_failure_ ? "true" : "false", scan_context_failure_trigger_count_,
-      scan_context_max_gicp_candidates_, scan_context_yaw_delta_sign_,
+      scan_context_max_gicp_candidates_, scan_context_max_iterations_, scan_context_yaw_delta_sign_,
       scan_context_max_delta_xy_, scan_context_max_delta_z_, scan_context_max_delta_yaw_,
+      scan_context_tf_lookup_timeout_,
       scan_context_free_space_check_ ? "true" : "false",
       scan_context_free_space_topic_.c_str(), scan_context_free_space_radius_);
   }
@@ -1255,7 +1267,7 @@ bool RelocalizationManagerNode::transformCloudToScanContextFrame(
   try {
     transform = tf_buffer_->lookupTransform(
       scan_context_params_.input_frame, header.frame_id, rclcpp::Time(header.stamp),
-      rclcpp::Duration::from_seconds(0.0));
+      rclcpp::Duration::from_seconds(scan_context_tf_lookup_timeout_));
   } catch (const tf2::TransformException & timed_ex) {
     try {
       transform = tf_buffer_->lookupTransform(
@@ -1548,7 +1560,8 @@ bool RelocalizationManagerNode::lookupScanContextOdomToBase(
   geometry_msgs::msg::TransformStamped odom_to_base_msg;
   try {
     odom_to_base_msg = tf_buffer_->lookupTransform(
-      odom_frame_, scan_context_params_.input_frame, stamp, rclcpp::Duration::from_seconds(0.0));
+      odom_frame_, scan_context_params_.input_frame, stamp,
+      rclcpp::Duration::from_seconds(scan_context_tf_lookup_timeout_));
   } catch (const tf2::TransformException & timed_ex) {
     try {
       odom_to_base_msg = tf_buffer_->lookupTransform(
@@ -1823,7 +1836,7 @@ bool RelocalizationManagerNode::verifyWithScanContextCandidates(
       if (first_free_space_reject_reason.empty()) {
         first_free_space_reject_reason = free_space_reject_reason;
       }
-      RCLCPP_DEBUG(
+      RCLCPP_WARN(
         this->get_logger(),
         "Scan Context candidate[%d] rejected by free-space check: keyframe_id=%d reason=%s "
         "map_base_xy=[%.3f, %.3f]",
@@ -1853,7 +1866,8 @@ bool RelocalizationManagerNode::verifyWithScanContextCandidates(
       map_to_odom_guess.translation().y(), map_to_odom_guess.translation().z());
 
     const VerificationResult verification = small_gicp_verifier_->verify(
-      accumulated_cloud, map_to_odom_guess, scan_context_delta_gate, "scan_context");
+      accumulated_cloud, map_to_odom_guess, scan_context_delta_gate, "scan_context",
+      scan_context_max_iterations_);
     if (!verification.accepted) {
       continue;
     }

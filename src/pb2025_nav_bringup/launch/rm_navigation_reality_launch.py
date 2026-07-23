@@ -29,6 +29,9 @@ from nav2_common.launch import RewrittenYaml
 def generate_launch_description():
     # Get the launch directory
     bringup_dir = get_package_share_directory("pb2025_nav_bringup")
+    source_bringup_dir = os.path.abspath(
+        os.path.join(bringup_dir, "..", "..", "..", "..", "src", "pb2025_nav_bringup")
+    )
     launch_dir = os.path.join(bringup_dir, "launch")
 
     # Create the launch configuration variables
@@ -93,7 +96,7 @@ def generate_launch_description():
         "scan_context_database_path",
         default_value=[
             TextSubstitution(
-                text=os.path.join(bringup_dir, "scan_context", "reality", "")
+                text=os.path.join(source_bringup_dir, "scan_context", "reality", "")
             ),
             world,
             TextSubstitution(text=".scdb"),

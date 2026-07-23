@@ -102,7 +102,7 @@ public:
   VerificationResult verify(
     const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud,
     const Eigen::Isometry3d & initial_guess, const GicpDeltaGate & delta_gate,
-    const std::string & delta_gate_label);
+    const std::string & delta_gate_label, int max_iterations);
 
 private:
   void prepareTarget();
@@ -209,10 +209,12 @@ private:
   bool scan_context_query_on_gicp_failure_{true};
   int scan_context_failure_trigger_count_{3};
   int scan_context_max_gicp_candidates_{5};
+  int scan_context_max_iterations_{60};
   double scan_context_yaw_delta_sign_{1.0};
   double scan_context_max_delta_xy_{1.0};
   double scan_context_max_delta_z_{0.30};
   double scan_context_max_delta_yaw_{0.35};
+  double scan_context_tf_lookup_timeout_{0.15};
   bool scan_context_free_space_check_{true};
   std::string scan_context_free_space_topic_{"map"};
   int scan_context_free_space_occupied_threshold_{65};
