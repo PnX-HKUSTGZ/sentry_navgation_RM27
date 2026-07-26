@@ -1,58 +1,29 @@
 cmake_minimum_required(VERSION 3.8)
 project(rm_27_stimulation)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(gazebo REQUIRED)
-find_package(gazebo_ros REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(livox_ros_driver2 REQUIRED)
-find_package(Boost REQUIRED COMPONENTS chrono)
-find_package(Protobuf REQUIRED)
+find_package(gz-msgs10 REQUIRED)
+find_package(gz-plugin2 REQUIRED)
+find_package(gz-sim8 REQUIRED)
+find_package(gz-transport13 REQUIRED)
 
-link_directories(${GAZEBO_LIBRARY_DIRS})
-
-add_library(ros2_livox SHARED
-  src/livox_points_plugin.cpp
-  src/livox_ode_multiray_shape.cpp
+add_library(rm27_cmd_vel_pose_control_system SHARED
+  src/cmd_vel_pose_control_system.cpp
+)
+target_link_libraries(rm27_cmd_vel_pose_control_system
+  gz-msgs10::gz-msgs10
+  gz-plugin2::gz-plugin2
+  gz-sim8::gz-sim8
+  gz-transport13::gz-transport13
 )
 
-target_include_directories(ros2_livox PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-  ${GAZEBO_INCLUDE_DIRS}
-)
-
-ament_target_dependencies(ros2_livox
-  rclcpp
-  gazebo_ros
-  sensor_msgs
-  livox_ros_driver2
-)
-
-target_link_libraries(ros2_livox
-  ${GAZEBO_LIBRARIES}
-  RayPlugin
-  GpuRayPlugin
-  Boost::chrono
-  protobuf::libprotobuf
-)
-
-install(TARGETS ros2_livox
+install(TARGETS rm27_cmd_vel_pose_control_system
   LIBRARY DESTINATION lib
-)
-
-install(DIRECTORY include/
-  DESTINATION include
 )
 
 install(DIRECTORY
   config
   launch
-  meshes
   rviz
   scan_mode
   urdf
@@ -60,5 +31,9 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
-ament_export_include_directories(include)
+install(DIRECTORY meshes
+  DESTINATION share/${PROJECT_NAME}
+  PATTERN "obstacle_plugin" EXCLUDE
+)
+
 ament_package()

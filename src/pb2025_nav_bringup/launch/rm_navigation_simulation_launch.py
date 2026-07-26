@@ -48,6 +48,7 @@ def generate_launch_description():
     use_respawn = LaunchConfiguration("use_respawn")
     rviz_config_file = LaunchConfiguration("rviz_config_file")
     use_rviz = LaunchConfiguration("use_rviz")
+    cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
 
     configured_params = ParameterFile(
         RewrittenYaml(
@@ -151,6 +152,15 @@ def generate_launch_description():
         description="Whether to respawn if a node crashes. Applied when composition is disabled.",
     )
 
+    declare_cmd_vel_smoothed_topic_cmd = DeclareLaunchArgument(
+        "cmd_vel_smoothed_topic",
+        default_value="cmd_vel",
+        description=(
+            "Output topic for nav2_velocity_smoother. Simulation writes directly "
+            "to cmd_vel so ros_gz_bridge can drive Gazebo."
+        ),
+    )
+
     declare_rviz_config_file_cmd = DeclareLaunchArgument(
         "rviz_config_file",
         default_value=os.path.join(bringup_dir, "rviz", "nav2_default_view.rviz"),
@@ -193,6 +203,7 @@ def generate_launch_description():
             "autostart": autostart,
             "use_composition": use_composition,
             "use_respawn": use_respawn,
+            "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
         }.items(),
     )
 
@@ -212,6 +223,7 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_use_respawn_cmd)
+    ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_velodyne_convert_tool)

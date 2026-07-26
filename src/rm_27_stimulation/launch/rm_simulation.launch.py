@@ -2,15 +2,16 @@
 
 import os
 import shlex
+import xml.etree.ElementTree as ET
 
 import yaml
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.actions.append_environment_variable import AppendEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from scripts import GazeboRosPaths
+from launch_ros.actions import Node
 
 
 def _load_yaml(path):
@@ -18,78 +19,92 @@ def _load_yaml(path):
         return yaml.safe_load(config_file) or {}
 
 
-def _world_path(context):
+def _as_bool(value):
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _world_file_and_name(context):
     package_share = get_package_share_directory("rm_27_stimulation")
     config_path = LaunchConfiguration("worlds_config").perform(context)
-    world_name = LaunchConfiguration("sim_world").perform(context)
+    world_key = LaunchConfiguration("sim_world").perform(context)
 
     worlds = _load_yaml(config_path).get("worlds", {})
-    if world_name not in worlds:
+    if world_key not in worlds:
         valid_worlds = ", ".join(sorted(worlds.keys()))
-        raise RuntimeError(f"Unknown world '{world_name}'. Valid worlds: {valid_worlds}")
+        raise RuntimeError(f"Unknown world '{world_key}'. Valid worlds: {valid_worlds}")
 
-    relative_path = worlds[world_name].get("path")
+    relative_path = worlds[world_key].get("path")
     if not relative_path:
-        raise RuntimeError(f"World '{world_name}' does not define a 'path' field")
+        raise RuntimeError(f"World '{world_key}' does not define a 'path' field")
 
-    resolved_path = os.path.join(package_share, "world", relative_path)
-    if not os.path.exists(resolved_path):
-        raise RuntimeError(f"World file does not exist: {resolved_path}")
+    world_path = os.path.join(package_share, "world", relative_path)
+    if not os.path.exists(world_path):
+        raise RuntimeError(f"World file does not exist: {world_path}")
 
-    return resolved_path
+    root = ET.parse(world_path).getroot()
+    world_element = root.find("world")
+    if world_element is None or not world_element.get("name"):
+        raise RuntimeError(f"World file does not define a named <world>: {world_path}")
+
+    return world_path, world_element.get("name")
 
 
-def _launch_gzserver(context, *args, **kwargs):
+def _launch_gz_sim(context, *args, **kwargs):
     del args, kwargs
 
-    pkg_gazebo_ros = get_package_share_directory("gazebo_ros")
-    gzserver_launch = os.path.join(pkg_gazebo_ros, "launch", "gzserver.launch.py")
+    gz_sim_launch = os.path.join(
+        get_package_share_directory("ros_gz_sim"), "launch", "gz_sim.launch.py"
+    )
+
+    world_path, _ = _world_file_and_name(context)
+    gz_args = []
+
+    if _as_bool(LaunchConfiguration("verbose").perform(context)):
+        gz_args.extend(["-v", "4"])
+
+    if not _as_bool(LaunchConfiguration("pause").perform(context)):
+        gz_args.append("-r")
+
+    if not _as_bool(LaunchConfiguration("gui").perform(context)):
+        gz_args.append("-s")
+
+    physics_engine = LaunchConfiguration("physics_engine").perform(context).strip()
+    if physics_engine:
+        gz_args.extend(["--physics-engine", physics_engine])
+
+    extra_args = LaunchConfiguration("extra_gazebo_args").perform(context).strip()
+    if extra_args:
+        gz_args.extend(shlex.split(extra_args))
+
+    gz_args.append(world_path)
 
     return [
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(gzserver_launch),
+            PythonLaunchDescriptionSource(gz_sim_launch),
             launch_arguments={
-                "world": _world_path(context),
-                "verbose": LaunchConfiguration("verbose").perform(context),
-                "pause": LaunchConfiguration("pause").perform(context),
-                "extra_gazebo_args": LaunchConfiguration("extra_gazebo_args").perform(context),
+                "gz_args": shlex.join(gz_args),
+                "gz_version": "8",
+                "on_exit_shutdown": "true",
             }.items(),
         )
     ]
 
 
-def _as_bool(value):
-    return value.strip().lower() in ("1", "true", "yes", "on")
-
-
-def _launch_gzclient(context, *args, **kwargs):
+def _launch_ros_gz_bridge(context, *args, **kwargs):
     del args, kwargs
 
-    if not _as_bool(LaunchConfiguration("gui").perform(context)):
+    if not _as_bool(LaunchConfiguration("use_ros_gz_bridge").perform(context)):
         return []
 
-    cmd = ["gzclient"]
-    if _as_bool(LaunchConfiguration("verbose").perform(context)):
-        cmd.append("--verbose")
-
-    extra_args = LaunchConfiguration("extra_gazebo_args").perform(context).strip()
-    if extra_args:
-        cmd.extend(shlex.split(extra_args))
-
-    model, plugin, media = GazeboRosPaths.get_paths()
-    resource_paths = [path for path in (media, "/usr/share/gazebo-11", os.environ.get("GAZEBO_RESOURCE_PATH", "")) if path]
-    model_paths = [path for path in (model, os.environ.get("GAZEBO_MODEL_PATH", "")) if path]
-    plugin_paths = [path for path in (plugin, os.environ.get("GAZEBO_PLUGIN_PATH", "")) if path]
-
     return [
-        ExecuteProcess(
-            cmd=cmd,
+        Node(
+            package="ros_gz_bridge",
+            executable="parameter_bridge",
+            name="rm_27_ros_gz_bridge",
             output="screen",
-            additional_env={
-                "GAZEBO_MODEL_PATH": os.pathsep.join(model_paths),
-                "GAZEBO_PLUGIN_PATH": os.pathsep.join(plugin_paths),
-                "GAZEBO_RESOURCE_PATH": os.pathsep.join(resource_paths),
-            },
+            parameters=[
+                {"config_file": LaunchConfiguration("bridge_config").perform(context)}
+            ],
         )
     ]
 
@@ -97,7 +112,6 @@ def _launch_gzclient(context, *args, **kwargs):
 def generate_launch_description():
     package_share = get_package_share_directory("rm_27_stimulation")
     package_prefix = get_package_prefix("rm_27_stimulation")
-    gazebo_ros_prefix = get_package_prefix("gazebo_ros")
 
     return LaunchDescription(
         [
@@ -114,12 +128,12 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "gui",
                 default_value="false",
-                description="Start Gazebo GUI client when true",
+                description="Start Gazebo GUI when true",
             ),
             DeclareLaunchArgument(
                 "verbose",
                 default_value="false",
-                description="Run gzserver/gzclient with verbose output",
+                description="Run Gazebo Harmonic with verbose output",
             ),
             DeclareLaunchArgument(
                 "pause",
@@ -127,16 +141,30 @@ def generate_launch_description():
                 description="Start Gazebo paused when true",
             ),
             DeclareLaunchArgument(
+                "physics_engine",
+                default_value="gz-physics-bullet-plugin",
+                description="Gazebo physics engine plugin. Use an empty value for Gazebo default.",
+            ),
+            DeclareLaunchArgument(
                 "extra_gazebo_args",
                 default_value="",
-                description="Additional raw arguments passed to Gazebo",
+                description="Additional raw arguments passed to Gazebo Harmonic",
             ),
-            AppendEnvironmentVariable("GAZEBO_MODEL_PATH", os.path.join(package_share, "meshes")),
-            AppendEnvironmentVariable("GAZEBO_MODEL_PATH", os.path.join(package_share, "world")),
-            AppendEnvironmentVariable("GAZEBO_RESOURCE_PATH", package_share),
-            AppendEnvironmentVariable("GAZEBO_PLUGIN_PATH", os.path.join(package_prefix, "lib")),
-            AppendEnvironmentVariable("GAZEBO_PLUGIN_PATH", os.path.join(gazebo_ros_prefix, "lib")),
-            OpaqueFunction(function=_launch_gzserver),
-            OpaqueFunction(function=_launch_gzclient),
+            DeclareLaunchArgument(
+                "use_ros_gz_bridge",
+                default_value="true",
+                description="Start ros_gz_bridge for clock, cmd_vel, lidar, and IMU topics",
+            ),
+            DeclareLaunchArgument(
+                "bridge_config",
+                default_value=os.path.join(package_share, "config", "ros_gz_bridge.yaml"),
+                description="ros_gz_bridge YAML configuration file",
+            ),
+            AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", package_share),
+            AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.path.join(package_share, "meshes")),
+            AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.path.join(package_share, "world")),
+            AppendEnvironmentVariable("GZ_SIM_SYSTEM_PLUGIN_PATH", os.path.join(package_prefix, "lib")),
+            OpaqueFunction(function=_launch_gz_sim),
+            OpaqueFunction(function=_launch_ros_gz_bridge),
         ]
     )

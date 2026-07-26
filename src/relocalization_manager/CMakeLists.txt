@@ -39,6 +39,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   DIRECTORY src
 )
 
+target_link_directories(${PROJECT_NAME} PRIVATE ${FLANN_LIBRARY_DIRS})
 target_link_libraries(${PROJECT_NAME} OpenMP::OpenMP_CXX small_gicp PkgConfig::FLANN)
 
 rclcpp_components_register_node(${PROJECT_NAME}

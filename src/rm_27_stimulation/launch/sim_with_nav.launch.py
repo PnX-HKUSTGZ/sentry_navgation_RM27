@@ -60,12 +60,19 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "sim_world": world_name,
                 "worlds_config": worlds_config_path,
                 "gui": LaunchConfiguration("gui").perform(context),
+                "verbose": LaunchConfiguration("verbose").perform(context),
+                "pause": LaunchConfiguration("pause").perform(context),
+                "physics_engine": LaunchConfiguration("physics_engine").perform(context),
+                "extra_gazebo_args": LaunchConfiguration("extra_gazebo_args").perform(context),
+                "use_ros_gz_bridge": LaunchConfiguration("use_ros_gz_bridge").perform(context),
+                "bridge_config": LaunchConfiguration("bridge_config").perform(context),
             }.items(),
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(spawn_launch),
             launch_arguments={
                 "sim_world": world_name,
+                "worlds_config": worlds_config_path,
                 "use_sim_time": LaunchConfiguration("use_sim_time").perform(context),
             }.items(),
         ),
@@ -130,6 +137,36 @@ def generate_launch_description():
                 "gui",
                 default_value="false",
                 description="Start Gazebo GUI client when true",
+            ),
+            DeclareLaunchArgument(
+                "verbose",
+                default_value="false",
+                description="Run Gazebo Harmonic with verbose output",
+            ),
+            DeclareLaunchArgument(
+                "pause",
+                default_value="false",
+                description="Start Gazebo paused when true",
+            ),
+            DeclareLaunchArgument(
+                "physics_engine",
+                default_value="gz-physics-bullet-plugin",
+                description="Gazebo physics engine plugin. Use an empty value for Gazebo default.",
+            ),
+            DeclareLaunchArgument(
+                "extra_gazebo_args",
+                default_value="",
+                description="Additional raw arguments passed to Gazebo Harmonic",
+            ),
+            DeclareLaunchArgument(
+                "use_ros_gz_bridge",
+                default_value="true",
+                description="Start ros_gz_bridge for clock, cmd_vel, lidar, and IMU topics",
+            ),
+            DeclareLaunchArgument(
+                "bridge_config",
+                default_value=os.path.join(sim_share, "config", "ros_gz_bridge.yaml"),
+                description="ros_gz_bridge YAML configuration file",
             ),
             DeclareLaunchArgument(
                 "use_rviz",

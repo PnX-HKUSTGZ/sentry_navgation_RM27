@@ -22,13 +22,14 @@ from launch.actions import (
     IncludeLaunchDescription,
     SetEnvironmentVariable,
 )
-from launch.conditions import (
-    IfCondition,
-    LaunchConfigurationEquals,
-    LaunchConfigurationNotEquals,
-)
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import (
+    EqualsSubstitution,
+    LaunchConfiguration,
+    NotEqualsSubstitution,
+    PythonExpression,
+)
 from launch_ros.actions import Node, PushRosNamespace, SetRemap
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import ReplaceString, RewrittenYaml
@@ -51,6 +52,7 @@ def generate_launch_description():
     use_composition = LaunchConfiguration("use_composition")
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
+    cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
 
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
@@ -62,13 +64,13 @@ def generate_launch_description():
     params_file = ReplaceString(
         source_file=params_file,
         replacements={"<robot_namespace>": ("")},
-        condition=LaunchConfigurationEquals("namespace", ""),
+        condition=IfCondition(EqualsSubstitution(namespace, "")),
     )
 
     params_file = ReplaceString(
         source_file=params_file,
         replacements={"<robot_namespace>": ("/", namespace)},
-        condition=LaunchConfigurationNotEquals("namespace", ""),
+        condition=IfCondition(NotEqualsSubstitution(namespace, "")),
     )
 
     configured_params = ParameterFile(
@@ -119,7 +121,9 @@ def generate_launch_description():
 
     declare_params_file_cmd = DeclareLaunchArgument(
         "params_file",
-        default_value=os.path.join(bringup_dir, "params", "nav2_params.yaml"),
+        default_value=os.path.join(
+            bringup_dir, "config", "reality", "nav2_params.yaml"
+        ),
         description="Full path to the ROS2 parameters file to use for all launched nodes",
     )
 
@@ -143,6 +147,12 @@ def generate_launch_description():
 
     declare_log_level_cmd = DeclareLaunchArgument(
         "log_level", default_value="info", description="log level"
+    )
+
+    declare_cmd_vel_smoothed_topic_cmd = DeclareLaunchArgument(
+        "cmd_vel_smoothed_topic",
+        default_value="cmd_vel_nav2_result",
+        description="Output topic for nav2_velocity_smoother",
     )
 
     # Specify the actions
@@ -191,6 +201,7 @@ def generate_launch_description():
                     "use_composition": use_composition,
                     "use_respawn": use_respawn,
                     "container_name": "nav2_container",
+                    "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -229,6 +240,7 @@ def generate_launch_description():
     ld.add_action(declare_use_composition_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
+    ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)

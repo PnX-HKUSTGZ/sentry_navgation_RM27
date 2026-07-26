@@ -3,30 +3,36 @@
 <package format="3">
   <name>rm_27_stimulation</name>
   <version>0.1.0</version>
-  <description>Gazebo Classic simulation package for the RM27 sentry navigation stack.</description>
+  <description>Gazebo Harmonic simulation package for the RM27 sentry navigation stack.</description>
   <maintainer email="pnx@example.com">pnx</maintainer>
   <license>TODO</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <build_depend>gazebo_dev</build_depend>
-  <build_depend>gazebo_ros</build_depend>
-  <build_depend>livox_ros_driver2</build_depend>
-  <build_depend>rclcpp</build_depend>
-  <build_depend>sensor_msgs</build_depend>
+  <build_depend>gz_msgs_vendor</build_depend>
+  <build_depend>gz_plugin_vendor</build_depend>
+  <build_depend>gz_sim_vendor</build_depend>
+  <build_depend>gz_transport_vendor</build_depend>
 
   <exec_depend>ament_index_python</exec_depend>
-  <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>gz_msgs_vendor</exec_depend>
+  <exec_depend>gz_plugin_vendor</exec_depend>
+  <exec_depend>gz_sim_vendor</exec_depend>
+  <exec_depend>gz_transport_vendor</exec_depend>
   <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>pb2025_nav_bringup</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>xacro</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
-    <gazebo_ros gazebo_model_path="${prefix}/meshes" gazebo_plugin_path="${prefix}/lib"/>
   </export>
 </package>

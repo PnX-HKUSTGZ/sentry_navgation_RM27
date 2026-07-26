@@ -28,10 +28,7 @@ import yaml
 def find_scan_context_mode(params):
     if isinstance(params, dict):
         ros_parameters = params.get("ros__parameters")
-        if (
-            isinstance(ros_parameters, dict)
-            and "scan_context_mode" in ros_parameters
-        ):
+        if isinstance(ros_parameters, dict) and "scan_context_mode" in ros_parameters:
             return str(ros_parameters["scan_context_mode"]).strip().lower()
 
         for value in params.values():
@@ -97,7 +94,9 @@ def generate_launch_description():
 
     declare_params_file_cmd = DeclareLaunchArgument(
         "params_file",
-        default_value=os.path.join(bringup_dir, "params", "nav2_params.yaml"),
+        default_value=os.path.join(
+            bringup_dir, "config", "simulation", "nav2_params.yaml"
+        ),
         description="Full path to the ROS2 parameters file to use for all launched nodes",
     )
 

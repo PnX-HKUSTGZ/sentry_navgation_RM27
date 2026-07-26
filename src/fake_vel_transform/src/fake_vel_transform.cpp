@@ -123,6 +123,10 @@ void FakeVelTransform::syncCallback(
   const nav_msgs::msg::Path::ConstSharedPtr & /*local_plan_msg*/)
 {
   std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
+  latest_odom_stamp_ = odom_msg->header.stamp;
+  has_latest_odom_stamp_ = true;
+  current_robot_base_angle_ = tf2::getYaw(odom_msg->pose.pose.orientation);
+
   geometry_msgs::msg::Twist::SharedPtr current_cmd_vel;
   {
     if (!latest_cmd_vel_) {
@@ -131,9 +135,6 @@ void FakeVelTransform::syncCallback(
     current_cmd_vel = latest_cmd_vel_;
   }
 
-  latest_odom_stamp_ = odom_msg->header.stamp;
-  has_latest_odom_stamp_ = true;
-  current_robot_base_angle_ = tf2::getYaw(odom_msg->pose.pose.orientation);
   float yaw_diff = current_robot_base_angle_;
   geometry_msgs::msg::Twist aft_tf_vel = transformVelocity(current_cmd_vel, yaw_diff);
 

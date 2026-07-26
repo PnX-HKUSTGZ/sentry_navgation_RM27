@@ -40,44 +40,39 @@
     </joint>
 
     <gazebo reference="${name}">
-      <sensor type="ray" name="${name}">
+      <sensor type="gpu_lidar" name="${name}">
         <pose>0 0 0 0 0 0</pose>
         <always_on>true</always_on>
-        <visualize>true</visualize>
+        <visualize>false</visualize>
         <update_rate>10</update_rate>
-        <plugin name="${name}_plugin" filename="libros2_livox.so">
-          <ray>
-            <scan>
-              <horizontal>
-                <samples>100</samples>
-                <resolution>1</resolution>
-                <min_angle>${0}</min_angle>
-                <max_angle>${2*M_PI}</max_angle>
-              </horizontal>
-              <vertical>
-                <samples>360</samples>
-                <resolution>1</resolution>
-                <min_angle>${-7.22/180*M_PI}</min_angle>
-                <max_angle>${55.22/180*M_PI}</max_angle>
-              </vertical>
-            </scan>
-            <range>
-              <min>${laser_min_range}</min>
-              <max>${laser_max_range}</max>
-              <resolution>${resolution}</resolution>
-            </range>
-            <noise>
-              <type>gaussian</type>
-              <mean>${noise_mean}</mean>
-              <stddev>${noise_stddev}</stddev>
-            </noise>
-          </ray>
-          <visualize>false</visualize>
-          <samples>${samples}</samples>
-          <downsample>1</downsample>
-          <csv_file_name>$(find rm_27_stimulation)/scan_mode/mid360.csv</csv_file_name>
-          <topic>${topic}</topic>
-        </plugin>
+        <topic>${topic}</topic>
+        <gz_frame_id>${name}</gz_frame_id>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>100</samples>
+              <resolution>1</resolution>
+              <min_angle>${0}</min_angle>
+              <max_angle>${2*M_PI}</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>${-7.22/180*M_PI}</min_angle>
+              <max_angle>${55.22/180*M_PI}</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>${laser_min_range}</min>
+            <max>${laser_max_range}</max>
+            <resolution>${resolution}</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>${noise_mean}</mean>
+            <stddev>${noise_stddev}</stddev>
+          </noise>
+        </lidar>
       </sensor>
     </gazebo>
   </xacro:macro>

@@ -124,32 +124,26 @@
     <xacro:default_inertial mass="0.5"/>
   </link>
 
-  <joint name="base_to_wheel1" type="continuous">
+  <joint name="base_to_wheel1" type="fixed">
     <parent link="base_link"/>
     <child link="wheel_1"/>
     <origin rpy="${-PI/2} 0 0" xyz="0.1 0.13 0"/>
-    <axis xyz="0 0 1" />
   </joint>
 
-  <joint name="base_to_wheel2" type="continuous">
-    <axis xyz="0 0 1" />
-    <anchor xyz="0 0 0" />
-    <limit effort="100" velocity="100" />
+  <joint name="base_to_wheel2" type="fixed">
     <parent link="base_link"/>
     <child link="wheel_2"/>
     <origin rpy="${-PI/2} 0 0" xyz="-0.1 0.13 0"/>
   </joint>
 
-  <joint name="base_to_wheel3" type="continuous">
+  <joint name="base_to_wheel3" type="fixed">
     <parent link="base_link"/>
-    <axis xyz="0 0 1" />
     <child link="wheel_3"/>
     <origin rpy="${-PI/2} 0 0" xyz="0.1 -0.13 0"/>
   </joint>
 
-  <joint name="base_to_wheel4" type="continuous">
+  <joint name="base_to_wheel4" type="fixed">
     <parent link="base_link"/>
-    <axis xyz="0 0 1" />
     <child link="wheel_4"/>
     <origin rpy="${-PI/2} 0 0" xyz="-0.1 -0.13 0"/>
   </joint>
@@ -209,51 +203,24 @@
     <material>Gazebo/LightBlueLaser</material>
   </gazebo>
 
-  <!-- Drive controller plugin-->
-  <!-- https://github.com/ros-simulation/gazebo_ros_pkgs/wiki/ROS-2-Migration:-Planar-Move -->
+  <!-- Drive controller plugin -->
   <gazebo>
-    <plugin name="mecanum_controller" filename="libgazebo_ros_planar_move.so">
-      <ros>
-        <!-- Add a namespace -->
-        <namespace>/</namespace>
-        <!-- Remap the default topic -->
-        <remapping>cmd_vel:=cmd_vel</remapping>
-        <remapping>odom:=gazebo_odom_unused</remapping>
-      </ros>
-
-      <!-- Set control loop update rate -->
-      <update_rate>100</update_rate>
-      <!-- Set odom publish rate -->
-      <publish_rate>10</publish_rate>
-
-      <!-- Set if odom required -->
-      <publish_odom>false</publish_odom>
-      <publish_odom_tf>false</publish_odom_tf>
-
-      <!-- Frame IDs -->
-      <odometry_frame>gazebo_odom_unused</odometry_frame>
-      <robot_base_frame>gazebo_base_footprint_unused</robot_base_frame>
-
-      <!-- Set odom covariance -->
-      <covariance_x>0.0001</covariance_x>
-      <covariance_y>0.0001</covariance_y>
-      <covariance_yaw>0.01</covariance_yaw>
+    <plugin name="rm_27_stimulation::CmdVelPoseControlSystem" filename="librm27_cmd_vel_pose_control_system.so">
+      <topic>/cmd_vel</topic>
+      <body_frame>true</body_frame>
+      <command_timeout>0.5</command_timeout>
+      <max_linear_velocity>3.0</max_linear_velocity>
+      <max_angular_velocity>6.0</max_angular_velocity>
     </plugin>
   </gazebo>
 
   <!-- mid360_imu plugin -->
-  <!-- https://github.com/ros-simulation/gazebo_ros_pkgs/wiki/ROS-2-Migration:-IMU-Sensors -->
   <gazebo reference="imu_link">
     <sensor name="mid360_imu" type="imu">
       <always_on>true</always_on>
       <update_rate>100</update_rate>
-      <plugin name="imu_plugin" filename="libgazebo_ros_imu_sensor.so">
-        <ros>
-          <namespace>/</namespace>
-          <remapping>~/out:=/livox/imu</remapping>
-        </ros>
-        <frame_name>imu_link</frame_name>
-      </plugin>
+      <topic>/livox/imu</topic>
+      <gz_frame_id>imu_link</gz_frame_id>
     </sensor>
   </gazebo>
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import xml.etree.ElementTree as ET
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -16,6 +17,32 @@ def _load_yaml(path):
         return yaml.safe_load(config_file) or {}
 
 
+def _world_name(context):
+    package_share = get_package_share_directory("rm_27_stimulation")
+    config_path = LaunchConfiguration("worlds_config").perform(context)
+    world_key = LaunchConfiguration("sim_world").perform(context)
+
+    worlds = _load_yaml(config_path).get("worlds", {})
+    if world_key not in worlds:
+        valid_worlds = ", ".join(sorted(worlds.keys()))
+        raise RuntimeError(f"Unknown world '{world_key}'. Valid worlds: {valid_worlds}")
+
+    relative_path = worlds[world_key].get("path")
+    if not relative_path:
+        raise RuntimeError(f"World '{world_key}' does not define a 'path' field")
+
+    world_path = os.path.join(package_share, "world", relative_path)
+    if not os.path.exists(world_path):
+        raise RuntimeError(f"World file does not exist: {world_path}")
+
+    root = ET.parse(world_path).getroot()
+    world_element = root.find("world")
+    if world_element is None or not world_element.get("name"):
+        raise RuntimeError(f"World file does not define a named <world>: {world_path}")
+
+    return world_element.get("name")
+
+
 def _spawn_robot(context, *args, **kwargs):
     del args, kwargs
 
@@ -23,7 +50,13 @@ def _spawn_robot(context, *args, **kwargs):
     world_name = LaunchConfiguration("sim_world").perform(context)
     entity_name = LaunchConfiguration("entity").perform(context)
     spawn_delay = float(LaunchConfiguration("spawn_delay").perform(context))
-    spawn_timeout = LaunchConfiguration("spawn_timeout").perform(context)
+    robot_description_file = LaunchConfiguration("robot_description_file")
+    robot_description = {
+        "robot_description": ParameterValue(
+            Command([FindExecutable(name="xacro"), " ", robot_description_file]),
+            value_type=str,
+        )
+    }
 
     spawn_poses = _load_yaml(config_path).get("spawn_poses", {})
     if world_name not in spawn_poses:
@@ -32,12 +65,12 @@ def _spawn_robot(context, *args, **kwargs):
 
     pose = spawn_poses[world_name]
     spawn_arguments = [
-        "-entity",
+        "-world",
+        _world_name(context),
+        "-name",
         entity_name,
-        "-topic",
+        "-param",
         "robot_description",
-        "-timeout",
-        spawn_timeout,
         "-x",
         str(pose.get("x", 0.0)),
         "-y",
@@ -57,10 +90,12 @@ def _spawn_robot(context, *args, **kwargs):
             period=spawn_delay,
             actions=[
                 Node(
-                    package="gazebo_ros",
-                    executable="spawn_entity.py",
+                    package="ros_gz_sim",
+                    executable="create",
+                    name="spawn_rm27_sentry",
                     output="screen",
                     arguments=spawn_arguments,
+                    parameters=[robot_description],
                 )
             ],
         )
@@ -92,6 +127,11 @@ def generate_launch_description():
                 description="YAML file describing robot spawn poses",
             ),
             DeclareLaunchArgument(
+                "worlds_config",
+                default_value=os.path.join(package_share, "config", "worlds.yaml"),
+                description="YAML file describing available Gazebo worlds",
+            ),
+            DeclareLaunchArgument(
                 "robot_description_file",
                 default_value=os.path.join(
                     package_share, "urdf", "simulation_waking_robot.xacro"
@@ -116,7 +156,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "spawn_timeout",
                 default_value="60.0",
-                description="Timeout while waiting for Gazebo spawn service",
+                description="Kept for launch-file compatibility; ros_gz_sim create does not use it",
             ),
             Node(
                 package="joint_state_publisher",

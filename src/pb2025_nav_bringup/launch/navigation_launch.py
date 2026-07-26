@@ -38,6 +38,7 @@ def generate_launch_description():
     container_name_full = (namespace, "/", container_name)
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
+    cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
 
     lifecycle_nodes = [
         "controller_server",
@@ -114,6 +115,12 @@ def generate_launch_description():
 
     declare_log_level_cmd = DeclareLaunchArgument(
         "log_level", default_value="info", description="log level"
+    )
+
+    declare_cmd_vel_smoothed_topic_cmd = DeclareLaunchArgument(
+        "cmd_vel_smoothed_topic",
+        default_value="cmd_vel_nav2_result",
+        description="Output topic for nav2_velocity_smoother",
     )
 
     start_terrain_analysis_cmd = Node(
@@ -249,7 +256,7 @@ def generate_launch_description():
                 arguments=["--ros-args", "--log-level", log_level],
                 remappings=[
                     ("cmd_vel", "cmd_vel_controller"),  # remap input
-                    ("cmd_vel_smoothed", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel_smoothed", cmd_vel_smoothed_topic),  # remap output
                 ],
             ),
             Node(
@@ -336,7 +343,7 @@ def generate_launch_description():
                 parameters=[configured_params],
                 remappings=[
                     ("cmd_vel", "cmd_vel_controller"),  # remap input
-                    ("cmd_vel_smoothed", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel_smoothed", cmd_vel_smoothed_topic),  # remap output
                 ],
             ),
             ComposableNode(
@@ -370,6 +377,7 @@ def generate_launch_description():
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
+    ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_terrain_analysis_cmd)
     ld.add_action(start_terrain_analysis_ext_cmd)
