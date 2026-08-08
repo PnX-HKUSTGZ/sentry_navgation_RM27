@@ -17,6 +17,8 @@
 
 #include <Eigen/Geometry>
 #include <atomic>
+#include <chrono>
+#include <future>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -31,6 +33,7 @@
 #include "pcl/io/pcd_io.h"
 #include "pcl/kdtree/kdtree_flann.h"
 #include "rclcpp/rclcpp.hpp"
+#include "relocalization_manager/teaser_relocalizer.hpp"
 #include "scan_context/scan_context_manager.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "small_gicp/ann/kdtree_omp.hpp"
@@ -59,6 +62,7 @@ struct SmallGicpParams
   double min_inlier_ratio{0.75};
   int min_inliers{1000};
   double prior_neighbor_max_distance{0.5};
+  bool filter_source_by_prior_map{true};
   double max_delta_xy{0.25};
   double max_delta_z{0.15};
   double max_delta_yaw{0.17453292519943295};
@@ -86,6 +90,16 @@ struct GicpDeltaGate
 
 enum class LocalizationState { LOCALIZING, LOCALIZED };
 
+struct TeaserPipelineResult
+{
+  bool accepted{false};
+  TeaserResult teaser;
+  VerificationResult coarse_verification;
+  NearestNeighborMetrics coarse_overlap;
+  VerificationResult final_verification;
+  std::string reason;
+};
+
 class SmallGicpVerifier
 {
 public:
@@ -94,6 +108,7 @@ public:
     const std::vector<double> & prior_pcd_transform);
 
   bool loadGlobalMap(const std::string & file_name);
+  bool setGlobalMap(const pcl::PointCloud<pcl::PointXYZ> & global_map);
   void transformGlobalMap(const Eigen::Affine3d & transform, const std::string & label);
   const pcl::PointCloud<pcl::PointXYZ> & globalMap() const;
   VerificationResult verify(
@@ -132,6 +147,7 @@ class RelocalizationManagerNode : public rclcpp::Node
 {
 public:
   explicit RelocalizationManagerNode(const rclcpp::NodeOptions & options);
+  ~RelocalizationManagerNode() override;
 
 private:
   void registeredPcdCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
@@ -141,6 +157,17 @@ private:
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void maybeApplyLidarOffsetToPriorMap();
   void publishPriorPcdMap(const pcl::PointCloud<pcl::PointXYZ> & prior_cloud);
+  void configureTeaserRelocalization();
+  void triggerTeaserRelocalizationCallback(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
+  bool startTeaserRelocalization(
+    const pcl::PointCloud<pcl::PointXYZ> & source, const std::string & reason,
+    bool bypass_cooldown);
+  bool processTeaserRelocalizationResult();
+  TeaserPipelineResult runTeaserRelocalization(
+    const pcl::PointCloud<pcl::PointXYZ> & source, const std::string & reason);
+  bool acceptCoarseOverlap(const NearestNeighborMetrics & metrics) const;
   void configureScanContext();
   void buildScanContextDatabaseFromPriorPcd();
   void queueScanContextInput(
@@ -170,8 +197,7 @@ private:
     pcl::PointCloud<pcl::PointXYZ> & cloud_in_scan_context_frame, rclcpp::Time & stamp);
   bool makeMapToBaseEstimateFromScanContextCandidate(
     const ::scan_context::ScanContextCandidate & candidate, Eigen::Isometry3d & map_to_base);
-  bool lookupScanContextOdomToBase(
-    const rclcpp::Time & stamp, Eigen::Isometry3d & odom_to_base);
+  bool lookupScanContextOdomToBase(const rclcpp::Time & stamp, Eigen::Isometry3d & odom_to_base);
   bool isScanContextFreeSpaceMapReady() const;
   bool isScanContextCandidateInFreeSpace(
     const Eigen::Isometry3d & map_to_base_estimate, std::string & reject_reason) const;
@@ -199,11 +225,24 @@ private:
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr occupancy_map_sub_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr save_scan_context_database_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr trigger_scan_context_relocalization_service_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr trigger_teaser_relocalization_service_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_pcd_map_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr scan_context_candidates_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr scan_context_best_pose_pub_;
 
   SmallGicpParams small_gicp_params_;
+  SmallGicpParams teaser_coarse_gicp_params_;
+  GicpDeltaGate teaser_coarse_delta_gate_;
+  TeaserParams teaser_params_;
+  bool teaser_query_on_startup_{true};
+  bool teaser_query_on_gicp_failure_{true};
+  int teaser_failure_trigger_count_{5};
+  int teaser_coarse_max_iterations_{60};
+  double teaser_retry_interval_{3.0};
+  double teaser_coarse_overlap_max_distance_{0.4};
+  double teaser_coarse_min_overlap_ratio_{0.65};
+  int teaser_coarse_min_overlap_points_{500};
+  double teaser_coarse_max_overlap_rmse_{0.25};
   ::scan_context::ScanContextParams scan_context_params_;
   bool scan_context_query_on_startup_{true};
   bool scan_context_query_on_gicp_failure_{true};
@@ -256,6 +295,9 @@ private:
   bool scan_context_database_dirty_{false};
   std::atomic_bool force_scan_context_query_once_{false};
   std::atomic_bool scan_context_startup_query_pending_{false};
+  std::atomic_bool force_teaser_query_once_{false};
+  std::atomic_bool teaser_startup_query_pending_{false};
+  std::atomic_bool teaser_relocalization_running_{false};
   std::atomic_bool robot_moving_{false};
   std::atomic_bool reset_accumulated_cloud_{false};
   bool has_motion_command_{false};
@@ -268,7 +310,12 @@ private:
   Eigen::Isometry3d last_scan_context_keyframe_pose_{Eigen::Isometry3d::Identity()};
   rclcpp::Time last_scan_context_keyframe_stamp_;
   std::unique_ptr<SmallGicpVerifier> small_gicp_verifier_;
+  std::unique_ptr<SmallGicpVerifier> teaser_coarse_gicp_verifier_;
+  std::unique_ptr<TeaserRelocalizer> teaser_relocalizer_;
   std::unique_ptr<::scan_context::ScanContextManager> scan_context_manager_;
+  std::future<TeaserPipelineResult> teaser_future_;
+  std::string active_teaser_reason_;
+  std::chrono::steady_clock::time_point next_teaser_attempt_time_{};
 
   rclcpp::TimerBase::SharedPtr transform_timer_;
   rclcpp::TimerBase::SharedPtr register_timer_;
