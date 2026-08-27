@@ -202,21 +202,21 @@ relocalization_manager:
     teaser_voxel_size: 0.5
     teaser_normal_radius: 1.0
     teaser_fpfh_radius: 2.0
-    teaser_cross_check: true
-    teaser_feature_ratio_threshold: 0.90
+    teaser_cross_check: false
+    teaser_feature_ratio_threshold: 0.99
     teaser_noise_bound: 0.4
     teaser_cbar2: 2.0
     teaser_rotation_max_iterations: 100
     teaser_rotation_gnc_factor: 1.4
     teaser_rotation_cost_threshold: 0.005
-    teaser_max_clique_time_limit: 1.0
+    teaser_max_clique_time_limit: 3.0
     teaser_use_exact_max_clique: true
     teaser_overlap_map_leaf_size: 0.10
     teaser_overlap_source_leaf_size: 0.20
     teaser_initial_overlap_max_distance: 0.8
     teaser_initial_min_overlap_ratio: 0.45
     teaser_initial_min_overlap_points: 200
-    teaser_initial_max_overlap_rmse: 0.45
+    teaser_initial_max_overlap_rmse: 0.50
     teaser_coarse_num_neighbors: 20
     teaser_coarse_global_leaf_size: 0.25
     teaser_coarse_registered_leaf_size: 0.20
@@ -233,35 +233,6 @@ relocalization_manager:
     teaser_coarse_min_overlap_ratio: 0.65
     teaser_coarse_min_overlap_points: 500
     teaser_coarse_max_overlap_rmse: 0.25
-    scan_context_mode: "off" # off / build / query
-    scan_context_database_path: ""
-    scan_context_input_frame: "base_footprint"
-    scan_context_build_source: "prior_pcd" # live / prior_pcd
-    scan_context_update_interval: 0.1
-    scan_context_num_rings: 20
-    scan_context_num_sectors: 60
-    scan_context_max_radius: 25.0
-    scan_context_min_height: -1.0
-    scan_context_max_height: 3.0
-    scan_context_num_candidates: 30
-    scan_context_score_threshold: 0.6
-    scan_context_keyframe_min_translation: 1.0
-    scan_context_keyframe_min_yaw: 0.1745329252
-    scan_context_keyframe_min_interval: 1.0
-    scan_context_min_points: 500
-    scan_context_prior_sample_resolution: 1.0
-    scan_context_prior_leaf_size: 0.25
-    scan_context_query_on_startup: false
-    scan_context_query_on_gicp_failure: true
-    scan_context_failure_trigger_count: 10
-    scan_context_max_gicp_candidates: 5
-    scan_context_max_iterations: 40
-    scan_context_yaw_delta_sign: -1.0
-    scan_context_max_delta_xy: 1.0
-    scan_context_max_delta_z: 0.50
-    scan_context_max_delta_yaw: 0.35
-    scan_context_tf_lookup_timeout: 0.15
-    scan_context_free_space_radius: 0.10
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
     # prior_pcd_file: ""
 
@@ -363,7 +334,7 @@ bt_navigator:
     robot_base_frame: gimbal_yaw_fake
     odom_topic: odometry
     bt_loop_duration: 10
-    default_server_timeout: 100
+    default_server_timeout: 500
     wait_for_service_timeout: 1000
     navigators: ["navigate_to_pose", "navigate_through_poses"]
     navigate_to_pose:

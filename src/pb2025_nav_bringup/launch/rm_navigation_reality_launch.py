@@ -29,9 +29,6 @@ from nav2_common.launch import RewrittenYaml
 def generate_launch_description():
     # Get the launch directory
     bringup_dir = get_package_share_directory("pb2025_nav_bringup")
-    source_bringup_dir = os.path.abspath(
-        os.path.join(bringup_dir, "..", "..", "..", "..", "src", "pb2025_nav_bringup")
-    )
     launch_dir = os.path.join(bringup_dir, "launch")
 
     # Create the launch configuration variables
@@ -40,7 +37,6 @@ def generate_launch_description():
     world = LaunchConfiguration("world")
     map_yaml_file = LaunchConfiguration("map")
     prior_pcd_file = LaunchConfiguration("prior_pcd_file")
-    scan_context_database_path = LaunchConfiguration("scan_context_database_path")
     use_sim_time = LaunchConfiguration("use_sim_time")
     params_file = LaunchConfiguration("params_file")
     autostart = LaunchConfiguration("autostart")
@@ -60,16 +56,13 @@ def generate_launch_description():
     declare_slam_cmd = DeclareLaunchArgument(
         "slam",
         default_value="False",
-        description=(
-            "Whether run a SLAM. If True, Scan Context database build is only "
-            "started when relocalization_manager.scan_context_mode is 'build'."
-        ),
+        description="Whether to run SLAM instead of localization",
     )
 
     declare_world_cmd = DeclareLaunchArgument(
         "world",
         default_value="highbay",
-        description="Select reality map/PCD/Scan Context resource name",
+        description="Select reality map and PCD resource name",
     )
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
@@ -90,18 +83,6 @@ def generate_launch_description():
             TextSubstitution(text=".pcd"),
         ],
         description="Full path to prior pcd file to load",
-    )
-
-    declare_scan_context_database_path_cmd = DeclareLaunchArgument(
-        "scan_context_database_path",
-        default_value=[
-            TextSubstitution(
-                text=os.path.join(source_bringup_dir, "scan_context", "reality", "")
-            ),
-            world,
-            TextSubstitution(text=".scdb"),
-        ],
-        description="Full path to Scan Context database file",
     )
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
@@ -202,7 +183,6 @@ def generate_launch_description():
             "slam": slam,
             "map": map_yaml_file,
             "prior_pcd_file": prior_pcd_file,
-            "scan_context_database_path": scan_context_database_path,
             "use_sim_time": use_sim_time,
             "params_file": params_file,
             "autostart": autostart,
@@ -219,7 +199,6 @@ def generate_launch_description():
     ld.add_action(declare_world_cmd)
     ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_prior_pcd_file_cmd)
-    ld.add_action(declare_scan_context_database_path_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)

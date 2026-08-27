@@ -17,42 +17,11 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
-import yaml
-
-
-def find_scan_context_mode(params):
-    if isinstance(params, dict):
-        ros_parameters = params.get("ros__parameters")
-        if isinstance(ros_parameters, dict) and "scan_context_mode" in ros_parameters:
-            return str(ros_parameters["scan_context_mode"]).strip().lower()
-
-        for value in params.values():
-            mode = find_scan_context_mode(value)
-            if mode is not None:
-                return mode
-
-    if isinstance(params, list):
-        for value in params:
-            mode = find_scan_context_mode(value)
-            if mode is not None:
-                return mode
-
-    return None
-
-
-def scan_context_mode_from_params_file(params_file_path):
-    try:
-        with open(params_file_path, "r", encoding="utf-8") as params_file:
-            params = yaml.safe_load(params_file) or {}
-    except (OSError, yaml.YAMLError):
-        return None
-
-    return find_scan_context_mode(params)
 
 
 def generate_launch_description():
@@ -62,8 +31,6 @@ def generate_launch_description():
     # Input parameters declaration
     namespace = LaunchConfiguration("namespace")
     params_file = LaunchConfiguration("params_file")
-    prior_pcd_file = LaunchConfiguration("prior_pcd_file")
-    scan_context_database_path = LaunchConfiguration("scan_context_database_path")
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
     use_respawn = LaunchConfiguration("use_respawn")
@@ -98,21 +65,6 @@ def generate_launch_description():
             bringup_dir, "config", "simulation", "nav2_params.yaml"
         ),
         description="Full path to the ROS2 parameters file to use for all launched nodes",
-    )
-
-    declare_prior_pcd_file_cmd = DeclareLaunchArgument(
-        "prior_pcd_file",
-        default_value="",
-        description=(
-            "Prior PCD path used to derive the default Scan Context database path "
-            "and, in simulation prior_pcd build mode, generate the database."
-        ),
-    )
-
-    declare_scan_context_database_path_cmd = DeclareLaunchArgument(
-        "scan_context_database_path",
-        default_value="",
-        description="Full path to Scan Context database file",
     )
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
@@ -206,39 +158,6 @@ def generate_launch_description():
         arguments=["--ros-args", "--log-level", log_level],
     )
 
-    def start_scan_context_builder(context, *args, **kwargs):
-        del args, kwargs
-        resolved_params_file = params_file.perform(context)
-        scan_context_mode = scan_context_mode_from_params_file(resolved_params_file)
-        if scan_context_mode != "build":
-            return [
-                LogInfo(
-                    msg=(
-                        "Scan Context builder is not started because "
-                        f"scan_context_mode is '{scan_context_mode or 'unset'}'. "
-                        "Set relocalization_manager.scan_context_mode to 'build' "
-                        "in the params file to build a Scan Context database."
-                    )
-                )
-            ]
-
-        return [
-            Node(
-                package="relocalization_manager",
-                executable="relocalization_manager_node",
-                name="relocalization_manager",
-                output="screen",
-                respawn=use_respawn,
-                respawn_delay=2.0,
-                parameters=[
-                    configured_params,
-                    {"prior_pcd_file": prior_pcd_file},
-                    {"scan_context_database_path": scan_context_database_path},
-                ],
-                arguments=["--ros-args", "--log-level", log_level],
-            )
-        ]
-
     start_static_transform_node = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -269,8 +188,6 @@ def generate_launch_description():
     # Declare the launch options
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_params_file_cmd)
-    ld.add_action(declare_prior_pcd_file_cmd)
-    ld.add_action(declare_scan_context_database_path_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_autostart_cmd)
     ld.add_action(declare_use_respawn_cmd)
@@ -283,7 +200,6 @@ def generate_launch_description():
     ld.add_action(start_pointcloud_to_laserscan_node)
     ld.add_action(start_sync_slam_toolbox_node)
     ld.add_action(start_point_lio_node)
-    ld.add_action(OpaqueFunction(function=start_scan_context_builder))
     ld.add_action(start_static_transform_node)
 
     return ld

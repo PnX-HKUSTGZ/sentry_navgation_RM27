@@ -18,7 +18,6 @@ ament_auto_package(
   launch
   map
   pcd
-  scan_context
   config
   behavior_trees
   rviz

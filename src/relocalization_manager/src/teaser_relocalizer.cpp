@@ -231,15 +231,21 @@ std::vector<std::pair<int, int>> TeaserRelocalizer::findCorrespondences(
       return lhs.squared_feature_distance < rhs.squared_feature_distance;
     });
 
-  if (
-    params_.max_correspondences > 0 &&
-    candidates.size() > static_cast<std::size_t>(params_.max_correspondences)) {
-    candidates.resize(static_cast<std::size_t>(params_.max_correspondences));
-  }
-
-  correspondences.reserve(candidates.size());
+  const std::size_t correspondence_limit = params_.max_correspondences > 0
+                                             ? static_cast<std::size_t>(params_.max_correspondences)
+                                             : candidates.size();
+  correspondences.reserve(std::min(candidates.size(), correspondence_limit));
+  std::vector<bool> target_used(target_.features->size(), false);
   for (const auto & candidate : candidates) {
+    const auto target_index = static_cast<std::size_t>(candidate.target_index);
+    if (target_used[target_index]) {
+      continue;
+    }
+    target_used[target_index] = true;
     correspondences.emplace_back(candidate.source_index, candidate.target_index);
+    if (correspondences.size() >= correspondence_limit) {
+      break;
+    }
   }
   return correspondences;
 }

@@ -45,7 +45,6 @@ def generate_launch_description():
     slam = LaunchConfiguration("slam")
     map_yaml_file = LaunchConfiguration("map")
     prior_pcd_file = LaunchConfiguration("prior_pcd_file")
-    scan_context_database_path = LaunchConfiguration("scan_context_database_path")
     use_sim_time = LaunchConfiguration("use_sim_time")
     params_file = LaunchConfiguration("params_file")
     autostart = LaunchConfiguration("autostart")
@@ -105,12 +104,6 @@ def generate_launch_description():
 
     declare_prior_pcd_file_cmd = DeclareLaunchArgument(
         "prior_pcd_file", description="Full path to prior PCD file to load"
-    )
-
-    declare_scan_context_database_path_cmd = DeclareLaunchArgument(
-        "scan_context_database_path",
-        default_value="",
-        description="Full path to Scan Context database file",
     )
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
@@ -181,8 +174,6 @@ def generate_launch_description():
                     "autostart": autostart,
                     "use_respawn": use_respawn,
                     "params_file": params_file,
-                    "prior_pcd_file": prior_pcd_file,
-                    "scan_context_database_path": scan_context_database_path,
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -197,7 +188,6 @@ def generate_launch_description():
                     "autostart": autostart,
                     "params_file": params_file,
                     "prior_pcd_file": prior_pcd_file,
-                    "scan_context_database_path": scan_context_database_path,
                     "use_composition": use_composition,
                     "use_respawn": use_respawn,
                     "container_name": "nav2_container",
@@ -233,7 +223,6 @@ def generate_launch_description():
     ld.add_action(declare_slam_cmd)
     ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_prior_pcd_file_cmd)
-    ld.add_action(declare_scan_context_database_path_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)

@@ -15,7 +15,6 @@
 #include "relocalization_manager/relocalization_manager.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -110,93 +109,9 @@ double yawFromIsometry(const Eigen::Isometry3d & transform)
   return std::atan2(rotation(1, 0), rotation(0, 0));
 }
 
-std::chrono::nanoseconds secondsToChrono(double seconds)
-{
-  return std::chrono::duration_cast<std::chrono::nanoseconds>(
-    std::chrono::duration<double>(seconds));
-}
-
-std::string replacePathExtension(const std::string & path, const std::string & extension)
-{
-  if (path.empty()) {
-    return "";
-  }
-
-  const std::size_t last_separator = path.find_last_of('/');
-  const std::size_t last_dot = path.find_last_of('.');
-  if (
-    last_dot == std::string::npos ||
-    (last_separator != std::string::npos && last_dot < last_separator)) {
-    return path + extension;
-  }
-  return path.substr(0, last_dot) + extension;
-}
-
-std::string scanContextDatabasePathFromPriorPcd(const std::string & prior_pcd_file)
-{
-  std::string database_path = replacePathExtension(prior_pcd_file, ".scdb");
-  const std::string pcd_directory_token = "/pcd/";
-  const std::size_t pcd_directory_position = database_path.find(pcd_directory_token);
-  if (pcd_directory_position != std::string::npos) {
-    database_path.replace(pcd_directory_position, pcd_directory_token.size(), "/scan_context/");
-  }
-  return database_path;
-}
-
-std::string lowerCopy(std::string value)
-{
-  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
-    return static_cast<char>(std::tolower(character));
-  });
-  return value;
-}
-
-std::string normalizedFrameId(std::string frame_id)
-{
-  while (!frame_id.empty() && frame_id.front() == '/') {
-    frame_id.erase(frame_id.begin());
-  }
-  return frame_id;
-}
-
-bool isScanContextBuildMode(const scan_context::ScanContextParams & params)
-{
-  return params.mode == "build";
-}
-
-bool isScanContextPriorBuildMode(const scan_context::ScanContextParams & params)
-{
-  return params.mode == "build" && params.build_source == "prior_pcd";
-}
-
-bool isScanContextLiveBuildMode(const scan_context::ScanContextParams & params)
-{
-  return params.mode == "build" && params.build_source == "live";
-}
-
-bool isScanContextQueryMode(const scan_context::ScanContextParams & params)
-{
-  return params.mode == "query";
-}
-
 double initPoseZ(const std::vector<double> & init_pose)
 {
   return init_pose.size() >= 3 ? init_pose[2] : 0.0;
-}
-
-geometry_msgs::msg::Pose poseFromIsometry(const Eigen::Isometry3d & transform)
-{
-  geometry_msgs::msg::Pose pose;
-  const Eigen::Vector3d translation = transform.translation();
-  const Eigen::Quaterniond rotation(transform.rotation());
-  pose.position.x = translation.x();
-  pose.position.y = translation.y();
-  pose.position.z = translation.z();
-  pose.orientation.x = rotation.x();
-  pose.orientation.y = rotation.y();
-  pose.orientation.z = rotation.z();
-  pose.orientation.w = rotation.w();
-  return pose;
 }
 
 }  // namespace
@@ -425,9 +340,9 @@ VerificationResult SmallGicpVerifier::verify(
     "Verifying GICP source: input_points=%zu filtered_points=%zu retained_ratio=%.3f "
     "downsampled_points=%zu "
     "bbox x=[%.3f, %.3f] y=[%.3f, %.3f] z=[%.3f, %.3f] init_xyz=[%.3f, %.3f, %.3f]",
-    accumulated_cloud.size(), filtered_cloud.size(), retained_ratio, source->size(), source_min_pt.x,
-    source_max_pt.x, source_min_pt.y, source_max_pt.y, source_min_pt.z, source_max_pt.z,
-    initial_guess.translation().x(), initial_guess.translation().y(),
+    accumulated_cloud.size(), filtered_cloud.size(), retained_ratio, source->size(),
+    source_min_pt.x, source_max_pt.x, source_min_pt.y, source_max_pt.y, source_min_pt.z,
+    source_max_pt.z, initial_guess.translation().x(), initial_guess.translation().y(),
     initial_guess.translation().z());
 
   small_gicp::estimate_covariances_omp(*source, params_.num_neighbors, params_.num_threads);
@@ -606,6 +521,9 @@ void RelocalizationManagerNode::setLocalizationState(
 
   const LocalizationState previous_state = localization_state_;
   localization_state_ = state;
+  if (state == LocalizationState::LOCALIZED) {
+    teaser_startup_query_pending_.store(false);
+  }
   const std::string previous_label = localizationStateLogLabel(previous_state);
   const std::string current_label = localizationStateLogLabel(localization_state_);
   RCLCPP_INFO(
@@ -719,40 +637,6 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("teaser_coarse_min_overlap_ratio", 0.65);
   this->declare_parameter("teaser_coarse_min_overlap_points", 500);
   this->declare_parameter("teaser_coarse_max_overlap_rmse", 0.25);
-  this->declare_parameter("scan_context_mode", "off");
-  this->declare_parameter("scan_context_database_path", "");
-  this->declare_parameter("scan_context_input_frame", "base_footprint");
-  this->declare_parameter("scan_context_build_source", "live");
-  this->declare_parameter("scan_context_update_interval", 0.1);
-  this->declare_parameter("scan_context_num_rings", 20);
-  this->declare_parameter("scan_context_num_sectors", 60);
-  this->declare_parameter("scan_context_max_radius", 25.0);
-  this->declare_parameter("scan_context_min_height", -1.0);
-  this->declare_parameter("scan_context_max_height", 3.0);
-  this->declare_parameter("scan_context_num_candidates", 10);
-  this->declare_parameter("scan_context_score_threshold", 0.15);
-  this->declare_parameter("scan_context_keyframe_min_translation", 1.0);
-  this->declare_parameter("scan_context_keyframe_min_yaw", 0.17453292519943295);
-  this->declare_parameter("scan_context_keyframe_min_interval", 1.0);
-  this->declare_parameter("scan_context_min_points", 500);
-  this->declare_parameter("scan_context_prior_sample_resolution", 1.0);
-  this->declare_parameter("scan_context_prior_leaf_size", 0.25);
-  this->declare_parameter("scan_context_query_on_startup", true);
-  this->declare_parameter("scan_context_query_on_gicp_failure", true);
-  this->declare_parameter("scan_context_failure_trigger_count", 3);
-  this->declare_parameter("scan_context_max_gicp_candidates", 5);
-  this->declare_parameter("scan_context_max_iterations", 60);
-  this->declare_parameter("scan_context_yaw_delta_sign", 1.0);
-  this->declare_parameter("scan_context_max_delta_xy", 1.0);
-  this->declare_parameter("scan_context_max_delta_z", 0.30);
-  this->declare_parameter("scan_context_max_delta_yaw", 0.35);
-  this->declare_parameter("scan_context_tf_lookup_timeout", 0.15);
-  this->declare_parameter("scan_context_free_space_check", true);
-  this->declare_parameter("scan_context_free_space_topic", "map");
-  this->declare_parameter("scan_context_free_space_occupied_threshold", 65);
-  this->declare_parameter("scan_context_free_space_reject_unknown", true);
-  this->declare_parameter("scan_context_free_space_radius", 0.20);
-
   this->get_parameter("num_threads", small_gicp_params_.num_threads);
   this->get_parameter("num_neighbors", small_gicp_params_.num_neighbors);
   this->get_parameter("max_iterations", small_gicp_params_.max_iterations);
@@ -841,50 +725,6 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("teaser_coarse_min_overlap_ratio", teaser_coarse_min_overlap_ratio_);
   this->get_parameter("teaser_coarse_min_overlap_points", teaser_coarse_min_overlap_points_);
   this->get_parameter("teaser_coarse_max_overlap_rmse", teaser_coarse_max_overlap_rmse_);
-  this->get_parameter("scan_context_mode", scan_context_params_.mode);
-  this->get_parameter("scan_context_database_path", scan_context_params_.database_path);
-  this->get_parameter("scan_context_input_frame", scan_context_params_.input_frame);
-  this->get_parameter("scan_context_build_source", scan_context_params_.build_source);
-  this->get_parameter("scan_context_update_interval", scan_context_params_.update_interval);
-  this->get_parameter("scan_context_num_rings", scan_context_params_.num_rings);
-  this->get_parameter("scan_context_num_sectors", scan_context_params_.num_sectors);
-  this->get_parameter("scan_context_max_radius", scan_context_params_.max_radius);
-  this->get_parameter("scan_context_min_height", scan_context_params_.min_height);
-  this->get_parameter("scan_context_max_height", scan_context_params_.max_height);
-  this->get_parameter("scan_context_num_candidates", scan_context_params_.num_candidates);
-  this->get_parameter("scan_context_score_threshold", scan_context_params_.score_threshold);
-  this->get_parameter(
-    "scan_context_keyframe_min_translation", scan_context_params_.keyframe_min_translation);
-  this->get_parameter("scan_context_keyframe_min_yaw", scan_context_params_.keyframe_min_yaw);
-  this->get_parameter(
-    "scan_context_keyframe_min_interval", scan_context_params_.keyframe_min_interval);
-  this->get_parameter("scan_context_min_points", scan_context_params_.min_points);
-  this->get_parameter(
-    "scan_context_prior_sample_resolution", scan_context_params_.prior_sample_resolution);
-  this->get_parameter("scan_context_prior_leaf_size", scan_context_params_.prior_leaf_size);
-  this->get_parameter("scan_context_query_on_startup", scan_context_query_on_startup_);
-  this->get_parameter("scan_context_query_on_gicp_failure", scan_context_query_on_gicp_failure_);
-  this->get_parameter("scan_context_failure_trigger_count", scan_context_failure_trigger_count_);
-  this->get_parameter("scan_context_max_gicp_candidates", scan_context_max_gicp_candidates_);
-  this->get_parameter("scan_context_max_iterations", scan_context_max_iterations_);
-  this->get_parameter("scan_context_yaw_delta_sign", scan_context_yaw_delta_sign_);
-  this->get_parameter("scan_context_max_delta_xy", scan_context_max_delta_xy_);
-  this->get_parameter("scan_context_max_delta_z", scan_context_max_delta_z_);
-  this->get_parameter("scan_context_max_delta_yaw", scan_context_max_delta_yaw_);
-  this->get_parameter("scan_context_tf_lookup_timeout", scan_context_tf_lookup_timeout_);
-  this->get_parameter("scan_context_free_space_check", scan_context_free_space_check_);
-  this->get_parameter("scan_context_free_space_topic", scan_context_free_space_topic_);
-  this->get_parameter(
-    "scan_context_free_space_occupied_threshold", scan_context_free_space_occupied_threshold_);
-  this->get_parameter(
-    "scan_context_free_space_reject_unknown", scan_context_free_space_reject_unknown_);
-  this->get_parameter("scan_context_free_space_radius", scan_context_free_space_radius_);
-
-  scan_context_params_.mode = lowerCopy(scan_context_params_.mode);
-  scan_context_params_.build_source = lowerCopy(scan_context_params_.build_source);
-  scan_context_failure_trigger_count_ = std::max(1, scan_context_failure_trigger_count_);
-  scan_context_max_gicp_candidates_ = std::max(1, scan_context_max_gicp_candidates_);
-  scan_context_max_iterations_ = std::max(1, scan_context_max_iterations_);
   required_consecutive_gicp_acceptances_ = std::max(1, required_consecutive_gicp_acceptances_);
   if (!std::isfinite(moving_linear_speed_threshold_) || moving_linear_speed_threshold_ < 0.0) {
     moving_linear_speed_threshold_ = 0.05;
@@ -892,31 +732,6 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   if (!std::isfinite(motion_command_timeout_) || motion_command_timeout_ <= 0.0) {
     motion_command_timeout_ = 0.5;
   }
-  if (!std::isfinite(scan_context_yaw_delta_sign_) || scan_context_yaw_delta_sign_ == 0.0) {
-    scan_context_yaw_delta_sign_ = 1.0;
-  }
-  scan_context_yaw_delta_sign_ = scan_context_yaw_delta_sign_ > 0.0 ? 1.0 : -1.0;
-  if (!std::isfinite(scan_context_max_delta_xy_) || scan_context_max_delta_xy_ < 0.0) {
-    scan_context_max_delta_xy_ = 1.0;
-  }
-  if (!std::isfinite(scan_context_max_delta_z_) || scan_context_max_delta_z_ < 0.0) {
-    scan_context_max_delta_z_ = 0.30;
-  }
-  if (!std::isfinite(scan_context_max_delta_yaw_) || scan_context_max_delta_yaw_ < 0.0) {
-    scan_context_max_delta_yaw_ = 0.35;
-  }
-  if (!std::isfinite(scan_context_tf_lookup_timeout_) || scan_context_tf_lookup_timeout_ < 0.0) {
-    scan_context_tf_lookup_timeout_ = 0.15;
-  }
-  if (scan_context_free_space_topic_.empty()) {
-    scan_context_free_space_topic_ = "map";
-  }
-  scan_context_free_space_occupied_threshold_ =
-    std::max(0, std::min(100, scan_context_free_space_occupied_threshold_));
-  if (!std::isfinite(scan_context_free_space_radius_) || scan_context_free_space_radius_ < 0.0) {
-    scan_context_free_space_radius_ = 0.20;
-  }
-
   teaser_failure_trigger_count_ = std::max(1, teaser_failure_trigger_count_);
   teaser_params_.num_threads = std::max(1, teaser_params_.num_threads);
   teaser_params_.min_source_points = std::max(1, teaser_params_.min_source_points);
@@ -990,17 +805,12 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
     teaser_params_.enabled = false;
   }
 
-  if (scan_context_params_.database_path.empty()) {
-    scan_context_params_.database_path = scanContextDatabasePathFromPriorPcd(prior_pcd_file_);
-  }
-
   if (!init_pose_.empty() && init_pose_.size() >= 6) {
     current_map_to_odom_ = poseVectorToIsometry(init_pose_);
   }
   previous_map_to_odom_ = current_map_to_odom_;
 
   accumulated_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-  latest_scan_context_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
@@ -1010,93 +820,32 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   state_log_timer_ = this->create_wall_timer(
     std::chrono::seconds(5), std::bind(&RelocalizationManagerNode::logLocalizationState, this));
 
-  configureScanContext();
-
-  const bool scan_context_build_mode = isScanContextBuildMode(scan_context_params_);
-  const bool scan_context_prior_build_mode = isScanContextPriorBuildMode(scan_context_params_);
-  const bool scan_context_query_mode = isScanContextQueryMode(scan_context_params_);
-
-  if (!scan_context_build_mode) {
-    small_gicp_verifier_ = std::make_unique<SmallGicpVerifier>(
-      this->get_logger(), small_gicp_params_, prior_pcd_transform_);
-    if (small_gicp_verifier_->loadGlobalMap(prior_pcd_file_)) {
-      maybeApplyLidarOffsetToPriorMap();
-      publishPriorPcdMap(small_gicp_verifier_->globalMap());
-    }
-    configureTeaserRelocalization();
-  } else {
-    save_scan_context_database_service_ = this->create_service<std_srvs::srv::Trigger>(
-      "save_scan_context_database", std::bind(
-                                      &RelocalizationManagerNode::saveScanContextDatabaseCallback,
-                                      this, std::placeholders::_1, std::placeholders::_2));
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Scan Context build mode is active; GICP verification and map->odom publishing are "
-      "disabled.");
+  small_gicp_verifier_ = std::make_unique<SmallGicpVerifier>(
+    this->get_logger(), small_gicp_params_, prior_pcd_transform_);
+  if (small_gicp_verifier_->loadGlobalMap(prior_pcd_file_)) {
+    maybeApplyLidarOffsetToPriorMap();
+    publishPriorPcdMap(small_gicp_verifier_->globalMap());
   }
+  configureTeaserRelocalization();
 
-  if (scan_context_query_mode) {
-    trigger_scan_context_relocalization_service_ = this->create_service<std_srvs::srv::Trigger>(
-      "trigger_scan_context_relocalization",
-      std::bind(
-        &RelocalizationManagerNode::triggerScanContextRelocalizationCallback, this,
-        std::placeholders::_1, std::placeholders::_2));
-    scan_context_candidates_pub_ =
-      this->create_publisher<geometry_msgs::msg::PoseArray>("scan_context_candidates", 10);
-    scan_context_best_pose_pub_ =
-      this->create_publisher<geometry_msgs::msg::PoseStamped>("scan_context_best_pose", 10);
-    if (scan_context_free_space_check_) {
-      occupancy_map_sub_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
-        scan_context_free_space_topic_, rclcpp::QoS(1).transient_local().reliable(),
-        std::bind(&RelocalizationManagerNode::occupancyMapCallback, this, std::placeholders::_1));
-    }
-    scan_context_startup_query_pending_.store(scan_context_query_on_startup_);
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Scan Context query mode is active: query_on_startup=%s query_on_gicp_failure=%s "
-      "failure_trigger_count=%d max_gicp_candidates=%d max_iterations=%d yaw_delta_sign=%.0f "
-      "delta_gate=[xy=%.3f, z=%.3f, yaw=%.3f] tf_lookup_timeout=%.3f "
-      "free_space_check=%s free_space_topic=%s free_space_radius=%.3f",
-      scan_context_query_on_startup_ ? "true" : "false",
-      scan_context_query_on_gicp_failure_ ? "true" : "false", scan_context_failure_trigger_count_,
-      scan_context_max_gicp_candidates_, scan_context_max_iterations_, scan_context_yaw_delta_sign_,
-      scan_context_max_delta_xy_, scan_context_max_delta_z_, scan_context_max_delta_yaw_,
-      scan_context_tf_lookup_timeout_, scan_context_free_space_check_ ? "true" : "false",
-      scan_context_free_space_topic_.c_str(), scan_context_free_space_radius_);
-  }
+  pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+    input_cloud_topic_, 10,
+    std::bind(&RelocalizationManagerNode::registeredPcdCallback, this, std::placeholders::_1));
 
-  if (scan_context_prior_build_mode) {
-    buildScanContextDatabaseFromPriorPcd();
-  }
+  motion_command_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+    motion_command_topic_, rclcpp::QoS(10),
+    std::bind(&RelocalizationManagerNode::motionCommandCallback, this, std::placeholders::_1));
 
-  if (scan_context_manager_ && !scan_context_prior_build_mode) {
-    scan_context_timer_ = this->create_wall_timer(
-      secondsToChrono(scan_context_params_.update_interval),
-      std::bind(&RelocalizationManagerNode::processPendingScanContext, this));
-  }
+  initial_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    initial_pose_topic_, 10,
+    std::bind(&RelocalizationManagerNode::initialPoseCallback, this, std::placeholders::_1));
 
-  if (!scan_context_prior_build_mode) {
-    pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-      input_cloud_topic_, 10,
-      std::bind(&RelocalizationManagerNode::registeredPcdCallback, this, std::placeholders::_1));
-  }
+  register_timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(500),
+    std::bind(&RelocalizationManagerNode::performRegistration, this));
 
-  if (!scan_context_build_mode) {
-    motion_command_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-      motion_command_topic_, rclcpp::QoS(10),
-      std::bind(&RelocalizationManagerNode::motionCommandCallback, this, std::placeholders::_1));
-
-    initial_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-      initial_pose_topic_, 10,
-      std::bind(&RelocalizationManagerNode::initialPoseCallback, this, std::placeholders::_1));
-
-    register_timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(500),
-      std::bind(&RelocalizationManagerNode::performRegistration, this));
-
-    transform_timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(50), std::bind(&RelocalizationManagerNode::publishTransform, this));
-  }
+  transform_timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(50), std::bind(&RelocalizationManagerNode::publishTransform, this));
 }
 
 RelocalizationManagerNode::~RelocalizationManagerNode()
@@ -1157,8 +906,8 @@ void RelocalizationManagerNode::configureTeaserRelocalization()
     teaser_relocalizer_->targetFeaturePointCount(), teaser_params_.voxel_size,
     teaser_params_.normal_radius, teaser_params_.fpfh_radius, teaser_params_.noise_bound,
     teaser_params_.min_correspondences, teaser_coarse_gicp_params_.prior_neighbor_max_distance,
-    teaser_query_on_startup_ ? "true" : "false",
-    teaser_query_on_gicp_failure_ ? "true" : "false", teaser_failure_trigger_count_);
+    teaser_query_on_startup_ ? "true" : "false", teaser_query_on_gicp_failure_ ? "true" : "false",
+    teaser_failure_trigger_count_);
 }
 
 void RelocalizationManagerNode::triggerTeaserRelocalizationCallback(
@@ -1242,11 +991,16 @@ TeaserPipelineResult RelocalizationManagerNode::runTeaserRelocalization(
     RCLCPP_WARN(
       this->get_logger(),
       "TEASER++ coarse pose rejected: trigger=%s reason=%s source_features=%zu "
-      "target_features=%zu correspondences=%zu overlap=%zu/%zu ratio=%.3f rmse=%.3f",
+      "target_features=%zu correspondences=%zu overlap=%zu/%zu ratio=%.3f rmse=%.3f "
+      "xyz=[%.3f, %.3f, %.3f] yaw=%.3f",
       reason.c_str(), pipeline.teaser.reason.c_str(), pipeline.teaser.source_feature_points,
       pipeline.teaser.target_feature_points, pipeline.teaser.correspondences,
       pipeline.teaser.overlap.inliers, pipeline.teaser.overlap.source_points,
-      pipeline.teaser.overlap.overlap_ratio, pipeline.teaser.overlap.rmse);
+      pipeline.teaser.overlap.overlap_ratio, pipeline.teaser.overlap.rmse,
+      pipeline.teaser.transform.translation().x(), pipeline.teaser.transform.translation().y(),
+      pipeline.teaser.transform.translation().z(),
+      std::atan2(
+        pipeline.teaser.transform.linear()(1, 0), pipeline.teaser.transform.linear()(0, 0)));
     return pipeline;
   }
 
@@ -1312,7 +1066,6 @@ bool RelocalizationManagerNode::processTeaserRelocalizationResult()
   }
   teaser_relocalization_running_.store(false);
 
-  const bool startup_attempt = active_teaser_reason_ == "startup";
   if (result.accepted && !isRobotMoving()) {
     current_map_to_odom_ = result.final_verification.transform;
     previous_map_to_odom_ = result.final_verification.transform;
@@ -1330,9 +1083,6 @@ bool RelocalizationManagerNode::processTeaserRelocalizationResult()
       result.final_verification.transform.translation().y(),
       result.final_verification.transform.translation().z());
   } else {
-    if (startup_attempt) {
-      teaser_startup_query_pending_.store(true);
-    }
     resetAcceptedGicpVerificationStreak();
     RCLCPP_WARN(
       this->get_logger(), "TEASER++ relocalization failed: trigger=%s reason=%s moving=%s",
@@ -1341,102 +1091,6 @@ bool RelocalizationManagerNode::processTeaserRelocalizationResult()
 
   active_teaser_reason_.clear();
   return true;
-}
-
-void RelocalizationManagerNode::configureScanContext()
-{
-  if (scan_context_params_.mode == "off") {
-    RCLCPP_INFO(this->get_logger(), "Scan Context is disabled.");
-    return;
-  }
-
-  if (scan_context_params_.mode != "build" && scan_context_params_.mode != "query") {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "Unsupported Scan Context mode: %s. Supported modes are: off, build, query. "
-      "Scan Context will stay disabled.",
-      scan_context_params_.mode.c_str());
-    scan_context_params_.mode = "off";
-    return;
-  }
-
-  if (
-    scan_context_params_.mode == "build" && scan_context_params_.build_source != "live" &&
-    scan_context_params_.build_source != "prior_pcd") {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "Unsupported Scan Context build source: %s. Supported build sources are: live, prior_pcd. "
-      "Scan Context will stay disabled.",
-      scan_context_params_.build_source.c_str());
-    scan_context_params_.mode = "off";
-    return;
-  }
-
-  if (
-    scan_context_params_.num_rings <= 0 || scan_context_params_.num_sectors <= 0 ||
-    scan_context_params_.max_radius <= 0.0 || !std::isfinite(scan_context_params_.max_radius) ||
-    !std::isfinite(scan_context_params_.min_height) ||
-    !std::isfinite(scan_context_params_.max_height) ||
-    scan_context_params_.min_height > scan_context_params_.max_height ||
-    scan_context_params_.num_candidates <= 0 || scan_context_params_.update_interval <= 0.0 ||
-    !std::isfinite(scan_context_params_.update_interval) ||
-    scan_context_params_.prior_sample_resolution <= 0.0 ||
-    !std::isfinite(scan_context_params_.prior_sample_resolution) ||
-    scan_context_params_.prior_leaf_size < 0.0 ||
-    !std::isfinite(scan_context_params_.prior_leaf_size)) {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "Scan Context parameters are invalid: rings=%d sectors=%d max_radius=%.3f "
-      "height=[%.3f, %.3f] candidates=%d update_interval=%.3f "
-      "prior_sample_resolution=%.3f prior_leaf_size=%.3f. "
-      "Scan Context will stay disabled.",
-      scan_context_params_.num_rings, scan_context_params_.num_sectors,
-      scan_context_params_.max_radius, scan_context_params_.min_height,
-      scan_context_params_.max_height, scan_context_params_.num_candidates,
-      scan_context_params_.update_interval, scan_context_params_.prior_sample_resolution,
-      scan_context_params_.prior_leaf_size);
-    scan_context_params_.mode = "off";
-    return;
-  }
-
-  scan_context_manager_ =
-    std::make_unique<::scan_context::ScanContextManager>(scan_context_params_);
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Scan Context configured: mode=%s build_source=%s input_frame=%s database=%s "
-    "update_interval=%.3f rings=%d sectors=%d max_radius=%.3f",
-    scan_context_params_.mode.c_str(), scan_context_params_.build_source.c_str(),
-    scan_context_params_.input_frame.c_str(), scan_context_params_.database_path.c_str(),
-    scan_context_params_.update_interval, scan_context_params_.num_rings,
-    scan_context_params_.num_sectors, scan_context_params_.max_radius);
-
-  if (scan_context_params_.database_path.empty()) {
-    RCLCPP_WARN(
-      this->get_logger(), "Scan Context is enabled but scan_context_database_path is empty.");
-    scan_context_manager_.reset();
-    scan_context_params_.mode = "off";
-    return;
-  }
-
-  if (scan_context_params_.mode == "build") {
-    RCLCPP_INFO(
-      this->get_logger(), "Scan Context build mode will create a fresh database: path=%s",
-      scan_context_params_.database_path.c_str());
-    return;
-  }
-
-  if (scan_context_manager_->loadDatabase(scan_context_params_.database_path)) {
-    RCLCPP_INFO(
-      this->get_logger(), "Loaded Scan Context database: path=%s keyframes=%zu",
-      scan_context_params_.database_path.c_str(), scan_context_manager_->size());
-  } else {
-    RCLCPP_WARN(
-      this->get_logger(), "Scan Context database was not loaded: path=%s",
-      scan_context_params_.database_path.c_str());
-    scan_context_manager_.reset();
-    scan_context_params_.mode = "off";
-  }
 }
 
 void RelocalizationManagerNode::publishPriorPcdMap(
@@ -1460,151 +1114,6 @@ void RelocalizationManagerNode::publishPriorPcdMap(
     this->get_logger(),
     "Published transformed prior PCD map: topic=prior_pcd_map frame=%s points=%zu",
     map_frame_.c_str(), prior_cloud.size());
-}
-
-void RelocalizationManagerNode::buildScanContextDatabaseFromPriorPcd()
-{
-  if (!scan_context_manager_) {
-    return;
-  }
-
-  if (prior_pcd_file_.empty()) {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "Scan Context prior_pcd build source was requested, but prior_pcd_file is empty.");
-    return;
-  }
-
-  pcl::PointCloud<pcl::PointXYZ>::Ptr prior_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-  if (pcl::io::loadPCDFile<pcl::PointXYZ>(prior_pcd_file_, *prior_cloud) == -1) {
-    RCLCPP_ERROR(
-      this->get_logger(), "Couldn't read prior PCD for Scan Context database: %s",
-      prior_pcd_file_.c_str());
-    return;
-  }
-
-  RCLCPP_INFO(
-    this->get_logger(), "Loaded prior PCD for Scan Context database: path=%s points=%zu",
-    prior_pcd_file_.c_str(), prior_cloud->size());
-
-  if (!isIdentityPoseVector(prior_pcd_transform_)) {
-    pcl::transformPointCloud(*prior_cloud, *prior_cloud, poseVectorToAffine(prior_pcd_transform_));
-  }
-  publishPriorPcdMap(*prior_cloud);
-
-  pcl::PointCloud<pcl::PointXYZ>::Ptr sampled_cloud(new pcl::PointCloud<pcl::PointXYZ>());
-  if (scan_context_params_.prior_leaf_size > 0.0) {
-    pcl::VoxelGrid<pcl::PointXYZ> voxel_filter;
-    voxel_filter.setInputCloud(prior_cloud);
-    const float leaf_size = static_cast<float>(scan_context_params_.prior_leaf_size);
-    voxel_filter.setLeafSize(leaf_size, leaf_size, leaf_size);
-    voxel_filter.filter(*sampled_cloud);
-  } else {
-    sampled_cloud = prior_cloud;
-  }
-
-  if (sampled_cloud->empty()) {
-    RCLCPP_ERROR(this->get_logger(), "Prior PCD for Scan Context is empty after filtering.");
-    return;
-  }
-
-  pcl::PointXYZ min_pt;
-  pcl::PointXYZ max_pt;
-  pcl::getMinMax3D(*sampled_cloud, min_pt, max_pt);
-
-  const double resolution = scan_context_params_.prior_sample_resolution;
-  const double max_radius_sq = scan_context_params_.max_radius * scan_context_params_.max_radius;
-  const double base_z = initPoseZ(init_pose_);
-  const double max_z_delta = std::max(
-    std::abs(static_cast<double>(min_pt.z) - base_z),
-    std::abs(static_cast<double>(max_pt.z) - base_z));
-  const double search_radius = std::sqrt(max_radius_sq + max_z_delta * max_z_delta);
-  std::size_t attempted_positions = 0;
-  std::size_t added_keyframes = 0;
-  std::int64_t stamp_nanoseconds = 0;
-  pcl::KdTreeFLANN<pcl::PointXYZ> local_search_tree;
-  local_search_tree.setInputCloud(sampled_cloud);
-
-  {
-    std::lock_guard<std::mutex> lock(scan_context_database_mutex_);
-    scan_context_manager_->clear();
-
-    for (double x = min_pt.x; x <= max_pt.x; x += resolution) {
-      for (double y = min_pt.y; y <= max_pt.y; y += resolution) {
-        ++attempted_positions;
-
-        pcl::PointXYZ query_center;
-        query_center.x = static_cast<float>(x);
-        query_center.y = static_cast<float>(y);
-        query_center.z = static_cast<float>(base_z);
-        std::vector<int> local_indices;
-        std::vector<float> local_distances;
-        if (
-          local_search_tree.radiusSearch(
-            query_center, search_radius, local_indices, local_distances) == 0) {
-          continue;
-        }
-
-        pcl::PointCloud<pcl::PointXYZ> local_cloud;
-        local_cloud.reserve(local_indices.size());
-
-        for (const int point_index : local_indices) {
-          const auto & point = sampled_cloud->points[static_cast<std::size_t>(point_index)];
-          if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
-            continue;
-          }
-
-          const double dx = static_cast<double>(point.x) - x;
-          const double dy = static_cast<double>(point.y) - y;
-          if (dx * dx + dy * dy > max_radius_sq) {
-            continue;
-          }
-
-          pcl::PointXYZ local_point;
-          local_point.x = static_cast<float>(dx);
-          local_point.y = static_cast<float>(dy);
-          local_point.z = static_cast<float>(static_cast<double>(point.z) - base_z);
-          local_cloud.push_back(local_point);
-        }
-
-        const auto descriptor = scan_context_manager_->makeDescriptor(local_cloud);
-        if (descriptor.scan_context.size() == 0) {
-          continue;
-        }
-
-        Eigen::Isometry3d map_to_base = Eigen::Isometry3d::Identity();
-        map_to_base.translation() << x, y, base_z;
-        if (scan_context_manager_->addKeyframeDescriptor(
-              descriptor, local_cloud.size(), map_to_base, stamp_nanoseconds, false)) {
-          ++added_keyframes;
-          stamp_nanoseconds += 1000000000LL;
-        }
-      }
-    }
-    scan_context_manager_->rebuildIndex();
-    scan_context_database_dirty_ = added_keyframes > 0;
-  }
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Built Scan Context database from prior PCD: source_points=%zu sampled_points=%zu "
-    "grid_positions=%zu keyframes=%zu bbox x=[%.3f, %.3f] y=[%.3f, %.3f] base_z=%.3f",
-    prior_cloud->size(), sampled_cloud->size(), attempted_positions, added_keyframes, min_pt.x,
-    max_pt.x, min_pt.y, max_pt.y, base_z);
-
-  if (added_keyframes == 0) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "No Scan Context keyframes were generated from prior PCD. Check height limits, "
-      "max_radius, min_points, and prior_sample_resolution.");
-    return;
-  }
-
-  if (saveScanContextDatabase()) {
-    RCLCPP_INFO(
-      this->get_logger(), "Saved prior-built Scan Context database: path=%s",
-      scan_context_params_.database_path.c_str());
-  }
 }
 
 void RelocalizationManagerNode::maybeApplyLidarOffsetToPriorMap()
@@ -1643,709 +1152,6 @@ void RelocalizationManagerNode::maybeApplyLidarOffsetToPriorMap()
   small_gicp_verifier_->transformGlobalMap(odom_to_lidar_odom, "Prior PCD after lidar offset");
 }
 
-void RelocalizationManagerNode::queueScanContextInput(
-  const std_msgs::msg::Header & header, const pcl::PointCloud<pcl::PointXYZ>::ConstPtr & scan)
-{
-  if (!scan_context_manager_) {
-    return;
-  }
-
-  std::lock_guard<std::mutex> lock(scan_context_mutex_);
-  pending_scan_context_header_ = header;
-  pending_scan_context_cloud_ = scan;
-  has_pending_scan_context_cloud_ = true;
-}
-
-void RelocalizationManagerNode::processPendingScanContext()
-{
-  if (!scan_context_manager_) {
-    return;
-  }
-
-  pcl::PointCloud<pcl::PointXYZ>::ConstPtr scan;
-  std_msgs::msg::Header header;
-  {
-    std::lock_guard<std::mutex> lock(scan_context_mutex_);
-    if (!has_pending_scan_context_cloud_) {
-      return;
-    }
-    scan = pending_scan_context_cloud_;
-    header = pending_scan_context_header_;
-    has_pending_scan_context_cloud_ = false;
-  }
-
-  if (!scan) {
-    return;
-  }
-
-  updateScanContextDescriptor(header, *scan);
-}
-
-bool RelocalizationManagerNode::transformCloudToScanContextFrame(
-  const std_msgs::msg::Header & header, const pcl::PointCloud<pcl::PointXYZ> & scan,
-  pcl::PointCloud<pcl::PointXYZ> & cloud_in_scan_context_frame)
-{
-  if (scan_context_params_.input_frame.empty()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "scan_context_input_frame is empty; cannot generate Scan Context descriptor.");
-    return false;
-  }
-
-  if (header.frame_id.empty()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Input cloud frame_id is empty; cannot generate Scan Context descriptor.");
-    return false;
-  }
-
-  if (header.frame_id == scan_context_params_.input_frame) {
-    cloud_in_scan_context_frame = scan;
-    return true;
-  }
-
-  geometry_msgs::msg::TransformStamped transform;
-  try {
-    transform = tf_buffer_->lookupTransform(
-      scan_context_params_.input_frame, header.frame_id, rclcpp::Time(header.stamp),
-      rclcpp::Duration::from_seconds(scan_context_tf_lookup_timeout_));
-  } catch (const tf2::TransformException & timed_ex) {
-    try {
-      transform = tf_buffer_->lookupTransform(
-        scan_context_params_.input_frame, header.frame_id, tf2::TimePointZero);
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Non-blocking Scan Context TF lookup at cloud stamp failed (%s -> %s): %s. "
-        "Using latest transform instead.",
-        header.frame_id.c_str(), scan_context_params_.input_frame.c_str(), timed_ex.what());
-    } catch (const tf2::TransformException & latest_ex) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Scan Context TF lookup failed (%s -> %s): %s", header.frame_id.c_str(),
-        scan_context_params_.input_frame.c_str(), latest_ex.what());
-      return false;
-    }
-  }
-
-  const Eigen::Affine3d transform_eigen = tf2::transformToEigen(transform.transform);
-  pcl::transformPointCloud(scan, cloud_in_scan_context_frame, transform_eigen);
-  return true;
-}
-
-void RelocalizationManagerNode::updateScanContextDescriptor(
-  const std_msgs::msg::Header & header, const pcl::PointCloud<pcl::PointXYZ> & scan)
-{
-  if (!scan_context_manager_) {
-    return;
-  }
-
-  pcl::PointCloud<pcl::PointXYZ> cloud_in_scan_context_frame;
-  if (!transformCloudToScanContextFrame(header, scan, cloud_in_scan_context_frame)) {
-    return;
-  }
-
-  const auto descriptor = scan_context_manager_->makeDescriptor(cloud_in_scan_context_frame);
-  if (descriptor.scan_context.size() == 0) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Scan Context descriptor is empty: frame=%s raw_points=%zu transformed_points=%zu",
-      scan_context_params_.input_frame.c_str(), scan.size(), cloud_in_scan_context_frame.size());
-    return;
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(scan_context_mutex_);
-    *latest_scan_context_cloud_ = cloud_in_scan_context_frame;
-    latest_scan_context_descriptor_ = descriptor;
-    latest_scan_context_stamp_ = rclcpp::Time(header.stamp);
-    has_latest_scan_context_descriptor_ = true;
-  }
-
-  const Eigen::Index occupied_bins = (descriptor.scan_context.array() > 0.0F).count();
-  RCLCPP_DEBUG_THROTTLE(
-    this->get_logger(), *this->get_clock(), 5000,
-    "Generated Scan Context descriptor: source_frame=%s target_frame=%s points=%zu bins=%ld/%ld",
-    header.frame_id.c_str(), scan_context_params_.input_frame.c_str(),
-    cloud_in_scan_context_frame.size(), static_cast<long>(occupied_bins),
-    static_cast<long>(descriptor.scan_context.size()));
-
-  if (isScanContextLiveBuildMode(scan_context_params_)) {
-    maybeAddScanContextKeyframe(header, cloud_in_scan_context_frame, descriptor);
-  }
-}
-
-bool RelocalizationManagerNode::lookupScanContextPoseInMap(
-  const std_msgs::msg::Header & header, Eigen::Isometry3d & map_to_scan_context_frame)
-{
-  if (map_frame_.empty() || scan_context_params_.input_frame.empty()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Cannot add Scan Context keyframe because map_frame or scan_context_input_frame is empty.");
-    return false;
-  }
-
-  geometry_msgs::msg::TransformStamped transform;
-  try {
-    transform = tf_buffer_->lookupTransform(
-      map_frame_, scan_context_params_.input_frame, rclcpp::Time(header.stamp),
-      rclcpp::Duration::from_seconds(0.0));
-  } catch (const tf2::TransformException & timed_ex) {
-    try {
-      transform = tf_buffer_->lookupTransform(
-        map_frame_, scan_context_params_.input_frame, tf2::TimePointZero);
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Non-blocking Scan Context keyframe pose lookup at cloud stamp failed (%s -> %s): %s. "
-        "Using latest transform instead.",
-        scan_context_params_.input_frame.c_str(), map_frame_.c_str(), timed_ex.what());
-    } catch (const tf2::TransformException & latest_ex) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Scan Context keyframe pose lookup failed (%s -> %s): %s",
-        scan_context_params_.input_frame.c_str(), map_frame_.c_str(), latest_ex.what());
-      return false;
-    }
-  }
-
-  map_to_scan_context_frame = tf2::transformToEigen(transform.transform);
-  return true;
-}
-
-bool RelocalizationManagerNode::shouldAddScanContextKeyframe(
-  const Eigen::Isometry3d & map_to_scan_context_frame, const rclcpp::Time & stamp) const
-{
-  if (!has_last_scan_context_keyframe_) {
-    return true;
-  }
-
-  if (scan_context_params_.keyframe_min_interval > 0.0) {
-    const double dt = (stamp - last_scan_context_keyframe_stamp_).seconds();
-    if (dt >= 0.0 && dt < scan_context_params_.keyframe_min_interval) {
-      return false;
-    }
-  }
-
-  const Eigen::Vector3d delta =
-    map_to_scan_context_frame.translation() - last_scan_context_keyframe_pose_.translation();
-  const double delta_xy = std::hypot(delta.x(), delta.y());
-  const double delta_yaw = std::abs(normalizeAngle(
-    yawFromIsometry(map_to_scan_context_frame) -
-    yawFromIsometry(last_scan_context_keyframe_pose_)));
-
-  return delta_xy >= scan_context_params_.keyframe_min_translation ||
-         delta_yaw >= scan_context_params_.keyframe_min_yaw;
-}
-
-void RelocalizationManagerNode::maybeAddScanContextKeyframe(
-  const std_msgs::msg::Header & header, const pcl::PointCloud<pcl::PointXYZ> & cloud,
-  const ::scan_context::ScanContextDescriptor & descriptor)
-{
-  Eigen::Isometry3d map_to_scan_context_frame = Eigen::Isometry3d::Identity();
-  if (!lookupScanContextPoseInMap(header, map_to_scan_context_frame)) {
-    return;
-  }
-
-  const rclcpp::Time stamp(header.stamp);
-  if (!shouldAddScanContextKeyframe(map_to_scan_context_frame, stamp)) {
-    return;
-  }
-
-  bool added = false;
-  std::size_t keyframe_count = 0;
-  {
-    std::lock_guard<std::mutex> lock(scan_context_database_mutex_);
-    added = scan_context_manager_->addKeyframeDescriptor(
-      descriptor, cloud.size(), map_to_scan_context_frame, stamp.nanoseconds());
-    if (added) {
-      scan_context_database_dirty_ = true;
-      keyframe_count = scan_context_manager_->size();
-    }
-  }
-
-  if (!added) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Failed to add Scan Context keyframe: points=%zu descriptor_size=%ld", cloud.size(),
-      static_cast<long>(descriptor.scan_context.size()));
-    return;
-  }
-
-  has_last_scan_context_keyframe_ = true;
-  last_scan_context_keyframe_pose_ = map_to_scan_context_frame;
-  last_scan_context_keyframe_stamp_ = stamp;
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Added Scan Context keyframe #%zu: stamp=%.3f xyz=[%.3f, %.3f, %.3f] yaw=%.3f "
-    "points=%zu",
-    keyframe_count, stamp.seconds(), map_to_scan_context_frame.translation().x(),
-    map_to_scan_context_frame.translation().y(), map_to_scan_context_frame.translation().z(),
-    yawFromIsometry(map_to_scan_context_frame), cloud.size());
-}
-
-bool RelocalizationManagerNode::saveScanContextDatabase()
-{
-  if (!scan_context_manager_) {
-    return false;
-  }
-
-  if (scan_context_params_.database_path.empty()) {
-    RCLCPP_ERROR(
-      this->get_logger(), "Cannot save Scan Context database because database path is empty.");
-    return false;
-  }
-
-  std::lock_guard<std::mutex> lock(scan_context_database_mutex_);
-  if (!scan_context_manager_->saveDatabase(scan_context_params_.database_path)) {
-    return false;
-  }
-
-  scan_context_database_dirty_ = false;
-  return true;
-}
-
-void RelocalizationManagerNode::saveScanContextDatabaseCallback(
-  const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
-{
-  (void)request;
-  response->success = saveScanContextDatabase();
-  if (response->success) {
-    response->message = "Saved Scan Context database to " + scan_context_params_.database_path;
-  } else {
-    response->message =
-      "Failed to save Scan Context database to " + scan_context_params_.database_path;
-  }
-}
-
-void RelocalizationManagerNode::triggerScanContextRelocalizationCallback(
-  const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
-{
-  (void)request;
-  if (!scan_context_manager_ || !isScanContextQueryMode(scan_context_params_)) {
-    response->success = false;
-    response->message = "Scan Context query mode is not active.";
-    return;
-  }
-
-  force_scan_context_query_once_.store(true);
-  response->success = true;
-  response->message = "Scan Context relocalization will be attempted on the next GICP cycle.";
-}
-
-void RelocalizationManagerNode::occupancyMapCallback(
-  const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
-{
-  if (!msg) {
-    return;
-  }
-
-  const std::size_t expected_size =
-    static_cast<std::size_t>(msg->info.width) * static_cast<std::size_t>(msg->info.height);
-  if (
-    msg->info.width == 0 || msg->info.height == 0 ||
-    !std::isfinite(static_cast<double>(msg->info.resolution)) || msg->info.resolution <= 0.0 ||
-    msg->data.size() != expected_size) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Ignoring invalid occupancy map for Scan Context free-space check: frame=%s "
-      "width=%u height=%u resolution=%.6f data=%zu expected=%zu",
-      msg->header.frame_id.c_str(), msg->info.width, msg->info.height, msg->info.resolution,
-      msg->data.size(), expected_size);
-    return;
-  }
-
-  std::lock_guard<std::mutex> lock(occupancy_map_mutex_);
-  latest_occupancy_map_ = msg;
-}
-
-bool RelocalizationManagerNode::getLatestScanContextCloud(
-  pcl::PointCloud<pcl::PointXYZ> & cloud_in_scan_context_frame, rclcpp::Time & stamp)
-{
-  std::lock_guard<std::mutex> lock(scan_context_mutex_);
-  if (
-    !has_latest_scan_context_descriptor_ || !latest_scan_context_cloud_ ||
-    latest_scan_context_cloud_->empty()) {
-    return false;
-  }
-
-  cloud_in_scan_context_frame = *latest_scan_context_cloud_;
-  stamp = latest_scan_context_stamp_;
-  return true;
-}
-
-bool RelocalizationManagerNode::makeMapToBaseEstimateFromScanContextCandidate(
-  const ::scan_context::ScanContextCandidate & candidate, Eigen::Isometry3d & map_to_base)
-{
-  Eigen::Isometry3d yaw_correction = Eigen::Isometry3d::Identity();
-  yaw_correction.linear() =
-    Eigen::AngleAxisd(scan_context_yaw_delta_sign_ * candidate.yaw_delta, Eigen::Vector3d::UnitZ())
-      .toRotationMatrix();
-
-  map_to_base = candidate.map_to_base * yaw_correction;
-  return map_to_base.matrix().allFinite();
-}
-
-bool RelocalizationManagerNode::lookupScanContextOdomToBase(
-  const rclcpp::Time & stamp, Eigen::Isometry3d & odom_to_base)
-{
-  if (odom_frame_.empty() || scan_context_params_.input_frame.empty()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Cannot make Scan Context GICP guess because odom_frame or scan_context_input_frame is "
-      "empty.");
-    return false;
-  }
-
-  geometry_msgs::msg::TransformStamped odom_to_base_msg;
-  try {
-    odom_to_base_msg = tf_buffer_->lookupTransform(
-      odom_frame_, scan_context_params_.input_frame, stamp,
-      rclcpp::Duration::from_seconds(scan_context_tf_lookup_timeout_));
-  } catch (const tf2::TransformException & timed_ex) {
-    try {
-      odom_to_base_msg = tf_buffer_->lookupTransform(
-        odom_frame_, scan_context_params_.input_frame, tf2::TimePointZero);
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Scan Context odom->base lookup at descriptor stamp failed (%s -> %s): %s. "
-        "Using latest transform instead.",
-        scan_context_params_.input_frame.c_str(), odom_frame_.c_str(), timed_ex.what());
-    } catch (const tf2::TransformException & latest_ex) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Scan Context odom->base lookup failed (%s -> %s): %s",
-        scan_context_params_.input_frame.c_str(), odom_frame_.c_str(), latest_ex.what());
-      return false;
-    }
-  }
-
-  odom_to_base = tf2::transformToEigen(odom_to_base_msg.transform);
-  return odom_to_base.matrix().allFinite();
-}
-
-bool RelocalizationManagerNode::isScanContextFreeSpaceMapReady() const
-{
-  if (!scan_context_free_space_check_) {
-    return true;
-  }
-
-  std::lock_guard<std::mutex> lock(occupancy_map_mutex_);
-  return static_cast<bool>(latest_occupancy_map_);
-}
-
-bool RelocalizationManagerNode::isScanContextCandidateInFreeSpace(
-  const Eigen::Isometry3d & map_to_base_estimate, std::string & reject_reason) const
-{
-  if (!scan_context_free_space_check_) {
-    return true;
-  }
-
-  if (!map_to_base_estimate.matrix().allFinite()) {
-    reject_reason = "non_finite_candidate_pose";
-    return false;
-  }
-
-  nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_map;
-  {
-    std::lock_guard<std::mutex> lock(occupancy_map_mutex_);
-    occupancy_map = latest_occupancy_map_;
-  }
-
-  if (!occupancy_map) {
-    reject_reason = "map_unavailable";
-    return false;
-  }
-
-  const std::string map_header_frame = normalizedFrameId(occupancy_map->header.frame_id);
-  const std::string configured_map_frame = normalizedFrameId(map_frame_);
-  if (
-    !map_header_frame.empty() && !configured_map_frame.empty() &&
-    map_header_frame != configured_map_frame) {
-    reject_reason = "map_frame_mismatch";
-    return false;
-  }
-
-  const auto & info = occupancy_map->info;
-  const std::size_t expected_size =
-    static_cast<std::size_t>(info.width) * static_cast<std::size_t>(info.height);
-  if (
-    info.width == 0 || info.height == 0 || !std::isfinite(static_cast<double>(info.resolution)) ||
-    info.resolution <= 0.0 || occupancy_map->data.size() != expected_size) {
-    reject_reason = "invalid_map";
-    return false;
-  }
-
-  const auto & origin = info.origin;
-  const Eigen::Vector3d origin_translation(origin.position.x, origin.position.y, origin.position.z);
-  Eigen::Quaterniond origin_rotation(
-    origin.orientation.w, origin.orientation.x, origin.orientation.y, origin.orientation.z);
-  if (
-    !origin_translation.allFinite() || !std::isfinite(origin_rotation.w()) ||
-    !std::isfinite(origin_rotation.x()) || !std::isfinite(origin_rotation.y()) ||
-    !std::isfinite(origin_rotation.z()) || origin_rotation.norm() < 1e-9) {
-    reject_reason = "invalid_map_origin";
-    return false;
-  }
-  origin_rotation.normalize();
-
-  Eigen::Isometry3d map_origin = Eigen::Isometry3d::Identity();
-  map_origin.translation() = origin_translation;
-  map_origin.linear() = origin_rotation.toRotationMatrix();
-
-  const Eigen::Vector3d candidate_position = map_to_base_estimate.translation();
-  const Eigen::Vector3d grid_position = map_origin.inverse() * candidate_position;
-  if (!grid_position.allFinite()) {
-    reject_reason = "non_finite_grid_position";
-    return false;
-  }
-
-  const double resolution = static_cast<double>(info.resolution);
-  const int center_x = static_cast<int>(std::floor(grid_position.x() / resolution));
-  const int center_y = static_cast<int>(std::floor(grid_position.y() / resolution));
-  const int width = static_cast<int>(info.width);
-  const int height = static_cast<int>(info.height);
-
-  const auto cell_is_free = [&](int x, int y) {
-    if (x < 0 || y < 0 || x >= width || y >= height) {
-      reject_reason = "outside_map";
-      return false;
-    }
-
-    const std::size_t index =
-      static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
-    const int occupancy = static_cast<int>(occupancy_map->data[index]);
-    if (occupancy < 0) {
-      if (scan_context_free_space_reject_unknown_) {
-        reject_reason = "unknown_cell";
-        return false;
-      }
-      return true;
-    }
-
-    if (occupancy >= scan_context_free_space_occupied_threshold_) {
-      reject_reason = "occupied_cell";
-      return false;
-    }
-    return true;
-  };
-
-  const int radius_cells =
-    static_cast<int>(std::ceil(scan_context_free_space_radius_ / resolution));
-  const double radius_sq = scan_context_free_space_radius_ * scan_context_free_space_radius_;
-  for (int dy = -radius_cells; dy <= radius_cells; ++dy) {
-    for (int dx = -radius_cells; dx <= radius_cells; ++dx) {
-      const double distance_sq = static_cast<double>(dx * dx + dy * dy) * resolution * resolution;
-      if (distance_sq > radius_sq) {
-        continue;
-      }
-
-      if (!cell_is_free(center_x + dx, center_y + dy)) {
-        return false;
-      }
-    }
-  }
-
-  return true;
-}
-
-void RelocalizationManagerNode::publishScanContextCandidates(
-  const std::vector<::scan_context::ScanContextCandidate> & candidates,
-  const std::vector<Eigen::Isometry3d> & map_to_base_estimates, const rclcpp::Time & stamp)
-{
-  if (!scan_context_candidates_pub_) {
-    return;
-  }
-
-  geometry_msgs::msg::PoseArray pose_array;
-  pose_array.header.stamp = stamp;
-  pose_array.header.frame_id = map_frame_;
-  const std::size_t pose_count = std::min(candidates.size(), map_to_base_estimates.size());
-  pose_array.poses.reserve(pose_count);
-  for (std::size_t i = 0; i < pose_count; ++i) {
-    pose_array.poses.push_back(poseFromIsometry(map_to_base_estimates[i]));
-  }
-  scan_context_candidates_pub_->publish(pose_array);
-}
-
-void RelocalizationManagerNode::publishAcceptedScanContextPose(
-  const Eigen::Isometry3d & map_to_base_estimate, const rclcpp::Time & stamp)
-{
-  if (!scan_context_best_pose_pub_) {
-    return;
-  }
-
-  geometry_msgs::msg::PoseStamped pose;
-  pose.header.stamp = stamp;
-  pose.header.frame_id = map_frame_;
-  pose.pose = poseFromIsometry(map_to_base_estimate);
-  scan_context_best_pose_pub_->publish(pose);
-}
-
-bool RelocalizationManagerNode::verifyWithScanContextCandidates(
-  const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud, const std::string & reason,
-  VerificationResult & best_verification)
-{
-  if (
-    !small_gicp_verifier_ || !scan_context_manager_ ||
-    !isScanContextQueryMode(scan_context_params_)) {
-    return false;
-  }
-
-  if (!isScanContextFreeSpaceMapReady()) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Scan Context relocalization skipped: free-space map is not available yet. reason=%s "
-      "topic=%s",
-      reason.c_str(), scan_context_free_space_topic_.c_str());
-    return false;
-  }
-
-  processPendingScanContext();
-
-  pcl::PointCloud<pcl::PointXYZ> cloud_in_scan_context_frame;
-  rclcpp::Time stamp;
-  if (!getLatestScanContextCloud(cloud_in_scan_context_frame, stamp)) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 5000,
-      "Scan Context relocalization skipped: no valid latest descriptor. reason=%s", reason.c_str());
-    return false;
-  }
-
-  std::vector<::scan_context::ScanContextCandidate> candidates;
-  {
-    std::lock_guard<std::mutex> lock(scan_context_database_mutex_);
-    candidates = scan_context_manager_->query(cloud_in_scan_context_frame);
-  }
-
-  if (candidates.empty()) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "Scan Context relocalization found no candidates: reason=%s points=%zu "
-      "score_threshold=%.3f",
-      reason.c_str(), cloud_in_scan_context_frame.size(), scan_context_params_.score_threshold);
-    return false;
-  }
-
-  const int max_candidates =
-    std::min(scan_context_max_gicp_candidates_, static_cast<int>(candidates.size()));
-  std::vector<::scan_context::ScanContextCandidate> valid_candidates;
-  std::vector<Eigen::Isometry3d> map_to_base_estimates;
-  valid_candidates.reserve(static_cast<std::size_t>(max_candidates));
-  map_to_base_estimates.reserve(static_cast<std::size_t>(max_candidates));
-
-  VerificationResult best_candidate_verification;
-  Eigen::Isometry3d best_map_to_base_estimate = Eigen::Isometry3d::Identity();
-  int best_candidate_index = -1;
-  int free_space_rejected_candidates = 0;
-  std::string first_free_space_reject_reason;
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Trying Scan Context relocalization: reason=%s candidates=%zu max_gicp_candidates=%d "
-    "free_space_check=%s",
-    reason.c_str(), candidates.size(), max_candidates,
-    scan_context_free_space_check_ ? "true" : "false");
-
-  Eigen::Isometry3d odom_to_base = Eigen::Isometry3d::Identity();
-  if (!lookupScanContextOdomToBase(stamp, odom_to_base)) {
-    return false;
-  }
-  const Eigen::Isometry3d base_to_odom = odom_to_base.inverse();
-  GicpDeltaGate scan_context_delta_gate;
-  scan_context_delta_gate.max_delta_xy = scan_context_max_delta_xy_;
-  scan_context_delta_gate.max_delta_z = scan_context_max_delta_z_;
-  scan_context_delta_gate.max_delta_yaw = scan_context_max_delta_yaw_;
-
-  for (int i = 0; i < max_candidates; ++i) {
-    const auto & candidate = candidates[static_cast<std::size_t>(i)];
-    Eigen::Isometry3d map_to_base_estimate = Eigen::Isometry3d::Identity();
-    if (!makeMapToBaseEstimateFromScanContextCandidate(candidate, map_to_base_estimate)) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Scan Context candidate produced a non-finite map->base estimate.");
-      continue;
-    }
-
-    std::string free_space_reject_reason;
-    if (!isScanContextCandidateInFreeSpace(map_to_base_estimate, free_space_reject_reason)) {
-      ++free_space_rejected_candidates;
-      if (first_free_space_reject_reason.empty()) {
-        first_free_space_reject_reason = free_space_reject_reason;
-      }
-      RCLCPP_WARN(
-        this->get_logger(),
-        "Scan Context candidate[%d] rejected by free-space check: keyframe_id=%d reason=%s "
-        "map_base_xy=[%.3f, %.3f]",
-        i, candidate.keyframe_id, free_space_reject_reason.c_str(),
-        map_to_base_estimate.translation().x(), map_to_base_estimate.translation().y());
-      continue;
-    }
-
-    const Eigen::Isometry3d map_to_odom_guess = map_to_base_estimate * base_to_odom;
-    if (!map_to_odom_guess.matrix().allFinite()) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Scan Context candidate produced a non-finite map->odom guess.");
-      continue;
-    }
-
-    valid_candidates.push_back(candidate);
-    map_to_base_estimates.push_back(map_to_base_estimate);
-
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Scan Context candidate[%d]: keyframe_id=%d score=%.4f yaw_delta=%.3f "
-      "map_base_xyz=[%.3f, %.3f, %.3f] guess_map_odom_xyz=[%.3f, %.3f, %.3f]",
-      i, candidate.keyframe_id, candidate.score, scan_context_yaw_delta_sign_ * candidate.yaw_delta,
-      map_to_base_estimate.translation().x(), map_to_base_estimate.translation().y(),
-      map_to_base_estimate.translation().z(), map_to_odom_guess.translation().x(),
-      map_to_odom_guess.translation().y(), map_to_odom_guess.translation().z());
-
-    const VerificationResult verification = small_gicp_verifier_->verify(
-      accumulated_cloud, map_to_odom_guess, scan_context_delta_gate, "scan_context",
-      scan_context_max_iterations_);
-    if (!verification.accepted) {
-      continue;
-    }
-
-    const bool better_than_current =
-      !best_candidate_verification.accepted ||
-      verification.mean_error < best_candidate_verification.mean_error ||
-      (std::abs(verification.mean_error - best_candidate_verification.mean_error) < 1e-9 &&
-       verification.inlier_ratio > best_candidate_verification.inlier_ratio);
-    if (better_than_current) {
-      best_candidate_verification = verification;
-      best_map_to_base_estimate = map_to_base_estimate;
-      best_candidate_index = i;
-    }
-  }
-
-  publishScanContextCandidates(valid_candidates, map_to_base_estimates, stamp);
-
-  if (!best_candidate_verification.accepted) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "Scan Context relocalization did not produce an accepted GICP result: reason=%s "
-      "valid_candidates=%zu free_space_rejected=%d first_free_space_reject_reason=%s",
-      reason.c_str(), valid_candidates.size(), free_space_rejected_candidates,
-      first_free_space_reject_reason.empty() ? "none" : first_free_space_reject_reason.c_str());
-    return false;
-  }
-
-  best_verification = best_candidate_verification;
-  publishAcceptedScanContextPose(best_map_to_base_estimate, stamp);
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Scan Context relocalization accepted candidate[%d]: mean_error=%.6f "
-    "inlier_ratio=%.3f transform_xyz=[%.3f, %.3f, %.3f]",
-    best_candidate_index, best_verification.mean_error, best_verification.inlier_ratio,
-    best_verification.transform.translation().x(), best_verification.transform.translation().y(),
-    best_verification.transform.translation().z());
-  return true;
-}
-
 void RelocalizationManagerNode::registeredPcdCallback(
   const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
@@ -2356,7 +1162,6 @@ void RelocalizationManagerNode::registeredPcdCallback(
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr scan(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::fromROSMsg(*msg, *scan);
-  queueScanContextInput(msg->header, scan);
   if (small_gicp_verifier_) {
     if (reset_accumulated_cloud_.exchange(false)) {
       accumulated_cloud_->clear();
@@ -2413,52 +1218,6 @@ void RelocalizationManagerNode::performRegistration()
     }
   }
 
-  const bool manual_scan_context_query = force_scan_context_query_once_.exchange(false);
-  const bool startup_scan_context_query = scan_context_startup_query_pending_.exchange(false);
-  const bool force_scan_context_query = manual_scan_context_query || startup_scan_context_query;
-  if (force_scan_context_query) {
-    if (!isScanContextFreeSpaceMapReady()) {
-      if (manual_scan_context_query) {
-        force_scan_context_query_once_.store(true);
-      }
-      if (startup_scan_context_query) {
-        scan_context_startup_query_pending_.store(true);
-      }
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(), *this->get_clock(), 5000,
-        "Scan Context query is still pending because free-space map is not available yet. "
-        "topic=%s",
-        scan_context_free_space_topic_.c_str());
-    } else {
-      VerificationResult scan_context_verification;
-      const std::string reason = manual_scan_context_query ? "manual_trigger" : "startup";
-      if (verifyWithScanContextCandidates(*accumulated_cloud_, reason, scan_context_verification)) {
-        if (isRobotMoving()) {
-          resetAcceptedGicpVerificationStreak();
-          accumulated_cloud_->clear();
-          return;
-        }
-        current_map_to_odom_ = scan_context_verification.transform;
-        previous_map_to_odom_ = scan_context_verification.transform;
-        consecutive_gicp_failures_ = 0;
-        recordAcceptedGicpVerification(std::string("Scan Context accepted: ") + reason);
-        accumulated_cloud_->clear();
-        return;
-      }
-
-      if (startup_scan_context_query) {
-        pcl::PointCloud<pcl::PointXYZ> latest_cloud;
-        rclcpp::Time latest_stamp;
-        if (!getLatestScanContextCloud(latest_cloud, latest_stamp)) {
-          scan_context_startup_query_pending_.store(true);
-          RCLCPP_DEBUG_THROTTLE(
-            this->get_logger(), *this->get_clock(), 5000,
-            "Startup Scan Context query is still pending because no descriptor is ready yet.");
-        }
-      }
-    }
-  }
-
   if (isLocalized()) {
     RCLCPP_DEBUG_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
@@ -2492,24 +1251,6 @@ void RelocalizationManagerNode::performRegistration()
     startTeaserRelocalization(*accumulated_cloud_, "gicp_failure", false)) {
     accumulated_cloud_->clear();
     return;
-  }
-
-  if (
-    scan_context_query_on_gicp_failure_ && isScanContextQueryMode(scan_context_params_) &&
-    consecutive_gicp_failures_ >= scan_context_failure_trigger_count_) {
-    VerificationResult scan_context_verification;
-    if (verifyWithScanContextCandidates(
-          *accumulated_cloud_, "gicp_failure", scan_context_verification)) {
-      if (isRobotMoving()) {
-        resetAcceptedGicpVerificationStreak();
-        accumulated_cloud_->clear();
-        return;
-      }
-      current_map_to_odom_ = scan_context_verification.transform;
-      previous_map_to_odom_ = scan_context_verification.transform;
-      consecutive_gicp_failures_ = 0;
-      recordAcceptedGicpVerification("Scan Context recovery accepted");
-    }
   }
 
   accumulated_cloud_->clear();
