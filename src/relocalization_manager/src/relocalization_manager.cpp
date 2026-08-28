@@ -152,18 +152,6 @@ bool SmallGicpVerifier::loadGlobalMap(const std::string & file_name)
   return true;
 }
 
-bool SmallGicpVerifier::setGlobalMap(const pcl::PointCloud<pcl::PointXYZ> & global_map)
-{
-  if (global_map.empty()) {
-    RCLCPP_ERROR(logger_, "Cannot configure Small GICP with an empty global map.");
-    return false;
-  }
-
-  *global_map_ = global_map;
-  prepareTarget();
-  return target_ && !target_->empty() && target_tree_;
-}
-
 void SmallGicpVerifier::transformGlobalMap(
   const Eigen::Affine3d & transform, const std::string & label)
 {
@@ -285,17 +273,6 @@ void SmallGicpVerifier::prepareTarget()
 VerificationResult SmallGicpVerifier::verify(
   const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud, const Eigen::Isometry3d & initial_guess)
 {
-  GicpDeltaGate delta_gate;
-  delta_gate.max_delta_xy = params_.max_delta_xy;
-  delta_gate.max_delta_z = params_.max_delta_z;
-  delta_gate.max_delta_yaw = params_.max_delta_yaw;
-  return verify(accumulated_cloud, initial_guess, delta_gate, "local", params_.max_iterations);
-}
-
-VerificationResult SmallGicpVerifier::verify(
-  const pcl::PointCloud<pcl::PointXYZ> & accumulated_cloud, const Eigen::Isometry3d & initial_guess,
-  const GicpDeltaGate & delta_gate, const std::string & delta_gate_label, int max_iterations)
-{
   VerificationResult verification;
   verification.transform = initial_guess;
 
@@ -349,7 +326,7 @@ VerificationResult SmallGicpVerifier::verify(
 
   register_->reduction.num_threads = params_.num_threads;
   register_->rejector.max_dist_sq = params_.max_dist_sq;
-  const int bounded_max_iterations = std::max(1, max_iterations);
+  const int bounded_max_iterations = std::max(1, params_.max_iterations);
   register_->optimizer.max_iterations = bounded_max_iterations;
 
   const auto result = register_->align(*target_, *source, *target_tree_, initial_guess);
@@ -398,34 +375,32 @@ VerificationResult SmallGicpVerifier::verify(
   }
 
   if (
-    std::abs(delta_translation.x()) > delta_gate.max_delta_xy ||
-    std::abs(delta_translation.y()) > delta_gate.max_delta_xy ||
-    std::abs(delta_translation.z()) > delta_gate.max_delta_z ||
-    std::abs(delta_yaw) > delta_gate.max_delta_yaw) {
+    std::abs(delta_translation.x()) > params_.max_delta_xy ||
+    std::abs(delta_translation.y()) > params_.max_delta_xy ||
+    std::abs(delta_translation.z()) > params_.max_delta_z ||
+    std::abs(delta_yaw) > params_.max_delta_yaw) {
     RCLCPP_WARN(
       logger_,
-      "GICP converged but rejected by %s pose delta gate: iterations=%zu error=%.2f "
+      "GICP converged but rejected by local pose delta gate: iterations=%zu error=%.2f "
       "mean_error=%.2f inliers_ratio=%zu/%zu ratio=%.3f "
       "max_iterations=%d delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] "
       "limit=[xy=%.3f, z=%.3f, yaw=%.3f]",
-      delta_gate_label.c_str(), result.iterations, result.error, mean_error, result.num_inliers,
-      source->size(), inlier_ratio, bounded_max_iterations, delta_translation.x(),
-      delta_translation.y(), delta_translation.z(), delta_yaw, delta_gate.max_delta_xy,
-      delta_gate.max_delta_z, delta_gate.max_delta_yaw);
+      result.iterations, result.error, mean_error, result.num_inliers, source->size(), inlier_ratio,
+      bounded_max_iterations, delta_translation.x(), delta_translation.y(), delta_translation.z(),
+      delta_yaw, params_.max_delta_xy, params_.max_delta_z, params_.max_delta_yaw);
     return verification;
   }
 
   RCLCPP_INFO(
     logger_,
-    "GICP converge successfully with %s pose delta gate!: iterations=%zu error=%.2f "
+    "GICP converge successfully with local pose delta gate!: iterations=%zu error=%.2f "
     "mean_error=%.2f "
     "inliers_ratio=%zu/%zu ratio=%.3f "
     "max_iterations=%d delta=[dx=%.3f, dy=%.3f, dz=%.3f, dyaw=%.3f] "
     "limit=[xy=%.3f, z=%.3f, yaw=%.3f]",
-    delta_gate_label.c_str(), result.iterations, result.error, mean_error, result.num_inliers,
-    source->size(), inlier_ratio, bounded_max_iterations, delta_translation.x(),
-    delta_translation.y(), delta_translation.z(), delta_yaw, delta_gate.max_delta_xy,
-    delta_gate.max_delta_z, delta_gate.max_delta_yaw);
+    result.iterations, result.error, mean_error, result.num_inliers, source->size(), inlier_ratio,
+    bounded_max_iterations, delta_translation.x(), delta_translation.y(), delta_translation.z(),
+    delta_yaw, params_.max_delta_xy, params_.max_delta_z, params_.max_delta_yaw);
   verification.accepted = true;
   verification.transform = result.T_target_source;
   return verification;
@@ -521,9 +496,6 @@ void RelocalizationManagerNode::setLocalizationState(
 
   const LocalizationState previous_state = localization_state_;
   localization_state_ = state;
-  if (state == LocalizationState::LOCALIZED) {
-    teaser_startup_query_pending_.store(false);
-  }
   const std::string previous_label = localizationStateLogLabel(previous_state);
   const std::string current_label = localizationStateLogLabel(localization_state_);
   RCLCPP_INFO(
@@ -593,50 +565,6 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("motion_command_timeout", 0.5);
   this->declare_parameter("required_consecutive_gicp_acceptances", 5);
   this->declare_parameter("transform_prior_map_with_lidar_offset", false);
-  this->declare_parameter("teaser_enabled", true);
-  this->declare_parameter("teaser_query_on_startup", true);
-  this->declare_parameter("teaser_query_on_gicp_failure", true);
-  this->declare_parameter("teaser_failure_trigger_count", 5);
-  this->declare_parameter("teaser_retry_interval", 3.0);
-  this->declare_parameter("teaser_num_threads", 4);
-  this->declare_parameter("teaser_min_source_points", 1000);
-  this->declare_parameter("teaser_min_feature_points", 50);
-  this->declare_parameter("teaser_min_correspondences", 30);
-  this->declare_parameter("teaser_max_correspondences", 500);
-  this->declare_parameter("teaser_voxel_size", 0.5);
-  this->declare_parameter("teaser_normal_radius", 1.0);
-  this->declare_parameter("teaser_fpfh_radius", 2.0);
-  this->declare_parameter("teaser_cross_check", true);
-  this->declare_parameter("teaser_feature_ratio_threshold", 0.90);
-  this->declare_parameter("teaser_noise_bound", 0.4);
-  this->declare_parameter("teaser_cbar2", 2.0);
-  this->declare_parameter("teaser_rotation_max_iterations", 100);
-  this->declare_parameter("teaser_rotation_gnc_factor", 1.4);
-  this->declare_parameter("teaser_rotation_cost_threshold", 0.005);
-  this->declare_parameter("teaser_max_clique_time_limit", 1.0);
-  this->declare_parameter("teaser_use_exact_max_clique", true);
-  this->declare_parameter("teaser_overlap_map_leaf_size", 0.10);
-  this->declare_parameter("teaser_overlap_source_leaf_size", 0.20);
-  this->declare_parameter("teaser_initial_overlap_max_distance", 0.8);
-  this->declare_parameter("teaser_initial_min_overlap_ratio", 0.45);
-  this->declare_parameter("teaser_initial_min_overlap_points", 200);
-  this->declare_parameter("teaser_initial_max_overlap_rmse", 0.45);
-  this->declare_parameter("teaser_coarse_num_neighbors", 20);
-  this->declare_parameter("teaser_coarse_global_leaf_size", 0.25);
-  this->declare_parameter("teaser_coarse_registered_leaf_size", 0.20);
-  this->declare_parameter("teaser_coarse_max_dist_sq", 1.44);
-  this->declare_parameter("teaser_coarse_prior_neighbor_max_distance", 1.2);
-  this->declare_parameter("teaser_coarse_max_mean_error", 0.50);
-  this->declare_parameter("teaser_coarse_min_inlier_ratio", 0.55);
-  this->declare_parameter("teaser_coarse_min_inliers", 300);
-  this->declare_parameter("teaser_coarse_max_iterations", 60);
-  this->declare_parameter("teaser_coarse_max_delta_xy", 1.0);
-  this->declare_parameter("teaser_coarse_max_delta_z", 0.40);
-  this->declare_parameter("teaser_coarse_max_delta_yaw", 0.52);
-  this->declare_parameter("teaser_coarse_overlap_max_distance", 0.40);
-  this->declare_parameter("teaser_coarse_min_overlap_ratio", 0.65);
-  this->declare_parameter("teaser_coarse_min_overlap_points", 500);
-  this->declare_parameter("teaser_coarse_max_overlap_rmse", 0.25);
   this->get_parameter("num_threads", small_gicp_params_.num_threads);
   this->get_parameter("num_neighbors", small_gicp_params_.num_neighbors);
   this->get_parameter("max_iterations", small_gicp_params_.max_iterations);
@@ -674,135 +602,12 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
     "required_consecutive_gicp_acceptances", required_consecutive_gicp_acceptances_);
   this->get_parameter(
     "transform_prior_map_with_lidar_offset", transform_prior_map_with_lidar_offset_);
-  this->get_parameter("teaser_enabled", teaser_params_.enabled);
-  this->get_parameter("teaser_query_on_startup", teaser_query_on_startup_);
-  this->get_parameter("teaser_query_on_gicp_failure", teaser_query_on_gicp_failure_);
-  this->get_parameter("teaser_failure_trigger_count", teaser_failure_trigger_count_);
-  this->get_parameter("teaser_retry_interval", teaser_retry_interval_);
-  this->get_parameter("teaser_num_threads", teaser_params_.num_threads);
-  this->get_parameter("teaser_min_source_points", teaser_params_.min_source_points);
-  this->get_parameter("teaser_min_feature_points", teaser_params_.min_feature_points);
-  this->get_parameter("teaser_min_correspondences", teaser_params_.min_correspondences);
-  this->get_parameter("teaser_max_correspondences", teaser_params_.max_correspondences);
-  this->get_parameter("teaser_voxel_size", teaser_params_.voxel_size);
-  this->get_parameter("teaser_normal_radius", teaser_params_.normal_radius);
-  this->get_parameter("teaser_fpfh_radius", teaser_params_.fpfh_radius);
-  this->get_parameter("teaser_cross_check", teaser_params_.cross_check);
-  this->get_parameter("teaser_feature_ratio_threshold", teaser_params_.feature_ratio_threshold);
-  this->get_parameter("teaser_noise_bound", teaser_params_.noise_bound);
-  this->get_parameter("teaser_cbar2", teaser_params_.cbar2);
-  this->get_parameter("teaser_rotation_max_iterations", teaser_params_.rotation_max_iterations);
-  this->get_parameter("teaser_rotation_gnc_factor", teaser_params_.rotation_gnc_factor);
-  this->get_parameter("teaser_rotation_cost_threshold", teaser_params_.rotation_cost_threshold);
-  this->get_parameter("teaser_max_clique_time_limit", teaser_params_.max_clique_time_limit);
-  this->get_parameter("teaser_use_exact_max_clique", teaser_params_.use_exact_max_clique);
-  this->get_parameter("teaser_overlap_map_leaf_size", teaser_params_.overlap_map_leaf_size);
-  this->get_parameter("teaser_overlap_source_leaf_size", teaser_params_.overlap_source_leaf_size);
-  this->get_parameter(
-    "teaser_initial_overlap_max_distance", teaser_params_.initial_overlap_max_distance);
-  this->get_parameter("teaser_initial_min_overlap_ratio", teaser_params_.initial_min_overlap_ratio);
-  this->get_parameter(
-    "teaser_initial_min_overlap_points", teaser_params_.initial_min_overlap_points);
-  this->get_parameter("teaser_initial_max_overlap_rmse", teaser_params_.initial_max_overlap_rmse);
-  this->get_parameter("teaser_coarse_num_neighbors", teaser_coarse_gicp_params_.num_neighbors);
-  this->get_parameter(
-    "teaser_coarse_global_leaf_size", teaser_coarse_gicp_params_.global_leaf_size);
-  this->get_parameter(
-    "teaser_coarse_registered_leaf_size", teaser_coarse_gicp_params_.registered_leaf_size);
-  this->get_parameter("teaser_coarse_max_dist_sq", teaser_coarse_gicp_params_.max_dist_sq);
-  this->get_parameter(
-    "teaser_coarse_prior_neighbor_max_distance",
-    teaser_coarse_gicp_params_.prior_neighbor_max_distance);
-  this->get_parameter("teaser_coarse_max_mean_error", teaser_coarse_gicp_params_.max_mean_error);
-  this->get_parameter(
-    "teaser_coarse_min_inlier_ratio", teaser_coarse_gicp_params_.min_inlier_ratio);
-  this->get_parameter("teaser_coarse_min_inliers", teaser_coarse_gicp_params_.min_inliers);
-  this->get_parameter("teaser_coarse_max_iterations", teaser_coarse_max_iterations_);
-  this->get_parameter("teaser_coarse_max_delta_xy", teaser_coarse_delta_gate_.max_delta_xy);
-  this->get_parameter("teaser_coarse_max_delta_z", teaser_coarse_delta_gate_.max_delta_z);
-  this->get_parameter("teaser_coarse_max_delta_yaw", teaser_coarse_delta_gate_.max_delta_yaw);
-  this->get_parameter("teaser_coarse_overlap_max_distance", teaser_coarse_overlap_max_distance_);
-  this->get_parameter("teaser_coarse_min_overlap_ratio", teaser_coarse_min_overlap_ratio_);
-  this->get_parameter("teaser_coarse_min_overlap_points", teaser_coarse_min_overlap_points_);
-  this->get_parameter("teaser_coarse_max_overlap_rmse", teaser_coarse_max_overlap_rmse_);
   required_consecutive_gicp_acceptances_ = std::max(1, required_consecutive_gicp_acceptances_);
   if (!std::isfinite(moving_linear_speed_threshold_) || moving_linear_speed_threshold_ < 0.0) {
     moving_linear_speed_threshold_ = 0.05;
   }
   if (!std::isfinite(motion_command_timeout_) || motion_command_timeout_ <= 0.0) {
     motion_command_timeout_ = 0.5;
-  }
-  teaser_failure_trigger_count_ = std::max(1, teaser_failure_trigger_count_);
-  teaser_params_.num_threads = std::max(1, teaser_params_.num_threads);
-  teaser_params_.min_source_points = std::max(1, teaser_params_.min_source_points);
-  teaser_params_.min_feature_points = std::max(3, teaser_params_.min_feature_points);
-  teaser_params_.min_correspondences = std::max(3, teaser_params_.min_correspondences);
-  teaser_params_.max_correspondences =
-    std::max(teaser_params_.min_correspondences, teaser_params_.max_correspondences);
-  teaser_params_.rotation_max_iterations = std::max(1, teaser_params_.rotation_max_iterations);
-  teaser_params_.initial_min_overlap_points =
-    std::max(1, teaser_params_.initial_min_overlap_points);
-  teaser_coarse_gicp_params_.num_threads = teaser_params_.num_threads;
-  teaser_coarse_gicp_params_.min_inliers = std::max(1, teaser_coarse_gicp_params_.min_inliers);
-  teaser_coarse_gicp_params_.filter_source_by_prior_map = true;
-  teaser_coarse_gicp_params_.max_iterations = std::max(1, teaser_coarse_max_iterations_);
-  teaser_coarse_gicp_params_.max_delta_xy = teaser_coarse_delta_gate_.max_delta_xy;
-  teaser_coarse_gicp_params_.max_delta_z = teaser_coarse_delta_gate_.max_delta_z;
-  teaser_coarse_gicp_params_.max_delta_yaw = teaser_coarse_delta_gate_.max_delta_yaw;
-  teaser_coarse_max_iterations_ = std::max(1, teaser_coarse_max_iterations_);
-  teaser_coarse_min_overlap_points_ = std::max(1, teaser_coarse_min_overlap_points_);
-
-  const bool teaser_parameters_valid =
-    std::isfinite(teaser_retry_interval_) && teaser_retry_interval_ >= 0.0 &&
-    std::isfinite(teaser_params_.voxel_size) && teaser_params_.voxel_size > 0.0 &&
-    std::isfinite(teaser_params_.normal_radius) && teaser_params_.normal_radius > 0.0 &&
-    std::isfinite(teaser_params_.fpfh_radius) &&
-    teaser_params_.fpfh_radius > teaser_params_.normal_radius &&
-    std::isfinite(teaser_params_.feature_ratio_threshold) &&
-    teaser_params_.feature_ratio_threshold > 0.0 && teaser_params_.feature_ratio_threshold <= 1.0 &&
-    std::isfinite(teaser_params_.noise_bound) && teaser_params_.noise_bound > 0.0 &&
-    std::isfinite(teaser_params_.cbar2) && teaser_params_.cbar2 > 0.0 &&
-    std::isfinite(teaser_params_.rotation_gnc_factor) && teaser_params_.rotation_gnc_factor > 1.0 &&
-    std::isfinite(teaser_params_.rotation_cost_threshold) &&
-    teaser_params_.rotation_cost_threshold > 0.0 &&
-    std::isfinite(teaser_params_.max_clique_time_limit) &&
-    teaser_params_.max_clique_time_limit > 0.0 &&
-    std::isfinite(teaser_params_.overlap_map_leaf_size) &&
-    teaser_params_.overlap_map_leaf_size > 0.0 &&
-    std::isfinite(teaser_params_.overlap_source_leaf_size) &&
-    teaser_params_.overlap_source_leaf_size > 0.0 &&
-    std::isfinite(teaser_params_.initial_overlap_max_distance) &&
-    teaser_params_.initial_overlap_max_distance > 0.0 &&
-    std::isfinite(teaser_params_.initial_min_overlap_ratio) &&
-    teaser_params_.initial_min_overlap_ratio >= 0.0 &&
-    teaser_params_.initial_min_overlap_ratio <= 1.0 &&
-    std::isfinite(teaser_params_.initial_max_overlap_rmse) &&
-    teaser_params_.initial_max_overlap_rmse > 0.0 && teaser_coarse_gicp_params_.num_neighbors > 0 &&
-    teaser_coarse_gicp_params_.global_leaf_size > 0.0F &&
-    teaser_coarse_gicp_params_.registered_leaf_size > 0.0F &&
-    teaser_coarse_gicp_params_.max_dist_sq > 0.0F &&
-    std::isfinite(teaser_coarse_gicp_params_.prior_neighbor_max_distance) &&
-    teaser_coarse_gicp_params_.prior_neighbor_max_distance > 0.0 &&
-    std::isfinite(teaser_coarse_gicp_params_.max_mean_error) &&
-    teaser_coarse_gicp_params_.max_mean_error > 0.0 &&
-    std::isfinite(teaser_coarse_gicp_params_.min_inlier_ratio) &&
-    teaser_coarse_gicp_params_.min_inlier_ratio >= 0.0 &&
-    teaser_coarse_gicp_params_.min_inlier_ratio <= 1.0 &&
-    std::isfinite(teaser_coarse_delta_gate_.max_delta_xy) &&
-    teaser_coarse_delta_gate_.max_delta_xy >= 0.0 &&
-    std::isfinite(teaser_coarse_delta_gate_.max_delta_z) &&
-    teaser_coarse_delta_gate_.max_delta_z >= 0.0 &&
-    std::isfinite(teaser_coarse_delta_gate_.max_delta_yaw) &&
-    teaser_coarse_delta_gate_.max_delta_yaw >= 0.0 &&
-    std::isfinite(teaser_coarse_overlap_max_distance_) &&
-    teaser_coarse_overlap_max_distance_ > 0.0 && std::isfinite(teaser_coarse_min_overlap_ratio_) &&
-    teaser_coarse_min_overlap_ratio_ >= 0.0 && teaser_coarse_min_overlap_ratio_ <= 1.0 &&
-    std::isfinite(teaser_coarse_max_overlap_rmse_) && teaser_coarse_max_overlap_rmse_ > 0.0;
-  if (teaser_params_.enabled && !teaser_parameters_valid) {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "TEASER++ parameters are invalid. Global TEASER++ relocalization will be disabled.");
-    teaser_params_.enabled = false;
   }
 
   if (!init_pose_.empty() && init_pose_.size() >= 6) {
@@ -826,7 +631,6 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
     maybeApplyLidarOffsetToPriorMap();
     publishPriorPcdMap(small_gicp_verifier_->globalMap());
   }
-  configureTeaserRelocalization();
 
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
     input_cloud_topic_, 10,
@@ -846,251 +650,6 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
 
   transform_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(50), std::bind(&RelocalizationManagerNode::publishTransform, this));
-}
-
-RelocalizationManagerNode::~RelocalizationManagerNode()
-{
-  if (teaser_future_.valid()) {
-    teaser_future_.wait();
-  }
-}
-
-void RelocalizationManagerNode::configureTeaserRelocalization()
-{
-  if (!teaser_params_.enabled) {
-    RCLCPP_INFO(this->get_logger(), "TEASER++ global relocalization is disabled.");
-    return;
-  }
-  if (!small_gicp_verifier_ || small_gicp_verifier_->globalMap().empty()) {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "TEASER++ global relocalization requires a loaded prior PCD map and will stay disabled.");
-    teaser_params_.enabled = false;
-    return;
-  }
-
-  teaser_relocalizer_ = std::make_unique<TeaserRelocalizer>(teaser_params_);
-  std::string setup_reason;
-  if (!teaser_relocalizer_->setGlobalMap(small_gicp_verifier_->globalMap(), setup_reason)) {
-    RCLCPP_ERROR(
-      this->get_logger(), "Failed to prepare TEASER++ target map: reason=%s", setup_reason.c_str());
-    teaser_relocalizer_.reset();
-    teaser_params_.enabled = false;
-    return;
-  }
-
-  teaser_coarse_gicp_verifier_ = std::make_unique<SmallGicpVerifier>(
-    this->get_logger(), teaser_coarse_gicp_params_, std::vector<double>{});
-  if (!teaser_coarse_gicp_verifier_->setGlobalMap(small_gicp_verifier_->globalMap())) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to prepare the TEASER++ coarse GICP target map.");
-    teaser_coarse_gicp_verifier_.reset();
-    teaser_relocalizer_.reset();
-    teaser_params_.enabled = false;
-    return;
-  }
-
-  trigger_teaser_relocalization_service_ = this->create_service<std_srvs::srv::Trigger>(
-    "trigger_teaser_relocalization",
-    std::bind(
-      &RelocalizationManagerNode::triggerTeaserRelocalizationCallback, this, std::placeholders::_1,
-      std::placeholders::_2));
-  teaser_startup_query_pending_.store(teaser_query_on_startup_);
-  next_teaser_attempt_time_ = std::chrono::steady_clock::now();
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "TEASER++ global relocalization configured: target_features=%zu voxel=%.3f "
-    "normal_radius=%.3f fpfh_radius=%.3f noise_bound=%.3f min_correspondences=%d "
-    "coarse_prior_neighbor_max_distance=%.3f query_on_startup=%s "
-    "query_on_gicp_failure=%s failure_trigger_count=%d",
-    teaser_relocalizer_->targetFeaturePointCount(), teaser_params_.voxel_size,
-    teaser_params_.normal_radius, teaser_params_.fpfh_radius, teaser_params_.noise_bound,
-    teaser_params_.min_correspondences, teaser_coarse_gicp_params_.prior_neighbor_max_distance,
-    teaser_query_on_startup_ ? "true" : "false", teaser_query_on_gicp_failure_ ? "true" : "false",
-    teaser_failure_trigger_count_);
-}
-
-void RelocalizationManagerNode::triggerTeaserRelocalizationCallback(
-  const std::shared_ptr<std_srvs::srv::Trigger::Request> /*request*/,
-  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
-{
-  if (!teaser_params_.enabled || !teaser_relocalizer_ || !teaser_coarse_gicp_verifier_) {
-    response->success = false;
-    response->message = "TEASER++ global relocalization is not available";
-    return;
-  }
-  if (teaser_relocalization_running_.load()) {
-    response->success = false;
-    response->message = "TEASER++ global relocalization is already running";
-    return;
-  }
-
-  force_teaser_query_once_.store(true);
-  response->success = true;
-  response->message = "TEASER++ global relocalization queued";
-}
-
-bool RelocalizationManagerNode::startTeaserRelocalization(
-  const pcl::PointCloud<pcl::PointXYZ> & source, const std::string & reason, bool bypass_cooldown)
-{
-  if (
-    !teaser_params_.enabled || !teaser_relocalizer_ || !teaser_coarse_gicp_verifier_ ||
-    !small_gicp_verifier_ || teaser_relocalization_running_.load()) {
-    return false;
-  }
-
-  if (source.size() < static_cast<std::size_t>(teaser_params_.min_source_points)) {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(), *this->get_clock(), 3000,
-      "TEASER++ relocalization is waiting for more source points: reason=%s points=%zu "
-      "required=%d",
-      reason.c_str(), source.size(), teaser_params_.min_source_points);
-    return false;
-  }
-
-  const auto now = std::chrono::steady_clock::now();
-  if (!bypass_cooldown && now < next_teaser_attempt_time_) {
-    return false;
-  }
-
-  active_teaser_reason_ = reason;
-  teaser_relocalization_running_.store(true);
-  next_teaser_attempt_time_ = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                                      std::chrono::duration<double>(teaser_retry_interval_));
-  try {
-    teaser_future_ = std::async(std::launch::async, [this, source, reason]() {
-      return runTeaserRelocalization(source, reason);
-    });
-  } catch (const std::exception & exception) {
-    teaser_relocalization_running_.store(false);
-    RCLCPP_ERROR(
-      this->get_logger(), "Failed to start TEASER++ relocalization task: %s", exception.what());
-    return false;
-  }
-
-  RCLCPP_INFO(
-    this->get_logger(), "Started asynchronous TEASER++ relocalization: reason=%s points=%zu",
-    reason.c_str(), source.size());
-  return true;
-}
-
-bool RelocalizationManagerNode::acceptCoarseOverlap(const NearestNeighborMetrics & metrics) const
-{
-  return metrics.valid && metrics.overlap_ratio >= teaser_coarse_min_overlap_ratio_ &&
-         metrics.inliers >= static_cast<std::size_t>(teaser_coarse_min_overlap_points_) &&
-         metrics.rmse <= teaser_coarse_max_overlap_rmse_;
-}
-
-TeaserPipelineResult RelocalizationManagerNode::runTeaserRelocalization(
-  const pcl::PointCloud<pcl::PointXYZ> & source, const std::string & reason)
-{
-  TeaserPipelineResult pipeline;
-  pipeline.teaser = teaser_relocalizer_->align(source);
-  if (!pipeline.teaser.accepted) {
-    pipeline.reason = std::string("teaser_") + pipeline.teaser.reason;
-    RCLCPP_WARN(
-      this->get_logger(),
-      "TEASER++ coarse pose rejected: trigger=%s reason=%s source_features=%zu "
-      "target_features=%zu correspondences=%zu overlap=%zu/%zu ratio=%.3f rmse=%.3f "
-      "xyz=[%.3f, %.3f, %.3f] yaw=%.3f",
-      reason.c_str(), pipeline.teaser.reason.c_str(), pipeline.teaser.source_feature_points,
-      pipeline.teaser.target_feature_points, pipeline.teaser.correspondences,
-      pipeline.teaser.overlap.inliers, pipeline.teaser.overlap.source_points,
-      pipeline.teaser.overlap.overlap_ratio, pipeline.teaser.overlap.rmse,
-      pipeline.teaser.transform.translation().x(), pipeline.teaser.transform.translation().y(),
-      pipeline.teaser.transform.translation().z(),
-      std::atan2(
-        pipeline.teaser.transform.linear()(1, 0), pipeline.teaser.transform.linear()(0, 0)));
-    return pipeline;
-  }
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "TEASER++ coarse pose accepted: trigger=%s correspondences=%zu overlap=%zu/%zu "
-    "ratio=%.3f rmse=%.3f xyz=[%.3f, %.3f, %.3f]",
-    reason.c_str(), pipeline.teaser.correspondences, pipeline.teaser.overlap.inliers,
-    pipeline.teaser.overlap.source_points, pipeline.teaser.overlap.overlap_ratio,
-    pipeline.teaser.overlap.rmse, pipeline.teaser.transform.translation().x(),
-    pipeline.teaser.transform.translation().y(), pipeline.teaser.transform.translation().z());
-
-  pipeline.coarse_verification = teaser_coarse_gicp_verifier_->verify(
-    source, pipeline.teaser.transform, teaser_coarse_delta_gate_, "teaser_coarse",
-    teaser_coarse_max_iterations_);
-  if (!pipeline.coarse_verification.accepted) {
-    pipeline.reason = "coarse_gicp_rejected";
-    return pipeline;
-  }
-
-  pipeline.coarse_overlap = teaser_relocalizer_->evaluateOverlap(
-    source, pipeline.coarse_verification.transform, teaser_coarse_overlap_max_distance_);
-  if (!acceptCoarseOverlap(pipeline.coarse_overlap)) {
-    pipeline.reason = "coarse_overlap_rejected";
-    RCLCPP_WARN(
-      this->get_logger(),
-      "TEASER++ coarse GICP rejected by nearest-neighbor overlap: inliers=%zu/%zu "
-      "ratio=%.3f min_ratio=%.3f rmse=%.3f max_rmse=%.3f",
-      pipeline.coarse_overlap.inliers, pipeline.coarse_overlap.source_points,
-      pipeline.coarse_overlap.overlap_ratio, teaser_coarse_min_overlap_ratio_,
-      pipeline.coarse_overlap.rmse, teaser_coarse_max_overlap_rmse_);
-    return pipeline;
-  }
-
-  pipeline.final_verification =
-    small_gicp_verifier_->verify(source, pipeline.coarse_verification.transform);
-  if (!pipeline.final_verification.accepted) {
-    pipeline.reason = "final_gicp_rejected";
-    return pipeline;
-  }
-
-  pipeline.accepted = true;
-  pipeline.reason = "accepted";
-  return pipeline;
-}
-
-bool RelocalizationManagerNode::processTeaserRelocalizationResult()
-{
-  if (!teaser_relocalization_running_.load()) {
-    return false;
-  }
-  if (
-    !teaser_future_.valid() ||
-    teaser_future_.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    return true;
-  }
-
-  TeaserPipelineResult result;
-  try {
-    result = teaser_future_.get();
-  } catch (const std::exception & exception) {
-    result.reason = std::string("exception: ") + exception.what();
-  }
-  teaser_relocalization_running_.store(false);
-
-  if (result.accepted && !isRobotMoving()) {
-    current_map_to_odom_ = result.final_verification.transform;
-    previous_map_to_odom_ = result.final_verification.transform;
-    consecutive_gicp_failures_ = 0;
-    recordAcceptedGicpVerification(
-      std::string("TEASER++ recovery accepted: ") + active_teaser_reason_);
-    RCLCPP_INFO(
-      this->get_logger(),
-      "TEASER++ relocalization accepted: trigger=%s coarse_overlap=%zu/%zu ratio=%.3f "
-      "rmse=%.3f final_mean_error=%.6f final_inlier_ratio=%.3f xyz=[%.3f, %.3f, %.3f]",
-      active_teaser_reason_.c_str(), result.coarse_overlap.inliers,
-      result.coarse_overlap.source_points, result.coarse_overlap.overlap_ratio,
-      result.coarse_overlap.rmse, result.final_verification.mean_error,
-      result.final_verification.inlier_ratio, result.final_verification.transform.translation().x(),
-      result.final_verification.transform.translation().y(),
-      result.final_verification.transform.translation().z());
-  } else {
-    resetAcceptedGicpVerificationStreak();
-    RCLCPP_WARN(
-      this->get_logger(), "TEASER++ relocalization failed: trigger=%s reason=%s moving=%s",
-      active_teaser_reason_.c_str(), result.reason.c_str(), isRobotMoving() ? "true" : "false");
-  }
-
-  active_teaser_reason_.clear();
-  return true;
 }
 
 void RelocalizationManagerNode::publishPriorPcdMap(
@@ -1180,11 +739,6 @@ void RelocalizationManagerNode::performRegistration()
 
   expireStaleMotionCommand();
 
-  if (processTeaserRelocalizationResult()) {
-    accumulated_cloud_->clear();
-    return;
-  }
-
   if (reset_accumulated_cloud_.exchange(false)) {
     accumulated_cloud_->clear();
   }
@@ -1200,22 +754,6 @@ void RelocalizationManagerNode::performRegistration()
 
   if (accumulated_cloud_->empty()) {
     return;
-  }
-
-  const bool manual_teaser_query = force_teaser_query_once_.exchange(false);
-  const bool startup_teaser_query = teaser_startup_query_pending_.exchange(false);
-  if (manual_teaser_query || startup_teaser_query) {
-    const std::string reason = manual_teaser_query ? "manual_trigger" : "startup";
-    if (startTeaserRelocalization(*accumulated_cloud_, reason, manual_teaser_query)) {
-      accumulated_cloud_->clear();
-      return;
-    }
-    if (manual_teaser_query) {
-      force_teaser_query_once_.store(true);
-    }
-    if (startup_teaser_query) {
-      teaser_startup_query_pending_.store(true);
-    }
   }
 
   if (isLocalized()) {
@@ -1237,22 +775,12 @@ void RelocalizationManagerNode::performRegistration()
     }
     current_map_to_odom_ = verification.transform;
     previous_map_to_odom_ = verification.transform;
-    consecutive_gicp_failures_ = 0;
     recordAcceptedGicpVerification("local GICP accepted");
     accumulated_cloud_->clear();
     return;
   }
 
   resetAcceptedGicpVerificationStreak();
-  ++consecutive_gicp_failures_;
-  if (
-    teaser_params_.enabled && teaser_query_on_gicp_failure_ &&
-    consecutive_gicp_failures_ >= teaser_failure_trigger_count_ &&
-    startTeaserRelocalization(*accumulated_cloud_, "gicp_failure", false)) {
-    accumulated_cloud_->clear();
-    return;
-  }
-
   accumulated_cloud_->clear();
 }
 
@@ -1303,7 +831,6 @@ void RelocalizationManagerNode::initialPoseCallback(
     const Eigen::Isometry3d map_to_odom = map_to_robot_base * robot_base_to_odom;
 
     previous_map_to_odom_ = current_map_to_odom_ = map_to_odom;
-    consecutive_gicp_failures_ = 0;
     resetAcceptedGicpVerificationStreak();
     setLocalizationState(LocalizationState::LOCALIZING, "initial pose reset");
     RCLCPP_INFO(

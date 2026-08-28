@@ -8,6 +8,8 @@ RM27 导航栈的重定位管理器。它使用
 [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/Point-LIO) 或类似工具构建的先验点云，
 `RelocalizationManagerNode` 会计算两份点云之间的修正量。
 `SmallGicpVerifier` 只返回经过验证的候选位姿；它不会直接做决策或发布 TF。
+该节点不执行全局位姿搜索，启动时需要通过 `init_pose` 或 `/initialpose` 提供足够接近
+真实位姿的初值，再由 small_gicp 做局部校准。
 
 ## 依赖
 

@@ -39,6 +39,7 @@ LoamInterfaceNode::LoamInterfaceNode(const rclcpp::NodeOptions & options)
 
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
   tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
+  static_tf_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
 
   pcd_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("registered_scan", 5);
   odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("lidar_odometry", 5);
@@ -79,6 +80,18 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
       tf2::fromMsg(tf_stamped.transform, tf_base_frame_to_lidar);
       tf_odom_to_lidar_odom_ = tf_base_frame_to_lidar;
       base_frame_to_lidar_initialized_ = true;
+
+      if (!msg->header.frame_id.empty() && msg->header.frame_id != odom_frame_) {
+        geometry_msgs::msg::TransformStamped transform;
+        transform.header.stamp = msg->header.stamp;
+        transform.header.frame_id = odom_frame_;
+        transform.child_frame_id = msg->header.frame_id;
+        transform.transform = tf2::toMsg(tf_odom_to_lidar_odom_);
+        static_tf_broadcaster_->sendTransform(transform);
+        RCLCPP_INFO(
+          this->get_logger(), "Published static transform %s -> %s",
+          transform.header.frame_id.c_str(), transform.child_frame_id.c_str());
+      }
     } catch (tf2::TransformException & ex) {
       RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s Retrying...", ex.what());
       return;

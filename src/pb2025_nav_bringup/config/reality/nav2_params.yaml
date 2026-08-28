@@ -23,6 +23,47 @@ point_lio:
     ivox_nearby_type: 18                                # Options: 0, 6, 18, 26
     runtime_pos_log_enable: False                       # Option: True
 
+    estimator:
+      max_iterations: 1                                # Current IKFoM update is covariance-consistent for one iteration
+
+    input_guard:
+      min_scan_points: 100
+      max_scan_duration: 0.12
+      max_imu_time_gap: 0.03
+      max_lidar_queue: 5
+      max_imu_queue: 500
+
+    map_quality:
+      insertion_delay: 0.30
+      impact_pause: 0.50
+      min_effective_points: 10
+
+    adaptive:
+      spatial:
+        enabled: True
+        neighbors: [5, 10, 20]
+        max_query_ranges: [0.35, 0.70, 1.40]
+        max_curvature: 0.03
+        max_plane_residual: 0.10
+        normalized_residual_gate: 3.0
+        outlier_probability: 0.05
+        student_t_dof: 5.0
+        min_responsibility: 0.05
+        degeneracy_eigen_ratio: 0.0001
+      temporal:
+        enabled: True
+        min_points: 8
+        initial_target_points: 32
+        max_points: 128
+        min_duration_ms: 1.0
+        max_duration_ms: 10.0
+        max_translation: 0.02
+        max_rotation_deg: 0.8
+        latency_penalty: 0.02
+        information_ema_alpha: 0.10
+        hysteresis_ratio: 0.15
+        max_pose_covariance_trace: 1.0
+
     common:
       lid_topic: "livox/lidar"
       imu_topic: "livox/imu"
@@ -64,6 +105,8 @@ point_lio:
       plane_thr: 0.1                                    # 0.05, the threshold for plane criteria, the smaller, the flatter a plane
       match_s: 81.0
       ivox_grid_resolution: 0.5
+      max_neighbor_distance: 1.4
+      max_points_per_voxel: 64
       gravity: [ 0.0, 0.0, -1.0 ]                       # Livox driver compensates the physical -45 deg roll
       gravity_init: [ 0.0, 0.0, -1.0 ]                  # acc_norm is 1.0 on the real MID360 path
       extrinsic_T: [ -0.011, -0.02329, 0.04412 ]        # MID360 internal LiDAR pose in IMU frame, not base_link mounting
@@ -104,7 +147,7 @@ sensor_scan_generation:
 terrain_analysis:
   ros__parameters:
     scanVoxelSize: 0.05                 # 点云下采样
-    decayTime: 0.3                      # 点云时间差阈值 大于则不会被处理；实车短一点可减少瞬时幽灵点残留
+    decayTime: 0.5                      # 点云时间差阈值 大于则不会被处理；实车短一点可减少瞬时幽灵点残留
     noDecayDis: 0.0                     # 点云距离阈值 小于该阈值不考虑时间差
     clearingDis: 0.0                    # 该距离外的点会被清除
     useSorting: True                    # 这个参数开起来就能上坡了；如果 use_sorting,那么就以周围点中的分位点作为地面点，否则以最低点作为地面点；周围其余点相对于地面点的高度作为通过代价，所以对于坡面，有的点的代价是正，有的是负，就相互抵消了；不要与 consider_drop 同时开启，计算上会有冲突
@@ -133,7 +176,7 @@ terrain_analysis:
 terrain_analysis_ext:
   ros__parameters:
     scanVoxelSize: 0.1
-    decayTime: 0.2
+    decayTime: 0.5
     noDecayDis: 0.0
     clearingDis: 20.0
     useSorting: true
@@ -172,7 +215,7 @@ relocalization_manager:
     max_dist_sq: 3.0
     max_mean_error: 0.30
     min_inlier_ratio: 0.75
-    min_inliers: 1000
+    min_inliers: 800
     max_delta_xy: 0.25
     max_delta_z: 0.15
     max_delta_yaw: 0.1745329252 # 10 deg
@@ -190,50 +233,6 @@ relocalization_manager:
     init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
     prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
     transform_prior_map_with_lidar_offset: False # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上
-    teaser_enabled: true
-    teaser_query_on_startup: true
-    teaser_query_on_gicp_failure: true
-    teaser_failure_trigger_count: 8
-    teaser_retry_interval: 3.0
-    teaser_num_threads: 4
-    teaser_min_source_points: 1000
-    teaser_min_feature_points: 50
-    teaser_min_correspondences: 30
-    teaser_max_correspondences: 500
-    teaser_voxel_size: 0.5
-    teaser_normal_radius: 1.0
-    teaser_fpfh_radius: 2.0
-    teaser_cross_check: true
-    teaser_feature_ratio_threshold: 0.90
-    teaser_noise_bound: 0.4
-    teaser_cbar2: 2.0
-    teaser_rotation_max_iterations: 100
-    teaser_rotation_gnc_factor: 1.4
-    teaser_rotation_cost_threshold: 0.005
-    teaser_max_clique_time_limit: 1.0
-    teaser_use_exact_max_clique: true
-    teaser_overlap_map_leaf_size: 0.10
-    teaser_overlap_source_leaf_size: 0.20
-    teaser_initial_overlap_max_distance: 0.8
-    teaser_initial_min_overlap_ratio: 0.45
-    teaser_initial_min_overlap_points: 200
-    teaser_initial_max_overlap_rmse: 0.45
-    teaser_coarse_num_neighbors: 20
-    teaser_coarse_global_leaf_size: 0.25
-    teaser_coarse_registered_leaf_size: 0.20
-    teaser_coarse_max_dist_sq: 1.44
-    teaser_coarse_prior_neighbor_max_distance: 1.2
-    teaser_coarse_max_mean_error: 0.50
-    teaser_coarse_min_inlier_ratio: 0.55
-    teaser_coarse_min_inliers: 300
-    teaser_coarse_max_iterations: 60
-    teaser_coarse_max_delta_xy: 1.0
-    teaser_coarse_max_delta_z: 0.40
-    teaser_coarse_max_delta_yaw: 0.52
-    teaser_coarse_overlap_max_distance: 0.40
-    teaser_coarse_min_overlap_ratio: 0.65
-    teaser_coarse_min_overlap_points: 500
-    teaser_coarse_max_overlap_rmse: 0.25
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
     # prior_pcd_file: ""
 

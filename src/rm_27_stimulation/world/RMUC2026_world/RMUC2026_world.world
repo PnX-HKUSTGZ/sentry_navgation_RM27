@@ -22,6 +22,59 @@
       <background>0.7 0.7 0.7 1</background>
       <shadows>1</shadows>
     </scene>
+
+    <gui fullscreen='0'>
+      <plugin name='3D View' filename='GzScene3D'>
+        <gz-gui>
+          <title>3D View</title>
+          <property type='bool' key='showTitleBar'>0</property>
+          <property type='string' key='state'>docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.7 0.7 0.7</background_color>
+        <camera_pose>-10 1.64 30 0 1.249 0</camera_pose>
+      </plugin>
+      <plugin name='World control' filename='WorldControl'>
+        <gz-gui>
+          <title>World control</title>
+          <property type='bool' key='showTitleBar'>0</property>
+          <property type='bool' key='resizable'>0</property>
+          <property type='double' key='height'>72</property>
+          <property type='double' key='width'>121</property>
+          <property type='double' key='z'>1</property>
+          <property type='string' key='state'>floating</property>
+          <anchors target='3D View'>
+            <line own='left' target='left'/>
+            <line own='bottom' target='bottom'/>
+          </anchors>
+        </gz-gui>
+        <play_pause>1</play_pause>
+        <step>1</step>
+        <start_paused>0</start_paused>
+      </plugin>
+      <plugin name='World stats' filename='WorldStats'>
+        <gz-gui>
+          <title>World stats</title>
+          <property type='bool' key='showTitleBar'>0</property>
+          <property type='bool' key='resizable'>0</property>
+          <property type='double' key='height'>110</property>
+          <property type='double' key='width'>290</property>
+          <property type='double' key='z'>1</property>
+          <property type='string' key='state'>floating</property>
+          <anchors target='3D View'>
+            <line own='right' target='right'/>
+            <line own='bottom' target='bottom'/>
+          </anchors>
+        </gz-gui>
+        <sim_time>1</sim_time>
+        <real_time>1</real_time>
+        <real_time_factor>1</real_time_factor>
+        <iterations>1</iterations>
+      </plugin>
+      <plugin name='Entity tree' filename='EntityTree'/>
+    </gui>
     
     <!-- 光源 -->
     <light name='sun' type='directional'>
