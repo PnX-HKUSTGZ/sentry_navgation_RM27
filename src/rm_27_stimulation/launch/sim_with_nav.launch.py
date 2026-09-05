@@ -23,7 +23,12 @@ def _launch_sim_stack(context, *args, **kwargs):
     worlds_config_path = LaunchConfiguration("worlds_config").perform(context)
     world_name = LaunchConfiguration("world").perform(context)
     nav_world = LaunchConfiguration("nav_world").perform(context)
-    nav_start_delay = float(LaunchConfiguration("nav_start_delay").perform(context))
+    spawn_delay = float(LaunchConfiguration("spawn_delay").perform(context))
+    requested_nav_start_delay = float(
+        LaunchConfiguration("nav_start_delay").perform(context)
+    )
+    # Give ros_gz_sim create time to receive the robot description and finish insertion.
+    nav_start_delay = max(requested_nav_start_delay, spawn_delay + 2.0)
 
     if nav_world == "auto":
         worlds = _load_yaml(worlds_config_path).get("worlds", {})
@@ -55,6 +60,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "pause": LaunchConfiguration("pause").perform(context),
                 "physics_engine": LaunchConfiguration("physics_engine").perform(context),
                 "extra_gazebo_args": LaunchConfiguration("extra_gazebo_args").perform(context),
+                "gui_config": LaunchConfiguration("gui_config").perform(context),
                 "use_ros_gz_bridge": LaunchConfiguration("use_ros_gz_bridge").perform(context),
                 "bridge_config": LaunchConfiguration("bridge_config").perform(context),
             }.items(),
@@ -65,6 +71,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "sim_world": world_name,
                 "worlds_config": worlds_config_path,
                 "use_sim_time": LaunchConfiguration("use_sim_time").perform(context),
+                "spawn_delay": LaunchConfiguration("spawn_delay").perform(context),
             }.items(),
         ),
         TimerAction(
@@ -82,6 +89,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                         "use_composition": LaunchConfiguration("use_composition"),
                         "use_respawn": LaunchConfiguration("use_respawn"),
                         "use_rviz": LaunchConfiguration("use_rviz"),
+                        "use_ground_truth_odom": LaunchConfiguration("use_ground_truth_odom"),
                     }.items(),
                 )
             ],
@@ -140,13 +148,21 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "physics_engine",
-                default_value="gz-physics-bullet-plugin",
-                description="Gazebo physics engine plugin. Use an empty value for Gazebo default.",
+                default_value="gz-physics-dartsim-plugin",
+                description=(
+                    "Gazebo physics engine plugin. DART is required by the planar "
+                    "velocity controller to retain STL terrain contacts."
+                ),
             ),
             DeclareLaunchArgument(
                 "extra_gazebo_args",
                 default_value="",
                 description="Additional raw arguments passed to Gazebo Harmonic",
+            ),
+            DeclareLaunchArgument(
+                "gui_config",
+                default_value=os.path.join(sim_share, "config", "gazebo_gui.config"),
+                description="Project-local Gazebo GUI configuration",
             ),
             DeclareLaunchArgument(
                 "use_ros_gz_bridge",
@@ -162,6 +178,11 @@ def generate_launch_description():
                 "use_rviz",
                 default_value="true",
                 description="Start RViz from pb2025_nav_bringup",
+            ),
+            DeclareLaunchArgument(
+                "use_ground_truth_odom",
+                default_value="true",
+                description="Use Gazebo ground truth for simulation navigation localization",
             ),
             DeclareLaunchArgument(
                 "use_sim_time",
@@ -194,6 +215,11 @@ def generate_launch_description():
                 "nav_start_delay",
                 default_value="8.0",
                 description="Delay before starting navigation, in seconds",
+            ),
+            DeclareLaunchArgument(
+                "spawn_delay",
+                default_value="6.0",
+                description="Delay before spawning the robot, in seconds",
             ),
             OpaqueFunction(function=_launch_sim_stack),
         ]

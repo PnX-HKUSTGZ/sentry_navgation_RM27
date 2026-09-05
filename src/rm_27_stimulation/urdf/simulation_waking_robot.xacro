@@ -14,24 +14,24 @@
   </xacro:macro>
 
   <!-- Logical Mid360 frame relative to base_link; physical roll is compensated before this frame. -->
-  <xacro:arg name="xyz" default="0.0 0.18 0.28" />
+  <xacro:arg name="xyz" default="0.0 0.18 0.14" />
   <xacro:arg name="rpy" default="0 0 0" />
 
   <link name="base_link">
     <visual>
       <geometry>
-        <box size="0.2 .3 .1"/>
+        <box size="0.2 .3 .14"/>
       </geometry>
-      <origin rpy="0 0 ${PI/2}" xyz="0 0 0.05"/>
-      <material name="white">
-        <color rgba="1 1 1 1"/>
+      <origin rpy="0 0 ${PI/2}" xyz="0 0 0.07"/>
+      <material name="orange">
+        <color rgba="0.95 0.28 0.04 1"/>
       </material>
     </visual>
     <collision>
       <geometry>
-        <box size="0.2 .3 0.1"/>
+        <box size="0.2 .3 0.14"/>
       </geometry>
-      <origin rpy="0 0 ${PI/2}" xyz="0 0 0.05"/>
+      <origin rpy="0 0 ${PI/2}" xyz="0 0 0.07"/>
     </collision>
     <xacro:default_inertial mass="8.2"/>
   </link>
@@ -65,8 +65,6 @@
         <cylinder length="${length_wheel}" radius="${radius_wheel}"/>
       </geometry>
     </collision>
-    <mu1>0.5</mu1>
-    <mu2>0.5</mu2>
     <xacro:default_inertial mass="0.5"/>
   </link>
 
@@ -83,8 +81,6 @@
         <cylinder length="${length_wheel}" radius="${radius_wheel}"/>
       </geometry>
     </collision>
-    <mu1>0.5</mu1>
-    <mu2>0.5</mu2>
     <xacro:default_inertial mass="0.5"/>
   </link>
 
@@ -101,8 +97,6 @@
         <cylinder length="${length_wheel}" radius="${radius_wheel}"/>
       </geometry>
     </collision>
-    <mu1>0.5</mu1>
-    <mu2>0.5</mu2>
     <xacro:default_inertial mass="0.5"/>
   </link>
 
@@ -119,8 +113,6 @@
         <cylinder length="${length_wheel}" radius="${radius_wheel}"/>
       </geometry>
     </collision>
-    <mu1>0.5</mu1>
-    <mu2>0.5</mu2>
     <xacro:default_inertial mass="0.5"/>
   </link>
 
@@ -186,15 +178,23 @@
   </gazebo>
   <gazebo reference="wheel_1">
     <material>Gazebo/Red</material>
+    <mu1>0.05</mu1>
+    <mu2>0.05</mu2>
   </gazebo>
   <gazebo reference="wheel_2">
     <material>Gazebo/Black</material>
+    <mu1>0.05</mu1>
+    <mu2>0.05</mu2>
   </gazebo>
   <gazebo reference="wheel_3">
     <material>Gazebo/Red</material>
+    <mu1>0.05</mu1>
+    <mu2>0.05</mu2>
   </gazebo>
   <gazebo reference="wheel_4">
     <material>Gazebo/Black</material>
+    <mu1>0.05</mu1>
+    <mu2>0.05</mu2>
   </gazebo>
   <gazebo reference="imu_link">
     <material>Gazebo/BuildingFrame</material>
@@ -211,6 +211,17 @@
       <command_timeout>0.5</command_timeout>
       <max_linear_velocity>3.0</max_linear_velocity>
       <max_angular_velocity>6.0</max_angular_velocity>
+      <linear_velocity_gain>80.0</linear_velocity_gain>
+      <angular_velocity_gain>4.0</angular_velocity_gain>
+      <max_planar_force>120.0</max_planar_force>
+      <max_yaw_torque>8.0</max_yaw_torque>
+    </plugin>
+    <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
+      <dimensions>3</dimensions>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <odom_topic>/ground_truth/odometry</odom_topic>
+      <odom_frame>world</odom_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
     </plugin>
   </gazebo>
 

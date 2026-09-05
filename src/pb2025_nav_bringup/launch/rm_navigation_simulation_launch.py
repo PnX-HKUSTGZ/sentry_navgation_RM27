@@ -18,7 +18,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
@@ -45,6 +45,7 @@ def generate_launch_description():
     rviz_config_file = LaunchConfiguration("rviz_config_file")
     use_rviz = LaunchConfiguration("use_rviz")
     cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
+    use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
 
     configured_params = ParameterFile(
         RewrittenYaml(
@@ -135,10 +136,10 @@ def generate_launch_description():
 
     declare_cmd_vel_smoothed_topic_cmd = DeclareLaunchArgument(
         "cmd_vel_smoothed_topic",
-        default_value="cmd_vel",
+        default_value="cmd_vel_nav2_result",
         description=(
-            "Output topic for nav2_velocity_smoother. Simulation writes directly "
-            "to cmd_vel so ros_gz_bridge can drive Gazebo."
+            "Output topic for nav2_velocity_smoother. fake_vel_transform converts "
+            "this world-aligned command to the chassis-frame cmd_vel used by Gazebo."
         ),
     )
 
@@ -152,6 +153,15 @@ def generate_launch_description():
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
 
+    declare_use_ground_truth_odom_cmd = DeclareLaunchArgument(
+        "use_ground_truth_odom",
+        default_value="True",
+        description=(
+            "Use Gazebo ground truth for the simulation navigation feedback loop. "
+            "Set False only when testing Point-LIO localization."
+        ),
+    )
+
     start_velodyne_convert_tool = Node(
         package="ign_sim_pointcloud_tool",
         executable="ign_sim_pointcloud_tool_node",
@@ -159,6 +169,17 @@ def generate_launch_description():
         output="screen",
         namespace=namespace,
         parameters=[configured_params],
+        condition=UnlessCondition(use_ground_truth_odom),
+    )
+
+    start_ground_truth_localizer = Node(
+        package="rm_27_stimulation",
+        executable="rm27_ground_truth_localizer",
+        name="rm27_ground_truth_localizer",
+        output="screen",
+        namespace=namespace,
+        parameters=[configured_params],
+        condition=IfCondition(use_ground_truth_odom),
     )
 
     rviz_cmd = IncludeLaunchDescription(
@@ -184,6 +205,7 @@ def generate_launch_description():
             "use_composition": use_composition,
             "use_respawn": use_respawn,
             "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
+            "use_ground_truth_odom": use_ground_truth_odom,
         }.items(),
     )
 
@@ -203,9 +225,11 @@ def generate_launch_description():
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
+    ld.add_action(declare_use_ground_truth_odom_cmd)
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_velodyne_convert_tool)
+    ld.add_action(start_ground_truth_localizer)
     ld.add_action(bringup_cmd)
     ld.add_action(rviz_cmd)
 

@@ -67,6 +67,15 @@ def _launch_gz_sim(context, *args, **kwargs):
 
     if not _as_bool(LaunchConfiguration("gui").perform(context)):
         gz_args.append("-s")
+    else:
+        gui_config = LaunchConfiguration("gui_config").perform(context).strip()
+        if gui_config and os.path.isfile(gui_config):
+            gz_args.extend(["--gui-config", gui_config])
+        elif gui_config:
+            print(
+                f"[rm_27_stimulation] GUI config not found: {gui_config}; "
+                "using the GUI section from the world SDF."
+            )
 
     physics_engine = LaunchConfiguration("physics_engine").perform(context).strip()
     if physics_engine:
@@ -131,6 +140,11 @@ def generate_launch_description():
                 description="Start Gazebo GUI when true",
             ),
             DeclareLaunchArgument(
+                "gui_config",
+                default_value=os.path.join(package_share, "config", "gazebo_gui.config"),
+                description="Project-local Gazebo GUI configuration",
+            ),
+            DeclareLaunchArgument(
                 "verbose",
                 default_value="false",
                 description="Run Gazebo Harmonic with verbose output",
@@ -142,8 +156,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "physics_engine",
-                default_value="gz-physics-bullet-plugin",
-                description="Gazebo physics engine plugin. Use an empty value for Gazebo default.",
+                default_value="gz-physics-dartsim-plugin",
+                description=(
+                    "Gazebo physics engine plugin. DART is required by the planar "
+                    "velocity controller to retain STL terrain contacts."
+                ),
             ),
             DeclareLaunchArgument(
                 "extra_gazebo_args",

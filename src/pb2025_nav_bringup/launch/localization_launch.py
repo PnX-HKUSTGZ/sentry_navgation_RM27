@@ -18,7 +18,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LoadComposableNodes, Node
 from launch_ros.descriptions import ComposableNode, ParameterFile
@@ -40,6 +40,7 @@ def generate_launch_description():
     container_name_full = (namespace, "/", container_name)
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
+    use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
 
     lifecycle_nodes = ["map_server"]
 
@@ -120,6 +121,12 @@ def generate_launch_description():
         "log_level", default_value="info", description="log level"
     )
 
+    declare_use_ground_truth_odom_cmd = DeclareLaunchArgument(
+        "use_ground_truth_odom",
+        default_value="False",
+        description="Use simulation ground-truth localization instead of Point-LIO and GICP",
+    )
+
     start_point_lio_node = Node(
         package="point_lio",
         executable="pointlio_mapping",
@@ -132,6 +139,7 @@ def generate_launch_description():
             {"prior_pcd.prior_pcd_map_path": prior_pcd_file},
         ],
         arguments=["--ros-args", "--log-level", log_level],
+        condition=UnlessCondition(use_ground_truth_odom),
     )
 
     load_nodes = GroupAction(
@@ -159,6 +167,7 @@ def generate_launch_description():
                     {"prior_pcd_file": prior_pcd_file},
                 ],
                 arguments=["--ros-args", "--log-level", log_level],
+                condition=UnlessCondition(use_ground_truth_odom),
             ),
             Node(
                 package="nav2_lifecycle_manager",
@@ -193,6 +202,7 @@ def generate_launch_description():
                     configured_params,
                     {"prior_pcd_file": prior_pcd_file},
                 ],
+                condition=UnlessCondition(use_ground_truth_odom),
             ),
             ComposableNode(
                 package="nav2_lifecycle_manager",
@@ -227,6 +237,7 @@ def generate_launch_description():
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
+    ld.add_action(declare_use_ground_truth_odom_cmd)
 
     # Add the actions to launch all of the localiztion nodes
     ld.add_action(start_point_lio_node)

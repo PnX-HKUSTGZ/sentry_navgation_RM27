@@ -30,7 +30,9 @@ def generate_launch_description():
 
     # Create the launch configuration variables
     namespace = LaunchConfiguration("namespace")
+    use_sim_time = LaunchConfiguration("use_sim_time")
     rviz_config_file = LaunchConfiguration("rviz_config")
+    rviz_qt_platform = LaunchConfiguration("rviz_qt_platform")
 
     # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -42,10 +44,25 @@ def generate_launch_description():
         ),
     )
 
+    declare_use_sim_time_cmd = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="Use simulation (Gazebo) clock when true",
+    )
+
     declare_rviz_config_file_cmd = DeclareLaunchArgument(
         "rviz_config",
         default_value=os.path.join(bringup_dir, "rviz", "nav2_default_view.rviz"),
         description="Full path to the RViz config file to use",
+    )
+
+    declare_rviz_qt_platform_cmd = DeclareLaunchArgument(
+        "rviz_qt_platform",
+        default_value="xcb",
+        description=(
+            "Qt window-system backend for RViz. XCB keeps saved window placement "
+            "predictable in GNOME Wayland and NoMachine sessions."
+        ),
     )
 
     # Launch rviz
@@ -54,7 +71,9 @@ def generate_launch_description():
         executable="rviz2",
         namespace=namespace,
         arguments=["-d", rviz_config_file],
+        parameters=[{"use_sim_time": use_sim_time}],
         output="screen",
+        additional_env={"QT_QPA_PLATFORM": rviz_qt_platform},
         remappings=[
             ("/tf", "tf"),
             ("/tf_static", "tf_static"),
@@ -73,7 +92,9 @@ def generate_launch_description():
 
     # Declare the launch options
     ld.add_action(declare_namespace_cmd)
+    ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
+    ld.add_action(declare_rviz_qt_platform_cmd)
 
     # Add any conditioned actions
     ld.add_action(start_rviz_cmd)

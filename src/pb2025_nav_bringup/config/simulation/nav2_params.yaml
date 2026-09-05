@@ -7,6 +7,21 @@ ign_sim_pointcloud_tool:
     ang_bottom: 7.22
     ang_res_y: 2.01419  # (55.22 + 7.22) / (32 - 1)
 
+rm27_ground_truth_localizer:
+  ros__parameters:
+    use_sim_time: True
+    ground_truth_odom_topic: "ground_truth/odometry"
+    lidar_cloud_topic: "livox/lidar"
+    odometry_topic: "odometry"
+    lidar_odometry_topic: "lidar_odometry"
+    registered_scan_topic: "registered_scan"
+    map_frame: "map"
+    odom_frame: "odom"
+    robot_base_frame: "base_footprint"
+    lidar_frame: "left_mid360"
+    base_to_lidar_xyz: [0.0, 0.18, 0.14]
+    base_to_lidar_rpy: [0.0, 0.0, 0.0]
+
 point_lio:
   ros__parameters:
     use_sim_time: True
@@ -164,7 +179,7 @@ terrain_analysis:
     noDataObstacle: False               # treat no data as obstacle
     noDataBlockSkipNum: 0
     minBlockPointNum: 10
-    vehicleHeight: 0.5                  # 小于车辆高度的点才会进行处理
+    vehicleHeight: 0.15                  # 小于车辆高度的点才会进行处理
     voxelPointUpdateThre: 100
     voxelTimeUpdateThre: 0.3
     minRelZ: -1.5                       # min_rel_z 以及 max_rel_z 限制了有效点云点的Z值范围，用于对天花板和地板进行处理
@@ -179,7 +194,7 @@ terrain_analysis_ext:
     clearingDis: 20.0
     useSorting: true
     quantileZ: 0.2
-    vehicleHeight: 1.0
+    vehicleHeight: 0.15
     voxelPointUpdateThre: 100
     voxelTimeUpdateThre: 0.5
     lowerBoundZ: -1.5
@@ -198,7 +213,7 @@ fake_vel_transform:
     robot_base_frame: "gimbal_yaw"
     fake_robot_base_frame: "gimbal_yaw_fake"
     input_cmd_vel_topic: "cmd_vel_nav2_result"
-    output_cmd_vel_topic: "cmd_vel_fake"
+    output_cmd_vel_topic: "cmd_vel"
     cmd_spin_topic: "cmd_spin"
     init_spin_speed: 0.0
 
@@ -387,7 +402,8 @@ controller_server:
       use_interpolation: false
       use_rotate_to_heading: false
       use_rotate_to_heading_treshold: 0.1
-      min_approach_linear_velocity: 0.05
+      # Stay above the simulated chassis' static-friction threshold near a goal.
+      min_approach_linear_velocity: 0.12
       approach_velocity_scaling_dist: 1.0
       v_linear_min: -2.5
       v_linear_max: 2.5
@@ -414,7 +430,7 @@ local_costmap:
       height: 5
       resolution: 0.05
       robot_radius: 0.2
-      plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
+      plugins: ["static_layer", "intensity_voxel_layer", "denoise_layer", "inflation_layer"]
       intensity_voxel_layer:
         plugin: pb_nav2_costmap_2d::IntensityVoxelLayer
         enabled: true
@@ -423,6 +439,8 @@ local_costmap:
         publish_voxel_map: false
         combination_method: 1
         mark_threshold: 0
+        obstacle_confirmation_frames: 2
+        obstacle_clear_frames: 2
         origin_z: 0.0
         unknown_threshold: 5
         z_resolution: 0.05
@@ -445,10 +463,15 @@ local_costmap:
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
+      denoise_layer:
+        plugin: "nav2_costmap_2d::DenoiseLayer"
+        enabled: True
+        minimal_group_size: 3
+        group_connectivity_type: 8
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 6.0
-        inflation_radius: 0.45
+        inflation_radius: 0.40
       always_send_full_costmap: False
 
 global_costmap:
@@ -461,7 +484,7 @@ global_costmap:
       robot_base_frame: gimbal_yaw_fake
       robot_radius: 0.2
       resolution: 0.05
-      plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
+      plugins: ["static_layer", "intensity_voxel_layer", "denoise_layer", "inflation_layer"]
       intensity_voxel_layer:
         plugin: pb_nav2_costmap_2d::IntensityVoxelLayer
         enabled: true
@@ -470,6 +493,8 @@ global_costmap:
         publish_voxel_map: false
         combination_method: 1
         mark_threshold: 0
+        obstacle_confirmation_frames: 2
+        obstacle_clear_frames: 2
         origin_z: 0.0
         unknown_threshold: 5
         z_resolution: 0.05
@@ -492,10 +517,15 @@ global_costmap:
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
+      denoise_layer:
+        plugin: "nav2_costmap_2d::DenoiseLayer"
+        enabled: True
+        minimal_group_size: 3
+        group_connectivity_type: 8
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 6.0
-        inflation_radius: 0.45
+        inflation_radius: 0.40
       always_send_full_costmap: False
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.

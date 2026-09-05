@@ -18,7 +18,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LoadComposableNodes, Node
 from launch_ros.descriptions import ComposableNode, ParameterFile
@@ -39,6 +39,7 @@ def generate_launch_description():
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
     cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
+    use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
 
     lifecycle_nodes = [
         "controller_server",
@@ -123,6 +124,12 @@ def generate_launch_description():
         description="Output topic for nav2_velocity_smoother",
     )
 
+    declare_use_ground_truth_odom_cmd = DeclareLaunchArgument(
+        "use_ground_truth_odom",
+        default_value="False",
+        description="Use simulation ground-truth odometry and registered scans",
+    )
+
     start_terrain_analysis_cmd = Node(
         package="terrain_analysis",
         executable="terrainAnalysis",
@@ -157,6 +164,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=["--ros-args", "--log-level", log_level],
+                condition=UnlessCondition(use_ground_truth_odom),
             ),
             Node(
                 package="sensor_scan_generation",
@@ -167,6 +175,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=["--ros-args", "--log-level", log_level],
+                condition=UnlessCondition(use_ground_truth_odom),
             ),
             Node(
                 package="fake_vel_transform",
@@ -283,12 +292,14 @@ def generate_launch_description():
                 plugin="loam_interface::LoamInterfaceNode",
                 name="loam_interface",
                 parameters=[configured_params],
+                condition=UnlessCondition(use_ground_truth_odom),
             ),
             ComposableNode(
                 package="sensor_scan_generation",
                 plugin="sensor_scan_generation::SensorScanGenerationNode",
                 name="sensor_scan_generation",
                 parameters=[configured_params],
+                condition=UnlessCondition(use_ground_truth_odom),
             ),
             ComposableNode(
                 package="fake_vel_transform",
@@ -378,6 +389,7 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
+    ld.add_action(declare_use_ground_truth_odom_cmd)
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_terrain_analysis_cmd)
     ld.add_action(start_terrain_analysis_ext_cmd)

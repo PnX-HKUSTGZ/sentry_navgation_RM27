@@ -12,7 +12,6 @@
 #include <gz/sim/Model.hh>
 #include <gz/sim/System.hh>
 #include <gz/sim/Util.hh>
-#include <gz/sim/components/Pose.hh>
 #include <gz/transport/Node.hh>
 
 namespace rm_27_stimulation
@@ -56,6 +55,26 @@ public:
     {
       this->maxAngularVelocity_ = std::max(0.0, _sdf->Get<double>("max_angular_velocity"));
     }
+    if (_sdf->HasElement("linear_velocity_gain"))
+    {
+      this->linearVelocityGain_ =
+          std::max(0.0, _sdf->Get<double>("linear_velocity_gain"));
+    }
+    if (_sdf->HasElement("angular_velocity_gain"))
+    {
+      this->angularVelocityGain_ =
+          std::max(0.0, _sdf->Get<double>("angular_velocity_gain"));
+    }
+    if (_sdf->HasElement("max_planar_force"))
+    {
+      this->maxPlanarForce_ =
+          std::max(0.0, _sdf->Get<double>("max_planar_force"));
+    }
+    if (_sdf->HasElement("max_yaw_torque"))
+    {
+      this->maxYawTorque_ =
+          std::max(0.0, _sdf->Get<double>("max_yaw_torque"));
+    }
 
     const auto modelName = this->model_.Name(_ecm);
     this->driveLink_ = gz::sim::Link(this->model_.CanonicalLink(_ecm));
@@ -74,6 +93,8 @@ public:
     }
 
     const auto linkName = this->driveLink_.Name(_ecm).value_or("<unnamed>");
+    this->driveLink_.EnableVelocityChecks(_ecm, true);
+    this->driveLink_.EnableAccelerationChecks(_ecm, true);
 
     this->configured_ = true;
     gzmsg << "CmdVelPoseControlSystem controlling model [" << modelName
@@ -106,12 +127,7 @@ public:
       hasCommand = this->hasCommand_;
     }
 
-    if (!hasCommand)
-    {
-      return;
-    }
-
-    if (commandSeq != this->lastCommandSeq_)
+    if (hasCommand && commandSeq != this->lastCommandSeq_)
     {
       this->lastCommandSeq_ = commandSeq;
       this->commandAge_ = 0.0;
@@ -121,18 +137,17 @@ public:
       this->commandAge_ += dt;
     }
 
-    if (this->commandAge_ > this->commandTimeout_)
-    {
-      return;
-    }
-
-    auto vx = this->Clamp(cmd.linear().x(), this->maxLinearVelocity_);
-    auto vy = this->Clamp(cmd.linear().y(), this->maxLinearVelocity_);
-    auto wz = this->Clamp(cmd.angular().z(), this->maxAngularVelocity_);
+    const auto commandActive = hasCommand &&
+        this->commandAge_ <= this->commandTimeout_;
+    auto vx = commandActive
+        ? this->Clamp(cmd.linear().x(), this->maxLinearVelocity_) : 0.0;
+    auto vy = commandActive
+        ? this->Clamp(cmd.linear().y(), this->maxLinearVelocity_) : 0.0;
+    auto wz = commandActive
+        ? this->Clamp(cmd.angular().z(), this->maxAngularVelocity_) : 0.0;
 
     auto pose = gz::sim::worldPose(this->model_.Entity(), _ecm);
-    auto rpy = pose.Rot().Euler();
-    const auto yaw = rpy.Z();
+    const auto yaw = pose.Rot().Euler().Z();
 
     double dx = vx;
     double dy = vy;
@@ -149,14 +164,33 @@ public:
       dy = vy;
     }
 
-    pose.Pos().X() += dx * dt;
-    pose.Pos().Y() += dy * dt;
-    rpy.Z() = this->NormalizeAngle(yaw + wz * dt);
-    pose.Rot().SetFromEuler(rpy);
+    const auto currentLinear =
+        this->driveLink_.WorldLinearVelocity(_ecm).value_or(
+            gz::math::Vector3d::Zero);
+    const auto currentAngular =
+        this->driveLink_.WorldAngularVelocity(_ecm).value_or(
+            gz::math::Vector3d::Zero);
 
-    // Bullet in Harmonic does not consume link velocity or world pose commands
-    // for this URDF model, so the simulation base is driven kinematically.
-    _ecm.SetComponentData<gz::sim::components::Pose>(this->model_.Entity(), pose);
+    // A force servo keeps IMU acceleration, contact response and model motion
+    // in the same physics solution. Only planar force and yaw torque are
+    // commanded, so gravity and terrain still determine z, roll and pitch.
+    auto planarForce = gz::math::Vector3d(
+        (dx - currentLinear.X()) * this->linearVelocityGain_,
+        (dy - currentLinear.Y()) * this->linearVelocityGain_,
+        0.0);
+    const auto forceLength = planarForce.Length();
+    if (this->maxPlanarForce_ > 0.0 && forceLength > this->maxPlanarForce_)
+    {
+      planarForce *= this->maxPlanarForce_ / forceLength;
+    }
+
+    const auto yawTorque = this->Clamp(
+        (wz - currentAngular.Z()) * this->angularVelocityGain_,
+        this->maxYawTorque_);
+    this->driveLink_.AddWorldForce(_ecm, planarForce);
+    this->driveLink_.AddWorldWrench(
+        _ecm, gz::math::Vector3d::Zero,
+        gz::math::Vector3d(0.0, 0.0, yawTorque));
   }
 
 private:
@@ -184,11 +218,6 @@ private:
     return std::clamp(_value, -_limit, _limit);
   }
 
-  static double NormalizeAngle(double _angle)
-  {
-    return std::atan2(std::sin(_angle), std::cos(_angle));
-  }
-
   gz::sim::Model model_;
   gz::sim::Link driveLink_;
   gz::transport::Node node_;
@@ -200,7 +229,10 @@ private:
   double commandAge_{0.0};
   double maxLinearVelocity_{3.0};
   double maxAngularVelocity_{6.0};
-
+  double linearVelocityGain_{80.0};
+  double angularVelocityGain_{4.0};
+  double maxPlanarForce_{120.0};
+  double maxYawTorque_{8.0};
   std::mutex mutex_;
   gz::msgs::Twist latestCmd_;
   uint64_t commandSeq_{0};

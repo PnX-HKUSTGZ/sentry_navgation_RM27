@@ -52,6 +52,7 @@ def generate_launch_description():
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
     cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
+    use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
 
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
@@ -148,6 +149,12 @@ def generate_launch_description():
         description="Output topic for nav2_velocity_smoother",
     )
 
+    declare_use_ground_truth_odom_cmd = DeclareLaunchArgument(
+        "use_ground_truth_odom",
+        default_value="False",
+        description="Use the Gazebo-only ground-truth localization pipeline",
+    )
+
     # Specify the actions
     bringup_cmd_group = GroupAction(
         [
@@ -192,6 +199,7 @@ def generate_launch_description():
                     "use_respawn": use_respawn,
                     "container_name": "nav2_container",
                     "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
+                    "use_ground_truth_odom": use_ground_truth_odom,
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -206,6 +214,8 @@ def generate_launch_description():
                     "use_composition": use_composition,
                     "use_respawn": use_respawn,
                     "container_name": "nav2_container",
+                    "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
+                    "use_ground_truth_odom": use_ground_truth_odom,
                 }.items(),
             ),
         ]
@@ -230,6 +240,7 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
+    ld.add_action(declare_use_ground_truth_odom_cmd)
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)

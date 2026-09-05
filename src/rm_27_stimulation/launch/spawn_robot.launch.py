@@ -150,7 +150,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "spawn_delay",
-                default_value="2.0",
+                default_value="6.0",
                 description="Delay before spawning the robot, in seconds",
             ),
             DeclareLaunchArgument(

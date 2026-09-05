@@ -45,10 +45,17 @@ ros2 launch rm_27_stimulation spawn_robot.launch.py sim_world:=RMUC2026
 ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False gui:=true use_rviz:=true
 ```
 
-当前默认 world 是 `RMUC2026`，并且已有对应的地图和 PCD。使用 small_gicp 重定位模式：
+当前默认 world 是 `RMUC2026`，并且已有对应地图。仿真导航默认使用 Gazebo
+真值里程计，避免简化车辆模型的 IMU / Point-LIO 漂移进入导航闭环：
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False gui:=false use_rviz:=true
+```
+
+只在单独调试 Point-LIO 和 small_gicp 时关闭真值模式：
+
+```bash
+ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False use_ground_truth_odom:=false
 ```
 
 ## 可用 world
@@ -74,19 +81,17 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False
   `ros_gz_bridge` 会把点云桥接回 ROS 侧的 `livox/lidar`。
 - 旧的 Classic `ros2_livox` 自定义扫描插件不再编译。当前 Mid360 使用 Harmonic
   原生 `gpu_lidar` 近似 3D 点云，不再发布 `livox_ros_driver2/msg/CustomMsg`。
-- RM27 仿真点云链路是 `/livox/lidar -> ign_sim_pointcloud_tool -> /velodyne_points
-  -> Point-LIO -> /cloud_registered -> loam_interface -> /registered_scan`。
-- `slam:=False` 会走 RM27 原有 small_gicp 重定位路径，需要
-  `pb2025_nav_bringup/pcd/simulation/<nav_world>.pcd` 存在；当前 RMUC2026 对应
-  `pb2025_nav_bringup/pcd/simulation/RMUC2026.pcd`。
-- Gazebo Harmonic `VelocityControl` 只负责接收 `/cmd_vel` 并推动机器人，不发布 `/odometry`
-  或 `odom -> base_footprint`。RM27 仿真导航链使用
-  `Point-LIO -> loam_interface -> sensor_scan_generation` 生成 `/odometry` 和
-  `odom -> base_footprint`，再由 small_gicp 发布 `map -> odom`。
-- 导航控制链路为 `cmd_vel_nav2_result -> fake_vel_transform -> cmd_vel -> ros_gz_bridge -> Gazebo VelocityControl`。
-- 默认 `physics_engine:=gz-physics-bullet-plugin`，用于保留 STL mesh collision 支持；如果需要
-  Gazebo 默认物理引擎，可传 `physics_engine:=`。
-- 仿真 Mid360 逻辑 frame 为 `base_link -> left_mid360`: `xyz="0.0 0.18 0.28"`、
+- 默认真值链路是 `Gazebo OdometryPublisher -> ros_gz_bridge ->
+  rm27_ground_truth_localizer`。该节点统一发布 `/odometry`、`map -> odom ->
+  base_footprint`，并把 `/livox/lidar` 转换为真值坐标下的 `/registered_scan`；
+  `terrain_analysis` 和 `terrain_analysis_ext` 仍正常处理地形点云。
+- `use_ground_truth_odom:=false` 才会恢复原有 `/livox/lidar ->
+  ign_sim_pointcloud_tool -> Point-LIO -> loam_interface -> sensor_scan_generation`
+  和 small_gicp 重定位链路。
+- 导航控制链路为 `cmd_vel_nav2_result -> fake_vel_transform -> cmd_vel -> ros_gz_bridge -> Gazebo 底盘控制插件`。
+- 默认 `physics_engine:=gz-physics-dartsim-plugin`。底盘控制器只施加平面力和偏航力矩，
+  DART 负责 STL mesh collision、重力和地形接触，因此 `z/roll/pitch` 会随坡面变化。
+- 仿真 Mid360 逻辑 frame 为 `base_link -> left_mid360`: `xyz="0.0 0.18 0.14"`、
   `rpy="0 0 0"`；`imu_link` 使用同一逻辑位姿，Point-LIO 仿真外参为
   `extrinsic_T=[0.0, 0.0, 0.0]`、`extrinsic_R=I`。
 - `meshes/mid360.stl` 目前是 Git LFS 指针文件，因此 URDF 暂用简单盒子作为 Mid360

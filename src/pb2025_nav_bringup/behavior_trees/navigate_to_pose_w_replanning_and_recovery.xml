@@ -18,7 +18,9 @@
         <RecoveryNode name="FollowPath"
                       number_of_retries="10">
           <FollowPath path="{path}"
-                      controller_id="FollowPath"/>
+                      controller_id="FollowPath"
+                      goal_checker_id="general_goal_checker"
+                      progress_checker_id="progress_checker"/>
           <ClearEntireCostmap name="ClearLocalCostmap-Context"
                               service_name="local_costmap/clear_entirely_local_costmap"/>
         </RecoveryNode>
