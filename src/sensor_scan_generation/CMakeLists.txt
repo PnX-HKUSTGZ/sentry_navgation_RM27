@@ -37,6 +37,14 @@ rclcpp_components_register_node(${PROJECT_NAME}
 #############
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_twist_estimator test/test_twist_estimator.cpp)
+  target_include_directories(test_twist_estimator PRIVATE include)
+  ament_target_dependencies(test_twist_estimator tf2)
+
+  ament_add_gtest(test_transform_sample_gate test/test_transform_sample_gate.cpp)
+  target_include_directories(test_transform_sample_gate PRIVATE include)
+
   set(ament_cmake_clang_format_CLANG_FORMAT_VERSION 21)
   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
   set(ament_cmake_clang_tidy_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-tidy")

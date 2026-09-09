@@ -1,0 +1,20 @@
+# Final overlay for the independent /minco_shadow planner_server.
+planner_server:
+  ros__parameters:
+    planner_plugins: ["MincoPlanner"]
+    MincoPlanner:
+      trajectory_topic: /minco_shadow/opt_path
+      backup_trajectory_topic: /minco_shadow/backup_path
+      # Shadow goals are deliberately one-shot snapshots, not heartbeats.
+      request_lease_timeout: 0.0
+      performance:
+        variant: shadow
+      rog_map:
+        performance:
+          variant: shadow
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      static_layer:
+        map_topic: /map

@@ -1,0 +1,115 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+  <world name="tunnel_ramp_test">
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+
+    <physics name="default_physics" default="0" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <scene>
+      <ambient>0.45 0.45 0.45 1</ambient>
+      <background>0.72 0.78 0.82 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <light name="sun" type="directional">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+      <cast_shadows>true</cast_shadows>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="ground">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>20 10</size></plane></geometry>
+          <surface><friction><ode><mu>100</mu><mu2>50</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 10</size></plane></geometry>
+          <material><ambient>0.45 0.45 0.45 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- The two walls force the global route through the instrumented corridor. -->
+    <model name="corridor_walls">
+      <static>true</static>
+      <link name="left_wall">
+        <pose>1.5 0.8 0.3 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>6.0 0.12 0.6</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>6.0 0.12 0.6</size></box></geometry>
+          <material><ambient>0.2 0.3 0.4 1</ambient><diffuse>0.3 0.5 0.7 1</diffuse></material>
+        </visual>
+      </link>
+      <link name="right_wall">
+        <pose>1.5 -0.8 0.3 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>6.0 0.12 0.6</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>6.0 0.12 0.6</size></box></geometry>
+          <material><ambient>0.2 0.3 0.4 1</ambient><diffuse>0.3 0.5 0.7 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Short tunnel: roof underside is z=0.55 m and length is 0.70 m. -->
+    <model name="short_tunnel_roof">
+      <static>true</static>
+      <pose>0 0 0.625 0 0 0</pose>
+      <link name="roof">
+        <collision name="collision"><geometry><box><size>0.70 1.60 0.15</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.70 1.60 0.15</size></box></geometry>
+          <material><ambient>0.45 0.18 0.16 1</ambient><diffuse>0.7 0.25 0.2 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- The ramp starts 0.10 m after the tunnel and rises 0.25 m over 1.20 m. -->
+    <model name="short_ramp">
+      <static>true</static>
+      <!-- Center height makes the pitched top face continuous with z=0 and z=0.25. -->
+      <pose>1.05 0 0.0857 0 -0.2054 0</pose>
+      <link name="ramp">
+        <collision name="collision">
+          <geometry><box><size>1.225 1.35 0.08</size></box></geometry>
+          <surface><friction><ode><mu>100</mu><mu2>50</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.225 1.35 0.08</size></box></geometry>
+          <material><ambient>0.2 0.42 0.24 1</ambient><diffuse>0.3 0.65 0.35 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="ramp_platform">
+      <static>true</static>
+      <!-- The leading edge coincides with the ramp top endpoint. -->
+      <pose>3.09147 0 0.20 0 0 0</pose>
+      <link name="platform">
+        <collision name="collision">
+          <geometry><box><size>2.9 1.35 0.10</size></box></geometry>
+          <surface><friction><ode><mu>100</mu><mu2>50</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>2.9 1.35 0.10</size></box></geometry>
+          <material><ambient>0.2 0.42 0.24 1</ambient><diffuse>0.3 0.65 0.35 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <gravity>0 0 -9.81</gravity>
+  </world>
+</sdf>

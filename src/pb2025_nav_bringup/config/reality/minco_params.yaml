@@ -1,0 +1,405 @@
+# Overlay loaded after config/reality/nav2_params.yaml when navigation_mode is minco.
+# Active MINCO registers only its authoritative planner/controller. Legacy and
+# shadow keep the original plugins through nav2_params.yaml.
+bt_navigator:
+  ros__parameters:
+    # The asynchronous planner currently owns one target per session. Do not
+    # expose NavigateThroughPoses until ordered waypoint semantics are added.
+    navigators: ["navigate_to_pose"]
+    default_nav_to_pose_bt_xml: $(find-pkg-share pb2025_nav_bringup)/behavior_trees/navigate_to_pose_w_minco_replanning.xml
+    default_nav_through_poses_bt_xml: $(find-pkg-share pb2025_nav_bringup)/behavior_trees/navigate_through_poses_w_minco_replanning.xml
+
+# Motion behaviors publish velocity outside MincoMpc's planning-token gate.
+# Active MINCO keeps only the zero-motion Wait behavior; legacy/shadow retain
+# the full behavior set from nav2_params.yaml.
+behavior_server:
+  ros__parameters:
+    behavior_plugins: ["wait"]
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    controller_plugins: ["MincoMpc"]
+    MincoMpc:
+      plugin: "minco_controller::MincoMpcController"
+      opt_path_topic: minco/opt_path
+      odom_topic: /odometry
+      cmd_vel_mpc_topic: minco/cmd_vel_mpc
+      odom_timeout: 0.25
+      trajectory_timeout: 1.50
+      future_stamp_tolerance: 0.05
+      dt: 0.05
+      lookahead_time: 0.50
+      use_small_gyro_mode: false
+      fixed_wz: 0.0
+      deadzone_speed_threshold: 0.05
+      control_delay_compensation: 0.05
+      # Break cold-start zero velocity without allowing the time cursor to
+      # outrun the physical robot on a short observed-safe stopping prefix.
+      reference_progress_max_lead_time: 0.25
+      # Keep the hardware ceiling unchanged on flat ground and reduce it only
+      # once measured chassis tilt confirms a ramp transition.
+      slope_slowdown_start_angle: 0.08
+      slope_full_slowdown_angle: 0.18
+      slope_speed_limit: 0.40
+      Q: [3.0, 3.0, 2.0]
+      q_along: 3.0
+      q_cross: 12.0
+      R: [1.5, 1.5, 1.0]
+      vx_min: -0.5
+      vx_max: 0.5
+      vy_min: -0.5
+      vy_max: 0.5
+      max_planar_speed: 0.5
+      omega_min: -0.8
+      omega_max: 0.8
+      use_acc_constraints: true
+      ax_min: -0.8
+      ax_max: 0.8
+      ay_min: -0.8
+      ay_max: 0.8
+      alpha_min: -2.0
+      alpha_max: 2.0
+      odom_frame: odom
+      map_frame: map
+      lidar_offset_x: 0.0
+      lidar_offset_y: 0.0
+      lidar_roll_offset: 0.0
+      performance:
+        enable: true
+        print_enable: true
+        detailed_csv_enable: false
+        odom_sub_debug_enable: false
+        mpc_csv_path: /tmp/rm27_minco_mpc_reality.csv
+        print_period_sec: 1.0
+        csv_flush_every_n: 30
+        run_id: ""
+        scenario: reality
+        variant: active
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      plugins: ["static_layer", "inflation_layer"]
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      plugins: ["static_layer", "inflation_layer"]
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    planner_plugins: ["MincoPlanner"]
+    MincoPlanner:
+      plugin: "minco_planner/MincoPlanner"
+      planner_mode: PRIORMAP
+      trajectory_topic: minco/opt_path
+      backup_trajectory_topic: minco/backup_path
+      # NavigateToPose refreshes createPlan at 10 Hz; loss of requests fences
+      # the asynchronous MINCO session before it can publish another NORMAL.
+      request_lease_timeout: 0.75
+      frames:
+        map_frame: map
+        rog_frame: camera_init
+        # Physical footprint yaw must not come from gimbal_yaw_fake.
+        physical_base_frame: base_link
+      priormap:
+        use_nav2_global_search: true
+        clip_seed_by_rog_boundary: true
+        rog_boundary_margin: 0.30
+        rog_boundary_sample_step: 0.10
+        # Static hard clearance is derived from this vehicle's 0.40 x 0.30 m
+        # safety envelope plus one 5 cm grid cell: 0.300 m. It is not a second
+        # manually tuned parameter that can drift away from collision checking.
+        # Uses only surveyed ground_elevation, never rolling ROG unknowns. A
+        # flat map produces no overlay; measured ramps/drop edges automatically
+        # constrain the global seed with the same thresholds as local safety.
+        # Free prior-map cells without valid elevation support are fail-closed.
+        ground_edge_avoidance:
+          enable: true
+          max_step: 0.06
+          max_slope_deg: 28.0
+          # The 0.40 x 0.30 m safety envelope has a 0.25 m corner radius.
+          # Reserve one 5 cm map cell beyond it so the optimized centerline and
+          # the footprint validator use compatible surveyed-edge clearance.
+          lethal_clearance_radius: 0.30
+          clearance_radius: 0.30
+          clearance_cost: 240
+      exploration:
+        boundary_margin: 0.30
+        boundary_sample_step: 0.10
+        unknown_as_occupied: true
+        prefer_goal_direction: true
+      tolerance: 0.30
+      use_smac: true
+      allow_unknown: false
+      odom_topic: /aft_mapped_to_init
+      lidar_offset_x: 0.0
+      lidar_offset_y: 0.18
+      safety:
+        footprint_length: 0.30
+        footprint_width: 0.20
+        footprint_margin: 0.05
+        sample_dt: 0.05
+        map_timeout: 0.50
+        future_tolerance: 0.05
+        collision_cache_reuse_max_duration: 0.40
+      performance:
+        enable: true
+        print_enable: true
+        detailed_csv_enable: false
+        odom_sub_debug_enable: false
+        minco_csv_path: /tmp/rm27_minco_planner_reality.csv
+        print_period_sec: 1.0
+        csv_flush_every_n: 30
+        run_id: ""
+        scenario: reality
+        variant: active
+      rog_map:
+        frame_id: camera_init
+        resolution: 0.05
+        inflation_resolution: 0.05
+        map_size: [10.0, 10.0, 2.0]
+        fix_map_origin: [0.0, 0.0, 0.0]
+        point_filt_num: 1
+        esdf:
+          enable: false
+          resolution: 0.10
+          local_update_box: [10.0, 10.0, 2.0]
+        map_sliding:
+          enable: true
+          threshold: 0.20
+          center_offset_enable: true
+          center_offset: [0.0, 0.20, 0.0]
+        ros_callback:
+          enable: true
+          cloud_topic: /cloud_registered_full
+          odom_topic: /aft_mapped_to_init
+          odom_timeout: 0.25
+          cloud_timeout: 0.50
+          future_tolerance: 0.05
+          cloud_odom_sync_tolerance: 0.10
+          update_period_ms: 20
+        cloud_filter:
+          enable: true
+          z_offset: -0.55
+          position_frame: base_link
+          # Transform points into base_link so the self-filter rotates with
+          # the vehicle; translating an axis-aligned box is wrong after yaw.
+          filter_mode: transform_cloud
+          # Point-LIO names its IMU pose child "body"; imu_link is the same
+          # physical frame in robot_state_publisher's static TF tree.
+          pose_child_frame: imu_link
+          # The paired Point-LIO odometry supplies the scan-time dynamic pose;
+          # this timeout only covers the static imu_link extrinsic lookup and
+          # the fail-closed exact-time compatibility fallback.
+          transform_timeout: 0.10
+          remove_inside: true
+          log_stats: false
+          publish_visualization: true
+          visualization_topic: /rog_map/self_filter_box
+          box_padding: 0.02
+          position: {x: 0.0, y: 0.0, z: 0.05}
+          box_size: {x: 0.34, y: 0.24, z: 0.14}
+        raycasting:
+          enable: true
+          batch_update_size: 1
+          ray_range: [0.10, 10.0]
+          local_update_box: [10.0, 10.0, 2.0]
+          unk_thresh: 0.70
+          p_hit: 0.90
+          p_miss: 0.45
+          p_min: 0.12
+          p_max: 0.97
+          p_occ: 0.85
+          p_free: 0.499
+          parallel_enable: true
+          num_threads: 4
+        decay:
+          enable: true
+          # At 0.5 m/s the MID360 near-field ground blind ring takes roughly
+          # 2.5 s to cross. Retain occupied surface evidence through that gap;
+          # this never turns unobserved space into free space.
+          keep_time: 3.00
+          clear_time: 5.00
+          active_list_enable: false
+        projection:
+          enable: true
+          scan_z_min_abs: -0.45
+          scan_z_max_abs: 1.40
+          unknown_as_occupied: true
+          min_observed_voxels: 2
+          surface_height_delta_max: 0.12
+          clearance_check_enable: true
+          # PRIORMAP may accept empty columns only after body-volume clearance
+          # is observed. Unknown columns and occupied returns remain fail-closed.
+          observed_empty_as_free: false
+          # Keep blind-region bridging disabled on hardware until a real bag
+          # sweep proves the required length and includes ramps, pits, and
+          # sloped floating plates. LiDAR endpoints alone cannot prove support.
+          bridge_observed_empty_for_ground_connectivity: false
+          ground_connectivity_bridge_max_length: 0.10
+          ground_connectivity_bridge_max_height_delta: 0.06
+          ground_connectivity_bridge_landing_min_length: 0.25
+          ground_connectivity_bridge_landing_min_height_delta: 0.04
+          # Bootstrap only the current 0.40 x 0.30 m self-filter/safety
+          # envelope. Required-support mode still demands known-free static
+          # space, height-matching continuous support, and zero occupied
+          # evidence. A map without surveyed support therefore remains closed.
+          clear_robot_footprint_unknown: true
+          robot_footprint_clear_length: 0.40
+          robot_footprint_clear_width: 0.30
+          # /lidar_odometry describes the MID360 origin at base y=+0.18 m.
+          robot_footprint_clear_offset_x: 0.0
+          robot_footprint_clear_offset_y: -0.18
+          # Legacy near-field 2D fill stays disabled.
+          near_field_prior_fill_enable: false
+          near_field_prior_fill_length: 0.80
+          near_field_prior_fill_width: 0.50
+          robot_origin_to_ground: 0.28
+          vehicle_height: 0.42
+          headroom_margin: 0.05
+          # Treat occupied voxels by their conservative upper/lower boundary
+          # until bag measurements justify a sensor-specific smaller inset.
+          headroom_voxel_inset_fraction: 0.5
+          body_bottom_clearance: 0.04
+          ground_seed_tolerance: 0.08
+          max_ground_height_delta: 0.35
+          max_ground_step: 0.06
+          max_ground_slope_deg: 28.0
+          ground_seed_radius: 2.50
+          min_headroom_known_ratio: 0.80
+          # Real sensor data must verify the body band even when a roof return
+          # is present. Do not copy the Gazebo-only 0.0 override here.
+          min_observed_overhead_headroom_known_ratio: 0.80
+          clearance_unknown_as_occupied: true
+          wall_height_delta_min: 0.35
+          wall_occupancy_ratio_min: 0.80
+          tunnel_height_delta_min: 0.62
+          tunnel_height_delta_max: 1.40
+          tunnel_occupancy_ratio_max: 0.60
+          passable_cost: 50
+          passable_as_free: true
+          hysteresis_enable: true
+          hysteresis_count: 2
+          obstacle_hold_time: 0.50
+          # One MID360 frame of zero-hit clearance dropout may reuse the last
+          # verified result. Measured occupied returns bypass this hold.
+          clearance_dropout_hold_time: 0.15
+          # Enable only after a real bag proves that one-cell holes dominate and
+          # thin dynamic obstacles remain detected from every approach angle.
+          clearance_hole_fill_enable: false
+          clearance_hole_fill_max_width: 0.05
+          mask_filter_en: true
+          fill_occ_min: 7
+          denoise_occ_max: 0
+          prior_map:
+            enable: true
+            frame_id: map
+            yaml_path: "<rog_prior_map_yaml>"
+            pgm_path: ""
+            free_fills_unknown: false
+            # Fail closed until the selected surveyed map YAML contains a
+            # calibrated ground_elevation block.
+            require_ground_support: true
+            ground_support_tolerance: 0.08
+            transform_timeout: 0.50
+            transform_future_tolerance: 0.20
+        field:
+          enable: true
+          inflation_radius: 0.0
+          max_distance: 4.0
+          min_distance: -2.0
+          clamp_distance: true
+          interpolation: quadratic
+          update_rate: 20.0
+        performance:
+          enable: true
+          detailed_csv_enable: false
+          summary_csv_enable: false
+          detailed_csv_path: /tmp/rm27_rog_map_reality_detailed.csv
+          summary_csv_path: /tmp/rm27_rog_map_reality_summary.csv
+          run_id: ""
+          scenario: reality
+          variant: active
+          csv_flush_every_n: 30
+          print_enable: true
+          summary_rate: 1.0
+          dirty_column_enable: true
+          dirty_full_ratio: 0.30
+          # Keep this legacy alias consistent with raycasting.parallel_enable
+          # above: Config loads both names and this later value wins.
+          parallel_raycast_enable: true
+          raycast_num_threads: 4
+        visualization:
+          enable: true
+          frame_id: camera_init
+          rate: 5.0
+          range: [10.0, 10.0, 2.0]
+      corridor:
+        robot_radius: 0.25
+        extra_margin: 0.05
+      smac_2d:
+        # The local ROG window is not a stable global topology source. Keep its
+        # fail-closed frontier out of SMAC's global soft cost; downstream local
+        # optimization and safety checks still enforce ROG obstacles.
+        use_esdf_cost: false
+        # Dormant experiment values for a future evidence-only dynamic field.
+        esdf_weight: 4.0
+        esdf_decay: 0.30
+        esdf_max_cost: 4.0
+      minco_optimizer:
+        opt_freq: 20.0
+        # Bound failure retries without reducing the independent 20 Hz
+        # trajectory safety monitor.
+        failed_replan_retry_period: 0.25
+        successful_replan_period: 0.50
+        # The internal FSM may revoke the trajectory at this distance. Keep it
+        # strictly inside Nav2's 0.20 m SimpleGoalChecker tolerance so an early
+        # BLOCK cannot strand FollowPath outside its success region.
+        traj_goal_tolerance: 0.15
+        # Translation is holonomic: track the explicit navigation goal yaw,
+        # never the path tangent that can rotate the body into a tunnel wall.
+        enable_yaw_opt: true
+        safe_dist: 0.30
+        # Hard validation already samples the 0.30x0.20 m footprint expanded
+        # by 0.05 m on every side. Zero keeps this an exact occupied/UNKNOWN
+        # test instead of applying a second, duplicate radial inflation.
+        collision_dist: 0.0
+        # At 0.5 m/s this keeps a 5 s local horizon while avoiding a demand to
+        # validate the complete route from one LiDAR viewpoint.
+        lookahead_dist: 1.5
+        max_velocity: 0.5
+        max_acceleration: 0.8
+        max_yaw_dot: 0.8
+        turn_angle_deadzone: 0.10
+        turn_angle_saturation: 0.80
+        min_turn_vel: 0.20
+        decay_power: 1.6
+        time_allocation_iters: 15
+        smooth_eps: 0.01
+        integral_res: 16
+        opt_accuracy: 0.001
+        print_optimizer_log: false
+        penalty_weight_time: 100.0
+        penalty_weight_pos: 50000.0
+        penalty_weight_vel: 1500.0
+        penalty_weight_acc: 1500.0
+        penalty_weight_att: 100.0
+        penalty_weight_time_barrier: 50.0
+      recovery_server:
+        fail_threshold: 3
+        cooldown_sec: 1.0
+        recovery_window_sec: 3.0
+        escape_speed: 0.15
+
+fake_vel_transform:
+  ros__parameters:
+    enable_cmd_spin: false
+    # Active MINCO uses the independent ROG-map freshness safety gate.
+    terrain_guard_enabled: false
+    use_latest_odom_for_cmd: true
+    odom_timeout: 0.20
+    input_cmd_vel_topic: cmd_vel_nav2_result
+    output_cmd_vel_topic: cmd_vel

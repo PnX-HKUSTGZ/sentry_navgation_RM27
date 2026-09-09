@@ -1,0 +1,23 @@
+image: tunnel_ramp_test.pgm
+mode: trinary
+resolution: 0.1
+origin: [-3.0, -3.5, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.25
+
+# Surveyed support in this map frame. A patch plane is
+# z = reference.z + slope.x * (x - reference.x)
+#                   + slope.y * (y - reference.y).
+# Later patches override default_height inside their inclusive XY bounds.
+ground_elevation:
+  default_height: 0.0
+  patches:
+    - name: ramp
+      bounds: [0.442, -0.675, 1.641, 0.675]
+      reference: [0.442, 0.0, 0.0]
+      slope: [0.2085, 0.0]
+    - name: platform
+      bounds: [1.641, -0.675, 4.541, 0.675]
+      reference: [1.641, 0.0, 0.25]
+      slope: [0.0, 0.0]

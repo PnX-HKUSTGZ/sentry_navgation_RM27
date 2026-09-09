@@ -203,6 +203,12 @@ fake_vel_transform:
     output_cmd_vel_topic: "cmd_vel"
     cmd_spin_topic: "cmd_spin"
     init_spin_speed: 0.0
+    # Fail closed if the legacy perception chain stops updating. Real MID360
+    # data is nominally 10 Hz, so 0.5 s tolerates jitter without masking a
+    # sensor/node failure.
+    terrain_guard_enabled: True
+    terrain_map_topic: "terrain_map"
+    terrain_timeout: 0.5
 
 relocalization_manager:
   ros__parameters:
@@ -438,6 +444,7 @@ local_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: <robot_namespace>/terrain_map
+          expected_update_rate: 0.5
           sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
@@ -493,6 +500,7 @@ global_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: <robot_namespace>/terrain_map_ext
+          expected_update_rate: 0.5
           sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0

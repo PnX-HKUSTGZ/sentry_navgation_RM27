@@ -1,0 +1,494 @@
+# Overlay loaded after config/simulation/nav2_params.yaml when navigation_mode is minco.
+# ROG-map consumes the ground-truth localizer's odom-frame cloud and LiDAR pose.
+bt_navigator:
+  ros__parameters:
+    # The asynchronous planner currently owns one target per session. Do not
+    # expose NavigateThroughPoses until ordered waypoint semantics are added.
+    navigators: ["navigate_to_pose"]
+    default_nav_to_pose_bt_xml: $(find-pkg-share pb2025_nav_bringup)/behavior_trees/navigate_to_pose_w_minco_replanning.xml
+    default_nav_through_poses_bt_xml: $(find-pkg-share pb2025_nav_bringup)/behavior_trees/navigate_through_poses_w_minco_replanning.xml
+
+# Motion behaviors publish velocity outside MincoMpc's planning-token gate.
+# Active MINCO keeps only the zero-motion Wait behavior; legacy/shadow retain
+# the full behavior set from nav2_params.yaml.
+behavior_server:
+  ros__parameters:
+    behavior_plugins: ["wait"]
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    # Active MINCO exposes only the authoritative controller. Legacy and
+    # shadow main stacks load FollowPath from nav2_params.yaml instead.
+    controller_plugins: ["MincoMpc"]
+    MincoMpc:
+      plugin: "minco_controller::MincoMpcController"
+      opt_path_topic: minco/opt_path
+      odom_topic: /odometry
+      cmd_vel_mpc_topic: minco/cmd_vel_mpc
+      odom_timeout: 0.25
+      trajectory_timeout: 1.50
+      future_stamp_tolerance: 0.05
+      dt: 0.05
+      lookahead_time: 0.50
+      use_small_gyro_mode: false
+      fixed_wz: 0.0
+      deadzone_speed_threshold: 0.05
+      control_delay_compensation: 0.05
+      # Break cold-start zero velocity without allowing the time cursor to
+      # outrun the physical robot on a short observed-safe stopping prefix.
+      reference_progress_max_lead_time: 0.25
+      # Ramp transitions are abrupt in the collision STL. Blend down only
+      # after measured roll/pitch shows that the chassis is entering a slope;
+      # flat-ground travel retains the 1.0 m/s limit.
+      slope_slowdown_start_angle: 0.06
+      slope_full_slowdown_angle: 0.18
+      slope_speed_limit: 0.60
+      Q: [3.0, 3.0, 2.0]
+      q_along: 3.0
+      q_cross: 12.0
+      R: [1.5, 1.5, 1.0]
+      # The simulator runs faster than the conservative first hardware
+      # ceiling. At 1.0 m/s the configured 1.0 m/s^2 brake limit needs about
+      # 0.50 m before latency/margin, which remains inside the 1.5 m rolling
+      # validation horizon. Hardware keeps its independently validated limit.
+      vx_min: -1.5
+      vx_max: 1.5
+      vy_min: -1.5
+      vy_max: 1.5
+      # Hard radial limit shared with MINCO. Independent vx/vy box limits alone
+      # permit 2.12 m/s at a diagonal and invalidate the 1.0 m/s brake model.
+      max_planar_speed: 1.0
+      omega_min: -1.2
+      omega_max: 1.2
+      use_acc_constraints: true
+      ax_min: -1.0
+      ax_max: 1.0
+      ay_min: -1.0
+      ay_max: 1.0
+      alpha_min: -3.0
+      alpha_max: 3.0
+      odom_frame: odom
+      map_frame: map
+      lidar_offset_x: 0.0
+      lidar_offset_y: 0.0
+      lidar_roll_offset: 0.0
+      performance:
+        enable: true
+        print_enable: true
+        detailed_csv_enable: false
+        odom_sub_debug_enable: false
+        mpc_csv_path: /tmp/rm27_minco_mpc_simulation.csv
+        print_period_sec: 1.0
+        csv_flush_every_n: 30
+        run_id: ""
+        scenario: simulation
+        variant: active
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      plugins: ["static_layer", "inflation_layer"]
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      plugins: ["static_layer", "inflation_layer"]
+      # The outer inflation remains a soft SMAC preference (cost 253 retains
+      # Nav2's normal non-traversable meaning). The planner separately builds a
+      # hard static-obstacle mask from the safety-footprint corner radius plus
+      # one max(costmap, ROG) grid cell, so this radius is no longer the safety
+      # boundary between global search and local validation.
+      inflation_layer:
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.35
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    # Do not leave a public action-level bypass around the ROG safety chain.
+    planner_plugins: ["MincoPlanner"]
+    MincoPlanner:
+      plugin: "minco_planner/MincoPlanner"
+      planner_mode: PRIORMAP
+      trajectory_topic: minco/opt_path
+      backup_trajectory_topic: minco/backup_path
+      # NavigateToPose refreshes createPlan at 3 Hz; loss of requests fences
+      # the asynchronous MINCO session before it can publish another NORMAL.
+      request_lease_timeout: 0.75
+      frames:
+        map_frame: map
+        rog_frame: odom
+        # Physical footprint yaw must not come from gimbal_yaw_fake.
+        physical_base_frame: base_link
+      priormap:
+        use_nav2_global_search: true
+        clip_seed_by_rog_boundary: true
+        rog_boundary_margin: 0.30
+        rog_boundary_sample_step: 0.10
+        # Static hard clearance is intentionally not a duplicated YAML value:
+        # footprint 0.32 x 0.31 m plus the 5 cm grid guard gives 0.273 m.
+        # Keep the 2D SMAC seed away from surveyed ramp/drop edges that the
+        # local 3D safety query will reject. The edge itself is lethal; the
+        # footprint-sized inner band is lethal; the remaining outer band stays
+        # high-cost so a robot already near an edge can replan away from it.
+        # Free prior-map cells without valid elevation support are fail-closed.
+        ground_edge_avoidance:
+          enable: true
+          # RMUC2026 contains surveyed 3 cm ramp-surface protrusions. Keep the
+          # continuous 15-degree ramp traversable but route around these local
+          # steps instead of repeatedly driving the wheel contacts into them.
+          max_step: 0.02
+          max_slope_deg: 20.0
+          # SMAC searches with the robot center while the downstream ROG gate
+          # validates the complete 0.32 x 0.31 m safety footprint. Keep the
+          # centerline at least one 5 cm cell beyond its 0.223 m corner radius
+          # so trajectory smoothing cannot clip a surveyed ramp/drop edge.
+          lethal_clearance_radius: 0.28
+          clearance_radius: 0.30
+          clearance_cost: 240
+      exploration:
+        boundary_margin: 0.30
+        boundary_sample_step: 0.10
+        unknown_as_occupied: true
+        prefer_goal_direction: true
+      tolerance: 0.30
+      use_smac: true
+      allow_unknown: false
+      odom_topic: /lidar_odometry
+      lidar_offset_x: 0.0
+      lidar_offset_y: 0.18
+      safety:
+        # Physical wheel envelope is 0.32 x 0.31 m in the simulation URDF.
+        footprint_length: 0.22
+        footprint_width: 0.21
+        footprint_margin: 0.05
+        sample_dt: 0.05
+        # The compacted cloud normally updates at 4-10 Hz, but Gazebo GPU lidar
+        # can still produce isolated ~2.1 s scheduling gaps under combined
+        # Gazebo/RViz load. ROG retains occupied evidence for 3 s, so this
+        # remains fail-closed before old obstacle evidence can decay.
+        # Real hardware retains the stricter 0.50 s gate.
+        map_timeout: 2.20
+        future_tolerance: 0.05
+        # A collision-rejected replacement may reuse only a short, freshly
+        # validated tail. Longer reuse can carry downhill tracking error into a
+        # static-map boundary before the next safety callback brakes the robot.
+        collision_cache_reuse_max_duration: 0.75
+      performance:
+        enable: true
+        print_enable: true
+        detailed_csv_enable: false
+        odom_sub_debug_enable: false
+        minco_csv_path: /tmp/rm27_minco_planner_simulation.csv
+        print_period_sec: 1.0
+        csv_flush_every_n: 30
+        run_id: ""
+        scenario: simulation
+        variant: active
+      rog_map:
+        frame_id: odom
+        resolution: 0.05
+        inflation_resolution: 0.05
+        # The local optimizer looks ahead 1.5 m. An 8 m rolling window retains
+        # ample boundary margin while reducing projected XY cells by 36%.
+        map_size: [8.0, 8.0, 2.0]
+        fix_map_origin: [0.0, 0.0, 0.0]
+        point_filt_num: 1
+        esdf:
+          enable: false
+          resolution: 0.10
+          local_update_box: [8.0, 8.0, 2.0]
+        map_sliding:
+          enable: true
+          threshold: 0.20
+          center_offset_enable: true
+          center_offset: [0.0, 0.20, 0.0]
+        ros_callback:
+          enable: true
+          cloud_topic: /registered_scan
+          odom_topic: /lidar_odometry
+          # Ground-truth scan reconstruction transforms up to 115200 organized
+          # samples before publishing /registered_scan. Accept its paired
+          # acquisition-time odometry through that bounded processing queue;
+          # final motion authorization still uses safety.map_timeout=2.20 s.
+          odom_timeout: 0.50
+          cloud_timeout: 1.25
+          future_tolerance: 0.05
+          cloud_odom_sync_tolerance: 0.10
+          update_period_ms: 20
+        cloud_filter:
+          enable: true
+          z_offset: -0.45
+          position_frame: base_link
+          # Transform points into base_link so the self-filter rotates with
+          # the vehicle; translating an axis-aligned box is wrong after yaw.
+          filter_mode: transform_cloud
+          # The paired /lidar_odometry pose supplies the scan-time dynamic
+          # transform. This timeout only covers the initial static extrinsic
+          # lookup and the fail-closed exact-time compatibility fallback.
+          transform_timeout: 0.20
+          remove_inside: true
+          log_stats: false
+          publish_visualization: true
+          visualization_topic: /rog_map/self_filter_box
+          box_padding: 0.02
+          position: {x: 0.0, y: 0.0, z: 0.07}
+          box_size: {x: 0.34, y: 0.28, z: 0.18}
+          # Keep separate boxes for the chassis/wheels and the sensor pod.
+          # The wheels extend to y=+/-0.155 m; the Mid360 visual and IMU
+          # collision occupy y=0.124..0.205 m and z=0.085..0.165 m. A single
+          # chassis-centred box missed that pod on pitched ramp transitions,
+          # where its returns became a persistent GROUND_UNVERIFIED obstacle.
+          positions:
+            x: [0.0, 0.0]
+            y: [0.0, 0.18]
+            z: [0.07, 0.14]
+          box_sizes:
+            x: [0.34, 0.10]
+            y: [0.28, 0.08]
+            z: [0.18, 0.08]
+        raycasting:
+          enable: true
+          batch_update_size: 1
+          ray_range: [0.10, 10.0]
+          local_update_box: [8.0, 8.0, 2.0]
+          unk_thresh: 0.70
+          p_hit: 0.90
+          p_miss: 0.45
+          p_min: 0.12
+          p_max: 0.97
+          p_occ: 0.85
+          p_free: 0.499
+          # Dense 360x320 scans otherwise age the safety snapshot while serial
+          # ray walks are still running. The parallel path preserves hit
+          # precedence and deduplicates only identical free-space endpoints.
+          parallel_enable: true
+          num_threads: 6
+        decay:
+          enable: true
+          # Preserve previously observed static ground while it crosses the
+          # MID360 near-field blind ring. This is conservative for obstacles:
+          # occupied returns remain blocking longer; UNKNOWN is never freed.
+          keep_time: 3.00
+          clear_time: 5.00
+          active_list_enable: false
+        projection:
+          enable: true
+          scan_z_min_abs: -0.45
+          scan_z_max_abs: 1.40
+          unknown_as_occupied: true
+          min_observed_voxels: 2
+          surface_height_delta_max: 0.12
+          clearance_check_enable: true
+          # PRIORMAP may accept empty columns only after body-volume clearance
+          # is observed. Unknown columns and occupied returns remain fail-closed.
+          # Required support mode authorizes an EMPTY column only from the
+          # mapped elevation plus observed body-volume clearance. This legacy
+          # fallback remains disabled.
+          observed_empty_as_free: false
+          # The surveyed support replaces blind bridging. UNKNOWN/occupied
+          # columns never participate.
+          bridge_observed_empty_for_ground_connectivity: false
+          ground_connectivity_bridge_max_length: 0.45
+          ground_connectivity_bridge_max_height_delta: 0.15
+          ground_connectivity_bridge_landing_min_length: 0.25
+          ground_connectivity_bridge_landing_min_height_delta: 0.04
+          # Cover the current 0.32 x 0.31 m hard footprint plus one 0.10 m
+          # ROG seed sample on every side. This prevents an oblique doorway
+          # exit from deadlocking on the regular LiDAR near-field lattice. In
+          # required-support mode every released cell still needs known-free,
+          # height-matching continuous support and zero occupied voxels; the
+          # envelope follows the robot and leaves no free trail.
+          clear_robot_footprint_unknown: true
+          robot_footprint_clear_length: 0.52
+          robot_footprint_clear_width: 0.51
+          # /lidar_odometry describes the MID360 origin at base y=+0.18 m.
+          robot_footprint_clear_offset_x: 0.0
+          robot_footprint_clear_offset_y: -0.18
+          # Cover the short swept region between current odometry and MINCO's
+          # first local seed. This removes the permanent zero-hit strip cast by
+          # the chassis on a downhill exit. In required-support mode it cannot
+          # use a 2D-only prior: every released column must be statically free,
+          # have continuous height-matching support, and contain no occupied
+          # voxel. The 1.40 m forward envelope covers the 0.16 m hard-footprint
+          # half-length plus the 0.50 m stop distance at 1 m/s; the narrower
+          # lateral envelope limits the static-prior-only release area.
+          near_field_prior_fill_enable: true
+          near_field_prior_fill_length: 1.40
+          near_field_prior_fill_width: 1.00
+          # lidar origin is 0.14 m above base; spawned base starts 0.06 m above ground.
+          robot_origin_to_ground: 0.20
+          # Gazebo collision geometry reaches 0.165 m above the contact plane.
+          # Keep 2 cm clearance and use occupied-voxel centers for the
+          # deterministic 5 cm simulated ray lattice. Hardware retains the
+          # conservative voxel-boundary model below.
+          vehicle_height: 0.17
+          headroom_margin: 0.02
+          headroom_voxel_inset_fraction: 0.0
+          body_bottom_clearance: 0.03
+          ground_seed_tolerance: 0.08
+          max_ground_height_delta: 0.35
+          max_ground_step: 0.06
+          max_ground_slope_deg: 28.0
+          # MID360's -7.22 deg lower FOV first sees level ground near 1.55 m.
+          ground_seed_radius: 1.80
+          # The regular 360x320 Gazebo ray lattice leaves some verified
+          # near-ground columns with only 1 of the 4 body-height voxels known.
+          # Occupied returns still veto the column; keep the real profile at 0.80.
+          min_headroom_known_ratio: 0.25
+          # At the leading roof face, finite roof returns replace every
+          # no-return ray in that XY voxel, so the body band can report 0% known
+          # even though the measured lower roof boundary clears the vehicle.
+          # This threshold applies only to a measured overhead run. Empty
+          # columns still require min_headroom_known_ratio above, and any return
+          # below vehicle_height + headroom_margin remains lethal.
+          min_observed_overhead_headroom_known_ratio: 0.0
+          clearance_unknown_as_occupied: true
+          wall_height_delta_min: 0.35
+          wall_occupancy_ratio_min: 0.80
+          tunnel_height_delta_min: 0.62
+          tunnel_height_delta_max: 1.40
+          tunnel_occupancy_ratio_max: 0.60
+          passable_cost: 50
+          passable_as_free: true
+          hysteresis_enable: true
+          hysteresis_count: 2
+          # Deterministic Gazebo rays retain the 2-frame hysteresis below but
+          # do not add a wall-clock hold.  The old hold repeatedly preserved a
+          # one-cell gate-edge classification after raw clearance was already
+          # verified and caused TRAJECTORY_RX_STALE braking.  Reality keeps a
+          # conservative 0.50 s hold until bag-measured dropout bounds exist.
+          obstacle_hold_time: 0.0
+          # Preserve a previously verified tunnel cell across one sparse
+          # body-band miss-ray dropout. This applies only to zero-hit columns
+          # with continuous surveyed support; any occupied return still blocks
+          # in the same update.
+          clearance_dropout_hold_time: 0.50
+          # Fill at most a 10 cm (two 5 cm cells) zero-hit ray hole enclosed by
+          # an opposing pair of clearance-verified cells. Candidate selection
+          # is one-shot, so this cannot spread across a wider unknown strip.
+          clearance_hole_fill_enable: true
+          clearance_hole_fill_max_width: 0.10
+          mask_filter_en: true
+          fill_occ_min: 7
+          denoise_occ_max: 0
+          prior_map:
+            enable: true
+            frame_id: map
+            yaml_path: "<rog_prior_map_yaml>"
+            pgm_path: ""
+            free_fills_unknown: false
+            require_ground_support: true
+            ground_support_tolerance: 0.08
+            transform_timeout: 0.75
+            transform_future_tolerance: 0.20
+        field:
+          enable: true
+          inflation_radius: 0.0
+          max_distance: 4.0
+          min_distance: -2.0
+          clamp_distance: true
+          interpolation: quadratic
+          update_rate: 20.0
+        performance:
+          enable: true
+          detailed_csv_enable: false
+          summary_csv_enable: false
+          detailed_csv_path: /tmp/rm27_rog_map_simulation_detailed.csv
+          summary_csv_path: /tmp/rm27_rog_map_simulation_summary.csv
+          run_id: ""
+          scenario: simulation
+          variant: active
+          csv_flush_every_n: 30
+          print_enable: true
+          summary_rate: 1.0
+          dirty_column_enable: true
+          dirty_full_ratio: 0.30
+          parallel_raycast_enable: true
+          # Keep the compatibility alias consistent with raycasting.num_threads.
+          raycast_num_threads: 6
+        visualization:
+          enable: true
+          frame_id: odom
+          # Building the occupied cloud holds the ROG data lock. Keep debug
+          # visualization low-rate and within the 1.5 m local planning radius
+          # so it cannot starve map updates.
+          rate: 1.0
+          range: [3.0, 3.0, 1.0]
+      corridor:
+        robot_radius: 0.25
+        extra_margin: 0.05
+      smac_2d:
+        # Global topology comes from the static Nav2 costmap. The ROG field is
+        # rolling and fail-closed at its observation frontier, so using it as a
+        # global soft potential makes transient tunnel-edge UNKNOWN cells pull
+        # SMAC onto an unstable detour. Corridor/MINCO/safety still consume the
+        # same ROG field as local soft/hard constraints.
+        use_esdf_cost: false
+        # Retained as dormant experiment values; do not enable without an
+        # evidence-only (non-UNKNOWN) global dynamic field.
+        esdf_weight: 8.0
+        esdf_decay: 0.15
+        esdf_max_cost: 8.0
+      minco_optimizer:
+        opt_freq: 20.0
+        # The FSM safety loop remains at 20 Hz, but a failed global/local
+        # generation attempt is retried at most 4 Hz. This prevents a blocked
+        # slope cell from launching SMAC and MINCO every 50 ms and starving the
+        # incoming ROG snapshot callbacks.
+        failed_replan_retry_period: 0.25
+        # Refresh before a 1.5 m stop-at-end horizon enters its braking tail.
+        # This uses a per-FSM steady clock, independent of Gazebo clock jumps.
+        successful_replan_period: 0.50
+        # The internal FSM may revoke the trajectory at this distance. Keep it
+        # strictly inside Nav2's 0.20 m SimpleGoalChecker tolerance so an early
+        # BLOCK cannot strand FollowPath outside its success region.
+        traj_goal_tolerance: 0.15
+        # The chassis is holonomic: optimize from measured yaw to the explicit
+        # navigation goal yaw, never to the path tangent. This rejects the old
+        # near-180 deg A<->B ramp turn without ratcheting contact-induced yaw
+        # drift into every rolling replan.
+        enable_yaw_opt: true
+        safe_dist: 0.30
+        # Hard validation already samples the 0.30x0.20 m footprint expanded
+        # by 0.05 m on every side. Zero keeps this an exact occupied/UNKNOWN
+        # test instead of applying a second, duplicate radial inflation.
+        collision_dist: 0.0
+        # Receding horizon: stay inside currently verifiable 3D coverage, then
+        # extend the trajectory as the robot moves through the tunnel/ramp.
+        lookahead_dist: 1.5
+        max_velocity: 1.0
+        max_acceleration: 1.0
+        max_yaw_dot: 1.2
+        turn_angle_deadzone: 0.10
+        turn_angle_saturation: 0.80
+        min_turn_vel: 0.20
+        decay_power: 1.6
+        time_allocation_iters: 15
+        smooth_eps: 0.01
+        integral_res: 16
+        opt_accuracy: 0.001
+        print_optimizer_log: false
+        penalty_weight_time: 100.0
+        penalty_weight_pos: 50000.0
+        penalty_weight_vel: 1500.0
+        penalty_weight_acc: 1500.0
+        penalty_weight_att: 100.0
+        penalty_weight_time_barrier: 50.0
+      recovery_server:
+        fail_threshold: 3
+        cooldown_sec: 1.0
+        recovery_window_sec: 3.0
+        escape_speed: 0.20
+
+fake_vel_transform:
+  ros__parameters:
+    enable_cmd_spin: false
+    # Active MINCO is fenced by ROG freshness and trajectory-session gates;
+    # legacy terrain nodes are deliberately not launched in this mode.
+    terrain_guard_enabled: false
+    use_latest_odom_for_cmd: true
+    odom_timeout: 0.20
+    input_cmd_vel_topic: cmd_vel_nav2_result
+    output_cmd_vel_topic: cmd_vel

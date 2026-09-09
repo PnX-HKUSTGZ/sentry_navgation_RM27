@@ -254,8 +254,12 @@ int main(int argc, char ** argv)
   auto subOdometry =
     nh->create_subscription<nav_msgs::msg::Odometry>("lidar_odometry", 5, odometryHandler);
 
-  auto subLaserCloud =
-    nh->create_subscription<sensor_msgs::msg::PointCloud2>("registered_scan", 5, laserCloudHandler);
+  // Point clouds are latest-sample sensor data.  SensorDataQoS is compatible
+  // with both the best-effort simulation publisher and the reliable real
+  // localization publisher, and avoids silently disconnecting the complete
+  // legacy obstacle chain when the publisher selects best effort.
+  auto subLaserCloud = nh->create_subscription<sensor_msgs::msg::PointCloud2>(
+    "registered_scan", rclcpp::SensorDataQoS().keep_last(1), laserCloudHandler);
 
   auto subJoystick = nh->create_subscription<sensor_msgs::msg::Joy>("joy", 5, joystickHandler);
 

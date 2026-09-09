@@ -37,6 +37,13 @@ rclcpp_components_register_node(${PROJECT_NAME}
 #############
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_fake_vel_transform test/test_fake_vel_transform.cpp)
+  if(TARGET test_fake_vel_transform)
+    target_link_libraries(test_fake_vel_transform ${PROJECT_NAME})
+  endif()
+
   set(ament_cmake_clang_format_CLANG_FORMAT_VERSION 21)
   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
   set(ament_cmake_clang_tidy_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-tidy")

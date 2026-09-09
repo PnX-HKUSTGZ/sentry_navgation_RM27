@@ -24,6 +24,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "sensor_scan_generation/transform_sample_gate.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
@@ -41,8 +42,11 @@ private:
     const nav_msgs::msg::Odometry::ConstSharedPtr & odometry,
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr & laserCloud2);
 
-  tf2::Transform getTransform(
-    const std::string & target_frame, const std::string & source_frame, const rclcpp::Time & time);
+  bool getTransform(
+    const std::string & target_frame, const std::string & source_frame, const rclcpp::Time & time,
+    tf2::Transform & transform);
+
+  void resetTwistHistory();
 
   void publishTransform(
     const tf2::Transform & transform, const std::string & parent_frame,
@@ -70,7 +74,7 @@ private:
     nav_msgs::msg::Odometry, sensor_msgs::msg::PointCloud2>;
   std::unique_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
 
-  tf2::Transform tf_lidar_to_robot_base_;
+  TransformSampleGate transform_sample_gate_;
   tf2::Transform previous_odometry_transform_;
   rclcpp::Time previous_odometry_stamp_;
   bool has_previous_odometry_{false};

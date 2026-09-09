@@ -5,7 +5,12 @@ import os
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    TimerAction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
@@ -15,8 +20,35 @@ def _load_yaml(path):
         return yaml.safe_load(config_file) or {}
 
 
+def _as_bool(value):
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
 def _launch_sim_stack(context, *args, **kwargs):
     del args, kwargs
+
+    namespace = LaunchConfiguration("namespace").perform(context).strip("/")
+    slam = _as_bool(LaunchConfiguration("slam").perform(context))
+    navigation_mode = LaunchConfiguration("navigation_mode").perform(context).lower()
+    use_ground_truth_odom = _as_bool(
+        LaunchConfiguration("use_ground_truth_odom").perform(context)
+    )
+    if namespace:
+        raise RuntimeError(
+            "Non-empty namespace is not supported by the current single-robot "
+            "navigation topic contract. Omit the namespace argument and use its "
+            "empty default instead."
+        )
+    if slam and use_ground_truth_odom:
+        raise RuntimeError(
+            "slam:=true and use_ground_truth_odom:=true are mutually exclusive. "
+            "Choose exactly one localization source."
+        )
+    if slam and navigation_mode != "legacy":
+        raise RuntimeError(
+            "slam:=true currently supports navigation_mode:=legacy only because "
+            "MINCO requires the selected static map as its ROG prior map."
+        )
 
     sim_share = get_package_share_directory("rm_27_stimulation")
     bringup_share = get_package_share_directory("pb2025_nav_bringup")
@@ -34,7 +66,9 @@ def _launch_sim_stack(context, *args, **kwargs):
         worlds = _load_yaml(worlds_config_path).get("worlds", {})
         if world_name not in worlds:
             valid_worlds = ", ".join(sorted(worlds.keys()))
-            raise RuntimeError(f"Unknown world '{world_name}'. Valid worlds: {valid_worlds}")
+            raise RuntimeError(
+                f"Unknown world '{world_name}'. Valid worlds: {valid_worlds}"
+            )
         nav_world = worlds[world_name].get("nav_world", "")
         if not nav_world:
             raise RuntimeError(
@@ -58,10 +92,16 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "gui": LaunchConfiguration("gui").perform(context),
                 "verbose": LaunchConfiguration("verbose").perform(context),
                 "pause": LaunchConfiguration("pause").perform(context),
-                "physics_engine": LaunchConfiguration("physics_engine").perform(context),
-                "extra_gazebo_args": LaunchConfiguration("extra_gazebo_args").perform(context),
+                "physics_engine": LaunchConfiguration("physics_engine").perform(
+                    context
+                ),
+                "extra_gazebo_args": LaunchConfiguration("extra_gazebo_args").perform(
+                    context
+                ),
                 "gui_config": LaunchConfiguration("gui_config").perform(context),
-                "use_ros_gz_bridge": LaunchConfiguration("use_ros_gz_bridge").perform(context),
+                "use_ros_gz_bridge": LaunchConfiguration("use_ros_gz_bridge").perform(
+                    context
+                ),
                 "bridge_config": LaunchConfiguration("bridge_config").perform(context),
             }.items(),
         ),
@@ -89,11 +129,17 @@ def _launch_sim_stack(context, *args, **kwargs):
                         "use_composition": LaunchConfiguration("use_composition"),
                         "use_respawn": LaunchConfiguration("use_respawn"),
                         "use_rviz": LaunchConfiguration("use_rviz"),
-                        "use_ground_truth_odom": LaunchConfiguration("use_ground_truth_odom"),
+                        "use_ground_truth_odom": LaunchConfiguration(
+                            "use_ground_truth_odom"
+                        ),
+                        "navigation_mode": LaunchConfiguration("navigation_mode"),
+                        "enable_legacy_terrain": LaunchConfiguration(
+                            "enable_legacy_terrain"
+                        ),
                     }.items(),
                 )
             ],
-        )
+        ),
     ]
 
 
@@ -183,6 +229,16 @@ def generate_launch_description():
                 "use_ground_truth_odom",
                 default_value="true",
                 description="Use Gazebo ground truth for simulation navigation localization",
+            ),
+            DeclareLaunchArgument(
+                "navigation_mode",
+                default_value="legacy",
+                description="Select legacy, minco_shadow, or minco navigation",
+            ),
+            DeclareLaunchArgument(
+                "enable_legacy_terrain",
+                default_value="auto",
+                description="Override legacy terrain nodes for the navigation mode",
             ),
             DeclareLaunchArgument(
                 "use_sim_time",

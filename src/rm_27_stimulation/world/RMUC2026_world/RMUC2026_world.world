@@ -10,10 +10,16 @@
     <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
 
     <!-- 物理引擎 -->
-    <physics name='default_physics' default='0' type='ode'>
+    <physics name='default_physics' default='1' type='dart'>
       <max_step_size>0.001</max_step_size>
       <real_time_factor>1</real_time_factor>
       <real_time_update_rate>1000</real_time_update_rate>
+      <!-- DART's default mesh approximation can pin spherical omni contacts
+           on millimetre-scale STL seams. Bullet collision detection keeps the
+           DART force / joint dynamics while resolving analytic spheres. -->
+      <dart>
+        <collision_detector>bullet</collision_detector>
+      </dart>
     </physics>
     
     <!-- 场景 -->

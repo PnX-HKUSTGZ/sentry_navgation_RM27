@@ -17,12 +17,155 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
+from launch.actions import (
+    DeclareLaunchArgument,
+    GroupAction,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+    SetLaunchConfiguration,
+)
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LoadComposableNodes, Node
 from launch_ros.descriptions import ComposableNode, ParameterFile
-from nav2_common.launch import RewrittenYaml
+from nav2_common.launch import ReplaceString, RewrittenYaml
+
+
+def _configure_navigation_mode(context, bringup_dir):
+    namespace = LaunchConfiguration("namespace").perform(context).strip("/")
+    navigation_mode = LaunchConfiguration("navigation_mode").perform(context).lower()
+    deployment = LaunchConfiguration("deployment").perform(context).lower()
+    legacy_terrain = (
+        LaunchConfiguration("enable_legacy_terrain").perform(context).lower()
+    )
+    use_ground_truth_odom_value = (
+        LaunchConfiguration("use_ground_truth_odom").perform(context).lower()
+    )
+    base_params_file = LaunchConfiguration("params_file").perform(context)
+    prior_map_yaml_file = LaunchConfiguration("map").perform(context).strip()
+
+    if namespace:
+        raise RuntimeError(
+            "This RM27 navigation stack currently requires the namespace launch "
+            "argument to keep its empty default. Its "
+            "sensor, localization, shadow-planner, and chassis topics use the "
+            "single-robot global contract; a partial namespace would be unsafe."
+        )
+
+    if navigation_mode not in {"legacy", "minco_shadow", "minco"}:
+        raise RuntimeError(
+            "navigation_mode must be one of: legacy, minco_shadow, minco"
+        )
+    if deployment not in {"reality", "simulation"}:
+        raise RuntimeError("deployment must be either reality or simulation")
+    if not prior_map_yaml_file:
+        default_map_name = (
+            "RMUC2026.yaml" if deployment == "simulation" else "highbay.yaml"
+        )
+        prior_map_yaml_file = os.path.join(
+            bringup_dir, "map", deployment, default_map_name
+        )
+    if legacy_terrain not in {"auto", "true", "false"}:
+        raise RuntimeError("enable_legacy_terrain must be auto, true, or false")
+    if use_ground_truth_odom_value not in {
+        "true",
+        "false",
+        "1",
+        "0",
+        "yes",
+        "no",
+        "on",
+        "off",
+    }:
+        raise RuntimeError("use_ground_truth_odom must be a boolean value")
+    use_ground_truth_odom = use_ground_truth_odom_value in {
+        "true",
+        "1",
+        "yes",
+        "on",
+    }
+
+    shadow_sidecar_params_file = base_params_file
+    if navigation_mode == "legacy":
+        minco_params_file = base_params_file
+        input_params_file = base_params_file
+        mode_params_file = base_params_file
+    else:
+        if not prior_map_yaml_file or not os.path.isfile(prior_map_yaml_file):
+            raise RuntimeError(
+                "MINCO modes require map:=<existing occupancy-map YAML> for "
+                f"ROG prior-map fusion; got '{prior_map_yaml_file}'"
+            )
+        config_dir = os.path.join(bringup_dir, "config", deployment)
+        minco_params_file = os.path.join(config_dir, "minco_params.yaml")
+        input_params_file = minco_params_file
+        if deployment == "simulation" and not use_ground_truth_odom:
+            input_params_file = os.path.join(config_dir, "minco_pointlio_params.yaml")
+        mode_params_file = input_params_file
+        if navigation_mode == "minco_shadow":
+            mode_params_file = os.path.join(config_dir, "minco_shadow_params.yaml")
+            shadow_sidecar_params_file = os.path.join(
+                config_dir, "minco_shadow_sidecar_params.yaml"
+            )
+        for profile_path in {
+            minco_params_file,
+            input_params_file,
+            mode_params_file,
+            shadow_sidecar_params_file,
+        }:
+            if not os.path.isfile(profile_path):
+                raise RuntimeError(f"navigation profile does not exist: {profile_path}")
+
+    # Shadow must be a true A/B sidecar: the authoritative stack receives only
+    # the legacy base plus its BT overlay. Active MINCO parameters are confined
+    # to the separately namespaced planner_server below.
+    main_minco_params_file = (
+        minco_params_file if navigation_mode == "minco" else base_params_file
+    )
+    main_input_params_file = (
+        input_params_file if navigation_mode == "minco" else base_params_file
+    )
+
+    if legacy_terrain == "auto":
+        legacy_terrain = "false" if navigation_mode == "minco" else "true"
+
+    command_output_topic = LaunchConfiguration("cmd_vel_smoothed_topic").perform(
+        context
+    )
+    planner_server_package = (
+        "minco_planner" if navigation_mode == "minco" else "nav2_planner"
+    )
+    planner_server_executable = (
+        "planner_server_mt" if navigation_mode == "minco" else "planner_server"
+    )
+
+    return [
+        SetLaunchConfiguration("map", prior_map_yaml_file),
+        SetLaunchConfiguration("selected_minco_params_file", minco_params_file),
+        SetLaunchConfiguration("selected_input_params_file", input_params_file),
+        SetLaunchConfiguration(
+            "selected_main_minco_params_file", main_minco_params_file
+        ),
+        SetLaunchConfiguration(
+            "selected_main_input_params_file", main_input_params_file
+        ),
+        SetLaunchConfiguration("selected_mode_params_file", mode_params_file),
+        SetLaunchConfiguration(
+            "selected_shadow_sidecar_params_file", shadow_sidecar_params_file
+        ),
+        SetLaunchConfiguration(
+            "start_minco_shadow",
+            "true" if navigation_mode == "minco_shadow" else "false",
+        ),
+        SetLaunchConfiguration("resolved_enable_legacy_terrain", legacy_terrain),
+        SetLaunchConfiguration("navigation_cmd_vel_output", command_output_topic),
+        SetLaunchConfiguration(
+            "selected_planner_server_package", planner_server_package
+        ),
+        SetLaunchConfiguration(
+            "selected_planner_server_executable", planner_server_executable
+        ),
+    ]
 
 
 def generate_launch_description():
@@ -33,13 +176,29 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
     params_file = LaunchConfiguration("params_file")
+    map_yaml_file = LaunchConfiguration("map")
     use_composition = LaunchConfiguration("use_composition")
     container_name = LaunchConfiguration("container_name")
     container_name_full = (namespace, "/", container_name)
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
-    cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
     use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
+    enable_legacy_terrain = LaunchConfiguration("resolved_enable_legacy_terrain")
+    navigation_cmd_vel_output = LaunchConfiguration("navigation_cmd_vel_output")
+    start_minco_shadow = LaunchConfiguration("start_minco_shadow")
+    planner_server_package = LaunchConfiguration("selected_planner_server_package")
+    planner_server_executable = LaunchConfiguration(
+        "selected_planner_server_executable"
+    )
+
+    def resolve_single_robot_topics(source_file):
+        return ReplaceString(
+            source_file=source_file,
+            replacements={
+                "<robot_namespace>": "",
+                "<rog_prior_map_yaml>": map_yaml_file,
+            },
+        )
 
     lifecycle_nodes = [
         "controller_server",
@@ -52,17 +211,112 @@ def generate_launch_description():
     ]
 
     # Create our own temporary YAML files that include substitutions
-    param_substitutions = {"use_sim_time": use_sim_time, "autostart": autostart}
+    param_substitutions = {
+        "use_sim_time": use_sim_time,
+        "autostart": autostart,
+        "input_cmd_vel_topic": navigation_cmd_vel_output,
+    }
 
     configured_params = ParameterFile(
         RewrittenYaml(
-            source_file=params_file,
+            source_file=resolve_single_robot_topics(params_file),
             root_key=namespace,
             param_rewrites=param_substitutions,
             convert_types=True,
         ),
         allow_substs=True,
     )
+
+    configured_minco_params = ParameterFile(
+        RewrittenYaml(
+            source_file=resolve_single_robot_topics(
+                LaunchConfiguration("selected_main_minco_params_file")
+            ),
+            root_key=namespace,
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+
+    configured_mode_params = ParameterFile(
+        RewrittenYaml(
+            source_file=resolve_single_robot_topics(
+                LaunchConfiguration("selected_mode_params_file")
+            ),
+            root_key=namespace,
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+
+    configured_input_params = ParameterFile(
+        RewrittenYaml(
+            source_file=resolve_single_robot_topics(
+                LaunchConfiguration("selected_main_input_params_file")
+            ),
+            root_key=namespace,
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+    navigation_parameters = [
+        configured_params,
+        configured_minco_params,
+        configured_input_params,
+        configured_mode_params,
+    ]
+
+    shadow_base_params = ParameterFile(
+        RewrittenYaml(
+            source_file=resolve_single_robot_topics(params_file),
+            root_key="minco_shadow",
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+    shadow_minco_params = ParameterFile(
+        RewrittenYaml(
+            source_file=resolve_single_robot_topics(
+                LaunchConfiguration("selected_minco_params_file")
+            ),
+            root_key="minco_shadow",
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+    shadow_input_params = ParameterFile(
+        RewrittenYaml(
+            source_file=resolve_single_robot_topics(
+                LaunchConfiguration("selected_input_params_file")
+            ),
+            root_key="minco_shadow",
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+    shadow_sidecar_params = ParameterFile(
+        RewrittenYaml(
+            source_file=resolve_single_robot_topics(
+                LaunchConfiguration("selected_shadow_sidecar_params_file")
+            ),
+            root_key="minco_shadow",
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+    shadow_navigation_parameters = [
+        shadow_base_params,
+        shadow_minco_params,
+        shadow_input_params,
+        shadow_sidecar_params,
+    ]
 
     stdout_linebuf_envvar = SetEnvironmentVariable(
         "RCUTILS_LOGGING_BUFFERED_STREAM", "1"
@@ -88,6 +342,15 @@ def generate_launch_description():
             bringup_dir, "config", "simulation", "nav2_params.yaml"
         ),
         description="Full path to the ROS2 parameters file to use for all launched nodes",
+    )
+
+    declare_map_yaml_cmd = DeclareLaunchArgument(
+        "map",
+        default_value="",
+        description=(
+            "Occupancy-map YAML used by ROG prior-map fusion in MINCO modes. "
+            "Empty selects the deployment-specific default."
+        ),
     )
 
     declare_autostart_cmd = DeclareLaunchArgument(
@@ -130,6 +393,32 @@ def generate_launch_description():
         description="Use simulation ground-truth odometry and registered scans",
     )
 
+    declare_deployment_cmd = DeclareLaunchArgument(
+        "deployment",
+        default_value="simulation",
+        description="Select reality or simulation MINCO topic/frame profile",
+    )
+
+    declare_navigation_mode_cmd = DeclareLaunchArgument(
+        "navigation_mode",
+        default_value="legacy",
+        description="Select legacy, minco_shadow, or minco navigation",
+    )
+
+    declare_enable_legacy_terrain_cmd = DeclareLaunchArgument(
+        "enable_legacy_terrain",
+        default_value="auto",
+        description=(
+            "Start terrain_analysis and terrain_analysis_ext. auto enables them for "
+            "legacy and minco_shadow, and disables them for active minco."
+        ),
+    )
+
+    configure_navigation_mode_cmd = OpaqueFunction(
+        function=_configure_navigation_mode,
+        args=[bringup_dir],
+    )
+
     start_terrain_analysis_cmd = Node(
         package="terrain_analysis",
         executable="terrainAnalysis",
@@ -139,6 +428,7 @@ def generate_launch_description():
         respawn_delay=2.0,
         arguments=["--ros-args", "--log-level", log_level],
         parameters=[configured_params],
+        condition=IfCondition(enable_legacy_terrain),
     )
 
     start_terrain_analysis_ext_cmd = Node(
@@ -150,10 +440,47 @@ def generate_launch_description():
         respawn_delay=2.0,
         arguments=["--ros-args", "--log-level", log_level],
         parameters=[configured_params],
+        condition=IfCondition(enable_legacy_terrain),
+    )
+
+    # Keep the shadow planner out of the authoritative process/container. Use
+    # the same multithreaded executor as active MINCO so ROG initialization or
+    # costmap lifecycle waits cannot starve this process's TF/cloud callbacks.
+    start_minco_shadow_planner_cmd = Node(
+        package="minco_planner",
+        executable="planner_server_mt",
+        namespace="minco_shadow",
+        name="planner_server",
+        output="screen",
+        respawn=use_respawn,
+        respawn_delay=2.0,
+        parameters=shadow_navigation_parameters,
+        arguments=["--ros-args", "--log-level", log_level],
+        remappings=[
+            ("map", "/map"),
+            ("tf", "/tf"),
+            ("tf_static", "/tf_static"),
+        ],
+        condition=IfCondition(start_minco_shadow),
+    )
+
+    start_minco_shadow_lifecycle_manager_cmd = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        namespace="minco_shadow",
+        name="lifecycle_manager",
+        output="screen",
+        arguments=["--ros-args", "--log-level", log_level],
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"autostart": autostart},
+            {"node_names": ["planner_server"]},
+        ],
+        condition=IfCondition(start_minco_shadow),
     )
 
     load_nodes = GroupAction(
-        condition=IfCondition(PythonExpression(["not ", use_composition])),
+        condition=UnlessCondition(use_composition),
         actions=[
             Node(
                 package="loam_interface",
@@ -184,7 +511,7 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 arguments=["--ros-args", "--log-level", log_level],
             ),
             Node(
@@ -194,7 +521,7 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 arguments=["--ros-args", "--log-level", log_level],
                 remappings=[("cmd_vel", "cmd_vel_controller")],
             ),
@@ -205,17 +532,17 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 arguments=["--ros-args", "--log-level", log_level],
             ),
             Node(
-                package="nav2_planner",
-                executable="planner_server",
+                package=planner_server_package,
+                executable=planner_server_executable,
                 name="planner_server",
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 arguments=["--ros-args", "--log-level", log_level],
             ),
             Node(
@@ -225,10 +552,10 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 arguments=["--ros-args", "--log-level", log_level],
                 remappings=[
-                    ("cmd_vel", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel", navigation_cmd_vel_output),
                 ],
             ),
             Node(
@@ -238,10 +565,10 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 arguments=["--ros-args", "--log-level", log_level],
                 remappings=[
-                    ("cmd_vel", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel", navigation_cmd_vel_output),
                 ],
             ),
             Node(
@@ -251,7 +578,7 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 arguments=["--ros-args", "--log-level", log_level],
             ),
             Node(
@@ -261,11 +588,11 @@ def generate_launch_description():
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 arguments=["--ros-args", "--log-level", log_level],
                 remappings=[
                     ("cmd_vel", "cmd_vel_controller"),  # remap input
-                    ("cmd_vel_smoothed", cmd_vel_smoothed_topic),  # remap output
+                    ("cmd_vel_smoothed", navigation_cmd_vel_output),
                 ],
             ),
             Node(
@@ -305,56 +632,57 @@ def generate_launch_description():
                 package="fake_vel_transform",
                 plugin="fake_vel_transform::FakeVelTransform",
                 name="fake_vel_transform",
-                parameters=[configured_params],
+                parameters=navigation_parameters,
             ),
             ComposableNode(
                 package="nav2_controller",
                 plugin="nav2_controller::ControllerServer",
                 name="controller_server",
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 remappings=[("cmd_vel", "cmd_vel_controller")],
             ),
             ComposableNode(
                 package="nav2_smoother",
                 plugin="nav2_smoother::SmootherServer",
                 name="smoother_server",
-                parameters=[configured_params],
+                parameters=navigation_parameters,
             ),
             ComposableNode(
                 package="nav2_planner",
                 plugin="nav2_planner::PlannerServer",
                 name="planner_server",
-                parameters=[configured_params],
+                parameters=navigation_parameters,
             ),
             ComposableNode(
                 package="nav2_behaviors",
                 plugin="behavior_server::BehaviorServer",
                 name="behavior_server",
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 remappings=[
-                    ("cmd_vel", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel", navigation_cmd_vel_output),
                 ],
             ),
             ComposableNode(
                 package="nav2_bt_navigator",
                 plugin="nav2_bt_navigator::BtNavigator",
                 name="bt_navigator",
-                parameters=[configured_params],
+                parameters=navigation_parameters,
+                remappings=[("cmd_vel", navigation_cmd_vel_output)],
             ),
             ComposableNode(
                 package="nav2_waypoint_follower",
                 plugin="nav2_waypoint_follower::WaypointFollower",
                 name="waypoint_follower",
-                parameters=[configured_params],
+                parameters=navigation_parameters,
             ),
             ComposableNode(
                 package="nav2_velocity_smoother",
                 plugin="nav2_velocity_smoother::VelocitySmoother",
                 name="velocity_smoother",
-                parameters=[configured_params],
+                parameters=navigation_parameters,
                 remappings=[
                     ("cmd_vel", "cmd_vel_controller"),  # remap input
-                    ("cmd_vel_smoothed", cmd_vel_smoothed_topic),  # remap output
+                    ("cmd_vel_smoothed", navigation_cmd_vel_output),
                 ],
             ),
             ComposableNode(
@@ -383,6 +711,7 @@ def generate_launch_description():
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
+    ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_autostart_cmd)
     ld.add_action(declare_use_composition_cmd)
     ld.add_action(declare_container_name_cmd)
@@ -390,10 +719,16 @@ def generate_launch_description():
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
+    ld.add_action(declare_deployment_cmd)
+    ld.add_action(declare_navigation_mode_cmd)
+    ld.add_action(declare_enable_legacy_terrain_cmd)
+    ld.add_action(configure_navigation_mode_cmd)
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_terrain_analysis_cmd)
     ld.add_action(start_terrain_analysis_ext_cmd)
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)
+    ld.add_action(start_minco_shadow_planner_cmd)
+    ld.add_action(start_minco_shadow_lifecycle_manager_cmd)
 
     return ld

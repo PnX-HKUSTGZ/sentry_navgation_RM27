@@ -213,8 +213,11 @@ int main(int argc, char **argv) {
   auto subOdometry = nh->create_subscription<nav_msgs::msg::Odometry>(
       "lidar_odometry", 5, odometryHandler);
 
+  // Match sensor-data semantics so this subscriber connects to both the
+  // best-effort simulator and a reliable real-vehicle publisher.
   auto subLaserCloud = nh->create_subscription<sensor_msgs::msg::PointCloud2>(
-      "registered_scan", 5, laserCloudHandler);
+      "registered_scan", rclcpp::SensorDataQoS().keep_last(1),
+      laserCloudHandler);
 
   auto subJoystick =
       nh->create_subscription<sensor_msgs::msg::Joy>("joy", 5, joystickHandler);

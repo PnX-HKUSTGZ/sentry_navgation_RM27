@@ -20,19 +20,52 @@ from launch.actions import (
     DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
+    OpaqueFunction,
     SetEnvironmentVariable,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     EqualsSubstitution,
     LaunchConfiguration,
     NotEqualsSubstitution,
-    PythonExpression,
 )
 from launch_ros.actions import Node, PushRosNamespace, SetRemap
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import ReplaceString, RewrittenYaml
+
+
+def _as_bool(value):
+    return value.strip().lower() in {"true", "1", "yes", "on"}
+
+
+def _validate_launch_contract(context):
+    namespace = LaunchConfiguration("namespace").perform(context).strip("/")
+    if namespace:
+        raise RuntimeError(
+            "This RM27 navigation stack currently requires the namespace launch "
+            "argument to keep its empty default. Its "
+            "sensor, localization, shadow-planner, and chassis topics use the "
+            "single-robot global contract; a partial namespace would be unsafe."
+        )
+
+    slam = _as_bool(LaunchConfiguration("slam").perform(context))
+    navigation_mode = LaunchConfiguration("navigation_mode").perform(context).lower()
+    use_ground_truth = _as_bool(
+        LaunchConfiguration("use_ground_truth_odom").perform(context)
+    )
+    if slam and use_ground_truth:
+        raise RuntimeError(
+            "slam:=true and use_ground_truth_odom:=true are mutually exclusive: "
+            "both pipelines would publish the map->odom localization transform."
+        )
+    if slam and navigation_mode != "legacy":
+        raise RuntimeError(
+            "slam:=true currently supports navigation_mode:=legacy only. MINCO "
+            "modes fuse the selected static map into ROG-map and require a stable "
+            "map-to-odometry frame relationship."
+        )
+    return []
 
 
 def generate_launch_description():
@@ -53,6 +86,9 @@ def generate_launch_description():
     log_level = LaunchConfiguration("log_level")
     cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
     use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
+    deployment = LaunchConfiguration("deployment")
+    navigation_mode = LaunchConfiguration("navigation_mode")
+    enable_legacy_terrain = LaunchConfiguration("enable_legacy_terrain")
 
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
@@ -155,6 +191,24 @@ def generate_launch_description():
         description="Use the Gazebo-only ground-truth localization pipeline",
     )
 
+    declare_deployment_cmd = DeclareLaunchArgument(
+        "deployment",
+        default_value="reality",
+        description="Select reality or simulation MINCO topic/frame profile",
+    )
+
+    declare_navigation_mode_cmd = DeclareLaunchArgument(
+        "navigation_mode",
+        default_value="legacy",
+        description="Select legacy, minco_shadow, or minco navigation",
+    )
+
+    declare_enable_legacy_terrain_cmd = DeclareLaunchArgument(
+        "enable_legacy_terrain",
+        default_value="auto",
+        description="Override legacy terrain nodes for the selected navigation mode",
+    )
+
     # Specify the actions
     bringup_cmd_group = GroupAction(
         [
@@ -165,7 +219,10 @@ def generate_launch_description():
                 condition=IfCondition(use_composition),
                 name="nav2_container",
                 package="rclcpp_components",
-                executable="component_container_isolated",
+                # ROG-map uses separate callback groups inside the MINCO
+                # planner. A multi-threaded container preserves that contract
+                # when composed bringup is requested.
+                executable="component_container_mt",
                 parameters=[configured_params, {"autostart": autostart}],
                 arguments=["--ros-args", "--log-level", log_level],
                 output="screen",
@@ -187,7 +244,7 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "localization_launch.py")
                 ),
-                condition=IfCondition(PythonExpression(["not ", slam])),
+                condition=UnlessCondition(slam),
                 launch_arguments={
                     "namespace": namespace,
                     "map": map_yaml_file,
@@ -211,11 +268,15 @@ def generate_launch_description():
                     "use_sim_time": use_sim_time,
                     "autostart": autostart,
                     "params_file": params_file,
+                    "map": map_yaml_file,
                     "use_composition": use_composition,
                     "use_respawn": use_respawn,
                     "container_name": "nav2_container",
                     "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
                     "use_ground_truth_odom": use_ground_truth_odom,
+                    "deployment": deployment,
+                    "navigation_mode": navigation_mode,
+                    "enable_legacy_terrain": enable_legacy_terrain,
                 }.items(),
             ),
         ]
@@ -241,6 +302,10 @@ def generate_launch_description():
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
+    ld.add_action(declare_deployment_cmd)
+    ld.add_action(declare_navigation_mode_cmd)
+    ld.add_action(declare_enable_legacy_terrain_cmd)
+    ld.add_action(OpaqueFunction(function=_validate_launch_contract))
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)

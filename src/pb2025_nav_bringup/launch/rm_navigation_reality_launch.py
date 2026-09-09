@@ -17,13 +17,40 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
+
+
+def _as_bool(value):
+    return value.strip().lower() in {"true", "1", "yes", "on"}
+
+
+def _validate_launch_contract(context, *args, **kwargs):
+    del args, kwargs
+    namespace = LaunchConfiguration("namespace").perform(context).strip("/")
+    if namespace:
+        raise RuntimeError(
+            "Non-empty namespace is not supported by the current single-robot "
+            "navigation topic contract. Omit the namespace argument and use its "
+            "empty default instead."
+        )
+    slam = _as_bool(LaunchConfiguration("slam").perform(context))
+    navigation_mode = LaunchConfiguration("navigation_mode").perform(context).lower()
+    if slam and navigation_mode != "legacy":
+        raise RuntimeError(
+            "slam:=true currently supports navigation_mode:=legacy only because "
+            "MINCO requires the selected static map as its ROG prior map."
+        )
+    return []
 
 
 def generate_launch_description():
@@ -45,6 +72,8 @@ def generate_launch_description():
     rviz_config_file = LaunchConfiguration("rviz_config_file")
     use_robot_state_pub = LaunchConfiguration("use_robot_state_pub")
     use_rviz = LaunchConfiguration("use_rviz")
+    navigation_mode = LaunchConfiguration("navigation_mode")
+    enable_legacy_terrain = LaunchConfiguration("enable_legacy_terrain")
 
     # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -133,6 +162,18 @@ def generate_launch_description():
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
 
+    declare_navigation_mode_cmd = DeclareLaunchArgument(
+        "navigation_mode",
+        default_value="legacy",
+        description="Select legacy, minco_shadow, or minco navigation",
+    )
+
+    declare_enable_legacy_terrain_cmd = DeclareLaunchArgument(
+        "enable_legacy_terrain",
+        default_value="auto",
+        description="Override legacy terrain nodes for the selected navigation mode",
+    )
+
     # Create our own temporary YAML files that include substitutions
 
     configured_params = ParameterFile(
@@ -188,6 +229,9 @@ def generate_launch_description():
             "autostart": autostart,
             "use_composition": use_composition,
             "use_respawn": use_respawn,
+            "deployment": "reality",
+            "navigation_mode": navigation_mode,
+            "enable_legacy_terrain": enable_legacy_terrain,
         }.items(),
     )
 
@@ -207,8 +251,11 @@ def generate_launch_description():
     ld.add_action(declare_use_robot_state_pub_cmd)
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_use_respawn_cmd)
+    ld.add_action(declare_navigation_mode_cmd)
+    ld.add_action(declare_enable_legacy_terrain_cmd)
 
     # Add the actions to launch all of the navigation nodes
+    ld.add_action(OpaqueFunction(function=_validate_launch_contract))
     ld.add_action(start_robot_state_publisher_cmd)
     ld.add_action(start_livox_ros_driver2_node)
     ld.add_action(bringup_cmd)

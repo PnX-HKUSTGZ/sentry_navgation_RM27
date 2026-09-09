@@ -17,13 +17,58 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
+
+
+def _as_bool(value):
+    return value.strip().lower() in {"true", "1", "yes", "on"}
+
+
+def _validate_localization_inputs(context):
+    namespace = LaunchConfiguration("namespace").perform(context).strip("/")
+    use_ground_truth = _as_bool(
+        LaunchConfiguration("use_ground_truth_odom").perform(context)
+    )
+    use_slam = _as_bool(LaunchConfiguration("slam").perform(context))
+    navigation_mode = LaunchConfiguration("navigation_mode").perform(context).lower()
+    if namespace:
+        raise RuntimeError(
+            "Non-empty namespace is not supported by the current single-robot "
+            "navigation topic contract. Omit the namespace argument and use its "
+            "empty default instead."
+        )
+    if use_ground_truth and use_slam:
+        raise RuntimeError(
+            "slam:=true and use_ground_truth_odom:=true are mutually exclusive: "
+            "both pipelines would publish the map->odom localization transform."
+        )
+    if use_slam and navigation_mode != "legacy":
+        raise RuntimeError(
+            "slam:=true currently supports navigation_mode:=legacy only because "
+            "MINCO requires the selected static map as its ROG prior map."
+        )
+    if use_ground_truth or use_slam:
+        return []
+
+    prior_pcd = LaunchConfiguration("prior_pcd_file").perform(context)
+    if not os.path.isfile(prior_pcd):
+        world = LaunchConfiguration("world").perform(context)
+        raise RuntimeError(
+            f"Point-LIO localization for world '{world}' requires a matching prior "
+            f"PCD, but '{prior_pcd}' does not exist. Supply prior_pcd_file:=... and "
+            "a matching relocalization init_pose, or use_ground_truth_odom:=true."
+        )
+    return []
 
 
 def generate_launch_description():
@@ -46,6 +91,8 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration("use_rviz")
     cmd_vel_smoothed_topic = LaunchConfiguration("cmd_vel_smoothed_topic")
     use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
+    navigation_mode = LaunchConfiguration("navigation_mode")
+    enable_legacy_terrain = LaunchConfiguration("enable_legacy_terrain")
 
     configured_params = ParameterFile(
         RewrittenYaml(
@@ -162,6 +209,18 @@ def generate_launch_description():
         ),
     )
 
+    declare_navigation_mode_cmd = DeclareLaunchArgument(
+        "navigation_mode",
+        default_value="legacy",
+        description="Select legacy, minco_shadow, or minco navigation",
+    )
+
+    declare_enable_legacy_terrain_cmd = DeclareLaunchArgument(
+        "enable_legacy_terrain",
+        default_value="auto",
+        description="Override legacy terrain nodes for the selected navigation mode",
+    )
+
     start_velodyne_convert_tool = Node(
         package="ign_sim_pointcloud_tool",
         executable="ign_sim_pointcloud_tool_node",
@@ -206,6 +265,9 @@ def generate_launch_description():
             "use_respawn": use_respawn,
             "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
             "use_ground_truth_odom": use_ground_truth_odom,
+            "deployment": "simulation",
+            "navigation_mode": navigation_mode,
+            "enable_legacy_terrain": enable_legacy_terrain,
         }.items(),
     )
 
@@ -226,6 +288,9 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
+    ld.add_action(declare_navigation_mode_cmd)
+    ld.add_action(declare_enable_legacy_terrain_cmd)
+    ld.add_action(OpaqueFunction(function=_validate_localization_inputs))
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_velodyne_convert_tool)

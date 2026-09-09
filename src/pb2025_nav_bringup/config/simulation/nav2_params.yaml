@@ -21,6 +21,26 @@ rm27_ground_truth_localizer:
     lidar_frame: "left_mid360"
     base_to_lidar_xyz: [0.0, 0.18, 0.14]
     base_to_lidar_rpy: [0.0, 0.0, 0.0]
+    # Gazebo preserves organized ray indices for no-return samples but encodes
+    # their XYZ as inf/nan. Rebuild only those directional misses beyond the
+    # ROG ray range; ROG clips them to free rays without inserting a hit.
+    reconstruct_no_return_rays: True
+    lidar_horizontal_samples: 360
+    lidar_vertical_samples: 320
+    lidar_horizontal_min_angle: 0.0
+    lidar_horizontal_max_angle: 6.283185307179586
+    lidar_vertical_min_angle: -0.1260127724939906
+    lidar_vertical_max_angle: 0.9637708129512688
+    no_return_ray_length: 10.5
+    rog_raycast_max_range: 10.0
+    rog_map_resolution: 0.05
+    # Subsample misses only and rotate the selected raster phase every frame.
+    # A fixed phase leaves the same rings permanently absent on the tunnel
+    # ramp; cycling covers all directions in four frames while halving per-scan
+    # synthetic points. Every finite obstacle hit is retained on every frame.
+    no_return_horizontal_stride: 1
+    no_return_vertical_stride: 2
+    cycle_no_return_stride_phase: True
 
 point_lio:
   ros__parameters:
@@ -179,7 +199,7 @@ terrain_analysis:
     noDataObstacle: False               # treat no data as obstacle
     noDataBlockSkipNum: 0
     minBlockPointNum: 10
-    vehicleHeight: 0.15                  # 小于车辆高度的点才会进行处理
+    vehicleHeight: 0.50                # 小于车辆高度的点才会进行处理
     voxelPointUpdateThre: 100
     voxelTimeUpdateThre: 0.3
     minRelZ: -1.5                       # min_rel_z 以及 max_rel_z 限制了有效点云点的Z值范围，用于对天花板和地板进行处理
@@ -194,7 +214,7 @@ terrain_analysis_ext:
     clearingDis: 20.0
     useSorting: true
     quantileZ: 0.2
-    vehicleHeight: 0.15
+    vehicleHeight: 0.50
     voxelPointUpdateThre: 100
     voxelTimeUpdateThre: 0.5
     lowerBoundZ: -1.5
@@ -216,6 +236,12 @@ fake_vel_transform:
     output_cmd_vel_topic: "cmd_vel"
     cmd_spin_topic: "cmd_spin"
     init_spin_speed: 0.0
+    # Legacy and shadow are allowed to move only while the local terrain
+    # product is arriving. This is the final output-edge guard against an
+    # empty IntensityVoxelLayer silently falling back to the static map.
+    terrain_guard_enabled: True
+    terrain_map_topic: "terrain_map"
+    terrain_timeout: 1.5
 
 relocalization_manager:
   ros__parameters:
@@ -455,6 +481,7 @@ local_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: <robot_namespace>/terrain_map
+          expected_update_rate: 1.5
           sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
@@ -470,8 +497,8 @@ local_costmap:
         group_connectivity_type: 8
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 6.0
-        inflation_radius: 0.40
+        cost_scaling_factor: 10.0
+        inflation_radius: 0.25
       always_send_full_costmap: False
 
 global_costmap:
@@ -509,6 +536,7 @@ global_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: <robot_namespace>/terrain_map_ext
+          expected_update_rate: 1.5
           sensor_frame: left_mid360
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
@@ -524,8 +552,8 @@ global_costmap:
         group_connectivity_type: 8
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 6.0
-        inflation_radius: 0.40
+        cost_scaling_factor: 10.0
+        inflation_radius: 0.25
       always_send_full_costmap: False
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.

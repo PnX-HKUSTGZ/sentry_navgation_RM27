@@ -50,13 +50,18 @@
         <lidar>
           <scan>
             <horizontal>
-              <samples>100</samples>
+              <!-- Keep azimuth spacing below one 5 cm ROG cell at the
+                   near-ground return radius. -->
+              <samples>360</samples>
               <resolution>1</resolution>
               <min_angle>${0}</min_angle>
               <max_angle>${2*M_PI}</max_angle>
             </horizontal>
             <vertical>
-              <samples>360</samples>
+              <!-- 320 elevation rings keep the nearest ground-return spacing
+                   below one 5 cm ROG cell while bounding Gazebo, DDS, and map
+                   update load; total rays are 115200. -->
+              <samples>320</samples>
               <resolution>1</resolution>
               <min_angle>${-7.22/180*M_PI}</min_angle>
               <max_angle>${55.22/180*M_PI}</max_angle>

@@ -18,6 +18,7 @@ find_package(tf2_ros REQUIRED)
 add_library(rm27_cmd_vel_pose_control_system SHARED
   src/cmd_vel_pose_control_system.cpp
 )
+target_include_directories(rm27_cmd_vel_pose_control_system PRIVATE include)
 target_link_libraries(rm27_cmd_vel_pose_control_system
   gz-msgs10::gz-msgs10
   gz-plugin2::gz-plugin2
@@ -28,6 +29,7 @@ target_link_libraries(rm27_cmd_vel_pose_control_system
 add_executable(rm27_ground_truth_localizer
   src/ground_truth_localizer.cpp
 )
+target_include_directories(rm27_ground_truth_localizer PRIVATE include)
 ament_target_dependencies(rm27_ground_truth_localizer
   geometry_msgs
   nav_msgs
@@ -38,6 +40,43 @@ ament_target_dependencies(rm27_ground_truth_localizer
   tf2_geometry_msgs
   tf2_ros
 )
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_ground_truth_twist_transform
+    test/test_ground_truth_twist_transform.cpp
+  )
+  if(TARGET test_ground_truth_twist_transform)
+    target_include_directories(test_ground_truth_twist_transform PRIVATE include)
+    ament_target_dependencies(test_ground_truth_twist_transform
+      geometry_msgs
+      tf2
+    )
+  endif()
+
+  ament_add_gtest(test_planar_velocity_pi
+    test/test_planar_velocity_pi.cpp
+  )
+  if(TARGET test_planar_velocity_pi)
+    target_include_directories(test_planar_velocity_pi PRIVATE include)
+  endif()
+
+  ament_add_gtest(test_stiction_assist
+    test/test_stiction_assist.cpp
+  )
+  if(TARGET test_stiction_assist)
+    target_include_directories(test_stiction_assist PRIVATE include)
+  endif()
+
+  ament_add_gtest(test_organized_lidar_miss_rays
+    test/test_organized_lidar_miss_rays.cpp
+  )
+  if(TARGET test_organized_lidar_miss_rays)
+    target_include_directories(test_organized_lidar_miss_rays PRIVATE include)
+    ament_target_dependencies(test_organized_lidar_miss_rays sensor_msgs)
+  endif()
+endif()
 
 install(TARGETS
   rm27_cmd_vel_pose_control_system
@@ -54,6 +93,10 @@ install(DIRECTORY
   urdf
   world
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(DIRECTORY include/rm_27_stimulation
+  DESTINATION include
 )
 
 install(DIRECTORY meshes

@@ -1,0 +1,17 @@
+# Additional simulation overlay selected when use_ground_truth_odom is false.
+# It switches only the MINCO/ROG input contract back to Point-LIO topics.
+planner_server:
+  ros__parameters:
+    MincoPlanner:
+      frames:
+        rog_frame: camera_init
+      odom_topic: /aft_mapped_to_init
+      lidar_offset_x: 0.0
+      lidar_offset_y: 0.18
+      rog_map:
+        frame_id: camera_init
+        ros_callback:
+          cloud_topic: /cloud_registered_full
+          odom_topic: /aft_mapped_to_init
+        visualization:
+          frame_id: camera_init

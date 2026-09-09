@@ -4,6 +4,9 @@
 
   <xacro:property name="length_wheel" value="0.05" />
   <xacro:property name="radius_wheel" value="0.06" />
+  <xacro:property name="omni_contact_radius" value="${radius_wheel}" />
+  <xacro:property name="omni_contact_x_inset" value="0.02" />
+  <xacro:property name="omni_contact_y_inset" value="0.04" />
   <xacro:property name="PI" value="3.1415926"/>
   <xacro:macro name="default_inertial" params="mass">
     <inertial>
@@ -61,8 +64,13 @@
       </material>
     </visual>
     <collision>
+      <!-- The real chassis is holonomic. Full wheel-radius spherical contacts
+           preserve curb/ramp traversal without imposing a fixed cylinder axle
+           direction on DART. The centers are inset so their 0.28 x 0.30 m
+           envelope remains inside the configured 0.32 x 0.31 m footprint. -->
+      <origin xyz="${-omni_contact_x_inset} 0 ${-omni_contact_y_inset}" rpy="0 0 0"/>
       <geometry>
-        <cylinder length="${length_wheel}" radius="${radius_wheel}"/>
+        <sphere radius="${omni_contact_radius}"/>
       </geometry>
     </collision>
     <xacro:default_inertial mass="0.5"/>
@@ -77,8 +85,9 @@
       <material name="black"/>
     </visual>
     <collision>
+      <origin xyz="${omni_contact_x_inset} 0 ${-omni_contact_y_inset}" rpy="0 0 0"/>
       <geometry>
-        <cylinder length="${length_wheel}" radius="${radius_wheel}"/>
+        <sphere radius="${omni_contact_radius}"/>
       </geometry>
     </collision>
     <xacro:default_inertial mass="0.5"/>
@@ -93,8 +102,9 @@
       <material name="black"/>
     </visual>
     <collision>
+      <origin xyz="${-omni_contact_x_inset} 0 ${omni_contact_y_inset}" rpy="0 0 0"/>
       <geometry>
-        <cylinder length="${length_wheel}" radius="${radius_wheel}"/>
+        <sphere radius="${omni_contact_radius}"/>
       </geometry>
     </collision>
     <xacro:default_inertial mass="0.5"/>
@@ -109,8 +119,9 @@
       <material name="black"/>
     </visual>
     <collision>
+      <origin xyz="${omni_contact_x_inset} 0 ${omni_contact_y_inset}" rpy="0 0 0"/>
       <geometry>
-        <cylinder length="${length_wheel}" radius="${radius_wheel}"/>
+        <sphere radius="${omni_contact_radius}"/>
       </geometry>
     </collision>
     <xacro:default_inertial mass="0.5"/>
@@ -212,8 +223,19 @@
       <max_linear_velocity>3.0</max_linear_velocity>
       <max_angular_velocity>6.0</max_angular_velocity>
       <linear_velocity_gain>80.0</linear_velocity_gain>
+      <!-- The 11.8-degree, low-friction test ramp needs about 21 N to hold this 10.2 kg model. -->
+      <linear_velocity_integral_gain>45.0</linear_velocity_integral_gain>
       <angular_velocity_gain>4.0</angular_velocity_gain>
       <max_planar_force>120.0</max_planar_force>
+      <max_planar_integral_force>35.0</max_planar_integral_force>
+      <!-- Add force only after measured motion stalls along a non-zero command.
+           It clears at 0.10 m/s, so no breakaway impulse remains on the slope. -->
+      <stall_assist_command_threshold>0.08</stall_assist_command_threshold>
+      <stall_assist_engage_velocity>0.02</stall_assist_engage_velocity>
+      <stall_assist_release_velocity>0.10</stall_assist_release_velocity>
+      <stall_assist_delay>0.20</stall_assist_delay>
+      <stall_assist_ramp_rate>100.0</stall_assist_ramp_rate>
+      <max_stall_assist_force>45.0</max_stall_assist_force>
       <max_yaw_torque>8.0</max_yaw_torque>
     </plugin>
     <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
