@@ -38,6 +38,12 @@ enum class ProjectionClassReason : uint8_t {
   SURVEYED_NEAR_FIELD_CLEAR
 };
 
+inline bool isMeasuredObstacleReason(ProjectionClassReason reason) {
+  return reason == ProjectionClassReason::SOLID_VERTICAL_WALL ||
+         reason == ProjectionClassReason::AMBIGUOUS_OCCUPIED ||
+         reason == ProjectionClassReason::HEADROOM_BLOCKED;
+}
+
 enum class VerticalVoxelState : uint8_t {
   UNKNOWN = 0,
   KNOWN_FREE = 1,
@@ -70,6 +76,8 @@ struct CellData {
   uint8_t ground_candidate{0};
   uint8_t ground_verified{0};
   uint8_t ground_bridge_verified{0};
+  uint8_t ground_support_bridge_eligible{0};
+  uint8_t ground_support_bridge_count{0};
   uint8_t prior_known_free{0};
   uint8_t ground_support_known{0};
   uint8_t ground_support_verified{0};
@@ -123,6 +131,14 @@ struct ProjectionLayerConfig {
   double ground_connectivity_bridge_max_height_delta{0.06};
   double ground_connectivity_bridge_landing_min_length{0.25};
   double ground_connectivity_bridge_landing_min_height_delta{0.04};
+  // A zero-hit prior/no-data cell may be released only when the current
+  // footprint has a short, measured support bridge on both sides. This is
+  // deliberately separate from the legacy empty-column bridge and is only
+  // active in required-ground-support mode.
+  bool observed_ground_support_bridge_en{false};
+  int observed_ground_support_bridge_min_neighbors{2};
+  double observed_ground_support_bridge_max_height_delta{0.06};
+  int observed_ground_support_bridge_hysteresis_count{2};
   bool clear_robot_footprint_unknown{false};
   double robot_footprint_clear_length{0.30};
   double robot_footprint_clear_width{0.20};

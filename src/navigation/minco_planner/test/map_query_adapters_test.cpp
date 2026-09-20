@@ -184,6 +184,26 @@ TEST(StaticObstacleClearanceQueryTest, HardensOnlyTrueLethalObstacleNeighborhood
   EXPECT_EQ(values[4U * kSize + 6U], nav2_costmap_2d::LETHAL_OBSTACLE);
 }
 
+TEST(StaticObstacleClearanceQueryTest, GuardsKnownFreeSideOfUnknownObstacleBoundary)
+{
+  constexpr unsigned int kSize = 9U;
+  nav2_costmap_2d::Costmap2D costmap(
+    kSize, kSize, 1.0, 0.0, 0.0, nav2_costmap_2d::FREE_SPACE);
+  costmap.setCost(4U, 4U, nav2_costmap_2d::LETHAL_OBSTACLE);
+  costmap.setCost(5U, 4U, nav2_costmap_2d::NO_INFORMATION);
+  auto base = std::make_shared<Nav2CostmapQuery>(&costmap);
+
+  StaticObstacleClearanceQuery query(base, 1.01);
+
+  EXPECT_EQ(query.value(5U, 4U), nav2_costmap_2d::NO_INFORMATION);
+  EXPECT_FALSE(query.isFree(5U, 4U));
+  EXPECT_EQ(query.value(6U, 4U),
+            nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE - 1U);
+  EXPECT_TRUE(query.isFree(6U, 4U));
+  EXPECT_EQ(query.value(8U, 8U), nav2_costmap_2d::FREE_SPACE);
+  EXPECT_GE(query.unknownBoundaryGuardCellCount(), 1U);
+}
+
 TEST(StaticObstacleClearanceQueryTest, RejectsInvalidRadius)
 {
   nav2_costmap_2d::Costmap2D costmap(

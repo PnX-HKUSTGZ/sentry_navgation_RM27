@@ -4,6 +4,7 @@
 #include "minco_core/components/planner_mode_context.hpp"
 #include "minco_core/components/trajectory_safety_checker.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -134,7 +135,8 @@ LocalPathProcessor makeProcessor(double lookahead = 5.0)
 {
   LocalPathProcessor processor;
   processor.configure(
-    lookahead, 0.5, 1.0, 0.05, rclcpp::get_logger("local_path_processor_test"),
+    lookahead, 0.5, 1.0, 0.05, 10.0, 5.0,
+    rclcpp::get_logger("local_path_processor_test"),
     std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME));
   return processor;
 }
@@ -286,12 +288,127 @@ TEST(LocalPathProcessorTest, FullyObservedGoalPreservesPathAndUsesMeasuredOmniYa
     EXPECT_NEAR(yaw, kMeasuredYaw, 1e-9);
   }
 
-  for (size_t i = 1U; i < sampled_positions.size(); ++i) {
+  // Inspect the dense-prefix pass. Sparsification then rechecks independent
+  // shortcuts and can legitimately restart sampling from earlier positions.
+  const auto dense_end = std::find_if(
+    sampled_positions.begin(), sampled_positions.end(),
+    [](const Eigen::Vector3d & p) {return p.isApprox(Eigen::Vector3d(0.25, 0.25, 0.0));});
+  ASSERT_NE(dense_end, sampled_positions.end());
+  const size_t dense_checks = static_cast<size_t>(std::distance(sampled_positions.begin(), dense_end)) + 1U;
+  for (size_t i = 1U; i < dense_checks; ++i) {
     const double step = (sampled_positions[i] - sampled_positions[i - 1U]).head<2>().norm();
     if (step > 1e-9) {
       EXPECT_LE(step, 0.025 + 1e-9);
     }
   }
+}
+
+TEST(LocalPathProcessorTest, DynamicFootprintVetoPreservesDetourDuringSparsification)
+{
+  auto query = std::make_shared<TestGridQuery>(
+    [](double, double) {return nav2_costmap_2d::FREE_SPACE;});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  processor.updateLimits(2.0, 4.0, 0.05);
+  std::vector<geometry_msgs::msg::PoseStamped> path;
+  for (int i = 0; i <= 16; ++i) {
+    path.push_back(pose(0.0, i * 0.05));
+  }
+  for (int i = 1; i <= 32; ++i) {
+    path.push_back(pose(i * 0.05, 0.80));
+  }
+  for (int i = 1; i <= 16; ++i) {
+    path.push_back(pose(1.60, 0.80 - i * 0.05));
+  }
+  const auto footprint_is_safe = [](const Eigen::Vector3d & p, double) {
+      return !(p.x() > 0.05 && p.x() < 1.55 && p.y() < 0.78);
+    };
+  const auto seed = processor.buildSeed(path, pose(0.0, 0.0), context, footprint_is_safe);
+
+  ASSERT_TRUE(seed.valid);
+  EXPECT_FALSE(seed.observed_prefix_clipped);
+  ASSERT_GE(seed.sparse_waypoints.size(), 4U);
+  for (size_t i = 1U; i < seed.sparse_waypoints.size(); ++i) {
+    const auto & a = seed.sparse_waypoints[i - 1U];
+    const auto & b = seed.sparse_waypoints[i];
+    const int samples = std::max(1, static_cast<int>(std::ceil((b - a).norm() / 0.01)));
+    for (int sample = 0; sample <= samples; ++sample) {
+      EXPECT_TRUE(footprint_is_safe(a + (b - a) * (static_cast<double>(sample) / samples), 0.0));
+    }
+  }
+}
+
+TEST(LocalPathProcessorTest, InflationCostEnvelopePreservesLowerCostDetour)
+{
+  auto query = std::make_shared<TestGridQuery>(
+    [](double x, double y) {
+      const bool inside_soft_band = x > 0.20 && x < 1.40 && std::abs(y) < 0.25;
+      return inside_soft_band ? static_cast<uint8_t>(180U) : nav2_costmap_2d::FREE_SPACE;
+    });
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  processor.updateLimits(2.0, 4.0, 0.05);
+
+  std::vector<geometry_msgs::msg::PoseStamped> path;
+  for (int i = 0; i <= 8; ++i) {
+    path.push_back(pose(0.0, i * 0.05));
+  }
+  for (int i = 1; i <= 32; ++i) {
+    path.push_back(pose(i * 0.05, 0.40));
+  }
+  for (int i = 1; i <= 8; ++i) {
+    path.push_back(pose(1.60, 0.40 - i * 0.05));
+  }
+
+  const auto seed = processor.buildSeed(
+    path, pose(0.0, 0.0), context,
+    [](const Eigen::Vector3d &, double) {return true;});
+
+  ASSERT_TRUE(seed.valid);
+  ASSERT_GE(seed.sparse_waypoints.size(), 4U);
+  for (size_t index = 1U; index < seed.sparse_waypoints.size(); ++index) {
+    const auto & a = seed.sparse_waypoints[index - 1U];
+    const auto & b = seed.sparse_waypoints[index];
+    const int samples = std::max(1, static_cast<int>(std::ceil((b - a).norm() / 0.02)));
+    for (int sample = 0; sample <= samples; ++sample) {
+      const Eigen::Vector3d point =
+        a + (b - a) * (static_cast<double>(sample) / samples);
+      if (point.x() > 0.20 && point.x() < 1.40) {
+        EXPECT_GE(point.y(), 0.25 - 1e-9);
+      }
+    }
+  }
+}
+
+TEST(LocalPathProcessorTest, UniformlyInflatedNarrowPassageStillAllowsShortcut)
+{
+  auto query = std::make_shared<TestGridQuery>(
+    [](double, double) {return static_cast<uint8_t>(180U);});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  processor.updateLimits(2.0, 4.0, 0.05);
+  const std::vector<geometry_msgs::msg::PoseStamped> path{
+    pose(0.0, 0.0), pose(0.20, 0.02), pose(0.40, 0.0), pose(0.60, 0.02),
+    pose(0.80, 0.0), pose(1.00, 0.02), pose(1.20, 0.0)};
+
+  const auto seed = processor.buildSeed(
+    path, pose(0.0, 0.0), context,
+    [](const Eigen::Vector3d &, double) {return true;});
+
+  ASSERT_TRUE(seed.valid);
+  EXPECT_LT(seed.sparse_waypoints.size(), seed.dense_path.size());
+  EXPECT_TRUE(seed.sparse_waypoints.front().isApprox(Eigen::Vector3d(0.0, 0.0, 0.0)));
+  EXPECT_TRUE(seed.sparse_waypoints.back().isApprox(Eigen::Vector3d(1.20, 0.0, 0.0)));
+}
+
+TEST(LocalPathProcessorTest, SparseRepairNeverAppendsUncheckedCornerOrGoal)
+{
+  const std::vector<Eigen::Vector3d> path{
+    {0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {1.0, 1.0, 0.0}, {1.0, 0.0, 0.0}};
+  const auto sparse = utils::getSparseWaypoints(
+    path, 2.0, 4.0, true,
+    [](const Eigen::Vector3d &, const Eigen::Vector3d &) {return false;});
+  EXPECT_TRUE(sparse.empty());
 }
 
 TEST(LocalPathProcessorTest, SafeRollingHorizonKeepsCruiseEndBehavior)

@@ -724,6 +724,7 @@ void ProjectionLayer::stageOneCell(int x, int y, double now,
   cell.ground_candidate = 0U;
   cell.ground_verified = 0U;
   cell.ground_bridge_verified = 0U;
+  cell.ground_support_bridge_eligible = 0U;
   cell.prior_known_free = stats.prior_known_free;
   cell.ground_support_known = stats.ground_support_known;
   cell.ground_support_verified = 0U;
@@ -752,11 +753,17 @@ void ProjectionLayer::stageOneCell(int x, int y, double now,
   const bool zero_hit_unverified =
       cell.candidate_reason ==
           ProjectionClassReason::INSUFFICIENT_OBSERVATION ||
-      cell.candidate_reason == ProjectionClassReason::HEADROOM_UNVERIFIED;
+      cell.candidate_reason == ProjectionClassReason::HEADROOM_UNVERIFIED ||
+      cell.candidate_reason == ProjectionClassReason::GROUND_UNVERIFIED;
   if ((config.clearance_check_en || config.require_ground_support) &&
       zero_hit_unverified && stats.occupied_count == 0 &&
       !contains_occupied_voxel) {
     cell.footprint_clear_eligible = 1U;
+  } else if (stats.occupied_count != 0 || contains_occupied_voxel ||
+             !zero_hit_unverified) {
+    // A measured occupied return is an immediate veto. Do not allow a bridge
+    // confirmation accumulated before the return to leak into this frame.
+    cell.ground_support_bridge_count = 0U;
   }
   cell_buffer_[static_cast<size_t>(hash_id)] = cell;
 }
@@ -766,6 +773,11 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
                                  const ProjectionLayerConfig &config) {
   const CellType previous_raw_type = cell.raw_type;
   const ProjectionClassReason previous_raw_reason = cell.raw_reason;
+  const bool previous_measured_obstacle =
+      previous_raw_type == CellType::OCCUPIED &&
+      isMeasuredObstacleReason(previous_raw_reason);
+  // Only the measured-obstacle branch below can start this deadline. Once
+  // started, keep it active even though raw_reason follows the new free proof.
   const bool hold_active = cell.occupied_clear_deadline > 0.0;
   const bool zero_hit_headroom_dropout =
       config.require_ground_support &&
@@ -808,7 +820,7 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
     cell.pending_type = CellType::OCCUPIED;
     cell.pending_count = 0U;
   } else if (config.obstacle_hold_time > 0.0 &&
-             (previous_raw_type == CellType::OCCUPIED || hold_active)) {
+             (previous_measured_obstacle || hold_active)) {
     if (!hold_active) {
       cell.occupied_clear_deadline = now + config.obstacle_hold_time;
     }
@@ -873,37 +885,108 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
   double seed_distance = std::numeric_limits<double>::infinity();
   constexpr double kPi = 3.14159265358979323846;
   const double slope = std::tan(config.max_ground_slope_deg * kPi / 180.0);
-  const auto has_continuous_ground_support = [&](int x, int y) {
+  const auto has_connected_ground_support = [&](int x, int y) {
     const CellData &cell =
         cell_buffer_[static_cast<size_t>(hashIndexFromLocal(x, y))];
     if (cell.prior_known_free == 0U || cell.ground_support_known == 0U ||
         !std::isfinite(cell.ground_support_z_abs)) {
       return false;
     }
-    for (int dy = -1; dy <= 1; ++dy) {
-      for (int dx = -1; dx <= 1; ++dx) {
-        if ((dx == 0 && dy == 0) || x + dx < 0 || x + dx >= width_ ||
-            y + dy < 0 || y + dy >= height_) {
-          continue;
-        }
-        const CellData &neighbor = cell_buffer_[static_cast<size_t>(
-            hashIndexFromLocal(x + dx, y + dy))];
-        if (neighbor.prior_known_free == 0U ||
-            neighbor.ground_support_known == 0U ||
-            !std::isfinite(neighbor.ground_support_z_abs)) {
-          continue;
-        }
-        const double planar_step = resolution_ * std::hypot(dx, dy);
-        const double allowed_step =
-            std::max(config.max_ground_step, slope * planar_step);
-        if (std::abs(static_cast<double>(cell.ground_support_z_abs) -
-                     static_cast<double>(neighbor.ground_support_z_abs)) >
-            allowed_step + 1.0e-6) {
-          return false;
-        }
+    constexpr std::array<std::array<int, 2>, 4> kCardinalNeighbors{{
+        {{1, 0}},
+        {{-1, 0}},
+        {{0, 1}},
+        {{0, -1}},
+    }};
+    for (const auto &direction : kCardinalNeighbors) {
+      const int neighbor_x = x + direction[0];
+      const int neighbor_y = y + direction[1];
+      if (neighbor_x < 0 || neighbor_x >= width_ || neighbor_y < 0 ||
+          neighbor_y >= height_) {
+        continue;
+      }
+      const CellData &neighbor = cell_buffer_[static_cast<size_t>(
+          hashIndexFromLocal(neighbor_x, neighbor_y))];
+      if (neighbor.prior_known_free == 0U ||
+          neighbor.ground_support_known == 0U ||
+          !std::isfinite(neighbor.ground_support_z_abs)) {
+        continue;
+      }
+      const double allowed_step =
+          std::max(config.max_ground_step, slope * resolution_);
+      if (std::abs(static_cast<double>(cell.ground_support_z_abs) -
+                   static_cast<double>(neighbor.ground_support_z_abs)) <=
+          allowed_step + 1.0e-6) {
+        // One connected cardinal neighbor is sufficient evidence that this
+        // surveyed cell belongs to a local support surface. Requiring every
+        // eight-neighbor to agree dilates a lateral step into every footprint
+        // sample beside it. Actual occupied voxels are classified before this
+        // support gate and remain an unconditional veto.
+        return true;
       }
     }
-    return true;
+    return false;
+  };
+  const auto has_observed_support_bridge = [&](int x, int y) {
+    if (!config.observed_ground_support_bridge_en ||
+        !config.require_ground_support) {
+      return false;
+    }
+    const double wx =
+        origin_.x() + (static_cast<double>(x) + 0.5) * resolution_;
+    const double wy =
+        origin_.y() + (static_cast<double>(y) + 0.5) * resolution_;
+    const bool inside_footprint =
+        config.clear_robot_footprint_unknown &&
+        insideRobotEnvelope(wx, wy, config, config.robot_footprint_clear_length,
+                            config.robot_footprint_clear_width, resolution_);
+    if (!inside_footprint) {
+      return false;
+    }
+
+    // Use the hard current footprint only. The larger near-field prior sweep
+    // has a separate fail-closed path and must not become a blanket bridge.
+    // Cardinal neighbors only: diagonal/8-neighbor expansion lets a footprint
+    // sample beside a step borrow support from around the corner.
+    constexpr std::array<std::array<int, 2>, 4> kCardinalNeighbors{{
+        {{1, 0}},
+        {{-1, 0}},
+        {{0, 1}},
+        {{0, -1}},
+    }};
+    int support_count = 0;
+    double support_min = std::numeric_limits<double>::infinity();
+    double support_max = -std::numeric_limits<double>::infinity();
+    for (const auto &direction : kCardinalNeighbors) {
+      const int neighbor_x = x + direction[0];
+      const int neighbor_y = y + direction[1];
+      if (neighbor_x < 0 || neighbor_x >= width_ || neighbor_y < 0 ||
+          neighbor_y >= height_) {
+        continue;
+      }
+      const CellData &neighbor = cell_buffer_[static_cast<size_t>(
+          hashIndexFromLocal(neighbor_x, neighbor_y))];
+      if (neighbor.candidate_type == CellType::OCCUPIED ||
+          neighbor.traversable == 0U || neighbor.clearance_verified == 0U ||
+          neighbor.prior_known_free == 0U ||
+          neighbor.ground_support_known == 0U ||
+          !std::isfinite(neighbor.ground_support_z_abs)) {
+        continue;
+      }
+      const double support_z =
+          static_cast<double>(neighbor.ground_support_z_abs);
+      if (std::abs(support_z - config.reference_ground_z_abs) >
+          config.max_ground_height_delta + 1.0e-6) {
+        continue;
+      }
+      ++support_count;
+      support_min = std::min(support_min, support_z);
+      support_max = std::max(support_max, support_z);
+    }
+    return support_count >= config.observed_ground_support_bridge_min_neighbors &&
+           std::isfinite(support_min) && std::isfinite(support_max) &&
+           support_max - support_min <=
+               config.observed_ground_support_bridge_max_height_delta + 1.0e-6;
   };
   for (int y = 0; y < height_; ++y) {
     for (int x = 0; x < width_; ++x) {
@@ -912,12 +995,13 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       cell.ground_verified = 0U;
       cell.ground_bridge_verified = 0U;
       cell.ground_support_verified = 0U;
+      cell.ground_support_bridge_eligible = 0U;
       if (cell.ground_candidate == 0U || !std::isfinite(cell.ground_z_abs)) {
         continue;
       }
       if (config.require_ground_support) {
         if (matchesTrustedGroundSupport(cell, config) &&
-            has_continuous_ground_support(x, y)) {
+            has_connected_ground_support(x, y)) {
           cell.ground_verified = 1U;
           cell.ground_support_verified = 1U;
         }
@@ -1155,7 +1239,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
              cell.footprint_clear_eligible != 0U &&
              cell.prior_known_free != 0U && cell.ground_support_known != 0U &&
              std::isfinite(cell.ground_support_z_abs) &&
-             has_continuous_ground_support(x, y);
+             has_connected_ground_support(x, y);
     };
     const auto is_verified_endpoint = [&](int x, int y) {
       if (x < 0 || x >= width_ || y < 0 || y >= height_) {
@@ -1169,7 +1253,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
              (cell.ground_candidate == 0U || cell.ground_verified != 0U) &&
              cell.prior_known_free != 0U && cell.ground_support_known != 0U &&
              std::isfinite(cell.ground_support_z_abs) &&
-             has_continuous_ground_support(x, y);
+             has_connected_ground_support(x, y);
     };
     const auto find_endpoint = [&](int start_x, int start_y, int dx, int dy,
                                    int &interior_count) {
@@ -1238,10 +1322,38 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       cell.near_field_prior_fill_eligible = 0U;
       CellType final_type = cell.candidate_type;
       ProjectionClassReason final_reason = cell.candidate_reason;
-      const bool discontinuous_support = config.require_ground_support &&
-                                         cell.clearance_verified != 0U &&
-                                         !has_continuous_ground_support(x, y);
-      if (discontinuous_support) {
+      const bool support_bridge_evidence =
+          cell.footprint_clear_eligible != 0U &&
+          has_observed_support_bridge(x, y);
+      if (support_bridge_evidence) {
+        cell.ground_support_bridge_eligible = 1U;
+        cell.ground_support_bridge_count = static_cast<uint8_t>(std::min(
+            255, static_cast<int>(cell.ground_support_bridge_count) + 1));
+      } else {
+        cell.ground_support_bridge_eligible = 0U;
+        cell.ground_support_bridge_count = 0U;
+      }
+      const bool support_bridge_confirmed =
+          support_bridge_evidence &&
+          static_cast<int>(cell.ground_support_bridge_count) >=
+              std::max(1, config.observed_ground_support_bridge_hysteresis_count);
+      if (support_bridge_confirmed) {
+        // The current cell has no occupied voxel (eligibility is set only by
+        // stageOneCell after that veto), while two cardinal neighbors provide
+        // a continuous, height-consistent measured support surface. This is a
+        // bounded one-cell bridge, not a general unknown-as-free rule.
+        final_type = CellType::FREE;
+        final_reason = ProjectionClassReason::GROUND_BRIDGE_CLEARANCE_OK;
+        cell.ground_bridge_verified = 1U;
+        cell.ground_support_verified = 1U;
+        cell.empty_support_verified = 1U;
+        cell.clearance_verified = 1U;
+        cell.traversable = 1U;
+      }
+      const bool disconnected_support = config.require_ground_support &&
+                                        cell.clearance_verified != 0U &&
+                                        !has_connected_ground_support(x, y);
+      if (!support_bridge_confirmed && disconnected_support) {
         final_type = CellType::OCCUPIED;
         final_reason = ProjectionClassReason::GROUND_UNVERIFIED;
         cell.ground_verified = 0U;
@@ -1249,7 +1361,8 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
         cell.empty_support_verified = 0U;
         cell.clearance_verified = 0U;
         cell.traversable = 0U;
-      } else if (cell.ground_candidate != 0U && cell.ground_verified == 0U) {
+      } else if (!support_bridge_confirmed && cell.ground_candidate != 0U &&
+                 cell.ground_verified == 0U) {
         final_type = CellType::OCCUPIED;
         final_reason = ProjectionClassReason::GROUND_UNVERIFIED;
         cell.clearance_verified = 0U;
@@ -1292,7 +1405,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
           const bool continuous_trusted_support =
               cell.prior_known_free != 0U && cell.ground_support_known != 0U &&
               std::isfinite(cell.ground_support_z_abs) &&
-              has_continuous_ground_support(x, y);
+              has_connected_ground_support(x, y);
           cell.continuous_ground_support =
               continuous_trusted_support ? 1U : 0U;
           // This is the support gate for the bounded zero-hit clearance

@@ -31,6 +31,8 @@ public:
     double max_vel,
     double max_acc,
     double traj_goal_tolerance,
+    double shortcut_peak_cost_slack,
+    double shortcut_mean_cost_slack,
     rclcpp::Logger logger,
     rclcpp::Clock::SharedPtr clock);
 
@@ -60,6 +62,8 @@ private:
   double max_vel_{2.0};
   double max_acc_{4.0};
   double traj_goal_tolerance_{0.5};
+  double shortcut_peak_cost_slack_{10.0};
+  double shortcut_mean_cost_slack_{5.0};
   rclcpp::Logger logger_{rclcpp::get_logger("LocalPathProcessor")};
   rclcpp::Clock::SharedPtr clock_;
 };

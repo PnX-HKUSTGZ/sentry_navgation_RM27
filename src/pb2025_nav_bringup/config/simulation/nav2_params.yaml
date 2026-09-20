@@ -26,7 +26,7 @@ rm27_ground_truth_localizer:
     # ROG ray range; ROG clips them to free rays without inserting a hit.
     reconstruct_no_return_rays: True
     lidar_horizontal_samples: 360
-    lidar_vertical_samples: 320
+    lidar_vertical_samples: 96
     lidar_horizontal_min_angle: 0.0
     lidar_horizontal_max_angle: 6.283185307179586
     lidar_vertical_min_angle: -0.1260127724939906
@@ -34,13 +34,13 @@ rm27_ground_truth_localizer:
     no_return_ray_length: 10.5
     rog_raycast_max_range: 10.0
     rog_map_resolution: 0.05
-    # Subsample misses only and rotate the selected raster phase every frame.
-    # A fixed phase leaves the same rings permanently absent on the tunnel
-    # ramp; cycling covers all directions in four frames while halving per-scan
-    # synthetic points. Every finite obstacle hit is retained on every frame.
+    # Rebuild misses on every vertical ring. With the simulation sensor reduced
+    # to 96 rings this is still only 34560 rays, while it removes the regular
+    # body-band HEADROOM_UNVERIFIED blind strip. Every finite obstacle hit is
+    # retained on every frame and therefore still has veto priority.
     no_return_horizontal_stride: 1
-    no_return_vertical_stride: 2
-    cycle_no_return_stride_phase: True
+    no_return_vertical_stride: 1
+    cycle_no_return_stride_phase: False
 
 point_lio:
   ros__parameters:
@@ -199,7 +199,10 @@ terrain_analysis:
     noDataObstacle: False               # treat no data as obstacle
     noDataBlockSkipNum: 0
     minBlockPointNum: 10
-    vehicleHeight: 0.50                # 小于车辆高度的点才会进行处理
+    # Legacy terrain_map intensity is point-to-local-ground height. Keep
+    # returns at or above the 0.60 m tunnel-clearance threshold out of the
+    # obstacle cloud; maxRelZ remains the sensor-frame input crop.
+    vehicleHeight: 0.60
     voxelPointUpdateThre: 100
     voxelTimeUpdateThre: 0.3
     minRelZ: -1.5                       # min_rel_z 以及 max_rel_z 限制了有效点云点的Z值范围，用于对天花板和地板进行处理
@@ -214,7 +217,9 @@ terrain_analysis_ext:
     clearingDis: 20.0
     useSorting: true
     quantileZ: 0.2
-    vehicleHeight: 0.50
+    # Match terrain_analysis so the ext/global cloud cannot re-introduce roof
+    # returns that the local legacy chain has already excluded.
+    vehicleHeight: 0.60
     voxelPointUpdateThre: 100
     voxelTimeUpdateThre: 0.5
     lowerBoundZ: -1.5
@@ -474,7 +479,8 @@ local_costmap:
         min_obstacle_height: 0.0
         max_obstacle_height: 2.0
         min_obstacle_intensity: 0.1
-        max_obstacle_intensity: 2.0
+        # terrain_map intensity is disZ above the local ground, not world z.
+        max_obstacle_intensity: 0.60
         observation_sources: terrain_map
         terrain_map:
           data_type: PointCloud2
@@ -498,7 +504,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 10.0
-        inflation_radius: 0.25
+        inflation_radius: 0.45
       always_send_full_costmap: False
 
 global_costmap:
@@ -529,7 +535,8 @@ global_costmap:
         min_obstacle_height: 0.0
         max_obstacle_height: 2.0
         min_obstacle_intensity: 0.1
-        max_obstacle_intensity: 2.0
+        # terrain_map_ext intensity is also disZ above the local ground.
+        max_obstacle_intensity: 0.60
         observation_sources: terrain_map_ext
         terrain_map_ext:
           data_type: PointCloud2

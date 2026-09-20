@@ -411,6 +411,9 @@ void StaticObstacleClearanceQuery::buildOverlay()
   }
 
   overlay_costs_.assign(cell_count, nav2_costmap_2d::FREE_SPACE);
+  hardened_cell_count_ = 0U;
+  unknown_boundary_guard_cell_count_ = 0U;
+  std::vector<uint8_t> unknown_near_lethal(cell_count, 0U);
   const int clearance_cells = static_cast<int>(
     std::ceil(clearance_radius_ / map_resolution));
   for (unsigned int my = 0U; my < ny; ++my) {
@@ -437,6 +440,52 @@ void StaticObstacleClearanceQuery::buildOverlay()
           const size_t target_index = static_cast<size_t>(target_y) *
             static_cast<size_t>(nx) + static_cast<size_t>(target_x);
           overlay_costs_[target_index] = nav2_costmap_2d::LETHAL_OBSTACLE;
+          if (base_values[target_index] == nav2_costmap_2d::NO_INFORMATION) {
+            unknown_near_lethal[target_index] = 1U;
+          }
+        }
+      }
+    }
+  }
+
+  // Unknown pixels at the anti-aliased edge of a static obstacle are still
+  // intentionally unknown. Guard only the known-free side of that edge with a
+  // high, but traversable, cost so global search prefers the middle of the
+  // surveyed corridor instead of entering the unknown boundary. The second
+  // dilation is bounded by the same footprint radius and never changes an
+  // unknown cell into free space.
+  constexpr uint8_t kUnknownBoundaryGuardCost =
+    nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE - 1U;
+  for (unsigned int my = 0U; my < ny; ++my) {
+    for (unsigned int mx = 0U; mx < nx; ++mx) {
+      const size_t source_index = static_cast<size_t>(my) *
+        static_cast<size_t>(nx) + mx;
+      if (unknown_near_lethal[source_index] == 0U) {
+        continue;
+      }
+      for (int dy = -clearance_cells; dy <= clearance_cells; ++dy) {
+        for (int dx = -clearance_cells; dx <= clearance_cells; ++dx) {
+          if (map_resolution * std::hypot(dx, dy) > clearance_radius_ + 1.0e-9) {
+            continue;
+          }
+          const int target_x = static_cast<int>(mx) + dx;
+          const int target_y = static_cast<int>(my) + dy;
+          if (target_x < 0 || target_y < 0 || target_x >= static_cast<int>(nx) ||
+            target_y >= static_cast<int>(ny))
+          {
+            continue;
+          }
+          const size_t target_index = static_cast<size_t>(target_y) *
+            static_cast<size_t>(nx) + static_cast<size_t>(target_x);
+          const uint8_t base_cost = base_values[target_index];
+          if (base_cost == nav2_costmap_2d::NO_INFORMATION ||
+            base_cost == nav2_costmap_2d::LETHAL_OBSTACLE)
+          {
+            continue;
+          }
+          if (overlay_costs_[target_index] < kUnknownBoundaryGuardCost) {
+            overlay_costs_[target_index] = kUnknownBoundaryGuardCost;
+          }
         }
       }
     }
@@ -448,6 +497,14 @@ void StaticObstacleClearanceQuery::buildOverlay()
       base_values[index] != nav2_costmap_2d::NO_INFORMATION)
     {
       ++hardened_cell_count_;
+    }
+    if (overlay_costs_[index] == kUnknownBoundaryGuardCost &&
+      base_values[index] < kUnknownBoundaryGuardCost &&
+      base_values[index] != nav2_costmap_2d::NO_INFORMATION &&
+      base_values[index] != nav2_costmap_2d::LETHAL_OBSTACLE &&
+      overlay_costs_[index] < nav2_costmap_2d::LETHAL_OBSTACLE)
+    {
+      ++unknown_boundary_guard_cell_count_;
     }
   }
 }

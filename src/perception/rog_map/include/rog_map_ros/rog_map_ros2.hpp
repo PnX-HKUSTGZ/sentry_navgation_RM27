@@ -215,6 +215,8 @@ class ROGMapROS : public ROGMap {
   }
 
   ROGMapVisualizer::Publishers vm_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
+      dynamic_obstacles_pub_;
 
   static uint8_t reasonVisualizationValue(ProjectionClassReason reason) {
     // Spread the reason enum over RViz's 0..100 map palette. The exact enum and
@@ -531,6 +533,20 @@ class ROGMapROS : public ROGMap {
     map_update_waiting_.store(false, std::memory_order_release);
     updateMapInternal(pending_frame->value.pc, pending_frame->value.pose,
                       pending_frame->value.sensor_stamp);
+    nav_msgs::msg::OccupancyGrid dynamic_obstacles;
+    size_t dynamic_obstacle_count = 0U;
+    const bool publish_dynamic_obstacles =
+        fillDynamicObstacleGrid(dynamic_obstacles, dynamic_obstacle_count);
+    map_lock.unlock();
+    if (publish_dynamic_obstacles) {
+      dynamic_obstacles_pub_->publish(std::move(dynamic_obstacles));
+      RCLCPP_INFO_THROTTLE(
+          node_logging_->get_logger(), *node_clock_->get_clock(), 5000,
+          "[ROGMap] dynamic obstacle grid published: frame='%s' "
+          "measured_obstacles=%zu subscribers=%zu",
+          cfg_.visualization_frame_id.c_str(), dynamic_obstacle_count,
+          dynamic_obstacles_pub_->get_subscription_count());
+    }
   }
 
   void vizCallback() {
@@ -961,6 +977,31 @@ class ROGMapROS : public ROGMap {
     fillLayerGrid(occupancy, grid);
   }
 
+  bool fillDynamicObstacleGrid(nav_msgs::msg::OccupancyGrid &grid,
+                               size_t &obstacle_count) {
+    obstacle_count = 0U;
+    if (!dynamic_obstacles_pub_ || !layer_ || layer_->empty()) {
+      return false;
+    }
+
+    std::vector<uint8_t> occupancy(layer_->cells().size(), 0U);
+    const auto &cells = layer_->cells();
+    for (size_t i = 0; i < cells.size(); ++i) {
+      const auto &cell = cells[i];
+      const bool measured_height = std::isfinite(cell.occupied_z_min_abs) &&
+                                   std::isfinite(cell.occupied_z_max_abs);
+      if (cell.raw_type == CellType::OCCUPIED && measured_height &&
+          (isMeasuredObstacleReason(cell.raw_reason) ||
+           isMeasuredObstacleReason(cell.candidate_reason))) {
+        occupancy[i] = 100U;
+        ++obstacle_count;
+      }
+    }
+
+    fillLayerGrid(occupancy, grid);
+    return true;
+  }
+
   void fillLayerHeightDeltaCloud(sensor_msgs::msg::PointCloud2 &cloud) {
     pcl::PointCloud<pcl::PointXYZI> pcl_cloud;
     const auto &cells = layer_->cells();
@@ -1090,6 +1131,11 @@ class ROGMapROS : public ROGMap {
     // message transmission.
     const rclcpp::QoS qos(
         rclcpp::QoS(1).best_effort().keep_last(1).durability_volatile());
+
+    // This is an operational input to Nav2, not an RViz-only publisher. Keep
+    // it alive even when ROG visualization is disabled.
+    dynamic_obstacles_pub_ = createPublisher<nav_msgs::msg::OccupancyGrid>(
+        "/rog_map/dynamic_obstacles", qos);
 
     if (cfg_.prior_map_enable) {
       prior_map_ =

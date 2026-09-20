@@ -615,6 +615,12 @@ bool TrajectorySafetyChecker::checkTrajectory(
 
 bool TrajectorySafetyChecker::checkTrajectoryFromTime(
     const traj_opt::Trajectory &traj, double start_time) const {
+  return checkTrajectoryFromTime(traj, start_time, traj.getTotalDuration());
+}
+
+bool TrajectorySafetyChecker::checkTrajectoryFromTime(
+    const traj_opt::Trajectory &traj, double start_time,
+    double end_time) const {
   const auto query = querySnapshot();
   if (!query) {
     FailureDiagnostic failure;
@@ -645,7 +651,24 @@ bool TrajectorySafetyChecker::checkTrajectoryFromTime(
   }
 
   const double first_time = std::clamp(start_time, 0.0, dur);
-  for (double t = first_time; t < dur; t += sample_dt_) {
+  if (start_time >= dur) {
+    const Eigen::Vector3d endpoint = traj.getPos(dur);
+    auto endpoint_check = evaluatePoint(query, endpoint);
+    if (!endpoint_check.safe) {
+      endpoint_check.diagnostic.center = endpoint;
+      endpoint_check.diagnostic.trajectory_time = dur;
+      recordTrajectoryFailure(endpoint_check.diagnostic, dur);
+      return false;
+    }
+    clearTrajectoryFailure();
+    return true;
+  }
+  const double last_time = std::clamp(end_time, first_time, dur);
+  if (!std::isfinite(last_time) || last_time <= first_time + 1.0e-9) {
+    clearTrajectoryFailure();
+    return true;
+  }
+  for (double t = first_time; t < last_time; t += sample_dt_) {
     const Eigen::Vector3d center = traj.getPos(t);
     auto point_check = evaluatePoint(query, center);
     if (!point_check.safe) {
@@ -656,11 +679,11 @@ bool TrajectorySafetyChecker::checkTrajectoryFromTime(
     }
   }
 
-  const Eigen::Vector3d endpoint = traj.getPos(dur);
+  const Eigen::Vector3d endpoint = traj.getPos(last_time);
   auto endpoint_check = evaluatePoint(query, endpoint);
   if (!endpoint_check.safe) {
     endpoint_check.diagnostic.center = endpoint;
-    endpoint_check.diagnostic.trajectory_time = dur;
+    endpoint_check.diagnostic.trajectory_time = last_time;
     recordTrajectoryFailure(endpoint_check.diagnostic, dur);
     return false;
   }
@@ -677,6 +700,14 @@ bool TrajectorySafetyChecker::checkTrajectory(
 bool TrajectorySafetyChecker::checkTrajectoryFromTime(
     const traj_opt::Trajectory &position_traj,
     const traj_opt::Trajectory &yaw_traj, double start_time) const {
+  return checkTrajectoryFromTime(position_traj, yaw_traj, start_time,
+                                 position_traj.getTotalDuration());
+}
+
+bool TrajectorySafetyChecker::checkTrajectoryFromTime(
+    const traj_opt::Trajectory &position_traj,
+    const traj_opt::Trajectory &yaw_traj, double start_time,
+    double end_time) const {
   const auto query = querySnapshot();
   if (!query) {
     FailureDiagnostic failure;
@@ -734,7 +765,22 @@ bool TrajectorySafetyChecker::checkTrajectoryFromTime(
   };
 
   const double first_time = std::clamp(start_time, 0.0, position_duration);
-  for (double t = first_time; t < position_duration; t += sample_dt_) {
+  if (start_time >= position_duration) {
+    FailureDiagnostic endpoint_failure;
+    if (!check_sample(position_duration, endpoint_failure)) {
+      recordTrajectoryFailure(endpoint_failure, position_duration);
+      return false;
+    }
+    clearTrajectoryFailure();
+    return true;
+  }
+  const double last_time =
+      std::clamp(end_time, first_time, position_duration);
+  if (!std::isfinite(last_time) || last_time <= first_time + 1.0e-9) {
+    clearTrajectoryFailure();
+    return true;
+  }
+  for (double t = first_time; t < last_time; t += sample_dt_) {
     FailureDiagnostic failure;
     if (!check_sample(t, failure)) {
       recordTrajectoryFailure(failure, position_duration);
@@ -742,7 +788,7 @@ bool TrajectorySafetyChecker::checkTrajectoryFromTime(
     }
   }
   FailureDiagnostic endpoint_failure;
-  if (!check_sample(position_duration, endpoint_failure)) {
+  if (!check_sample(last_time, endpoint_failure)) {
     recordTrajectoryFailure(endpoint_failure, position_duration);
     return false;
   }

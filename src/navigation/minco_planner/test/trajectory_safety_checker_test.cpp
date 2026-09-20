@@ -423,6 +423,26 @@ TEST(TrajectorySafetyCheckerTest, StartPastDurationStillChecksEndpoint) {
   EXPECT_DOUBLE_EQ(checker->lastFailureDiagnostic().trajectory_time, 1.0);
 }
 
+TEST(TrajectorySafetyCheckerTest, BoundedEndTimeDoesNotQueryBeyondSafetyWindow) {
+  TrajectorySafetyChecker::Config config;
+  config.safe_dist = 0.01;
+  config.footprint_length = 0.02;
+  config.footprint_width = 0.02;
+  config.footprint_margin = 0.001;
+  config.sample_dt = 0.10;
+  auto map = std::make_shared<FakeMapQuery>([](const Eigen::Vector3d &pos) {
+    return pos.x() >= 0.80;
+  });
+  auto checker = makeChecker(config, map);
+  const auto position = makeLinearTrajectory(
+      2.0, Eigen::Vector3d::Zero(), Eigen::Vector3d::UnitX());
+  const auto yaw = makeYawTrajectory(2.0, 0.0);
+
+  ASSERT_TRUE(checker->checkTrajectoryFromTime(position, yaw, 0.0, 0.50));
+  ASSERT_FALSE(checker->checkTrajectoryFromTime(position, yaw, 0.0, 1.0));
+  EXPECT_GE(checker->lastFailureDiagnostic().trajectory_time, 0.79);
+}
+
 TEST(TrajectorySafetyCheckerTest, NonfiniteStartTimeFailsClosed) {
   auto map = std::make_shared<FakeMapQuery>(
       [](const Eigen::Vector3d &) { return false; });

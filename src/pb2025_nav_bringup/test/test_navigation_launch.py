@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import importlib.util
 import math
 from pathlib import Path
@@ -22,12 +23,14 @@ import xml.etree.ElementTree as ET
 import pytest
 import yaml
 from launch import LaunchContext
+from launch.utilities import perform_substitutions
 
 
 BRINGUP_DIR = Path(__file__).resolve().parents[1]
 LAUNCH_FILE = BRINGUP_DIR / "launch" / "navigation_launch.py"
 REALITY_LAUNCH_FILE = BRINGUP_DIR / "launch" / "rm_navigation_reality_launch.py"
 SIMULATION_LAUNCH_FILE = BRINGUP_DIR / "launch" / "rm_navigation_simulation_launch.py"
+SLAM_LAUNCH_FILE = BRINGUP_DIR / "launch" / "slam_launch.py"
 RMUC2026_MAP = BRINGUP_DIR / "map" / "simulation" / "RMUC2026.yaml"
 RMUC2026_ELEVATION_GENERATOR = BRINGUP_DIR / "tools" / "generate_rmuc2026_elevation.py"
 RMUC2026_STL = (
@@ -142,6 +145,60 @@ def _read_pgm_header_and_raster(path):
     return magic, width, height, max_value, raster
 
 
+def _literal_assignment(path, variable_name):
+    tree = ast.parse(path.read_text())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(
+            isinstance(target, ast.Name) and target.id == variable_name
+            for target in node.targets
+        ):
+            return ast.literal_eval(node.value)
+    raise AssertionError(f"{variable_name} is not assigned in {path}")
+
+
+def test_slam_toolbox_owns_dynamic_map_to_odom_transform():
+    module = load_launch(SLAM_LAUNCH_FILE, "rm27_slam_launch")
+    launch_description = module.generate_launch_description()
+    launched_nodes = {
+        (entity.node_package, entity.node_executable)
+        for entity in launch_description.entities
+        if hasattr(entity, "node_package")
+    }
+
+    assert ("slam_toolbox", "sync_slam_toolbox_node") in launched_nodes
+    assert ("tf2_ros", "static_transform_publisher") not in launched_nodes
+    assert _literal_assignment(SLAM_LAUNCH_FILE, "lifecycle_nodes") == [
+        "slam_toolbox",
+        "map_saver",
+    ]
+    assert _literal_assignment(SLAM_LAUNCH_FILE, "slam_lifecycle_params") == {
+        "use_lifecycle_manager": True
+    }
+
+    slam_node = next(
+        entity
+        for entity in launch_description.entities
+        if getattr(entity, "node_package", None) == "slam_toolbox"
+    )
+    launch_context = LaunchContext()
+    additional_env = {
+        perform_substitutions(launch_context, name): perform_substitutions(
+            launch_context, value
+        )
+        for name, value in slam_node.additional_env
+    }
+    library_path = additional_env["LD_LIBRARY_PATH"]
+    assert library_path.split(":", maxsplit=1)[0].startswith("/usr/lib/")
+
+    reality_params = yaml.safe_load(
+        (BRINGUP_DIR / "config" / "reality" / "nav2_params.yaml").read_text()
+    )
+    slam_params = reality_params["slam_toolbox"]["ros__parameters"]
+    assert slam_params["transform_publish_period"] == pytest.approx(0.05)
+
+
 @pytest.mark.parametrize(
     ("deployment", "expected_name"),
     [("simulation", "RMUC2026.yaml"), ("reality", "highbay.yaml")],
@@ -244,7 +301,7 @@ def test_simulation_minco_global_seed_keeps_ramp_corner_clearance():
     # never be more permissive than the final local safety gate.
     assert 0.0 < ground_edge["max_step"] <= projection["max_ground_step"]
     assert 0.0 < ground_edge["max_slope_deg"] <= projection["max_ground_slope_deg"]
-    assert ground_edge["max_step"] == pytest.approx(0.02)
+    assert ground_edge["max_step"] == pytest.approx(0.042)
     assert ground_edge["max_slope_deg"] == pytest.approx(20.0)
     footprint_corner_radius = math.hypot(
         0.5 * planner["safety"]["footprint_length"]
@@ -378,6 +435,45 @@ def test_active_minco_profiles_expose_only_authoritative_plugins():
         ] == ["MincoMpc"]
 
 
+def test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps():
+    for deployment in ("simulation", "reality"):
+        profile = yaml.safe_load(
+            (BRINGUP_DIR / "config" / deployment / "minco_params.yaml").read_text()
+        )
+        for costmap_name in ("local_costmap", "global_costmap"):
+            params = profile[costmap_name][costmap_name]["ros__parameters"]
+            assert params["plugins"] == [
+                "static_layer",
+                "rog_dynamic_obstacle_layer",
+                "inflation_layer",
+            ]
+            rog_layer = params["rog_dynamic_obstacle_layer"]
+            assert rog_layer["plugin"] == (
+                "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
+            )
+            assert rog_layer["topic"] == "/rog_map/dynamic_obstacles"
+            assert 0 < rog_layer["obstacle_threshold"] <= 100
+            assert rog_layer["stale_timeout"] > 0.0
+            if deployment == "reality":
+                inflation = params["inflation_layer"]
+                assert inflation["plugin"] == "nav2_costmap_2d::InflationLayer"
+                assert inflation["enabled"] is True
+                assert 0.25 <= inflation["inflation_radius"] <= 1.0
+                assert inflation["cost_scaling_factor"] > 0.0
+
+        smac = profile["planner_server"]["ros__parameters"]["MincoPlanner"][
+            "smac_2d"
+        ]
+        expected_cost_penalty = 2.0 if deployment == "simulation" else 6.0
+        assert smac["cost_penalty"] == pytest.approx(expected_cost_penalty)
+        assert smac["use_quadratic_cost_penalty"] is False
+        local_path = profile["planner_server"]["ros__parameters"]["MincoPlanner"][
+            "local_path"
+        ]
+        assert local_path["shortcut_peak_cost_slack"] == pytest.approx(10.0)
+        assert local_path["shortcut_mean_cost_slack"] == pytest.approx(5.0)
+
+
 def test_active_minco_profiles_keep_physical_pose_and_bounded_reference_contracts():
     for deployment in ("simulation", "reality"):
         profile = yaml.safe_load(
@@ -424,16 +520,16 @@ def test_simulated_no_return_rays_match_embedded_rog_range_and_resolution():
 
     assert localizer["reconstruct_no_return_rays"] is True
     assert localizer["lidar_horizontal_samples"] == 360
-    assert localizer["lidar_vertical_samples"] == 320
+    assert localizer["lidar_vertical_samples"] == 96
     assert localizer["rog_raycast_max_range"] == rog["raycasting"]["ray_range"][1]
     assert localizer["rog_map_resolution"] == rog["resolution"]
     assert localizer["no_return_ray_length"] >= (
         localizer["rog_raycast_max_range"] + 2.0 * localizer["rog_map_resolution"]
     )
     assert localizer["no_return_horizontal_stride"] == 1
-    assert localizer["no_return_vertical_stride"] == 2
-    assert localizer["cycle_no_return_stride_phase"] is True
-    assert rog["map_size"] == [8.0, 8.0, 2.0]
+    assert localizer["no_return_vertical_stride"] == 1
+    assert localizer["cycle_no_return_stride_phase"] is False
+    assert rog["map_size"] == [6.0, 6.0, 2.0]
     assert rog["esdf"]["local_update_box"] == rog["map_size"]
     assert rog["raycasting"]["local_update_box"] == rog["map_size"]
 
@@ -457,9 +553,12 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
     real_optimizer = reality["planner_server"]["ros__parameters"]["MincoPlanner"][
         "minco_optimizer"
     ]
+    real_mpc = reality["controller_server"]["ros__parameters"]["MincoMpc"]
 
     assert sim_optimizer["max_velocity"] == pytest.approx(1.0)
-    assert real_optimizer["max_velocity"] == pytest.approx(0.5)
+    assert real_optimizer["max_velocity"] == pytest.approx(0.7)
+    assert real_optimizer["max_velocity"] == pytest.approx(real_mpc["max_planar_speed"])
+    assert real_mpc["slope_speed_limit"] < real_mpc["max_planar_speed"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vx_max"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vy_max"]
     assert sim_optimizer["max_velocity"] == pytest.approx(sim_mpc["max_planar_speed"])
@@ -485,6 +584,14 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
         sim_planner["safety"]["map_timeout"]
         < sim_planner["rog_map"]["decay"]["keep_time"]
     )
+    assert sim_planner["safety"]["map_timeout"] == pytest.approx(2.50)
+    assert (
+        0.0
+        < sim_projection["clearance_dropout_hold_time"]
+        < sim_planner["rog_map"]["decay"]["keep_time"]
+    )
+    assert sim_projection["clearance_hole_fill_enable"] is True
+    assert sim_projection["clearance_hole_fill_max_width"] <= hard_footprint_length
 
 
 def test_simulation_footprint_bootstrap_covers_one_rog_seed_step():
@@ -519,8 +626,8 @@ def test_simulation_footprint_bootstrap_covers_one_rog_seed_step():
     real_projection = reality["planner_server"]["ros__parameters"]["MincoPlanner"][
         "rog_map"
     ]["projection"]
-    assert real_projection["robot_footprint_clear_length"] == pytest.approx(0.40)
-    assert real_projection["robot_footprint_clear_width"] == pytest.approx(0.30)
+    assert real_projection["robot_footprint_clear_length"] == pytest.approx(0.45)
+    assert real_projection["robot_footprint_clear_width"] == pytest.approx(0.35)
 
 
 def test_active_minco_profiles_disable_unsafe_motion_entry_points():
@@ -621,6 +728,25 @@ def test_rviz_keeps_heavy_scan_optional_and_minco_outputs_visible():
         for display in rog_group["Displays"]
         if display.get("Name") == "Occupied Voxels"
     )
+    dynamic_obstacles = next(
+        display
+        for display in rog_group["Displays"]
+        if display.get("Name") == "ROG Raw Input (Before Inflation)"
+    )
+    global_planner_group = next(
+        display for display in displays if display.get("Name") == "Global Planner"
+    )
+    inflated_costs = next(
+        display
+        for display in global_planner_group["Displays"]
+        if display.get("Name")
+        == "Final Inflation + Obstacle Cores (Point Cloud)"
+    )
+    dynamic_inflation = next(
+        display
+        for display in global_planner_group["Displays"]
+        if display.get("Name") == "Dynamic Inflation (Final Costmap)"
+    )
 
     assert registered["Enabled"] is False
     assert registered["Value"] is False
@@ -628,6 +754,19 @@ def test_rviz_keeps_heavy_scan_optional_and_minco_outputs_visible():
     assert registered["Topic"]["Value"] == "/registered_scan"
     assert occupied["Enabled"] is True
     assert occupied["Topic"]["Value"] == "/rog_map/occupied"
+    assert dynamic_obstacles["Enabled"] is True
+    assert dynamic_obstacles["Draw Behind"] is True
+    assert dynamic_obstacles["Alpha"] < 0.5
+    assert dynamic_obstacles["Topic"]["Value"] == "/rog_map/dynamic_obstacles"
+    assert dynamic_obstacles["Topic"]["Reliability Policy"] == "Best Effort"
+    assert inflated_costs["Enabled"] is True
+    assert inflated_costs["Style"] == "Flat Squares"
+    assert inflated_costs["Max Intensity"] == pytest.approx(254)
+    assert inflated_costs["Topic"]["Value"] == "/minco/global_costmap_soft_costs"
+    assert inflated_costs["Topic"]["Durability Policy"] == "Transient Local"
+    assert dynamic_inflation["Enabled"] is True
+    assert dynamic_inflation["Topic"]["Value"] == "/minco/dynamic_costmap_inflation"
+    assert dynamic_inflation["Topic"]["Durability Policy"] == "Transient Local"
     assert minco_path["Topic"]["Value"] == "/opt_path_vis"
 
 

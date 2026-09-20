@@ -80,9 +80,10 @@ void PlannerModeContext::rebuildQueries(const std::shared_ptr<rog_map::MapQueryI
         RCLCPP_INFO(
           logger,
           "[MincoPlanner] Static-obstacle global hard clearance: radius=%.3f m "
-          "newly_hardened_cells=%zu",
+          "newly_hardened_cells=%zu unknown_boundary_guard_cells=%zu",
           static_clearance_query->clearanceRadius(),
-          static_clearance_query->hardenedCellCount());
+          static_clearance_query->hardenedCellCount(),
+          static_clearance_query->unknownBoundaryGuardCellCount());
         global_query_ = std::move(static_clearance_query);
       }
       if (params_.priormap_ground_edge_avoidance_enable && ground_edge_prior_ready_) {

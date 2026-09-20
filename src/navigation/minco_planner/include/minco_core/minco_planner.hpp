@@ -223,12 +223,14 @@ private:
   bool use_smac_;
   bool use_yaw_opt_{true};
   bool priormap_use_nav2_global_search_{true};
+  bool priormap_dynamic_global_obstacle_enable_{false};
   bool priormap_clip_seed_by_rog_boundary_{true};
   bool priormap_ground_edge_avoidance_enable_{false};
   bool exploration_unknown_as_occupied_{true};
   bool exploration_prefer_goal_direction_{true};
   double priormap_rog_boundary_margin_{0.8};
   double priormap_rog_boundary_sample_step_{0.1};
+  double priormap_dynamic_global_collision_distance_{0.0};
   double priormap_ground_edge_max_step_{0.06};
   double priormap_ground_edge_max_slope_deg_{28.0};
   double priormap_ground_edge_lethal_clearance_radius_{0.0};
@@ -246,6 +248,8 @@ private:
   double successful_replan_period_{1.0};
   double lookahead_dist_;
   double traj_goal_tolerance_{0.5};
+  // Maximum future time certified against the rolling ROG snapshot.
+  double safety_check_horizon_{2.0};
   double collision_cache_reuse_max_duration_{0.75};
   double request_lease_timeout_{0.0};
   MincoOptimizer::Config minco_config;

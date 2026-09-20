@@ -7,12 +7,18 @@
 #include <iomanip>
 #include <sstream>
 
+#include "nav2_costmap_2d/costmap_layer.hpp"
+
 namespace minco_planner {
 
-void Visualizer::configure(const nav2_util::LifecycleNode::WeakPtr & parent, const std::string & global_frame)
+void Visualizer::configure(
+  const nav2_util::LifecycleNode::WeakPtr & parent,
+  const std::string & global_frame,
+  const std::shared_ptr<nav2_costmap_2d::Costmap2DROS> & costmap_ros)
 {
   node_ = parent;
   global_frame_ = global_frame;
+  costmap_ros_ = costmap_ros;
 
   auto node = parent.lock();
   if (!node) {
@@ -45,6 +51,16 @@ void Visualizer::configure(const nav2_util::LifecycleNode::WeakPtr & parent, con
   // Markers
   control_points_vis_pub_ = node->create_publisher<visualization_msgs::msg::Marker>(
     "/minco_control_points_vis", rclcpp::QoS(rclcpp::KeepLast(1)).transient_local());
+
+  // This is the final master costmap after all plugins are merged. Publishing
+  // soft cells as XYZ+intensity bypasses RViz's indexed Map texture shader,
+  // which is unreliable on some integrated-GPU OpenGL drivers.
+  global_costmap_soft_costs_pub_ = node->create_publisher<sensor_msgs::msg::PointCloud2>(
+    "/minco/global_costmap_soft_costs",
+    rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
+  dynamic_costmap_inflation_pub_ = node->create_publisher<sensor_msgs::msg::PointCloud2>(
+    "/minco/dynamic_costmap_inflation",
+    rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
 
   // 15Hz visualization timer
   visual_callback_group_ =
@@ -81,6 +97,22 @@ void Visualizer::cleanup()
     path.header.frame_id = global_frame_;
     candidate_path_vis_pub_->publish(path);
   }
+  if (node && astar_path_vis_pub_) {
+    nav_msgs::msg::Path path;
+    path.header.stamp = node->now();
+    path.header.frame_id = global_frame_;
+    astar_path_vis_pub_->publish(path);
+  }
+  if (node && global_costmap_soft_costs_pub_) {
+    sensor_msgs::msg::PointCloud2 cloud;
+    cloud.header.stamp = node->now();
+    const auto costmap_ros = costmap_ros_.lock();
+    cloud.header.frame_id = costmap_ros ? costmap_ros->getGlobalFrameID() : global_frame_;
+    global_costmap_soft_costs_pub_->publish(cloud);
+    if (dynamic_costmap_inflation_pub_) {
+      dynamic_costmap_inflation_pub_->publish(cloud);
+    }
+  }
 
   backup_path_vis_pub_.reset();
   opt_path_vis_pub_.reset();
@@ -89,10 +121,14 @@ void Visualizer::cleanup()
   recover_path_vis_pub_.reset();
   recover_goal_vis_pub_.reset();
   control_points_vis_pub_.reset();
+  global_costmap_soft_costs_pub_.reset();
+  dynamic_costmap_inflation_pub_.reset();
+  costmap_ros_.reset();
 
   std::lock_guard<std::mutex> lock(vis_mutex_);
   vis_control_points_.clear();
   vis_astar_path_ = nav_msgs::msg::Path();
+  astar_path_update_pending_ = false;
   vis_opt_time_ = -1.0;
   has_vis_opt_traj_ = false;
   has_vis_backup_traj_ = false;
@@ -234,6 +270,14 @@ void Visualizer::update(const std::vector<Eigen::Vector3d> & control_points,
   has_vis_opt_traj_ = (opt_traj.getTotalDuration() > 1e-3);
 
   vis_astar_path_ = astar_path;
+  astar_path_update_pending_ = true;
+}
+
+void Visualizer::updateGlobalPath(const nav_msgs::msg::Path & astar_path)
+{
+  std::lock_guard<std::mutex> lock(vis_mutex_);
+  vis_astar_path_ = astar_path;
+  astar_path_update_pending_ = true;
 }
 
 void Visualizer::visualTimerCallback()
@@ -247,15 +291,19 @@ void Visualizer::visualTimerCallback()
     return;
   }
 
+  publishGlobalCostmapSoftCosts(header);
+
   std::lock_guard<std::mutex> lock(vis_mutex_);
 
   // 1. A* Path
-  if (astar_path_vis_pub_ && !vis_astar_path_.poses.empty()) {
+  if (astar_path_vis_pub_ &&
+      (astar_path_update_pending_ || !vis_astar_path_.poses.empty())) {
     vis_astar_path_.header = header;
     for (auto & p : vis_astar_path_.poses) {
       p.header = header;
     }
     astar_path_vis_pub_->publish(vis_astar_path_);
+    astar_path_update_pending_ = false;
   }
 
   // 2. Project A* sampled control points to optimized trajectory + straight line connections
@@ -471,6 +519,220 @@ void Visualizer::visualTimerCallback()
       mk.action = visualization_msgs::msg::Marker::DELETE;
       control_points_vis_pub_->publish(mk);
     }
+  }
+}
+
+void Visualizer::publishGlobalCostmapSoftCosts(const std_msgs::msg::Header & header)
+{
+  if (!global_costmap_soft_costs_pub_) {
+    return;
+  }
+
+  const auto now = std::chrono::steady_clock::now();
+  if (last_costmap_soft_costs_publish_.time_since_epoch().count() != 0 &&
+      now - last_costmap_soft_costs_publish_ < std::chrono::seconds(1)) {
+    return;
+  }
+  last_costmap_soft_costs_publish_ = now;
+
+  const auto costmap_ros = costmap_ros_.lock();
+  auto * costmap = costmap_ros ? costmap_ros->getCostmap() : nullptr;
+  if (!costmap) {
+    return;
+  }
+
+  unsigned int size_x = 0U;
+  unsigned int size_y = 0U;
+  double resolution = 0.0;
+  double origin_x = 0.0;
+  double origin_y = 0.0;
+  std::vector<unsigned char> costs;
+  std::vector<uint8_t> dynamic_neighborhood;
+  size_t dynamic_sources = 0U;
+  size_t missing_dynamic_cores = 0U;
+  double inflation_radius = 0.0;
+  if (dynamic_costmap_inflation_pub_ && costmap_ros->get_parameter(
+      "inflation_layer.inflation_radius", inflation_radius) &&
+      std::isfinite(inflation_radius) && inflation_radius > 0.0)
+  {
+    // Read the active Nav2 inflation radius, not a separate visualization knob.
+  } else {
+    inflation_radius = 0.0;
+  }
+  {
+    std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> costmap_lock(*costmap->getMutex());
+    size_x = costmap->getSizeInCellsX();
+    size_y = costmap->getSizeInCellsY();
+    resolution = costmap->getResolution();
+    origin_x = costmap->getOriginX();
+    origin_y = costmap->getOriginY();
+    const size_t cell_count = static_cast<size_t>(size_x) * size_y;
+    const unsigned char * charmap = costmap->getCharMap();
+    if (!charmap || cell_count == 0U) {
+      return;
+    }
+    costs.assign(charmap, charmap + cell_count);
+
+    // The ROG layer contains only measured source cells. Sample the final
+    // master inside their inflation radius, so this display never invents
+    // costs that Nav2's planner did not actually receive.
+    if (dynamic_costmap_inflation_pub_ && inflation_radius > 0.0) {
+      auto * layered = costmap_ros->getLayeredCostmap();
+      nav2_costmap_2d::CostmapLayer * rog_layer = nullptr;
+      for (const auto & plugin : *layered->getPlugins()) {
+        if (plugin->getName().find("rog_dynamic_obstacle_layer") != std::string::npos) {
+          rog_layer = dynamic_cast<nav2_costmap_2d::CostmapLayer *>(plugin.get());
+          break;
+        }
+      }
+      if (rog_layer && rog_layer->getSizeInCellsX() == size_x &&
+          rog_layer->getSizeInCellsY() == size_y &&
+          std::abs(rog_layer->getOriginX() - origin_x) < 1e-6 &&
+          std::abs(rog_layer->getOriginY() - origin_y) < 1e-6 &&
+          std::abs(rog_layer->getResolution() - resolution) < 1e-6)
+      {
+        // RogDynamicObstacleLayer commits its rolling snapshot on the
+        // costmap update thread.  Lock the layer while sampling it; without
+        // this, the diagnostic cloud can mix a newly cleared layer with an
+        // old master and falsely report missing dynamic cores.
+        std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> rog_lock(
+          *rog_layer->getMutex());
+        dynamic_neighborhood.assign(cell_count, 0U);
+        const auto * sources = rog_layer->getCharMap();
+        const int radius_cells = static_cast<int>(std::ceil(inflation_radius / resolution));
+        for (unsigned int my = 0U; my < size_y; ++my) {
+          for (unsigned int mx = 0U; mx < size_x; ++mx) {
+            const size_t source_index = static_cast<size_t>(my) * size_x + mx;
+            if (sources[source_index] != nav2_costmap_2d::LETHAL_OBSTACLE) {
+              continue;
+            }
+            ++dynamic_sources;
+            if (costs[source_index] != nav2_costmap_2d::LETHAL_OBSTACLE) {
+              ++missing_dynamic_cores;
+            }
+            for (int dy = -radius_cells; dy <= radius_cells; ++dy) {
+              for (int dx = -radius_cells; dx <= radius_cells; ++dx) {
+                if (std::hypot(dx, dy) * resolution > inflation_radius) {
+                  continue;
+                }
+                const int x = static_cast<int>(mx) + dx;
+                const int y = static_cast<int>(my) + dy;
+                if (x >= 0 && y >= 0 && x < static_cast<int>(size_x) &&
+                    y < static_cast<int>(size_y)) {
+                  dynamic_neighborhood[static_cast<size_t>(y) * size_x + x] = 1U;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const auto is_visible_cost = [](const unsigned char cost) {
+    return cost > nav2_costmap_2d::FREE_SPACE &&
+           cost != nav2_costmap_2d::NO_INFORMATION;
+  };
+  const size_t visible_cell_count = static_cast<size_t>(
+    std::count_if(costs.begin(), costs.end(), is_visible_cost));
+
+  const std::string costmap_frame = costmap_ros->getGlobalFrameID();
+  if (global_costmap_soft_costs_pub_->get_subscription_count() > 0U) {
+    sensor_msgs::msg::PointCloud2 cloud;
+    cloud.header = header;
+    cloud.header.frame_id = costmap_frame;
+    sensor_msgs::PointCloud2Modifier modifier(cloud);
+    modifier.setPointCloud2Fields(
+      4,
+      "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "z", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "intensity", 1, sensor_msgs::msg::PointField::FLOAT32);
+    modifier.resize(visible_cell_count);
+
+    sensor_msgs::PointCloud2Iterator<float> iter_x(cloud, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(cloud, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(cloud, "z");
+    sensor_msgs::PointCloud2Iterator<float> iter_intensity(cloud, "intensity");
+    for (unsigned int my = 0U; my < size_y; ++my) {
+      for (unsigned int mx = 0U; mx < size_x; ++mx) {
+        const unsigned char cost = costs[static_cast<size_t>(my) * size_x + mx];
+        if (!is_visible_cost(cost)) {
+          continue;
+        }
+        *iter_x = static_cast<float>(origin_x + (static_cast<double>(mx) + 0.5) * resolution);
+        *iter_y = static_cast<float>(origin_y + (static_cast<double>(my) + 0.5) * resolution);
+        *iter_z = 0.08F;
+        *iter_intensity = static_cast<float>(cost);
+        ++iter_x;
+        ++iter_y;
+        ++iter_z;
+        ++iter_intensity;
+      }
+    }
+    cloud.is_dense = true;
+    global_costmap_soft_costs_pub_->publish(cloud);
+  }
+
+  if (dynamic_costmap_inflation_pub_) {
+    size_t dynamic_cells = 0U;
+    for (size_t index = 0U; index < dynamic_neighborhood.size(); ++index) {
+      dynamic_cells += dynamic_neighborhood[index] != 0U && is_visible_cost(costs[index]);
+    }
+    sensor_msgs::msg::PointCloud2 dynamic_cloud;
+    dynamic_cloud.header = header;
+    dynamic_cloud.header.frame_id = costmap_frame;
+    sensor_msgs::PointCloud2Modifier dynamic_modifier(dynamic_cloud);
+    dynamic_modifier.setPointCloud2Fields(
+      4, "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "z", 1, sensor_msgs::msg::PointField::FLOAT32,
+      "intensity", 1, sensor_msgs::msg::PointField::FLOAT32);
+    dynamic_modifier.resize(dynamic_cells);
+    sensor_msgs::PointCloud2Iterator<float> dynamic_x(dynamic_cloud, "x");
+    sensor_msgs::PointCloud2Iterator<float> dynamic_y(dynamic_cloud, "y");
+    sensor_msgs::PointCloud2Iterator<float> dynamic_z(dynamic_cloud, "z");
+    sensor_msgs::PointCloud2Iterator<float> dynamic_intensity(dynamic_cloud, "intensity");
+    size_t dynamic_soft_cells = 0U;
+    for (unsigned int my = 0U; my < size_y; ++my) {
+      for (unsigned int mx = 0U; mx < size_x; ++mx) {
+        const size_t index = static_cast<size_t>(my) * size_x + mx;
+        if (dynamic_neighborhood.empty() || !dynamic_neighborhood[index] ||
+            !is_visible_cost(costs[index])) {
+          continue;
+        }
+        *dynamic_x = static_cast<float>(origin_x + (static_cast<double>(mx) + 0.5) * resolution);
+        *dynamic_y = static_cast<float>(origin_y + (static_cast<double>(my) + 0.5) * resolution);
+        *dynamic_z = 0.17F;
+        *dynamic_intensity = static_cast<float>(costs[index]);
+        dynamic_soft_cells += costs[index] < nav2_costmap_2d::LETHAL_OBSTACLE;
+        ++dynamic_x;
+        ++dynamic_y;
+        ++dynamic_z;
+        ++dynamic_intensity;
+      }
+    }
+    dynamic_cloud.is_dense = true;
+    dynamic_costmap_inflation_pub_->publish(dynamic_cloud);
+    auto node = node_.lock();
+    if (node) {
+      RCLCPP_INFO_THROTTLE(
+        node->get_logger(), *node->get_clock(), 5000,
+        "[MincoVisualizer] dynamic final costmap: sources=%zu missing_cores=%zu "
+        "inflated_soft=%zu visible=%zu radius=%.2f subscribers=%zu",
+        dynamic_sources, missing_dynamic_cores, dynamic_soft_cells, dynamic_cells,
+        inflation_radius, dynamic_costmap_inflation_pub_->get_subscription_count());
+    }
+  }
+
+  auto node = node_.lock();
+  if (node) {
+    RCLCPP_INFO_THROTTLE(
+      node->get_logger(), *node->get_clock(), 5000,
+      "[MincoVisualizer] final costmap cloud: cells=%zu subscribers=%zu "
+      "frame='%s' (cost 1..254 includes inflation and lethal obstacle cores)",
+      visible_cell_count, global_costmap_soft_costs_pub_->get_subscription_count(),
+      costmap_frame.c_str());
   }
 }
 

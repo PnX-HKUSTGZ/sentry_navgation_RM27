@@ -1,4 +1,5 @@
 #include "minco_core/astar.hpp"
+#include "minco_core/components/dynamic_obstacle_evidence.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include <algorithm>
 #include <cmath>
@@ -31,6 +32,8 @@ Astar::Astar(unsigned int nx, unsigned int ny) : nx(nx), ny(ny), ns(nx * ny)
   nextP = new int[ns];
   overP = new int[ns];
   dynamic_collision_cache_.assign(static_cast<size_t>(ns), -1);
+  dynamic_evidence_cache_.assign(static_cast<size_t>(ns), -1);
+  dynamic_distance_cache_.assign(static_cast<size_t>(ns), 0.0);
 
   costarr = NULL;
   start[0] = 0;
@@ -66,18 +69,46 @@ void Astar::setCostmap(const unsigned char * costmap, bool /*isROS*/, bool allow
 void Astar::setMap(const std::shared_ptr<rog_map::MapQueryInterface> & map)
 {
   map_ = map;
+  std::fill(dynamic_collision_cache_.begin(), dynamic_collision_cache_.end(), -1);
+  std::fill(dynamic_evidence_cache_.begin(), dynamic_evidence_cache_.end(), -1);
 }
 
 void Astar::setESDFQuery(const std::shared_ptr<rog_map::MapQueryInterface> & query)
 {
   esdf_query_ = query;
   std::fill(dynamic_collision_cache_.begin(), dynamic_collision_cache_.end(), -1);
+  std::fill(dynamic_evidence_cache_.begin(), dynamic_evidence_cache_.end(), -1);
 }
 
 void Astar::setCollisionDistance(double collision_distance)
 {
   collision_distance_ = std::max(0.0, collision_distance);
   std::fill(dynamic_collision_cache_.begin(), dynamic_collision_cache_.end(), -1);
+  std::fill(dynamic_evidence_cache_.begin(), dynamic_evidence_cache_.end(), -1);
+}
+
+bool Astar::queryDynamicEvidence(int index, double & distance)
+{
+  const size_t cache_index = static_cast<size_t>(index);
+  if (dynamic_evidence_cache_[cache_index] != -1) {
+    distance = dynamic_distance_cache_[cache_index];
+    return dynamic_evidence_cache_[cache_index] >= 0;
+  }
+  const unsigned int mx = static_cast<unsigned int>(index % nx);
+  const unsigned int my = static_cast<unsigned int>(index / nx);
+  double wx = 0.0;
+  double wy = 0.0;
+  map_->mapToWorld(mx, my, wx, wy);
+  const auto result = esdf_query_->query(Eigen::Vector3d(wx, wy, 0.0));
+  if (!result.ok || !std::isfinite(result.distance)) {
+    dynamic_evidence_cache_[cache_index] = -2;
+    return false;
+  }
+  distance = result.distance;
+  dynamic_distance_cache_[cache_index] = distance;
+  dynamic_evidence_cache_[cache_index] = !result.projection.valid ? 2 :
+    (dynamic_obstacle::hasMeasuredOccupiedEvidence(result) ? 1 : 0);
+  return true;
 }
 
 bool Astar::isDynamicCollision(int index)
@@ -96,16 +127,41 @@ bool Astar::isDynamicCollision(int index)
 
   const unsigned int mx = static_cast<unsigned int>(index % nx);
   const unsigned int my = static_cast<unsigned int>(index / nx);
-  double wx = 0.0;
-  double wy = 0.0;
-  map_->mapToWorld(mx, my, wx, wy);
-  const auto result = esdf_query_->query(Eigen::Vector3d(wx, wy, 0.0));
-  if (!result.ok || !std::isfinite(result.distance)) {
+  double distance = 0.0;
+  if (!queryDynamicEvidence(index, distance)) {
     dynamic_collision_cache_[cache_index] = 0;
     return false;
   }
 
-  const bool collision = result.distance < collision_distance_;
+  bool collision = false;
+  if (dynamic_evidence_cache_[cache_index] > 0) {
+    collision = distance < collision_distance_;
+  } else if (distance < collision_distance_) {
+    // A free cell has no direct occupied evidence. Search the small clearance
+    // ring for an actual occupied ROG cell; UNKNOWN cells are deliberately not
+    // accepted, so an unknown frontier cannot become a detour wall.
+    const double resolution = std::max(1.0e-3, map_->resolution());
+    const int radius_cells = static_cast<int>(std::ceil(collision_distance_ / resolution));
+    for (int dy = -radius_cells; dy <= radius_cells && !collision; ++dy) {
+      for (int dx = -radius_cells; dx <= radius_cells && !collision; ++dx) {
+        if ((dx == 0 && dy == 0) ||
+            std::hypot(static_cast<double>(dx), static_cast<double>(dy)) * resolution >
+            collision_distance_ + 0.75 * resolution) {
+          continue;
+        }
+        const int sx = static_cast<int>(mx) + dx;
+        const int sy = static_cast<int>(my) + dy;
+        if (sx < 0 || sy < 0 || sx >= static_cast<int>(map_->sizeX()) ||
+            sy >= static_cast<int>(map_->sizeY())) {
+          continue;
+        }
+        const int neighbor_index = sy * nx + sx;
+        double neighbor_distance = 0.0;
+        collision = queryDynamicEvidence(neighbor_index, neighbor_distance) &&
+          dynamic_evidence_cache_[static_cast<size_t>(neighbor_index)] == 1;
+      }
+    }
+  }
   dynamic_collision_cache_[cache_index] = collision ? 1 : 0;
   return collision;
 }
@@ -158,6 +214,8 @@ void Astar::setSize(int nx, int ny)
   delete[] overP;
   overP = new int[ns];
   dynamic_collision_cache_.assign(static_cast<size_t>(ns), -1);
+  dynamic_evidence_cache_.assign(static_cast<size_t>(ns), -1);
+  dynamic_distance_cache_.assign(static_cast<size_t>(ns), 0.0);
 }
 
 void Astar::setupNavFn(bool /*keepit*/)
@@ -174,6 +232,7 @@ void Astar::setupNavFn(bool /*keepit*/)
   nextPe = 0;
   overPe = 0;
   std::fill(dynamic_collision_cache_.begin(), dynamic_collision_cache_.end(), -1);
+  std::fill(dynamic_evidence_cache_.begin(), dynamic_evidence_cache_.end(), -1);
 
   int goal_idx = goal[1] * nx + goal[0];
   if (isDynamicCollision(goal_idx)) {

@@ -27,6 +27,7 @@ find_package(rcl_interfaces REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -103,6 +104,7 @@ ament_target_dependencies(${library_name}
   rcl_interfaces
   rclcpp
   rclcpp_lifecycle
+  sensor_msgs
   std_msgs
   tf2
   tf2_geometry_msgs
@@ -247,6 +249,7 @@ ament_export_dependencies(
   rclcpp
   rclcpp_lifecycle
   rcl_interfaces
+  sensor_msgs
   std_msgs
   tf2
   tf2_geometry_msgs

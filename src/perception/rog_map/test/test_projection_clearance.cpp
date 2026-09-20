@@ -283,7 +283,7 @@ TEST(GroundSupportProjection,
 }
 
 TEST(GroundSupportProjection,
-     CurrentFootprintDoesNotBootstrapAcrossDiscontinuousSupport) {
+     CurrentFootprintDoesNotDilateAdjacentSupportDiscontinuity) {
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
   config.clear_robot_footprint_unknown = true;
@@ -295,6 +295,30 @@ TEST(GroundSupportProjection,
         rog_map::ColumnStats stats;
         stats.vertical_states.assign(11U, rog_map::VerticalVoxelState::UNKNOWN);
         attachSupport(stats, x == 3 ? 0.30 : 0.0);
+        return stats;
+      });
+
+  EXPECT_EQ(center(layer).type, rog_map::CellType::FREE);
+  EXPECT_EQ(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::ROBOT_FOOTPRINT_CLEAR);
+  EXPECT_EQ(center(layer).ground_support_verified, 1U);
+  EXPECT_EQ(center(layer).clearance_verified, 1U);
+  EXPECT_EQ(center(layer).traversable, 1U);
+}
+
+TEST(GroundSupportProjection,
+     CurrentFootprintDoesNotBootstrapIsolatedSupport) {
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+  config.reference_ground_z_abs = 0.0;
+  layer.update(
+      kWidth, kHeight, kResolution, kOrigin, 1.0, config, [](int x, int y) {
+        rog_map::ColumnStats stats;
+        stats.vertical_states.assign(11U, rog_map::VerticalVoxelState::UNKNOWN);
+        attachSupport(stats, x == 2 && y == 2 ? 0.0 : 0.30);
         return stats;
       });
 
@@ -365,6 +389,73 @@ TEST(GroundSupportProjection,
   EXPECT_EQ(center(layer).raw_type, rog_map::CellType::FREE);
   EXPECT_EQ(center(layer).type, rog_map::CellType::FREE);
   EXPECT_EQ(center(layer).pending_count, 0U);
+}
+
+TEST(GroundSupportProjection,
+     ZeroHitUnknownDoesNotStartMeasuredObstacleHold) {
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  config.clear_robot_footprint_unknown = false;
+  config.reference_ground_z_abs = 0.0;
+  config.hysteresis_en = false;
+  config.obstacle_hold_time = 0.50;
+
+  layer.update(
+      kWidth, kHeight, kResolution, kOrigin, 1.0, config, [](int, int) {
+        auto stats = emptyColumn(kResolution, false);
+        attachSupport(stats, 0.0);
+        return stats;
+      });
+  ASSERT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  ASSERT_EQ(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED);
+
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+  layer.update(
+      kWidth, kHeight, kResolution, kOrigin, 1.10, config, [](int, int) {
+        auto stats = emptyColumn(kResolution, false);
+        attachSupport(stats, 0.0);
+        return stats;
+      });
+
+  EXPECT_EQ(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::ROBOT_FOOTPRINT_CLEAR);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::FREE);
+}
+
+TEST(GroundSupportProjection, MeasuredObstacleStillUsesConfiguredHold) {
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  config.hysteresis_en = false;
+  config.obstacle_hold_time = 0.50;
+
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+               [](int, int) {
+                 auto stats = column({1, 4});
+                 attachSupport(stats, 0.05);
+                 return stats;
+               });
+  ASSERT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  ASSERT_EQ(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+
+  const auto verified_empty = [](int, int) {
+    auto stats = emptyColumn(kResolution, true);
+    attachSupport(stats, 0.05);
+    return stats;
+  };
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.10, config,
+               verified_empty);
+  EXPECT_EQ(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::EMPTY_COLUMN);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  EXPECT_GT(center(layer).occupied_clear_deadline, 1.10);
+
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.61, config,
+               verified_empty);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::FREE);
 }
 
 TEST(GroundSupportProjection,
@@ -597,12 +688,29 @@ TEST(GroundSupportProjection, MatchingRampCandidatesAreVerifiedBySurvey) {
   EXPECT_EQ(center(layer).ground_support_verified, 1U);
 }
 
-TEST(GroundSupportProjection, SurveyedVerticalStepFormsABlockedBoundary) {
+TEST(GroundSupportProjection,
+     SurveyedVerticalStepDoesNotDilateIntoConnectedSurface) {
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
   layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
                [](int x, int) {
                  const double support_z = x < 2 ? 0.0 : 0.20;
+                 auto stats = groundColumn(support_z, kResolution);
+                 attachSupport(stats, support_z);
+                 return stats;
+               });
+
+  EXPECT_EQ(center(layer).type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(center(layer).ground_verified, 1U);
+  EXPECT_EQ(center(layer).ground_support_verified, 1U);
+}
+
+TEST(GroundSupportProjection, IsolatedSurveyedSupportSpikeIsRejected) {
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+               [](int x, int y) {
+                 const double support_z = x == 2 && y == 2 ? 0.20 : 0.0;
                  auto stats = groundColumn(support_z, kResolution);
                  attachSupport(stats, support_z);
                  return stats;
@@ -614,7 +722,8 @@ TEST(GroundSupportProjection, SurveyedVerticalStepFormsABlockedBoundary) {
             rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
 }
 
-TEST(GroundSupportProjection, EmptyColumnCannotCrossSurveyedVerticalStep) {
+TEST(GroundSupportProjection,
+     EmptyColumnBesideStepKeepsConnectedSurveyedSupport) {
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
   layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
@@ -624,10 +733,10 @@ TEST(GroundSupportProjection, EmptyColumnCannotCrossSurveyedVerticalStep) {
                  return stats;
                });
 
-  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
-  EXPECT_EQ(center(layer).empty_support_verified, 0U);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::FREE);
+  EXPECT_EQ(center(layer).empty_support_verified, 1U);
   EXPECT_EQ(center(layer).raw_reason,
-            rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+            rog_map::ProjectionClassReason::EMPTY_COLUMN);
 }
 
 TEST(GroundSupportProjection,
@@ -715,9 +824,10 @@ TEST(GroundSupportProjection,
 
   rog_map::ProjectionLayer step_layer;
   step_layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
-                    [](int x, int) {
+                    [](int x, int y) {
                       auto stats = emptyColumn(kResolution, false);
-                      attachSupport(stats, x == 4 ? 0.10 : 0.0);
+                      attachSupport(stats,
+                                    x == 4 && y == 2 ? 0.10 : 0.0);
                       return stats;
                     });
   const auto &step = step_layer.cells().at(2U * kWidth + 4U);
@@ -928,6 +1038,42 @@ TEST(GroundSupportProjection,
   EXPECT_EQ(empty_neighbor.type, rog_map::CellType::OCCUPIED);
   EXPECT_EQ(empty_neighbor.raw_reason,
             rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED);
+}
+
+TEST(GroundSupportProjection,
+     ZeroObservedOverheadThresholdStillRequiresSurveyedSupport) {
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+               [](int, int) {
+                 auto stats = column({6});
+                 std::fill(stats.vertical_states.begin(), stats.vertical_states.end(),
+                           rog_map::VerticalVoxelState::UNKNOWN);
+                 stats.vertical_states.at(6U) = rog_map::VerticalVoxelState::OCCUPIED;
+                 stats.observed_count = 1;
+                 attachSupport(stats, 0.05, true, false);
+                 return stats;
+               });
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(center(layer).raw_reason, rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+  EXPECT_EQ(center(layer).clearance_verified, 0U);
+}
+
+TEST(GroundSupportProjection,
+     ZeroObservedOverheadThresholdNeverOverridesLowOccupiedReturn) {
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+               [](int, int) {
+                 auto stats = column({1, 3, 6});
+                 attachSupport(stats, 0.05);
+                 return stats;
+               });
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(center(layer).raw_reason, rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+  EXPECT_EQ(center(layer).clearance_verified, 0U);
 }
 
 TEST(ProjectionClearance, AcceptsVerifiedGroundWithEnoughHeadroom) {
@@ -1506,6 +1652,68 @@ TEST(ProjectionClearance,
   EXPECT_EQ(outside.type, rog_map::CellType::OCCUPIED);
   EXPECT_EQ(outside.raw_reason,
             rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED);
+}
+
+TEST(ProjectionClearance, BridgesOnePriorNoDataCellFromTwoCardinalSupports)
+{
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+  config.observed_ground_support_bridge_en = true;
+  config.observed_ground_support_bridge_min_neighbors = 2;
+  config.observed_ground_support_bridge_max_height_delta = 0.06;
+  config.observed_ground_support_bridge_hysteresis_count = 2;
+
+  const auto scanner = [](int x, int y) {
+    if (x == 2 && y == 2) {
+      return emptyColumn(kResolution);
+    }
+    auto stats = groundColumn(0.05, kResolution);
+    attachSupport(stats, 0.05);
+    return stats;
+  };
+
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config, scanner);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(center(layer).ground_support_bridge_count, 1U);
+
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 2.0, config, scanner);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::FREE);
+  EXPECT_EQ(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::GROUND_BRIDGE_CLEARANCE_OK);
+  EXPECT_EQ(center(layer).ground_bridge_verified, 1U);
+  EXPECT_EQ(center(layer).ground_support_bridge_count, 2U);
+}
+
+TEST(ProjectionClearance, ObservedSupportBridgeRejectsOccupiedReturn)
+{
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+  config.observed_ground_support_bridge_en = true;
+  config.observed_ground_support_bridge_min_neighbors = 2;
+  config.observed_ground_support_bridge_hysteresis_count = 1;
+
+  const auto scanner = [](int x, int y) {
+    if (x == 2 && y == 2) {
+      auto stats = column({1, 2, 3, 4, 5});
+      attachSupport(stats, 0.05);
+      return stats;
+    }
+    auto stats = groundColumn(0.05, kResolution);
+    attachSupport(stats, 0.05);
+    return stats;
+  };
+
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config, scanner);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  EXPECT_NE(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::GROUND_BRIDGE_CLEARANCE_OK);
+  EXPECT_EQ(center(layer).ground_support_bridge_count, 0U);
 }
 
 TEST(ProjectionClearance,

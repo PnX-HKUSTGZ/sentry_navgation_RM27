@@ -114,6 +114,13 @@ public:
    */
   void setParameters(bool allow_unknown, int max_iterations, float tolerance);
 
+  /**
+   * @brief Configure how traversable inflation costs bias the global search.
+   * @param cost_penalty Non-negative multiplier applied to normalized cost.
+   * @param use_quadratic_cost_penalty Square normalized cost when true.
+   */
+  void setInflationCostParameters(float cost_penalty, bool use_quadratic_cost_penalty);
+
 private:
   void ensureSearchBuffers();
   void logFailure(const std::string & reason,
@@ -172,6 +179,9 @@ private:
   std::vector<uint32_t> esdf_cost_cache_id_;
   std::vector<double> esdf_distance_cache_;
   std::vector<uint32_t> esdf_distance_cache_id_;
+  std::vector<int8_t> esdf_evidence_cache_;
+  std::vector<int8_t> esdf_collision_cache_;
+  std::vector<uint32_t> esdf_collision_cache_id_;
 
   // Search info
   SearchInfo search_info_;

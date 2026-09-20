@@ -39,6 +39,7 @@ private:
   void updateCell(int n);
   void updateCellAstar(int n);
   bool isDynamicCollision(int index);
+  bool queryDynamicEvidence(int index, double & distance);
 
   int nx, ny, ns;
   const unsigned char * costarr;
@@ -56,6 +57,8 @@ private:
   std::shared_ptr<rog_map::MapQueryInterface> esdf_query_;
   double collision_distance_{0.0};
   std::vector<int8_t> dynamic_collision_cache_;
+  std::vector<int8_t> dynamic_evidence_cache_;
+  std::vector<double> dynamic_distance_cache_;
 
   float curT;
   float priInc;

@@ -243,6 +243,12 @@ void MincoFsm::callMainFsmOnce()
       // to the controller's spatial pickup point, and the remaining trajectory
       // through the endpoint. An unsafe cache has already emitted BLOCK here.
       if (!planner_->ensureTrajectorySafe(current_pose)) {
+        // The local seed follows latest_global_path_. If that route is now
+        // obstructed, retrying only ReplanLocal() can never discover another
+        // homotopy. Regenerate the global path so the latest ROG costmap
+        // overlay and dynamic hard mask can route around the obstruction.
+        clearGenerateRetry();
+        changeState("UNSAFE_LOCAL_REPLAN_GLOBAL_SEARCH", State::GENERATE_TRAJ);
         return;
       }
       if (!planner_->isTrajectoryTimeExpired(now_s)) {

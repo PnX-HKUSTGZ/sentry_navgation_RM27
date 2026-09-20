@@ -1208,6 +1208,20 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
                               curr.yaw);
   curr.yaw = normalizeYaw(curr.yaw);
 
+  // /lidar_odometry reports the lidar/IMU origin, while MINCO trajectories
+  // and collision footprints track the chassis rotation center. The configured
+  // offset is base -> lidar in the base frame, so subtract its world-frame
+  // projection to obtain the base position. extractGlobalVelocityAndYaw()
+  // applies the matching rigid-body velocity compensation.
+  const double offset_global_x =
+      std::cos(curr.yaw) * lidar_offset_x_ -
+      std::sin(curr.yaw) * lidar_offset_y_;
+  const double offset_global_y =
+      std::sin(curr.yaw) * lidar_offset_x_ +
+      std::cos(curr.yaw) * lidar_offset_y_;
+  curr.x -= offset_global_x;
+  curr.y -= offset_global_y;
+
   const double noise_threshold = 0.03;
   if (std::abs(curr.vx) < noise_threshold) {
     curr.vx = 0.0;

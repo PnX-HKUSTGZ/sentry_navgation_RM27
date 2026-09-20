@@ -2,6 +2,12 @@
 
 本文面向 `sentry-navigation-RM27` 当前代码，给出从仿真到实车的可执行流程。命令默认在 ROS 2 Jazzy、仓库根目录 `/home/pnx/nav_ws/sentry-navigation-RM27` 下执行。
 
+实车当前的里程计 topic 合同需要特别区分：MincoPlanner/ROG 使用 Point-LIO 的
+`/aft_mapped_to_init`；MincoMpc、`fake_vel_transform` 和 legacy 控制器使用 `loam_interface`
+输出的 `/lidar_odometry`。实车 launch 不会自动提供通用别名 `/odometry`，因此不能把仿真的
+`/odometry` 直接复制到 `config/reality/minco_params.yaml`。启动后应先用 `ros2 topic hz` 验证
+两条输入，再发送导航目标。
+
 端到端所有权、数据结构和源码索引见配套文档
 [`rog_minco_navigation_architecture.md`](rog_minco_navigation_architecture.md)；本文重点是实际操作、
 验收和故障定位。
@@ -18,7 +24,7 @@
    通过放宽 unknown 或沿用平地高度处理。
 4. 仿真 `projection.min_headroom_known_ratio: 0.25` 用于空列，
    `projection.min_observed_overhead_headroom_known_ratio: 0.0` 只用于已测到且最低边界高于车体的顶板列；
-   实车两项都保持 `0.80`。车身体积内的 occupied 和静态先验 occupied 始终硬否决。
+   实车两项当前都是 `0.50`。车身体积内的 occupied 和静态先验 occupied 始终硬否决。
    **禁止把两个仿真补偿值直接下放实车。**
 5. active `minco` 当前只支持 `NavigateToPose`。`NavigateThroughPoses` 未加载；运动型
    behavior action（spin/backup/drive-on-heading/assisted-teleop）也未加载，避免绕过
@@ -330,7 +336,8 @@ ros2 action send_goal \
 
 ```bash
 export ROS_DOMAIN_ID=153
-ros2 topic echo /odometry --once --qos-profile sensor_data
+# 实车；仿真真值 profile 才使用 /odometry
+ros2 topic echo /lidar_odometry --once --qos-profile sensor_data
 rg -n 'Goal|result|Trajectory safety rejected|ground-elevation|fail-closed|Failed to make progress' \
   /tmp/rm27_tunnel_goal.log /tmp/rm27_tunnel_active.log
 ```
@@ -387,7 +394,7 @@ ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
 
 仿真的 no-return 重建只属于 `rm27_ground_truth_localizer` 对 Gazebo organized GPU lidar 的适配。
 **实车不得在 reality 参数中增加或开启 `reconstruct_no_return_rays`，也不得把实车无回波按仿真的
-360 x 320 行列角度合成。** 实车驱动的点排列、ring 和无回波编码必须从实际消息合同验证；未经验证的
+360 x 96 行列角度合成。** 实车驱动的点排列、ring 和无回波编码必须从实际消息合同验证；未经验证的
 合成会把错误方向写成 free 证据。实车 shadow 原始包可直接这样录：
 
 ```bash
@@ -971,7 +978,7 @@ omega_lidar = R_lidar_base * omega_base
 #### Gazebo organized LiDAR 的 no-return 重建
 
 这一适配只在 `use_ground_truth_odom:=true` 的仿真 localizer 中启用。Gazebo 的 organized GPU lidar
-保留 `360 x 320` 射线栅格和 ring，但无回波点的 XYZ 是 Inf/NaN。若直接送入 PCL/ROG，这些点会被
+保留 `360 x 96` 射线栅格和 ring，但无回波点的 XYZ 是 Inf/NaN。若直接送入 PCL/ROG，这些点会被
 跳过，射线经过的体素不会得到 miss/free 证据；在 `unknown_as_occupied=true` 和净空 known-ratio
 门下，真实空旷区域会继续保持 UNKNOWN。
 
@@ -988,7 +995,7 @@ free，不能在末端制造假障碍。
 ```yaml
 reconstruct_no_return_rays: true
 lidar_horizontal_samples: 360
-lidar_vertical_samples: 320
+lidar_vertical_samples: 96
 lidar_horizontal_min_angle: 0.0
 lidar_horizontal_max_angle: 6.283185307179586
 lidar_vertical_min_angle: -0.1260127724939906
@@ -996,7 +1003,7 @@ lidar_vertical_max_angle: 0.9637708129512688
 no_return_ray_length: 10.5
 rog_raycast_max_range: 10.0
 no_return_horizontal_stride: 1
-no_return_vertical_stride: 2
+no_return_vertical_stride: 1
 ```
 
 代码在节点构造时直接执行以下硬校验：
@@ -1039,10 +1046,10 @@ No-return rays: synthesized=42956 finite_returns=29436 \
 unsupported_nonfinite=0 stride_skipped=42808 length=10.50m stride=1x2
 ```
 
-对一帧有效 `360 x 320` cloud，应满足：
+对一帧有效 `360 x 96` cloud，应满足：
 
 ```text
-synthesized + finite_returns + unsupported_nonfinite + stride_skipped = 115200
+synthesized + finite_returns + unsupported_nonfinite + stride_skipped = 34560
 ```
 
 计数会随车辆姿态和可见障碍变化，不能硬编码上面示例的四个分项。出现
@@ -1310,7 +1317,7 @@ allowed_height_step = max(max_ground_step,
                           tan(max_ground_slope_deg) * planar_step)
 ```
 
-两项取较大值但绝不相加。该公式既用于兼容 BFS，也用于当前 active required-support 的八邻域
+两项取较大值但绝不相加。该公式既用于兼容 BFS，也用于当前 active required-support 的四邻域
 高程连续性。提高任意一项都会放宽允许的测绘地面跳变；降低它们则可能在坡脚、坡顶或 patch 边界
 形成闭锁带。它们只校验几何连续性，不能替代 `ground_support_tolerance` 对实际回波高度的匹配。
 
@@ -1319,9 +1326,9 @@ allowed_height_step = max(max_ground_step,
 | 环境 | 当前值 | 允许探索范围 | 硬约束 |
 |---|---:|---:|---|
 | 仿真 | `0.25` | 0.25-0.50 | 只可向更严格方向验证；不得低于 0.25 |
-| 实车 | `0.80` | 0.75-0.90 | 首次必须从 0.80 开始；不得复制仿真值 |
+| 实车 | `0.50` | 0.50-0.80 | 不得低于 0.50；提高只会更保守 |
 
-仿真 0.25 只补偿规则射线对车侧近地列的离散覆盖不足；所需车体净空带内的 occupied 检查仍然硬拒绝。实车若要从 0.80 降低，至少需要 30 次真实正例观测统计、完整负例拦截和评审记录。任何浮空障碍漏检都立即回退原值。
+仿真 0.25 只补偿规则射线对车侧近地列的离散覆盖不足；所需车体净空带内的 occupied 检查仍然硬拒绝。实车当前 0.50 必须通过至少 30 次真实正例观测统计、完整负例拦截和评审记录；任何浮空障碍漏检都立即提高阈值并回退 active MINCO。
 
 ### 6.5 第 4 层：动态层、静态先验与最终融合
 
@@ -1796,7 +1803,7 @@ rg --line-buffered \
    fail-closed。先修传感器消息合同，禁止打开 `observed_empty_as_free`、关闭
    `unknown_as_occupied` 或延长 map stamp。
 5. synthesized 数量很大本身不是错误；要同时看输入频率、每帧总计数、ROG 更新率和 P95/P99。
-   当前 full `1 x 1` 每帧最多把 115200 个栅格点送入下游，`1 x 2` 只减少 miss，不能减少 finite hit。
+   当前 full `1 x 1` 每帧最多把 34560 个栅格点送入下游；stride 只减少 miss，不能减少 finite hit。
 
 `map_timeout` 仍是安全 watchdog，不是吞吐调节器。先降低**已验证可抽样的 miss**、关闭非必要可视化、
 确认 Release 构建并定位 callback 热点；不得通过增大 timeout、伪造 sensor stamp、跳过 completion
@@ -1868,8 +1875,9 @@ odom 的 `x=-0.398` 查图。对同一位置的观测为：
 2. 保守下边界与该列 support Z 之差不小于
    `vehicle_height + headroom_margin`；
 3. 同一 XY 列中所需车身高度带达到
-   `min_observed_overhead_headroom_known_ratio`。RMUC2026 的规则激光仿真允许该值为 0；空列仍必须
-   达到 `min_headroom_known_ratio=0.25`，实车两项都为 0.80。
+   `min_observed_overhead_headroom_known_ratio`。当前仿真和实车均为 0，表示“已测顶板”由
+   保守顶板下边界和可信 support 的几何净高做判定；它不适用于没有顶板回波的空列。
+   空列仍必须分别达到仿真 `min_headroom_known_ratio=0.25` 和实车 `0.50`。
 
 不做跨 XY 列的顶棚“桥接放行”；低于所需净空、同列 body band 观测不足或高程支撑缺失时均
 fail-closed。顶棚放行列的诊断组合应为 `layer_type=66`、`headroom_known_ratio`
@@ -2053,10 +2061,10 @@ peak |v| ..., peak |a| ...
 
 | 参数 | 仿真 | 实车 |
 |---|---:|---:|
-| `max_velocity` | 1.00 m/s | 0.50 m/s |
+| `max_velocity` | 1.00 m/s | 0.70 m/s |
 | `max_acceleration` | 1.00 m/s² | 0.80 m/s² |
 | `max_yaw_dot` | 1.20 rad/s | 0.80 rad/s |
-| MPC `max_planar_speed` | 1.00 m/s | 0.50 m/s |
+| MPC `max_planar_speed` | 1.00 m/s | 0.70 m/s |
 | 配置 `minco_optimizer.opt_freq` | 20 Hz | 20 Hz |
 | time-allocation/retiming 最大迭代数 | 15 | 15 |
 | trajectory safety sample dt | 0.05 s | 0.05 s |
@@ -2527,7 +2535,7 @@ support 缝。当前基线把 platform pose.x 改为 `3.09147`，并把 platform
 独立日志/bag；任何一次偶然通过都不能替代 P3/P6 和以下完整发布矩阵。
 
 2026-09-06 在旧 `360 x 720` 传感器基线上留下了两次**单向正例观测**，用于比较 full no-return
-与 miss stride；它们是历史数据，不是当前 `360 x 320` 配置的完整发布验收：
+与 miss stride；它们是历史数据，不是当前 `360 x 96` 配置的完整发布验收：
 
 | 配置 | no-return 日志样例 | action/真值结果 | 性能与证据边界 |
 |---|---|---|---|
@@ -3022,7 +3030,8 @@ commit/diff、改前值、改后值、理论理由、预期、实测分位数、
 | `cloud_filter.box_size` | 仿真 `[0.34,0.28,0.18]`；实车 `[0.34,0.24,0.14]` m | 按 URDF/CAD/静态扫描重新测量 | 车体外障碍被删除立即回退 |
 | `cloud_filter.z_offset` | 仿真 -0.45，实车 -0.55 m | 0.01 m，最多基线上下 0.02 | 地面仍系统偏差时回查外参 |
 | `cloud_filter.box_padding` | 0.02 m | 0.01，范围 0-0.04 | 洞顶/墙/坡被滤掉立即回退 |
-| `global_costmap.inflation_layer.inflation_radius/cost_scaling_factor` | 仿真 MINCO `0.35 m / 5.0`；实车继承现场 profile | 每次 `0.05 m / 1.0`，先只调仿真 | 洞口变得无全局路径，或路径仍擦边时停止并核对 PGM/STL |
+| `global_costmap.inflation_layer.inflation_radius/cost_scaling_factor` | 仿真 MINCO `0.35 m / 5.0`；实车 `0.52 m / 5.0` | 每次 `0.05 m / 1.0`，先只调仿真 | 洞口变得无全局路径，或路径仍擦边时停止并核对 PGM/STL |
+| `MincoPlanner.smac_2d.cost_penalty/use_quadratic_cost_penalty` | `2.0 / false` | penalty 每次 0.5，通常保持线性 | 大于 4 前必须验证窄洞是否被长绕路取代 |
 | `raycasting.p_hit` | 0.90 | 0.01-0.02，范围 0.86-0.94 | 孤立噪声固化 |
 | `raycasting.p_miss` | 0.45 | 0.01，范围 0.40-0.48 | 真实障碍被过早清空 |
 | `raycasting.p_occ` | 0.85 | 0.01-0.02，范围 0.80-0.90 | 墙体闪烁或小障碍漏检 |
@@ -3047,8 +3056,8 @@ required-support=true 时，`ground_seed_tolerance/ground_seed_radius` 服务于
 |---|---|---|
 | `projection.prior_map.require_ground_support` | 必须 true | 必须 true；无高程时保持闭锁 |
 | `projection.prior_map.ground_support_tolerance` | 0.08 m 起 | 由测绘/TF/点云误差预算，0.01 m 小步验证 |
-| `projection.min_headroom_known_ratio` | 0.25；约束空列，不应降为 0 | 0.80，通常保持 0.75-0.90 |
-| `projection.min_observed_overhead_headroom_known_ratio` | 0.0；仅限已测顶板列 | 0.80，不得照抄仿真值 |
+| `projection.min_headroom_known_ratio` | 0.25；约束空列，不应降为 0 | 0.50，不得低于当前验证基线 |
+| `projection.min_observed_overhead_headroom_known_ratio` | 0.0；仅限已测顶板列 | 0.0；仅限有顶板回波、可信 support 且保守净高通过的列 |
 | `projection.headroom_voxel_inset_fraction` | 0.0；规则仿真射线按 voxel center | 0.5；按 occupied voxel 边界保守估计 |
 | `projection.prior_map.free_fills_unknown` | 保持 false | 必须为 false |
 | `projection.observed_empty_as_free` | 保持 false | 必须为 false |
@@ -3113,9 +3122,9 @@ d_stop = v_max^2 / (2 * a_brake) + v_max * total_latency + position_error
 
 ### 11.5 MINCO
 
-当前仿真 `max_velocity=1.00 m/s`，实车保持 `0.50 m/s`；仿真加速度/角速度为
-`1.0 m/s²`、`1.2 rad/s`，实车为 `0.8 m/s²`、`0.8 rad/s`。仿真速度提高不代表实车已经
-完成同速放行；实车参数仍按下面的步骤独立验证。
+当前仿真 `max_velocity=1.00 m/s`，实车为 `0.70 m/s`；仿真加速度/角速度为
+`1.0 m/s²`、`1.2 rad/s`，实车为 `0.8 m/s²`、`0.8 rad/s`。实车上限按独立流程放行，
+不跟随仿真上限。
 实车 active 首次应在 YAML 中降到 `0.20 m/s`，重启后用参数 dump 证明生效：
 
 ```bash
@@ -3128,7 +3137,7 @@ ros2 param get /controller_server MincoMpc.max_planar_speed
 
 | 参数 | 调整方式 | 停止条件 |
 |---|---|---|
-| `max_velocity` | 0.20 起，每次 +0.10，最高不超过实车基线 0.50 | 制动距离/视距不足、跟踪误差增大 |
+| `max_velocity` | 0.20 起，每次 +0.10，最高不超过实车基线 0.70 | 制动距离/视距不足、跟踪误差增大 |
 | `max_acceleration` | 0.30 起，每次 +0.10，最高不超过 0.80 | 轮滑、姿态扰动、MPC 饱和 |
 | `max_yaw_dot` | 每次 +0.10，最高不超过 0.80 | 洞口横向误差或角速度饱和 |
 | `traj_goal_tolerance` | 0.15 m；必须 `< xy_goal_tolerance(0.20 m)` | FSM 提前 BLOCK 或 Nav2 到点环振荡 |
@@ -3598,10 +3607,11 @@ ros2 service call \
 2. 仿真正向和反向各 10/10 通过。
 3. 静态墙、低浮空横梁、错高斜浮板、小箱体、stale、取消和旧 generation 负例全部 fail-closed。
 4. 实车 map 已加入经复核的 `ground_elevation`；测点、拟合残差、patch 边界和 TF Z 归档。
-5. `require_ground_support/clearance_check_enable/unknown_as_occupied=true`；observed-empty、bridge、
-   near-field 和 `free_fills_unknown` 均为 false；current-footprint bootstrap 为 true，但尺寸、offset、
-   支撑匹配/连续性和 occupied veto 已由参数 dump、单测与负例共同证明。
-6. 仿真 0.25 与实车 0.80 参数分离已由第二人复核。
+5. `require_ground_support/clearance_check_enable/unknown_as_occupied=true`；普通 observed-empty、
+   ground-connectivity bridge 和 `free_fills_unknown` 均为 false。有界 observed-support bridge、
+   current-footprint bootstrap 和 near-field 只在 prior FREE、高程连续、零 occupied voxel
+   条件下启用，尺寸、offset、迟滞和 occupied veto 已由参数 dump、单测与负例共同证明。
+6. 仿真 0.25 与实车 0.50 参数分离已由第二人复核。
 7. 实车 raw 点云高度、外参、自滤除框和车辆完整包络已测量记录。
 8. 若运行域有坑/坠落边缘，下视支撑否决传感器已接入并完成动态坑负例；否则相关区域已在地图封闭。
 9. 实车 shadow 连续运行至少 30 分钟，无错误放行、无地图长时间 stale、无 TF 跳变。
@@ -3894,16 +3904,32 @@ ros2 param get /planner_server \
    `clearance_unknown_as_occupied` 或增大车体自滤框；这些会改变真实障碍的放行边界。
 
 全局 SMAC 的 `use_esdf_cost` 在实车和仿真都保持 `false`。这是因为 ROG 是局部滚动安全场，边界的
-UNKNOWN 会随车辆和射线相位移动，不应改变全局拓扑。洞口前缘仍可能在日志中出现保守的
-`HEADROOM_UNVERIFIED` 和 local seed clipping，但它应随车前移、短时停车等待新观测，而不应让全局
-路径改走另一条路。需要动态全局绕障时，应接入只含明确 occupied evidence 的独立代价层；不要重新
-开启当前含 UNKNOWN 的 ROG ESDF 软偏置。
+UNKNOWN 会随车辆和射线相位移动，不应改变全局拓扑。需要动态全局绕障时，使用
+`MincoPlanner.priormap.dynamic_global_obstacle.enable=true` 启用证据过滤动态碰撞门，并用
+`collision_distance` 设置中心线到实测动态障碍的最小距离。该门只影响局部 ROG 窗口内的全局搜索，
+不会提供窗口外的动态无碰证明；不要直接打开含 UNKNOWN 的 ROG ESDF 软偏置。
+全局硬门只把具有有限 `occupied_z` 且原因为 `SOLID_VERTICAL_WALL`、
+`AMBIGUOUS_OCCUPIED` 或 `HEADROOM_BLOCKED` 的单元当作障碍核。只是因为射线未覆盖而闭锁的
+`HEADROOM_UNVERIFIED` / `GROUND_UNVERIFIED` 仍会在局部轨迹安全门制动，但不会把全局 SMAC 的
+open set 封死。
+搜索证据缓存每轮重置，不跨轮复用旧占据；局部 waypoint 稀疏化也逐条检查动态 footprint，防止全局
+绕障折线被静态地图的视线检查重新拉直。若 `/astar_path_vis` 绕行但 `/opt_path_vis` 穿墙，检查
+最终轨迹安全日志和当前加载的二进制，不能关闭安全门来解决。
 
 检查实际全局策略：
 
 ```bash
 ros2 param get /planner_server MincoPlanner.smac_2d.use_esdf_cost
+ros2 param get /planner_server MincoPlanner.priormap.dynamic_global_obstacle.enable
+ros2 param get /planner_server MincoPlanner.priormap.dynamic_global_obstacle.collision_distance
 ```
+
+正常的 active MINCO 仿真/实车输出应分别为 `false`、`true` 和约 `0.26`。若动态门开启但全局路径
+仍穿过已经确认的障碍，先检查 `/rog_map/raw_occupied`、`/rog_map/projection_reason` 和
+`header.frame_id`，再查看 planner 日志中的 `Global search dynamic ROG hard mask`。障碍核必须有
+`occupied_z=[有限值,有限值]` 且 `raw_reason/candidate_reason` 是上述三类之一；如果只有
+`HEADROOM_UNVERIFIED + occupied_z=[nan,nan]`，它是无回波闭锁，不是可以让全局路径绕行的实测障碍。不要先增大
+`collision_distance`，否则会把洞口有效宽度一起吃掉。
 
 当前必须返回 `False`。
 
@@ -4234,3 +4260,363 @@ python3 src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py --check
 本次静态地图连通性检查把自动静态硬净空、当前坡边硬内圈和无支撑闭锁共同投影后，最近任务的
 起点、目标仍位于同一连通域；旧卡死中心被正确排除。这个结果只证明全局拓扑没有被新层封死，
 不替代冷/暖启动、双向各 5 次以及低梁、浮空障碍和贴墙负例的动态仿真验收。
+
+### 20.3 RViz 全局搜索路径与第二洞口绕行
+
+MINCO 模式下 `/plan` 只包含起点和目标点，它是 Nav2 action/controller 的规划 token 契约，不是
+SMAC/A* 搜索结果。默认 RViz 已将这条红色 `Nav2 Contract Path (Start-Goal)` 关闭，并启用橙色
+`MINCO Global Search (SMAC/A*)`；后者订阅 `/astar_path_vis`。全局搜索一提交就会发布完整路径，
+不再等待局部 MINCO 优化成功。`/opt_path_vis` 仍只表示当前滚动窗口中的优化轨迹，不能据此判断
+全局拓扑。
+
+```bash
+ros2 topic info /astar_path_vis -v
+ros2 topic echo /astar_path_vis --once
+ros2 topic echo /opt_path_vis --once
+```
+
+从 `(-11.700,2.900)` 到 `(4.752,4.923)` 的复现中，当前全局路径包含约 511 个点、长约
+`28.6 m`：它沿 `y=7.5 m` 向右到约 `x=8.8 m`，绕过横墙后再折返，因此确实没有走第二洞口。
+逐层复算结果如下：
+
+| 全局查询层 | 路径长度 | 是否走第二洞口 |
+| --- | ---: | --- |
+| Nav2 static + inflation | 约 `20.5 m` | 是 |
+| 再加 `0.273 m` 静态障碍硬净空 | 约 `20.5 m` | 是 |
+| 再加高程断边硬内圈 | 约 `28.3 m` | 否，右侧绕行 |
+
+直接触发点位于第二洞口坡面约 `(4.775..4.875,6.665)` 到 `(4.825,6.715)`：高程由约
+`0.104 m` 跳到 `0.143 m`，局部差约 `3.9 cm`。仿真全局
+`ground_edge_avoidance.max_step=0.02 m` 会把这些格判成断边，再按
+`lethal_clearance_radius=0.28 m` 扩张，最终与真实坡侧边界共同封住洞口中心通道。这不是 ROG
+瞬时 UNKNOWN、`smac_2d.use_esdf_cost`、静态 PGM 墙或 MPC 导致的绕行。
+
+离线敏感性检查中，`max_step=0.04 m` 会重新得到约 `20.5 m` 的穿洞路径；`0.035 m` 仍绕行。
+该值代表允许全局路径跨越的实测台阶，不应仅为缩短路径直接放宽。决定采用 `0.04 m` 前，应先核对
+STL/高程格是否是栅格化凸点，并验证轮径和底盘确实能跨越 `4 cm` 台阶；修改位置是
+`config/simulation/minco_params.yaml`，实车参数不得跟随修改。修改后至少重跑第二洞口正反向各 5 次、
+坡边停止、低梁和浮空障碍负例。
+
+### 20.4 偏离局部路径后卡住
+
+如果日志同时出现以下两类信息，应先处理规划器状态，而不是继续放宽障碍阈值：
+
+```text
+state=COLD ... velocity_direction_cos=-...
+Trajectory safety rejected: reason=OUT_OF_MAP t=18....../50....
+```
+
+前者表示冷启动沿用了与新局部路径相反的里程计速度，当前代码会在方向余弦低于 `0.25` 时将冷启动速度置零；后者表示用滚动 ROG 窗口检查了远端轨迹。仿真配置中的
+`planner_server.MincoPlanner.safety.check_horizon: 2.0` 将硬安全检查限制在未来 2 秒，后续路径由下一次局部重规划和全局静态地图继续覆盖。该值不是障碍膨胀半径：降低它会减少提前预警，增大它会增加局部 ROG 越界和快照过期概率。建议仿真先保持 `2.0 s`，只有确认 ROG 窗口、点云频率和 CPU 余量后才以 `0.5 s` 为步长调整。
+
+验证命令：
+
+```bash
+rg -n 'check_horizon|Cold-start velocity rejected|OUT_OF_MAP|velocity_direction_cos|BLOCK_COMMAND' \
+  ~/.ros/log/planner_server_mt_*.log ~/.ros/log/controller_server_*.log | tail -200
+```
+
+合格表现是 `OUT_OF_MAP` 不再以未来十几秒的轨迹时间连续出现，冷启动反向速度告警只在真实方向冲突时出现，车辆偏离局部路径后能够在下一个重规划周期恢复，而不是进入长时间 BLOCK。真实障碍、当前 footprint 内的 `COSTMAP_LETHAL` 和快照过期仍必须失败关闭。
+
+## 21. 2026-09-12 实车速度方向、断续零速与低速
+
+最近一次 active MINCO 实车日志中，planner 有 109 次 `Trajectory safety rejected`，controller 有
+27 条 `BLOCK_COMMAND/BLOCKED`。主要失败格的 `raw_reason=HEADROOM_UNVERIFIED`、
+`occupied_z=[nan,nan]`、`prior_free=1`、`support_known=1`、`continuous_support=1`，说明零速首先来自
+近场无回波净空被失败关闭以及其后的 `OBSTACLE_HOLD`，不是 MPC QP 或真实 occupied 点先触发。
+
+当前修复保持以下边界：
+
+1. `/aft_mapped_to_init` 的 child-frame twist 由 `loam_interface` 保留到 `/lidar_odometry`；MPC 不再
+   把运动中的车误认为速度恒为零。
+2. 实车 base 到 MID360 的杆臂统一为 `(0.0,-0.20) m`；MPC 同时补偿 position 和 twist。
+3. 只允许静态 prior 为 FREE、高程支撑连续且格内没有 occupied voxel 的近场零回波格被释放。
+   `SOLID_VERTICAL_WALL`、`AMBIGUOUS_OCCUPIED` 和 `HEADROOM_BLOCKED` 仍启动障碍保持；单纯
+   `HEADROOM_UNVERIFIED` 不再额外保持 `0.5 s`。
+4. 实车通信层直接传递 chassis-frame `/cmd_vel` 的 `x/y`，不再改符号；普通导航线速度缩放由
+   `0.4` 改为 `1.0`。`follow_mark=0` 的洞口/堡垒任务仍单独乘 `0.5`。
+
+### 21.1 不要把 world 速度误认成 chassis 速度
+
+`/minco/cmd_vel_mpc`、`/cmd_vel_controller` 和 `/cmd_vel_nav2_result` 的平移量按 `odom/world`
+对齐；最终 `/cmd_vel` 才由 `fake_vel_transform` 使用最新 yaw 旋到 `base_link`。例如车头 yaw 为
+`+90 deg` 时，world `+x` 会成为 chassis `-y`，这不是 `x/y` 接反。串口只应原样发送最终
+`/cmd_vel`；若最终 topic 的方向正确而底盘方向错误，才检查电控协议轴定义。
+
+### 21.2 实车启动前检查
+
+`tools/reality/start_nav.bash` 当前明确是 legacy 回退脚本。active MINCO 应显式启动：
+
+```bash
+cd /home/pnx/nav_ws/sentry-navigation-RM27
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+  slam:=False navigation_mode:=minco world:=highbay3
+```
+
+实车通信程序也必须重新编译并重启，否则仍运行旧的符号/缩放逻辑：
+
+```bash
+cd /home/pnx/pnx_autoaim_sp/auto-aim-new
+cmake --build build --target sentry sentry_debug -j4
+```
+
+轮子落地前先确认参数和唯一所有权：
+
+```bash
+ros2 param get /controller_server MincoMpc.odom_topic
+ros2 param get /fake_vel_transform odom_topic
+ros2 topic info -v /cmd_vel
+ros2 topic hz /aft_mapped_to_init
+ros2 topic hz /lidar_odometry
+```
+
+前两个参数都应显示 `/lidar_odometry`；`/cmd_vel` 应只有一个导航发布者，实车通信节点只是订阅者。
+
+### 21.3 一次运行中定位零速发生层级
+
+分别开终端观察，不要把这些 topic 手工互相转发：
+
+```bash
+ros2 topic hz /minco/cmd_vel_mpc
+ros2 topic hz /cmd_vel_controller
+ros2 topic hz /cmd_vel_nav2_result
+ros2 topic hz /cmd_vel
+
+ros2 topic echo /minco/cmd_vel_mpc --once
+ros2 topic echo /cmd_vel_nav2_result --once
+ros2 topic echo /cmd_vel --once
+ros2 topic echo /lidar_odometry --once --qos-profile sensor_data
+```
+
+- raw MPC 已变零：同时查 `BLOCK_COMMAND`、轨迹 token、ROG safety reason 和 odom freshness。
+- raw MPC 非零、smoother 输出为零：查 velocity smoother 限幅/lifecycle。
+- smoother 非零、最终 `/cmd_vel` 为零：查 `/lidar_odometry` 是否超过 `0.20 s`，以及
+  `fake_vel_transform` 的 stale-odom 告警。
+- 最终 `/cmd_vel` 连续非零、底盘仍慢或方向错：查通信程序是否已经重启、实际加载的
+  `configs/sentry.yaml`、串口包和电控坐标约定，不再调 ROG/MINCO。
+
+快速汇总日志：
+
+```bash
+rg -n 'BLOCK_COMMAND|BLOCKED|Trajectory safety rejected|OBSTACLE_HOLD|HEADROOM_UNVERIFIED|STALE_|NO_ODOMETRY|QP_FAILED' \
+  ~/.ros/log/planner_server_mt_*.log ~/.ros/log/controller_server_*.log \
+  ~/.ros/log/fake_vel_transform_node_*.log | tail -200
+```
+
+### 21.4 速度参数含义和调参顺序
+
+实车当前平地硬上限是 `max_planar_speed=0.70 m/s`，坡面限速是 `0.50 m/s`；通信普通模式乘
+`cmd_vel_linear_scale=1.0`，`follow_mark=0` 再乘 `follow_mark_zero_linear_scale=0.5`。因此特殊任务
+的理论发送上限是平地 `0.35 m/s`、坡面 `0.25 m/s`。先验证本次 `0.4 -> 1.0` 修复后的普通模式，
+再决定是否提高 follow scale；每次最多增加 `0.1`，并重新做架空轮方向、急停、取消、真实障碍
+BLOCK、双向过洞和坡上停车。不要同时提高 MPC 上限、follow scale 和加速度，否则无法判断振荡或
+制动距离来自哪一层。按当前 `0.8 m/s²` 减速度计算，`0.70 m/s` 的理想纯制动距离约为
+`0.31 m`；现场还必须为感知、规划、通信延迟和轮胎打滑额外留裕量。
+
+## 22. 2026-09-14 实车洞口拒绝与动态障碍直穿修复
+
+### 22.1 日志证据与结论边界
+
+本轮核对了 2026-09-13 的实车 MINCO 日志。16:50 启动的
+`planner_server_mt_48598_1789289411662.log` 明确输出
+`Global search hard obstacles come from the global map only`，说明当时全局 seed 不消费 ROG 动态硬障碍。
+同一运行的洞顶拒绝样本为 `HEADROOM_UNVERIFIED`：`support_z=-0.300`、`ceiling_z=0.350`、
+`headroom=0.650`，但 `headroom_known=0.000`。它是已测顶板列缺少同列车身高度带的 free-ray 证明，
+不是日志计算净高小于车辆所需高度。地面先验、外参和车辆实际最高点仍须实测核对。
+
+17:41 的 `planner_server_mt_40965_1789292475832.log` 已开启动态全局门，却反复出现
+`open set exhausted`。旧证据筛选仅看 raw/candidate/base 的 OCCUPIED 类型，误把没有 occupied 回波的
+`HEADROOM_UNVERIFIED + occupied_z=[nan,nan]` 当作墙体。18:16 和 18:24 的两个较晚运行是 legacy，
+不能用来评估 MINCO 修复是否生效。
+
+控制器日志同时存在 `BLOCK_COMMAND/BLOCKED`。文字日志没有记录最终速度和底盘反馈，且当前工作区
+没有找到对应 rosbag，因此不能据此判定实际撞击发生在规划、坐标变换、命令发布者冲突还是底盘制动阶段。
+全局引导线穿障碍是规划缺陷，但不能据此证明控制器已经执行了该线。
+
+### 22.2 当前代码与参数
+
+- `config/reality/minco_params.yaml`：`min_observed_overhead_headroom_known_ratio` 从 `0.50` 改为 `0.0`。
+  只有该柱最低 occupied run 的保守下边界满足 `vehicle_height + headroom_margin`，且有可信静态自由
+  地面高程支撑时才接受顶板。空列仍用 `min_headroom_known_ratio=0.50`；低位占据仍拒绝。
+- Astar/SMAC 共用 `dynamic_obstacle_evidence.hpp`：动态障碍核必须有有限 occupied 高度区间和
+  `SOLID_VERTICAL_WALL/AMBIGUOUS_OCCUPIED/HEADROOM_BLOCKED` 原因；未知、去噪后未知和补洞结果不能
+  封锁全局拓扑。局部轨迹安全仍闭锁这些未知单元。证据缓存每轮重置，邻域检查不重复查询同一 cell。
+- `local_path_processor.cpp`：每条稀疏化捷径除静态视线检查外，还按半个 ROG cell 采样完整动态
+  footprint，防止绕障折线被重新拉直穿墙。
+- `minco_utils.cpp`：碰撞捷径拆分后，两条新边都必须检查；无法安全连接时返回失败，不强行插入
+  未检查的拐点或终点。
+
+### 22.3 复测命令与验收
+
+代码已编译；复测前重启导航进程。当前 `tools/reality/start_nav.bash` 的模式仍是 legacy，不要误用。
+下面是 active MINCO 启动命令，会连接真实速度链；执行前完成安全隔离并准备硬件急停：
+
+```bash
+cd /home/pnx/nav_ws/sentry-navigation-RM27
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+  slam:=False navigation_mode:=minco world:=highbay3
+```
+
+另开终端核对实际加载的参数，预期依次为 `true`、`0.26`、`0.0`、`0.50`：
+
+```bash
+ros2 param get /planner_server MincoPlanner.priormap.dynamic_global_obstacle.enable
+ros2 param get /planner_server MincoPlanner.priormap.dynamic_global_obstacle.collision_distance
+ros2 param get /planner_server MincoPlanner.rog_map.projection.min_observed_overhead_headroom_known_ratio
+ros2 param get /planner_server MincoPlanner.rog_map.projection.min_headroom_known_ratio
+ros2 topic info -v /cmd_vel
+```
+
+RViz 对照 `/astar_path_vis`（全局搜索）、`/minco_candidate_path_vis`（候选，不代表允许执行）、
+`/opt_path_vis`（已接受轨迹）和 `/rog_map/projection_reason`。先禁用底盘驱动验证动态墙体绕行、
+低梁拒绝和取消目标，再以低速、人工监护验证双向过洞，不能直接按现有高速上限冲障碍。
+如果 SMAC 的目标 cost 为 0 却报告不可通行，可能是动态硬门命中了目标或其邻域，而不是静态地图出错。
+若安全日志已 BLOCK 但车仍向障碍运动，立即停止试验，检查唯一 `/cmd_vel` 发布者、串口命令和底盘制动，
+不要调低 ROG 安全阈值。
+
+本轮验证：`minco_planner` 10/10 CTest 项、83 个用例通过；`rog_map` 4/4 CTest 项、100 个用例通过。
+未运行新的实车/仿真场景，未发布速度；现场通过性和制动能力仍需上述复测。
+
+## 23. 2026-09-16 膨胀层可视化与贴障路径
+
+### 23.1 本轮结论
+
+最新实车日志中 local/global costmap 都按 `static_layer -> rog_dynamic_obstacle_layer ->
+inflation_layer` 成功加载；ROG 投影日志的 `source` 与 `marked` 一致，且 global 侧
+`outside=0 transform_failed=0`。全局搜索记录过 `goal_cost=45` 和 `start_cost=45`：ROG 原始输入只
+发布 0/100，插件再映射成 0/254，因此 45 只能来自后置 InflationLayer。这证明 master costmap 中
+确实已有膨胀值。
+
+真正的路径贴边原因是简化 SMAC 原先把低代价固定平方。cost=45 归一化后约为 0.179，在旧的
+`2*x^2` 公式下只增加约 6% 行程代价，绕行收益通常不足。现在参数由两套 active profile 显式给出：
+
+```yaml
+smac_2d:
+  cost_penalty: 4.0  # 2026-09-16 reality baseline; current setting is in section 24
+  use_quadratic_cost_penalty: false
+local_path:
+  shortcut_peak_cost_slack: 10.0
+  shortcut_mean_cost_slack: 5.0
+```
+
+线性公式在仿真系数 2.0 时把同一格提高到约 36%，在此前实车系数 4.0 时提高到约 71%；cost 大于 128
+的旧内圈陡峭屏障仍保留，cost 大于等于 253 仍不可通行。实车启动时应看到：
+
+```text
+[SMAC 2D] costmap soft-cost bias: penalty=4.00 shaping=linear; ESDF bias=disabled
+```
+
+全局搜索之后还有局部 waypoint 稀疏化。旧逻辑只要求捷径不是 lethal，并检查动态 footprint，因此
+一条穿过软膨胀带的直线仍可能把 SMAC 的绕行抹掉。当前实现同时比较捷径与原 SMAC 子路径的峰值和
+平均 cost；超过上述 slack 就保留原转折。比较的是相对代价，因此整条窄通道都处于相近膨胀 cost 时
+仍可稀疏，不会用固定阈值封死洞口。两个 slack 都是 configure-time 参数，修改后需重启导航。
+
+### 23.2 RViz 三层对照
+
+RViz 日志曾出现 `indexed_8bit_image.vert/frag` 的 GLSL sampler 链接错误，这会让 `Map` 显示器空白，
+不能据此判定 costmap 没数据。默认 RViz 现在同时提供：
+
+- `ROG Raw Input (Before Inflation)`：`/rog_map/dynamic_obstacles`，仅看送入 costmap 前的二维障碍核；
+- `Final Inflation + Obstacle Cores (Point Cloud)`：`/minco/global_costmap_soft_costs`，以 PointCloud2
+  显示 master costmap 中 1..254 的最终代价格，蓝/绿外圈到红色 lethal 核连续显示，并绕开 RViz
+  Map 的 indexed-texture shader；
+- `MINCO Global Search (SMAC/A*)`：`/astar_path_vis`，橙色完整全局搜索路径；
+- `MINCO Optimized Path`：`/opt_path_vis`，绿色滚动局部优化轨迹。
+
+最终代价点云不发布 cost=0 和 unknown=255。发布频率限制为 1 Hz，并持续保留 transient-local 最新帧，
+所以 RViz 晚启动也能立即收到。planner 日志每 5 秒输出一次
+`[MincoVisualizer] final costmap cloud: cells=... subscribers=...`；`cells=0` 才表示 master costmap 中
+确实没有可显示代价，`subscribers=0` 表示 RViz 配置或 ROS domain 不一致。
+
+```bash
+ros2 param get /global_costmap/global_costmap plugins
+ros2 param get /global_costmap/global_costmap inflation_layer.enabled
+ros2 param get /global_costmap/global_costmap inflation_layer.inflation_radius
+ros2 param get /global_costmap/global_costmap inflation_layer.cost_scaling_factor
+ros2 param get /planner_server MincoPlanner.smac_2d.cost_penalty
+ros2 param get /planner_server MincoPlanner.smac_2d.use_quadratic_cost_penalty
+ros2 param get /planner_server MincoPlanner.local_path.shortcut_peak_cost_slack
+ros2 param get /planner_server MincoPlanner.local_path.shortcut_mean_cost_slack
+ros2 topic info -v /minco/global_costmap_soft_costs
+ros2 topic hz /minco/global_costmap_soft_costs
+ros2 topic echo /minco/global_costmap_soft_costs --once --field width
+```
+
+若 topic 有发布且 `width>0`，但旧 `Global Costmap` 仍空白，问题在 RViz/OpenGL，不在 InflationLayer；
+直接使用新增点云验收。若 `width=0`，再检查 ROG 障碍核是否存在、插件顺序和 inflation enabled。
+
+### 23.3 调参顺序
+
+1. 先保持 `use_quadratic_cost_penalty=false`。本节记录的是实车 `4.0`、仿真 `2.0` 的上一轮设置；
+   最新实车数值和回退办法见第 24 节。
+2. `inflation_radius` 决定软代价几何范围；每次只改 0.05 m。`cost_scaling_factor` 越大，代价随距离
+   衰减越快；希望外圈更有影响时应小幅降低它，而不是增大。
+3. 若橙色 `/astar_path_vis` 已离障碍足够远，但绿色 `/opt_path_vis` 又切近，问题已经不在 Nav2
+   inflation/SMAC，应检查 `minco_optimizer.safe_dist`、corridor 和 ROG ESDF；不要继续放大全局膨胀。
+4. 若某处完全无全局路径，检查该处是否已成为 cost 253/254 或静态硬净空。`cost_penalty` 只改变
+   可通行软格的偏好，无法打开硬封闭洞口。
+5. 每组参数做洞口正反向、开阔区贴墙、静态障碍和动态障碍至少各 5 次；只看一次路径截图不能作为
+   放行依据。
+6. 若橙色全局路径绕开障碍，但稀疏/绿色路径仍切近，先把两个 shortcut slack 每次各减 `2/1`；
+   若窄洞内局部 seed 失败，则反向各加 `2/1`。不要先增大 `safe_dist`，它会直接压缩洞口可行净空。
+
+本轮代码回归已通过内外两套 install 构建、`minco_planner` 10/10 CTest、局部路径 12/12 用例以及
+本节对应的两项 bringup/RViz 断言。当前没有替用户启动实车或发布速度，最终净空和动态制动仍需
+现场低速验收。
+
+## 24. 2026-09-18 实车动态膨胀核对
+
+最近可用的实车日志是 9 月 17 日 00:14-00:17 的
+`/home/pnx/.ros/log/planner_server_mt_14175_1789575278767.log`。全局图层依次加载
+`static_layer -> rog_dynamic_obstacle_layer -> inflation_layer`；ROG 每 5 秒记录的障碍核
+`source=108..737, marked=source, outside=0, transform_failed=0`。但此前全图点云只报告
+`cells=44634 subscribers=1`，对障碍核数量变化不敏感。`cells` 只统计 cost>0 的格子，
+动态核可能落在已有静态软膨胀带中，也可能没有进入 master；旧日志不能区分二者，不能据此宣称
+动态膨胀正常或失效。RViz 的 Map 显示还报告了 GLSL sampler 错误。
+同一趟运行中的若干 `COSTMAP_LETHAL` 记录给出的 `raw_reason=HEADROOM_UNVERIFIED`
+（无可用顶空测量），其二维静态 PGM 位置为 free；这类未知空间硬安全停机不属于
+`/rog_map/dynamic_obstacles` 的“实测障碍”，调大 inflation 无法消除。先区分橙色全局线贴近
+实测障碍与绿色局部轨迹因未知顶空停止，不能把两者都归咎于膨胀层。
+
+本次实车 local/global inflation 均由 `0.52` 调至 `0.65 m`，SMAC 线性软代价权重由 `4.0`
+调至 `6.0`。不改 `cost_scaling_factor=5.0`、硬碰撞距离、车体 footprint 或仿真参数；
+这扩大开阔区域的软避障偏好，不保证洞口仍有足够余量，必须先低速复测。
+后续实车配置已再次调整：当前 local/global 半径均为 `0.52 m`，local 衰减系数为 `3.0`、
+global 为 `5.0`；以正在运行的 ROS 参数为准，不要仅凭此处历史记录调参。
+
+RViz 默认启用 `Global Planner -> Dynamic Inflation (Final Costmap)`；
+`Final Inflation + Obstacle Cores (Point Cloud)` 也默认启用，用半透明平面方块显示完整全局代价地图；
+仿真有约 9 万个代价格，若 RViz 帧率不足，可在 RViz 中关闭全图点云并保留动态高亮。
+新主题 `/minco/dynamic_costmap_inflation` 只截取 ROG 实测障碍核周围
+`inflation_radius` 内**最终 master 中真实存在**的代价值，颜色从蓝（软外圈）到红（lethal 核），
+高于地图 0.17 m；无核或无最终代价时发布空云，不伪造膨胀结果。点云最多 1 Hz；
+全图点云无人订阅时不构造、不发布。
+
+重新启动导航后，在**当前实车使用的 ROS_DOMAIN_ID 和环境**中执行：
+
+```bash
+ros2 param get /global_costmap/global_costmap inflation_layer.inflation_radius
+ros2 param get /local_costmap/local_costmap inflation_layer.inflation_radius
+ros2 param get /planner_server MincoPlanner.smac_2d.cost_penalty
+ros2 topic info -v /minco/dynamic_costmap_inflation
+ros2 topic hz /minco/dynamic_costmap_inflation
+ros2 topic echo /minco/dynamic_costmap_inflation --once --field width
+rg 'dynamic final costmap|ROG obstacle projection|Nav2 costmap global search input|SMAC 2D' "$(ls -t /home/pnx/.ros/log/planner_server_mt_*.log | head -n 1)" | tail -60
+```
+
+重点看 `[MincoVisualizer] dynamic final costmap: sources=... missing_cores=...
+inflated_soft=... visible=... radius=...`：`sources>0, missing_cores>0` 表示有实测障碍核没进
+最终 costmap，优先检查 ROG 投影 frame、图层几何与刷新时序，**停止测试避障**；
+`missing_cores=0, inflated_soft=0` 则核已写入，但周围没有软代价格；在开阔的已知空白区放置
+独立障碍后再检查后置 inflation（核周围若全是 253/254 或 unknown，此计数同样可能为 0）；
+`missing_cores=0, inflated_soft>0` 表示最终 master 有动态软代价，再比较橙色全局搜索路径与绿色
+局部轨迹。全图 `cells` 不变不再作为动态图层失效证据。注意动态区域与静态障碍重叠时，
+显示的是该区域的最终代价，不能单凭它归因某一图层。
+
+若窄路/洞口变得无路或绕远，先将实车 global/local `inflation_radius` 各降回 `0.52`，
+再将 `cost_penalty` 降回 `4.0`，每次只改一个量并重新启动；勿用降低碰撞安全半径换取通行。
+当前没有这一版的实车运行日志，配置能编译不等于真实避障距离已经验收。

@@ -88,12 +88,26 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      plugins: ["static_layer", "inflation_layer"]
+      plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
+      rog_dynamic_obstacle_layer:
+        plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
+        enabled: true
+        topic: /rog_map/dynamic_obstacles
+        obstacle_threshold: 65
+        stale_timeout: 2.75
+        tf_timeout: 0.10
 
 global_costmap:
   global_costmap:
     ros__parameters:
-      plugins: ["static_layer", "inflation_layer"]
+      plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
+      rog_dynamic_obstacle_layer:
+        plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
+        enabled: true
+        topic: /rog_map/dynamic_obstacles
+        obstacle_threshold: 65
+        stale_timeout: 2.75
+        tf_timeout: 0.10
       # The outer inflation remains a soft SMAC preference (cost 253 retains
       # Nav2's normal non-traversable meaning). The planner separately builds a
       # hard static-obstacle mask from the safety-footprint corner radius plus
@@ -101,7 +115,7 @@ global_costmap:
       # boundary between global search and local validation.
       inflation_layer:
         cost_scaling_factor: 5.0
-        inflation_radius: 0.35
+        inflation_radius: 0.50
 
 planner_server:
   ros__parameters:
@@ -123,6 +137,12 @@ planner_server:
         physical_base_frame: base_link
       priormap:
         use_nav2_global_search: true
+        # Measured ROG occupied cells are checked by the global search inside
+        # the rolling window. UNKNOWN/frontier cells are excluded by the
+        # evidence gate in Astar/SMAC.
+        dynamic_global_obstacle:
+          enable: true
+          collision_distance: 0.26
         clip_seed_by_rog_boundary: true
         rog_boundary_margin: 0.30
         rog_boundary_sample_step: 0.10
@@ -138,7 +158,7 @@ planner_server:
           # RMUC2026 contains surveyed 3 cm ramp-surface protrusions. Keep the
           # continuous 15-degree ramp traversable but route around these local
           # steps instead of repeatedly driving the wheel contacts into them.
-          max_step: 0.02
+          max_step: 0.05
           max_slope_deg: 20.0
           # SMAC searches with the robot center while the downstream ROG gate
           # validates the complete 0.32 x 0.31 m safety footprint. Keep the
@@ -165,12 +185,17 @@ planner_server:
         footprint_margin: 0.05
         sample_dt: 0.05
         # The compacted cloud normally updates at 4-10 Hz, but Gazebo GPU lidar
-        # can still produce isolated ~2.1 s scheduling gaps under combined
+        # can still produce isolated 2.2-2.45 s scheduling gaps under combined
         # Gazebo/RViz load. ROG retains occupied evidence for 3 s, so this
-        # remains fail-closed before old obstacle evidence can decay.
+        # remains fail-closed before old obstacle evidence can decay. The 3.5 s
+        # outlier remains rejected rather than authorizing stale perception.
         # Real hardware retains the stricter 0.50 s gate.
-        map_timeout: 2.20
+        map_timeout: 2.50
         future_tolerance: 0.05
+        # The dynamic ROG map is a rolling local window. Validate only this
+        # short future interval; the global map and the next replans cover the
+        # remainder of the route.
+        check_horizon: 2.0
         # A collision-rejected replacement may reuse only a short, freshly
         # validated tail. Longer reuse can carry downhill tracking error into a
         # static-map boundary before the next safety callback brakes the robot.
@@ -190,15 +215,16 @@ planner_server:
         frame_id: odom
         resolution: 0.05
         inflation_resolution: 0.05
-        # The local optimizer looks ahead 1.5 m. An 8 m rolling window retains
-        # ample boundary margin while reducing projected XY cells by 36%.
-        map_size: [8.0, 8.0, 2.0]
+        # The local optimizer looks ahead 1.5 m. A 6 m rolling window retains
+        # over 1 m of boundary margin while reducing projected XY work by 44%
+        # from the previous 8 m window.
+        map_size: [6.0, 6.0, 2.0]
         fix_map_origin: [0.0, 0.0, 0.0]
         point_filt_num: 1
         esdf:
           enable: false
           resolution: 0.10
-          local_update_box: [8.0, 8.0, 2.0]
+          local_update_box: [6.0, 6.0, 2.0]
         map_sliding:
           enable: true
           threshold: 0.20
@@ -208,10 +234,10 @@ planner_server:
           enable: true
           cloud_topic: /registered_scan
           odom_topic: /lidar_odometry
-          # Ground-truth scan reconstruction transforms up to 115200 organized
+          # Ground-truth scan reconstruction transforms up to 34560 organized
           # samples before publishing /registered_scan. Accept its paired
           # acquisition-time odometry through that bounded processing queue;
-          # final motion authorization still uses safety.map_timeout=2.20 s.
+          # final motion authorization still uses safety.map_timeout=2.50 s.
           odom_timeout: 0.50
           cloud_timeout: 1.25
           future_tolerance: 0.05
@@ -252,7 +278,7 @@ planner_server:
           enable: true
           batch_update_size: 1
           ray_range: [0.10, 10.0]
-          local_update_box: [8.0, 8.0, 2.0]
+          local_update_box: [6.0, 6.0, 2.0]
           unk_thresh: 0.70
           p_hit: 0.90
           p_miss: 0.45
@@ -260,7 +286,7 @@ planner_server:
           p_max: 0.97
           p_occ: 0.85
           p_free: 0.499
-          # Dense 360x320 scans otherwise age the safety snapshot while serial
+          # Dense 360x96 scans otherwise age the safety snapshot while serial
           # ray walks are still running. The parallel path preserves hit
           # precedence and deduplicates only identical free-space endpoints.
           parallel_enable: true
@@ -294,6 +320,13 @@ planner_server:
           ground_connectivity_bridge_max_height_delta: 0.15
           ground_connectivity_bridge_landing_min_length: 0.25
           ground_connectivity_bridge_landing_min_height_delta: 0.04
+          # A one-cell prior/no-data strip inside the measured footprint may
+          # borrow support from two cardinal neighbors after two frames. Any
+          # occupied voxel in the strip remains an immediate veto.
+          observed_ground_support_bridge_enable: true
+          observed_ground_support_bridge_min_neighbors: 2
+          observed_ground_support_bridge_max_height_delta: 0.06
+          observed_ground_support_bridge_hysteresis_count: 2
           # Cover the current 0.32 x 0.31 m hard footprint plus one 0.10 m
           # ROG seed sample on every side. This prevents an oblique doorway
           # exit from deadlocking on the regular LiDAR near-field lattice. In
@@ -333,8 +366,8 @@ planner_server:
           max_ground_slope_deg: 28.0
           # MID360's -7.22 deg lower FOV first sees level ground near 1.55 m.
           ground_seed_radius: 1.80
-          # The regular 360x320 Gazebo ray lattice leaves some verified
-          # near-ground columns with only 1 of the 4 body-height voxels known.
+          # The 360x96 Gazebo ray lattice now reconstructs every vertical miss
+          # ray, so body-height knowledge is no longer intentionally sparse.
           # Occupied returns still veto the column; keep the real profile at 0.80.
           min_headroom_known_ratio: 0.25
           # At the leading roof face, finite roof returns replace every
@@ -360,16 +393,16 @@ planner_server:
           # verified and caused TRAJECTORY_RX_STALE braking.  Reality keeps a
           # conservative 0.50 s hold until bag-measured dropout bounds exist.
           obstacle_hold_time: 0.0
-          # Preserve a previously verified tunnel cell across one sparse
-          # body-band miss-ray dropout. This applies only to zero-hit columns
-          # with continuous surveyed support; any occupied return still blocks
-          # in the same update.
-          clearance_dropout_hold_time: 0.50
-          # Fill at most a 10 cm (two 5 cm cells) zero-hit ray hole enclosed by
+          # Preserve a previously verified tunnel cell across short sparse-scan
+          # and delayed-snapshot gaps.
+          # This applies only to zero-hit columns with connected surveyed
+          # support; any occupied return still blocks in the same update.
+          clearance_dropout_hold_time: 1.50
+          # Fill at most a 20 cm (four 5 cm cells) zero-hit ray hole enclosed by
           # an opposing pair of clearance-verified cells. Candidate selection
           # is one-shot, so this cannot spread across a wider unknown strip.
           clearance_hole_fill_enable: true
-          clearance_hole_fill_max_width: 0.10
+          clearance_hole_fill_max_width: 0.20
           mask_filter_en: true
           fill_occ_min: 7
           denoise_occ_max: 0
@@ -414,12 +447,17 @@ planner_server:
           # Building the occupied cloud holds the ROG data lock. Keep debug
           # visualization low-rate and within the 1.5 m local planning radius
           # so it cannot starve map updates.
-          rate: 1.0
+          rate: 0.5
           range: [3.0, 3.0, 1.0]
       corridor:
         robot_radius: 0.25
         extra_margin: 0.05
       smac_2d:
+        # Linear shaping makes the visible Nav2 inflation band affect global
+        # route selection without raising the penalty enough to reject the
+        # narrow tunnel in favor of a large detour.
+        cost_penalty: 2.0
+        use_quadratic_cost_penalty: false
         # Global topology comes from the static Nav2 costmap. The ROG field is
         # rolling and fail-closed at its observation frontier, so using it as a
         # global soft potential makes transient tunnel-edge UNKNOWN cells pull
@@ -431,6 +469,11 @@ planner_server:
         esdf_weight: 8.0
         esdf_decay: 0.15
         esdf_max_cost: 8.0
+      local_path:
+        # Preserve SMAC's inflation-aware route during waypoint sparsification.
+        # Relative comparison keeps a uniformly narrow tunnel traversable.
+        shortcut_peak_cost_slack: 10.0
+        shortcut_mean_cost_slack: 5.0
       minco_optimizer:
         opt_freq: 20.0
         # The FSM safety loop remains at 20 Hz, but a failed global/local

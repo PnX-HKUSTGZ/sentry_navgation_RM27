@@ -87,7 +87,8 @@ GridBased/FollowPath”的逻辑。
 - `enable_legacy_terrain:=auto` 在 `legacy`、`minco_shadow` 中解析为 `true`，在 `minco`
   中解析为 `false`。
 - 显式在 `minco` 中设置 `enable_legacy_terrain:=true` 只会额外启动旧 terrain producer；
-  active costmap 已覆盖为 static + inflation，它不会因此恢复旧动态避障权威。
+  active costmap 已覆盖为 static + ROG dynamic obstacle + inflation，它不会因此恢复旧
+  IntensityVoxelLayer 动态避障权威。
 - 反过来，在 `legacy` 中强制关闭 terrain，会让 IntensityVoxelLayer 缺少预期输入，不能视为
   正常 legacy 配置。
 - `slam:=true` 当前只允许 `legacy`；`slam:=true` 与 `use_ground_truth_odom:=true` 互斥。
@@ -285,9 +286,11 @@ flowchart LR
 active 模式中：
 
 - 主 local/global costmap 的完整 `plugins` 数组被覆盖为
-  `[static_layer, inflation_layer]`；
+  `[static_layer, rog_dynamic_obstacle_layer, inflation_layer]`；
 - `IntensityVoxelLayer` 不再是动态障碍权威；
-- ROG 动态障碍不作为一个 Nav2 costmap plugin 注入，而由 MincoPlanner 内部查询和安全门使用；
+- ROG 中具有实测 occupied 证据的动态障碍会经 `/rog_map/dynamic_obstacles` 注入 Nav2 costmap，
+  再由后置 inflation layer 生成软代价；ROG 的未知地面、未知净空、三维距离场和最终放行仍由
+  MincoPlanner 内部查询和安全门负责；
 - active BT 指定 `MincoPlanner + MincoMpc`；
 - `fake_vel_transform.use_latest_odom_for_cmd` 改为 `true`。
 
@@ -300,9 +303,15 @@ active 模式中：
 
 | 部署 | ROG frame | ROG 点云 | Planner/ROG odom | MPC odom | 规划输出 frame |
 | --- | --- | --- | --- | --- | --- |
-| 实车 | `camera_init` | `/cloud_registered_full` | `/aft_mapped_to_init` | `/odometry` | `map` |
+| 实车 | `camera_init` | `/cloud_registered_full` | `/aft_mapped_to_init` | `/lidar_odometry` | `map` |
 | 仿真真值 | `odom` | `/registered_scan` | `/lidar_odometry` | `/odometry` | `map` |
 | 仿真 Point-LIO | `camera_init` | `/cloud_registered_full` | `/aft_mapped_to_init` | `/odometry` | `map` |
+
+> 实车 active MINCO 的 MPC、fake-vel 和 legacy 控制器都订阅 `loam_interface` 生成的
+> `/lidar_odometry`；MincoPlanner/ROG 直接订阅 `/aft_mapped_to_init`。实车 `/odometry` 是旧版
+> sensor-scan 兼容链路的历史名称，不能作为当前 active MINCO 的输入前提；现场调试
+> 应以 `src/pb2025_nav_bringup/config/reality/minco_params.yaml` 和
+> `config/reality/nav2_params.yaml` 为准。
 
 所有当前 MINCO profile 都是 `planner_mode: PRIORMAP`。`FrameAwareRogQuery` 在规划时把
 `map` 中的查询变换到 ROG frame。
@@ -335,11 +344,12 @@ relocalization_manager
 ~~~
 
 因此 active 并不是删除所有旧前端节点；它删除的是旧 terrain/costmap 的动态障碍权威。
-MPC 仍依赖 `/odometry`，PRIORMAP 仍依赖连通的
+MPC 依赖 `/lidar_odometry`，PRIORMAP 仍依赖连通的
 `map -> odom -> camera_init` TF。
 
-Point-LIO 与 `sensor_scan_generation` 的 twist 已按 ROS odometry 合同处理为
-`child_frame_id` 中的速度，MPC 再将其旋转到 `odom`。这与仅修改 header 名称不是一回事。
+Point-LIO 的 twist 按 ROS odometry 合同表达在 `child_frame_id=body`；`loam_interface` 在当前
+同轴安装合同下将其保留到 `child_frame_id=left_mid360`，MPC 再将其旋转到 `odom` 并补偿
+base-to-lidar 杆臂。这与仅修改 header 名称不是一回事。
 
 `sensor_scan_generation` 对每组同步的 `/registered_scan + /lidar_odometry` 还要求在该点云 stamp
 同时取得 `lidar_frame <- robot_base_frame` 和 `lidar_frame <- base_frame` 两个 TF。任意一个查询
@@ -361,7 +371,7 @@ sensor_scan_generation。`rm27_ground_truth_localizer` 把原始状态输出与 
 /livox/lidar(scan stamp) + GT 状态缓存
   -> exact sample，或由 scan stamp 两侧状态插值
   -> worker 入队前预发布 scan-time odom -> base_footprint TF
-  -> 360 x 320/ring 强校验；合格的 any-inf no-return 恢复为 miss ray
+  -> 360 x 96/ring 强校验；合格的 any-inf no-return 恢复为 miss ray
   -> 再发布 scan-time TF + /lidar_odometry + /registered_scan
      （同一插值位姿、同一 scan stamp）
 ~~~
@@ -398,9 +408,9 @@ Sigma_lidar = J * Sigma_base * J^T
 ~~~yaml
 reconstruct_no_return_rays: true
 lidar_horizontal_samples: 360
-lidar_vertical_samples: 320
+lidar_vertical_samples: 96
 no_return_horizontal_stride: 1
-no_return_vertical_stride: 2
+no_return_vertical_stride: 1
 no_return_ray_length: 10.5
 rog_raycast_max_range: 10.0
 rog_map_resolution: 0.05
@@ -425,7 +435,7 @@ Gazebo 保留了每条射线的 raster 行列和 `ring`，但无回波方向的 
 `ground_elevation` 支撑门共同决定通行。它只补“射线明确未命中”的空域证据，不把 UNKNOWN 全局
 改成 free，也不证明轮下存在地面。
 
-该重建只适用于当前 `use_ground_truth_odom:=true` 的 360 x 320 Gazebo raster，不能复制到实车或
+该重建只适用于当前 `use_ground_truth_odom:=true` 的 360 x 96 Gazebo raster，不能复制到实车或
 仿真 Point-LIO 路径。实车必须先确认驱动是否保存 no-return 的方向/ring/方位俯仰或等价 range
 语义，再按真实扫描模式实现并验证 miss；下视盲区和负障碍还需要独立下视补盲/支撑否决能力，且
 `ground_elevation` 必须现场测量。不得照搬仿真的分辨率、FOV、stride 或 10.5 m 数值来制造 free。
@@ -873,13 +883,28 @@ query 角色与当前机器人 pose 的来源是两件事。`getRobotPose()` 总
 
 - `globalQuery` 负责静态全局拓扑和全局 SMAC/A* seed；
 - `dynamicQuery` 负责局部实时三维柱投影、距离场、优化障碍代价和最终安全检查；
-- `sparsifyQuery` 用静态全局代价地图检查全局 seed 的视线稀疏化。
+- `sparsifyQuery` 用静态全局代价地图检查全局 seed 的视线稀疏化；每条捷径还需通过完整 footprint
+  的动态安全检查，不能将动态绕障折线重新拉直穿墙。
 
-active Nav2 global costmap 只有 static + inflation，且 `smac_2d.use_esdf_cost=false`。全局搜索不会
-把局部滚动 ROG 的 fail-closed 观测前缘当成软代价或全局永久地图；动态 ROG 的约束发生在后续局部
-corridor、MINCO 优化和最终安全门。这使洞口拓扑不随激光射线相位抖动，也不会因 10 m 滑窗以外
-没有 ROG 数据而完全失去拓扑，同时意味着全局 path 本身不是动态无碰证明。未来如需动态障碍驱动
-全局绕行，应单独构建只含明确 occupied evidence 的全局动态层，不能直接复用含 UNKNOWN 的安全场。
+active Nav2 global costmap 按 `static -> rog_dynamic_obstacle -> inflation` 合并，且
+`smac_2d.use_esdf_cost=false`。其中 ROG costmap plugin 只接受实测 occupied 障碍，不把未知支撑或
+未知净空投影成二维墙；后置 inflation 的 `1..253` 软代价直接进入 SMAC 路径代价。当
+`priormap.dynamic_global_obstacle.enable=true` 时，Astar/SMAC 还会额外查询
+`FrameAwareRogQuery` 的局部 ESDF，在 `collision_distance` 内避开明确的 ROG occupied evidence。
+该动态门只接受同一柱中存在有限 `occupied_z=[min,max]` 且分类原因为
+`SOLID_VERTICAL_WALL`、`AMBIGUOUS_OCCUPIED` 或 `HEADROOM_BLOCKED` 的实测障碍证据，再用
+`collision_distance` 对其周围搜索单元做硬门。`HEADROOM_UNVERIFIED`、`GROUND_UNVERIFIED`、
+`UNKNOWN_AS_OCCUPIED`、去噪后未知和 ROG 窗口外查询失败不允许改写全局拓扑，否则实车激光盲区会将
+起点周围封死。
+占据证据和距离在同一轮搜索中按 cell 缓存，邻域膨胀不重复查询相同单元；下一轮搜索重新获取证据。
+动态 ROG 的约束仍同时进入局部 corridor、MINCO 优化和最终安全门；全局 path 仍不是覆盖滑窗之外的
+动态无碰证明。关闭该开关即可恢复原来的“静态全局 + 局部动态安全”行为。
+
+SMAC 对软代价的当前配置为实车 `cost_penalty=4.0`、仿真 `2.0`，且
+`use_quadratic_cost_penalty=false`。旧实现固定平方归一化代价，使外圈常见 cost=45 只增加约 6%
+行程代价；实车线性配置将其提高到约 71%，使膨胀外圈能
+实际推动路径离墙，同时不把窄洞的重叠软代价抬到默认就绕远路的程度。cost `>=253` 仍不可通行，
+明确 occupied 的动态硬门也不受该软权重影响。
 
 `Nav2CostmapQuery` 在读取 cell 和复制 charmap 时持有 `Costmap2D::getMutex()`。SMAC/A* 使用
 同一次锁内复制出的自有快照；如果 costmap 在尺寸读取与复制合同间发生不一致，搜索失败，而不是
@@ -897,7 +922,9 @@ corridor、MINCO 优化和最终安全门。这使洞口拓扑不随激光射线
 5. 若终点由观测前缘裁剪得到，MINCO 的终端速度和加速度强制为零，时间分配也按停车端点处理；
    yaw 始终从当前实测车身朝向优化到 NavigateToPose 的显式目标朝向，不再从路径切线重建终点 yaw。
    因此全向横移不会在每次重规划时把矩形车身逐步转向 UNKNOWN 边缘；
-6. 通过静态 query 做可视线稀疏化；
+6. 通过全局 costmap query 做可视线稀疏化；候选捷径的峰值/平均 cost 不得明显高于原 SMAC 子路径，
+   并沿每条候选捷径以半个 ROG cell 的步长检查当前 yaw 的完整 footprint。失败时拆分回原始拐点，
+   拆分后的两条边都必须检查；不允许补入未经检查的拐点/终点；
 7. 结合 ROG 动态 field 构造 corridor 和障碍代价；
 8. 生成分段五次 MINCO position trajectory 和独立 yaw trajectory；
 9. 通过发布前安全检查后，发布 `MpcPositionCommand`。
@@ -1171,7 +1198,7 @@ R: [1.5, 1.5, 1.0]
 odom_timeout: 0.25
 trajectory_timeout: 1.50
 future_stamp_tolerance: 0.05
-max_planar_speed: 1.0  # 实车为 0.5
+max_planar_speed: 1.0  # 实车为 0.7
 ~~~
 
 `q_cross > q_along` 让横向误差比沿轨误差更重。速度和加速度约束的实车/仿真差异见第 10 节。
@@ -1266,6 +1293,10 @@ active 中 `fake_vel_transform.use_latest_odom_for_cmd: true`。它用每一帧�
 没有 fresh odom 时，新命令直接变零；50 Hz watchdog 会在已经输出过非零命令后 odom 断流时主动
 补发 stop。legacy/shadow 则保持 `use_latest_odom_for_cmd: false` 的历史同步路径。
 
+实车随后由 `gimbal_navigation_bridge` 订阅 chassis-frame `/cmd_vel`，使用 NavToGimbalV2 原样发送
+`linear.x/y`。坐标旋转和符号只允许在 `fake_vel_transform` 完成，串口层不得再次交换或取反。
+普通模式的通信线速度比例为 `1.0`；`follow_mark=0` 的特殊路段仍可使用独立比例降速。
+
 仿真中的 `/cmd_vel` 最终进入 `CmdVelPoseControlSystem`。它仍只施加 world-XY 平面力和 yaw 力矩，
 `z/roll/pitch` 由 DART 重力和接触求解；平面速度环由 P 扩展为可参数化 PI。插件默认
 `linear_velocity_integral_gain=0`、`max_planar_integral_force=0`，所以其他未显式配置的模型保持旧 P
@@ -1288,7 +1319,7 @@ detector 解析球体与三角网格接触；这同时保留重力/坡面姿态�
 | --- | ---: | ---: | --- |
 | ROG frame | `camera_init` | `odom` / Point-LIO 覆盖为 `camera_init` | 输入合同不同 |
 | cloud | `/cloud_registered_full` | `/registered_scan` / Point-LIO 覆盖为 full cloud | 输入合同不同 |
-| organized no-return 重建 | 无 | 仅真值：360 x 320，any-inf，miss stride 1 x 2 | Gazebo 专用，不适用于 Point-LIO/实车 |
+| organized no-return 重建 | 无 | 仅真值：360 x 96，any-inf，miss stride 1 x 1 | Gazebo 专用，不适用于 Point-LIO/实车 |
 | ROG odom | `/aft_mapped_to_init` | `/lidar_odometry` / Point-LIO 覆盖为 aft mapped | 输入合同不同 |
 | `robot_origin_to_ground` | 0.28 m | 0.20 m | 必须按安装高度复测 |
 | `vehicle_height` | 0.42 m | 0.17 m | 仿真碰撞体顶面约 0.165 m；仿真值不是实车尺寸证明 |
@@ -1298,15 +1329,15 @@ detector 解析球体与三角网格接触；这同时保留重力/坡面姿态�
 | `ground_support_tolerance` | 0.08 m | 0.08 m | 回波表面与测绘高程容差 |
 | blind bridge | 关闭 | 关闭 | 不作为轮下支撑证明 |
 | current-footprint / near-field fill | 严格 bootstrap / near-field 关闭 | `0.52 x 0.51 m` bootstrap / `1.40 x 1.00 m` 仿真短扫掠区 | 均须 prior-free、连续匹配高程、零 occupied |
-| `min_headroom_known_ratio` | **0.80** | **0.25** | 仿真离散 ray 专用补偿 |
-| `min_observed_overhead_headroom_known_ratio` | **0.80** | **0.0** | 仅放宽已测到且几何净空足够的顶板列；空列仍用上一项 |
+| `min_headroom_known_ratio` | **0.50** | **0.25** | 仿真离散 ray 专用补偿 |
+| `min_observed_overhead_headroom_known_ratio` | **0.0** | **0.0** | 仅适用于已测到顶板回波的列；仍要求可信高程支撑且保守顶板下边界高于车体，空列继续用上一项闭锁 |
 | `headroom_margin` | **0.05 m** | **0.02 m** | 净空余量；仿真仍保留 2 cm，不得复制体素模型到实车 |
 | `headroom_voxel_inset_fraction` | **0.5** | **0.0** | 实车按 occupied voxel 边界保守估计；规则仿真射线按 voxel center 估计 |
 | `obstacle_hold_time` | 0.50 s | 0.0 s | 仿真靠 2 帧 hysteresis；实车按漏检上界保守保持 |
 | prior `transform_timeout` | 0.50 s | 0.75 s | 仿真负载容差 |
 | safety `map_timeout` | 0.50 s | 2.20 s | Gazebo 调度尖峰容差；仍小于占据证据 3 s 保留期 |
 | 碰撞类缓存续发上限 | 0.40 s | 0.75 s | 超限立即 BLOCK，不继续执行长旧轨迹 |
-| planner `max_velocity` | 0.5 m/s | 1.0 m/s | MINCO 连续峰值；仿真已提高，实车独立放行 |
+| planner `max_velocity` | 0.7 m/s | 1.0 m/s | MINCO 连续峰值；实车与仿真分别放行 |
 | planner `max_acceleration` | 0.8 m/s2 | 1.0 m/s2 | MINCO 连续峰值 |
 | planner `max_yaw_dot` | 0.8 rad/s | 1.2 rad/s | yaw trajectory |
 | planner `traj_goal_tolerance` | 0.15 m | 0.15 m | 必须严格小于 Nav2 `xy_goal_tolerance=0.20 m` |
@@ -1330,14 +1361,14 @@ hard collision_dist         0.0 m
 
 ### 10.1 为什么仿真 known ratio 是 0.25
 
-Gazebo MID360 当前是 10 Hz、水平 `360`、垂直 `320` 的规则 gpu_lidar，总计
-`115200` 条 ray/frame，垂直 FOV 为 `-7.22 ... +55.22 deg`。在当前仿真 `0.20 m` 车高、
+Gazebo MID360 当前是 10 Hz、水平 `360`、垂直 `96` 的规则 gpu_lidar，总计
+`34560` 条 ray/frame，垂直 FOV 为 `-7.22 ... +55.22 deg`。在当前仿真 `0.20 m` 车高、
 `0.05 m` 体素和规则射线模型下，车侧部分近地柱可能只有 4 个车体高度体素中的 1 个被标成
 known，所以仿真门限设为 `0.25`。
 
-320 条垂直 ray 在当前安装高度和俯视边界处的相邻地面回波间距约 `0.55 cm`；纵向 miss stride 为
-2 时，约 `1.6 m` 近地盲环处的方向间距约 `1.1 cm`，小于一个 ROG 体素。stride 只作用于
-no-return，有限的洞顶、坡面和障碍命中不会被抽样。该选择用于把 Gazebo、DDS 和 ROG 输入负载限制
+96 条垂直 ray 在当前安装高度和俯视边界处的相邻地面回波间距约 `1.8 cm`；当前 miss stride 为
+1，小于一个 ROG 体素。stride 只作用于 no-return，有限的洞顶、坡面和障碍命中不会被抽样。
+该选择用于把 Gazebo、DDS 和 ROG 输入负载限制
 在当前开发机能持续处理的范围内，不是实车 MID360 扫描模式的替代品。
 
 这只是 **Gazebo 规则离散射线模型补偿**：
@@ -1345,7 +1376,7 @@ no-return，有限的洞顶、坡面和障碍命中不会被抽样。该选择�
 - 它不改变“所需车体净空带内的任意 occupied return 都硬否决”的逻辑；
 - 它不放开 `INSUFFICIENT_OBSERVATION` 的普通全局 unknown；
 - 它不单独证明轮下支撑；支撑资格来自已测绘的 `ground_elevation`；
-- 它绝不能复制到实车；实车保持 `0.80`，并需用真实 bag 重新标定。
+- 它绝不能复制到实车；实车当前为 `0.50`，仍需用真实 bag 完成正负例验证。
 
 最低俯视角在水平地面上的首个回波约为 `1.55 m`；在坡前遮挡叠加后，实测未持续获得地面回波的
 区间约可达到 `2.35 m`。旧 `ground_seed_radius` 即使覆盖首圈回波也不能证明盲区内支撑，所以
@@ -1648,7 +1679,7 @@ hash 位图和 touched-ID 列表合并 miss，保持“每帧每体素一次 mis
 | `src/rm_27_stimulation/test/test_planar_velocity_pi.cpp` | P 兼容、积分限幅、anti-windup、复位和非法输入测试 |
 | `src/rm_27_stimulation/include/rm_27_stimulation/stiction_assist.hpp` | 非零命令下的延时、渐增、速度释放和换向复位停滞辅助 |
 | `src/rm_27_stimulation/test/test_stiction_assist.cpp` | 启用延时、斜坡、上限、释放、换向和非法输入测试 |
-| `src/rm_27_stimulation/urdf/mid360.xacro` | 360 x 320 gpu_lidar 模型 |
+| `src/rm_27_stimulation/urdf/mid360.xacro` | 360 x 96 gpu_lidar 模型 |
 | `src/rm_27_stimulation/urdf/simulation_waking_robot.xacro` | 仿真车体、全向球形接触、驱动插件、短坡 PI 与停滞辅助参数 |
 | `src/rm_27_stimulation/launch/sim_with_nav.launch.py` | Gazebo 与导航总入口 |
 | `src/rm_27_stimulation/config/worlds.yaml` | world 到 nav map 映射 |
@@ -1815,7 +1846,7 @@ registered cloud in odom
 冷启动时还有另一类没有有限占据回波的近场零命中。`SURVEYED_NEAR_FIELD_CLEAR` 只允许同时满足
 以下条件的格成为通行：二维 prior 明确 free、高程支撑有效且与车体所在连续坡面一致、格内零 occupied
 voxel、查询点位于配置的随车近场矩形内。它不覆盖 prior unknown、坡边、高程断层或任何真实 hit；
-实车配置仍保持该补偿关闭。
+实车当前也启用这一有界补偿，但使用独立尺寸，并保留真实 occupied return 的一票否决。
 
 MINCO 动力学提交也保持两级边界：每次重定时都以 `0.1%` 严格误差为目标；只有所有重定时次数耗尽
 后，才允许连续极值求根在重复根附近留下最多 `2%` 的数值残差。非有限值、边界状态超限和更大的

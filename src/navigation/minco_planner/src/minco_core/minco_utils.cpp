@@ -306,6 +306,9 @@ std::vector<Eigen::Vector3d> getSparseWaypoints(const std::vector<Eigen::Vector3
     return sparse;
   }
   if (path.size() == 2) {
+    if (is_line_free && !is_line_free(path.front(), path.back())) {
+      return {};
+    }
     sparse.push_back(path.back());
     return sparse;
   }
@@ -473,42 +476,40 @@ std::vector<Eigen::Vector3d> getSparseWaypoints(const std::vector<Eigen::Vector3
       continue;
     }
 
-    // Try to connect current_safe_idx -> target_idx; if collision, insert corner(s).
-    size_t guard = 0u;
-    while (guard++ < 32u && target_idx > current_safe_idx) {
-      const bool line_free = is_line_free ? is_line_free(path[current_safe_idx], path[target_idx]) : true;
+    // Split failed shortcuts at raw corners, then verify BOTH resulting edges.
+    // Never append an unchecked corner or force an unchecked final connection.
+    std::vector<size_t> pending_targets{target_idx};
+    while (!pending_targets.empty()) {
+      const size_t next_idx = pending_targets.back();
+      const bool line_free = is_line_free ?
+        is_line_free(path[current_safe_idx], path[next_idx]) : true;
       if (line_free) {
-        Eigen::Vector3d p = path[target_idx];
+        Eigen::Vector3d p = path[next_idx];
         p.z() = 0.0;
         if ((p - sparse.back()).head<2>().norm() > 1e-6) {
           sparse.push_back(p);
         }
-        current_safe_idx = target_idx;
-        break;
+        current_safe_idx = next_idx;
+        pending_targets.pop_back();
+        continue;
       }
 
-      // Collision: recover a corner point inside (current_safe_idx, target_idx)
-      size_t corner_idx = findCornerIndex(current_safe_idx, target_idx);
-      if (corner_idx <= current_safe_idx || corner_idx >= target_idx) {
-        // Fallback: force progress by inserting the next raw point.
-        corner_idx = current_safe_idx + 1u;
-        if (corner_idx >= target_idx) {
-          // Worst-case: cannot progress further, just stop trying this target.
-          break;
-        }
+      if (next_idx <= current_safe_idx + 1U) {
+        return {};
       }
-
-      Eigen::Vector3d corner = path[corner_idx];
-      corner.z() = 0.0;
-      if ((corner - sparse.back()).head<2>().norm() > 1e-6) {
-        sparse.push_back(corner);
+      size_t corner_idx = findCornerIndex(current_safe_idx, next_idx);
+      if (corner_idx <= current_safe_idx || corner_idx >= next_idx) {
+        corner_idx = current_safe_idx + 1U;
       }
-      current_safe_idx = corner_idx;
+      pending_targets.push_back(corner_idx);
     }
   }
 
-  // Ensure goal is included
+  // The last target is the goal; only a degenerate path can reach this fallback.
   if ((path.back() - sparse.back()).head<2>().norm() > 1e-6) {
+    if (is_line_free && !is_line_free(sparse.back(), path.back())) {
+      return {};
+    }
     Eigen::Vector3d goal = path.back();
     goal.z() = 0.0;
     sparse.push_back(goal);

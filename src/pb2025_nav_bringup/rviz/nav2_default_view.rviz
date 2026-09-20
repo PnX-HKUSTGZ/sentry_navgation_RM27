@@ -276,6 +276,27 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: false
           Value: true
+        - Alpha: 0.3499999940395355
+          Class: rviz_default_plugins/Map
+          Color Scheme: costmap
+          Draw Behind: true
+          Enabled: true
+          Name: ROG Raw Input (Before Inflation)
+          Topic:
+            Depth: 1
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Best Effort
+            Value: /rog_map/dynamic_obstacles
+          Update Topic:
+            Depth: 1
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Best Effort
+            Value: ""
+          Use Timestamp: false
+          Value: true
         - Alpha: 0.800000011920929
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -540,7 +561,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_common/Group
       Displays:
-        - Alpha: 0.30000001192092896
+        - Alpha: 0.550000011920929
           Class: rviz_default_plugins/Map
           Color Scheme: costmap
           Draw Behind: false
@@ -561,17 +582,113 @@ Visualization Manager:
             Value: global_costmap/costmap_updates
           Use Timestamp: false
           Value: true
+        - Alpha: 0.44999998807907104
+          Autocompute Intensity Bounds: false
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: Intensity
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 0; 0
+          Max Intensity: 254
+          Min Color: 0; 120; 255
+          Min Intensity: 1
+          Name: Final Inflation + Obstacle Cores (Point Cloud)
+          Position Transformer: XYZ
+          Selectable: false
+          Size (Pixels): 2
+          Size (m): 0.05000000074505806
+          Style: Flat Squares
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            Filter size: 1
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /minco/global_costmap_soft_costs
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Alpha: 0.8999999761581421
+          Autocompute Intensity Bounds: false
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: Intensity
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 30; 0
+          Max Intensity: 254
+          Min Color: 0; 160; 255
+          Min Intensity: 1
+          Name: Dynamic Inflation (Final Costmap)
+          Position Transformer: XYZ
+          Selectable: false
+          Size (Pixels): 3
+          Size (m): 0.05000000074505806
+          Style: Boxes
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            Filter size: 1
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /minco/dynamic_costmap_inflation
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Alpha: 1
+          Buffer Length: 1
+          Class: rviz_default_plugins/Path
+          Color: 255; 170; 0
+          Enabled: true
+          Head Diameter: 0.019999999552965164
+          Head Length: 0.019999999552965164
+          Length: 0.30000001192092896
+          Line Style: Billboards
+          Line Width: 0.05000000074505806
+          Name: MINCO Global Search (SMAC/A*)
+          Offset:
+            X: 0
+            Y: 0
+            Z: 0.029999999329447746
+          Pose Color: 255; 170; 0
+          Pose Style: None
+          Radius: 0.029999999329447746
+          Shaft Diameter: 0.004999999888241291
+          Shaft Length: 0.019999999552965164
+          Topic:
+            Depth: 1
+            Durability Policy: Transient Local
+            Filter size: 1
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /astar_path_vis
+          Value: true
         - Alpha: 1
           Buffer Length: 1
           Class: rviz_default_plugins/Path
           Color: 255; 0; 0
-          Enabled: true
+          Enabled: false
           Head Diameter: 0.019999999552965164
           Head Length: 0.019999999552965164
           Length: 0.30000001192092896
           Line Style: Lines
           Line Width: 0.029999999329447746
-          Name: Path
+          Name: Nav2 Contract Path (Start-Goal)
           Offset:
             X: 0
             Y: 0
@@ -588,7 +705,7 @@ Visualization Manager:
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: plan
-          Value: true
+          Value: false
         - Alpha: 1
           Class: rviz_default_plugins/Polygon
           Color: 25; 255; 0

@@ -78,11 +78,16 @@ public:
   bool checkTrajectory(const traj_opt::Trajectory &traj) const;
   bool checkTrajectoryFromTime(const traj_opt::Trajectory &traj,
                                double start_time) const;
+  bool checkTrajectoryFromTime(const traj_opt::Trajectory &traj,
+                               double start_time, double end_time) const;
   bool checkTrajectory(const traj_opt::Trajectory &position_traj,
                        const traj_opt::Trajectory &yaw_traj) const;
   bool checkTrajectoryFromTime(const traj_opt::Trajectory &position_traj,
                                const traj_opt::Trajectory &yaw_traj,
                                double start_time) const;
+  bool checkTrajectoryFromTime(const traj_opt::Trajectory &position_traj,
+                               const traj_opt::Trajectory &yaw_traj,
+                               double start_time, double end_time) const;
   bool computeSpatialCheckStartTime(const traj_opt::Trajectory &traj,
                                     const Eigen::Vector3d &actual_position,
                                     double &start_time) const;

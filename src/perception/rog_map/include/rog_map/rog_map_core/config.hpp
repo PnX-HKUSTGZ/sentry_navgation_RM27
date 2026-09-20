@@ -367,6 +367,10 @@ public:
     ground_connectivity_bridge_max_height_delta = 0.06;
     ground_connectivity_bridge_landing_min_length = 0.25;
     ground_connectivity_bridge_landing_min_height_delta = 0.04;
+    observed_ground_support_bridge_en = false;
+    observed_ground_support_bridge_min_neighbors = 2;
+    observed_ground_support_bridge_max_height_delta = 0.06;
+    observed_ground_support_bridge_hysteresis_count = 2;
     clear_robot_footprint_unknown = false;
     robot_footprint_clear_length = 0.30;
     robot_footprint_clear_width = 0.20;
@@ -425,6 +429,14 @@ public:
          ground_connectivity_bridge_landing_min_length);
     load("projection.ground_connectivity_bridge_landing_min_height_delta",
          ground_connectivity_bridge_landing_min_height_delta);
+    load("projection.observed_ground_support_bridge_enable",
+         observed_ground_support_bridge_en);
+    load("projection.observed_ground_support_bridge_min_neighbors",
+         observed_ground_support_bridge_min_neighbors);
+    load("projection.observed_ground_support_bridge_max_height_delta",
+         observed_ground_support_bridge_max_height_delta);
+    load("projection.observed_ground_support_bridge_hysteresis_count",
+         observed_ground_support_bridge_hysteresis_count);
     load("projection.clear_robot_footprint_unknown",
          clear_robot_footprint_unknown);
     load("projection.robot_footprint_clear_length",
@@ -606,6 +618,14 @@ public:
         ground_connectivity_bridge_landing_min_height_delta < 0.0 ||
         ground_connectivity_bridge_landing_min_height_delta >
             max_ground_height_delta ||
+        observed_ground_support_bridge_min_neighbors < 2 ||
+        observed_ground_support_bridge_min_neighbors > 4 ||
+        !std::isfinite(observed_ground_support_bridge_max_height_delta) ||
+        observed_ground_support_bridge_max_height_delta < 0.0 ||
+        observed_ground_support_bridge_max_height_delta >
+            max_ground_height_delta ||
+        observed_ground_support_bridge_hysteresis_count < 1 ||
+        observed_ground_support_bridge_hysteresis_count > 10 ||
         !std::isfinite(max_ground_slope_deg) || max_ground_slope_deg < 0.0 ||
         max_ground_slope_deg >= 90.0 || !std::isfinite(ground_seed_radius) ||
         ground_seed_radius <= 0.0 || !std::isfinite(min_headroom_known_ratio) ||
@@ -826,6 +846,10 @@ public:
   double ground_connectivity_bridge_max_height_delta{0.06};
   double ground_connectivity_bridge_landing_min_length{0.25};
   double ground_connectivity_bridge_landing_min_height_delta{0.04};
+  bool observed_ground_support_bridge_en{false};
+  int observed_ground_support_bridge_min_neighbors{2};
+  double observed_ground_support_bridge_max_height_delta{0.06};
+  int observed_ground_support_bridge_hysteresis_count{2};
   bool clear_robot_footprint_unknown{false};
   double robot_footprint_clear_length{0.30};
   double robot_footprint_clear_width{0.20};

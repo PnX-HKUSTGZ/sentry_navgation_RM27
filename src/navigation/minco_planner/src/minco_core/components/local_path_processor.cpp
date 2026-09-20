@@ -28,6 +28,119 @@ bool isLineFree(const std::shared_ptr<rog_map::MapQueryInterface> & map,
   return true;
 }
 
+struct CostProfile
+{
+  bool valid{false};
+  uint8_t peak{nav2_costmap_2d::FREE_SPACE};
+  double mean{0.0};
+};
+
+bool appendCostSample(
+  const std::shared_ptr<rog_map::MapQueryInterface> & map,
+  const Eigen::Vector3d & point,
+  uint64_t & cost_sum,
+  size_t & sample_count,
+  uint8_t & peak)
+{
+  unsigned int mx = 0U;
+  unsigned int my = 0U;
+  if (!map || !map->worldToMap(point.x(), point.y(), mx, my)) {
+    return false;
+  }
+  const uint8_t cost = map->value(mx, my);
+  if (cost == nav2_costmap_2d::NO_INFORMATION ||
+    cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE)
+  {
+    return false;
+  }
+  cost_sum += cost;
+  ++sample_count;
+  peak = std::max(peak, cost);
+  return true;
+}
+
+CostProfile samplePolylineCosts(
+  const std::shared_ptr<rog_map::MapQueryInterface> & map,
+  const std::vector<Eigen::Vector3d> & points,
+  size_t begin,
+  size_t end)
+{
+  CostProfile profile;
+  if (!map || begin >= points.size() || end >= points.size() || begin > end) {
+    return profile;
+  }
+
+  const double sample_step = std::max(1e-3, 0.5 * map->resolution());
+  uint64_t cost_sum = 0U;
+  size_t sample_count = 0U;
+  uint8_t peak = nav2_costmap_2d::FREE_SPACE;
+  for (size_t index = begin; index <= end; ++index) {
+    const Eigen::Vector3d & start = points[index];
+    const Eigen::Vector3d & finish = index < end ? points[index + 1U] : points[index];
+    const double length = (finish - start).head<2>().norm();
+    const int samples = index < end ?
+      std::max(1, static_cast<int>(std::ceil(length / sample_step))) : 0;
+    for (int sample = 0; sample <= samples; ++sample) {
+      if (index > begin && sample == 0) {
+        continue;
+      }
+      const double ratio = samples > 0 ?
+        static_cast<double>(sample) / static_cast<double>(samples) : 0.0;
+      if (!appendCostSample(
+          map, start + ratio * (finish - start), cost_sum, sample_count, peak))
+      {
+        return profile;
+      }
+    }
+  }
+
+  profile.valid = sample_count > 0U;
+  profile.peak = peak;
+  profile.mean = profile.valid ?
+    static_cast<double>(cost_sum) / static_cast<double>(sample_count) : 0.0;
+  return profile;
+}
+
+bool shortcutRespectsCostEnvelope(
+  const std::shared_ptr<rog_map::MapQueryInterface> & map,
+  const std::vector<Eigen::Vector3d> & reference_path,
+  const Eigen::Vector3d & a,
+  const Eigen::Vector3d & b,
+  double peak_slack,
+  double mean_slack)
+{
+  size_t begin = reference_path.size();
+  size_t end = reference_path.size();
+  for (size_t index = 0U; index < reference_path.size(); ++index) {
+    if (begin == reference_path.size() &&
+      (reference_path[index] - a).head<2>().squaredNorm() <= 1e-12)
+    {
+      begin = index;
+      continue;
+    }
+    if (begin != reference_path.size() && index > begin &&
+      (reference_path[index] - b).head<2>().squaredNorm() <= 1e-12)
+    {
+      end = index;
+      break;
+    }
+  }
+  if (begin == reference_path.size() || end == reference_path.size()) {
+    return true;
+  }
+
+  const CostProfile reference = samplePolylineCosts(map, reference_path, begin, end);
+  const std::vector<Eigen::Vector3d> shortcut{a, b};
+  const CostProfile candidate = samplePolylineCosts(map, shortcut, 0U, 1U);
+  if (!reference.valid || !candidate.valid) {
+    return false;
+  }
+
+  return static_cast<double>(candidate.peak) <=
+           static_cast<double>(reference.peak) + peak_slack &&
+         candidate.mean <= reference.mean + mean_slack;
+}
+
 }  // namespace
 
 bool shouldOptimizeYawForSeed(
@@ -41,6 +154,8 @@ void LocalPathProcessor::configure(
   double max_vel,
   double max_acc,
   double traj_goal_tolerance,
+  double shortcut_peak_cost_slack,
+  double shortcut_mean_cost_slack,
   rclcpp::Logger logger,
   rclcpp::Clock::SharedPtr clock)
 {
@@ -48,6 +163,8 @@ void LocalPathProcessor::configure(
   max_vel_ = max_vel;
   max_acc_ = max_acc;
   traj_goal_tolerance_ = traj_goal_tolerance;
+  shortcut_peak_cost_slack_ = shortcut_peak_cost_slack;
+  shortcut_mean_cost_slack_ = shortcut_mean_cost_slack;
   logger_ = logger;
   clock_ = std::move(clock);
 }
@@ -117,12 +234,37 @@ LocalPathSeed LocalPathProcessor::buildSeed(
 
   seed.local_end_is_goal = (global_goal - seed.dense_path.back()).head<2>().norm() <= traj_goal_tolerance_;
   seed.stop_at_local_end = seed.local_end_is_goal || seed.observed_prefix_clipped;
+  const double shortcut_sample_step =
+    std::max(1e-3, 0.5 * mode_context.dynamicQuery()->resolution());
   seed.sparse_waypoints = utils::getSparseWaypoints(seed.dense_path,
     max_vel_,
     max_acc_,
     seed.stop_at_local_end,
-    [&mode_context](const Eigen::Vector3d & a, const Eigen::Vector3d & b) {
-      return isLineFree(mode_context.sparsifyQuery(), a, b);
+    [this, &mode_context, &footprint_is_safe, &seed, initial_yaw, shortcut_sample_step](
+      const Eigen::Vector3d & a, const Eigen::Vector3d & b) {
+      if (!isLineFree(mode_context.sparsifyQuery(), a, b)) {
+        return false;
+      }
+      // SMAC deliberately routes through the lower-cost side of Nav2's
+      // inflation field. Do not let waypoint sparsification erase that choice
+      // merely because a geometrically shorter segment is not yet lethal.
+      if (!shortcutRespectsCostEnvelope(
+          mode_context.sparsifyQuery(), seed.dense_path, a, b,
+          shortcut_peak_cost_slack_, shortcut_mean_cost_slack_))
+      {
+        return false;
+      }
+      // A static line-of-sight shortcut must not erase a dynamic detour or cut
+      // the rectangular footprint across an unobserved corner.
+      const int samples = std::max(1, static_cast<int>(std::ceil(
+        (b - a).head<2>().norm() / shortcut_sample_step)));
+      for (int sample = 0; sample <= samples; ++sample) {
+        const double ratio = static_cast<double>(sample) / static_cast<double>(samples);
+        if (!footprint_is_safe(a + ratio * (b - a), initial_yaw)) {
+          return false;
+        }
+      }
+      return true;
     });
   seed.valid = seed.sparse_waypoints.size() >= 2U;
   return seed;

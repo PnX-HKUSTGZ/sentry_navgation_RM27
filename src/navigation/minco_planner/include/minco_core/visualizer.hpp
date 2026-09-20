@@ -11,7 +11,9 @@ public:
   Visualizer() = default;
   ~Visualizer() = default;
 
-  void configure(const nav2_util::LifecycleNode::WeakPtr & parent, const std::string & global_frame);
+  void configure(const nav2_util::LifecycleNode::WeakPtr & parent,
+    const std::string & global_frame,
+    const std::shared_ptr<nav2_costmap_2d::Costmap2DROS> & costmap_ros);
 
   void cleanup();
 
@@ -20,6 +22,8 @@ public:
     const traj_opt::Trajectory & opt_traj,
     double opt_time_seconds,
     const nav_msgs::msg::Path & astar_path);
+
+  void updateGlobalPath(const nav_msgs::msg::Path & astar_path);
 
   void publishRecoveryDebug(const geometry_msgs::msg::PoseStamped & current_pose,
     const Eigen::Vector2d & escape_vel,
@@ -40,6 +44,7 @@ public:
 
 private:
   void visualTimerCallback();
+  void publishGlobalCostmapSoftCosts(const std_msgs::msg::Header & header);
   nav_msgs::msg::Path convertTrajectoryToPath(const traj_opt::Trajectory & traj,
     const std_msgs::msg::Header & header,
     int steps,
@@ -47,6 +52,7 @@ private:
 
   nav2_util::LifecycleNode::WeakPtr node_;
   std::string global_frame_;
+  std::weak_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
 
   // Visualization publishers
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr backup_path_vis_pub_;
@@ -56,9 +62,12 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr recover_path_vis_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr recover_goal_vis_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr control_points_vis_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr global_costmap_soft_costs_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr dynamic_costmap_inflation_pub_;
 
   rclcpp::CallbackGroup::SharedPtr visual_callback_group_;
   rclcpp::TimerBase::SharedPtr visual_timer_;
+  std::chrono::steady_clock::time_point last_costmap_soft_costs_publish_{};
 
   // Cache
   std::mutex vis_mutex_;
@@ -66,6 +75,7 @@ private:
   traj_opt::Trajectory vis_backup_traj_;
   std::vector<Eigen::Vector3d> vis_control_points_;
   nav_msgs::msg::Path vis_astar_path_;
+  bool astar_path_update_pending_{false};
   double vis_opt_time_ = -1.0;
   bool has_vis_opt_traj_ = false;
   bool has_vis_backup_traj_ = false;

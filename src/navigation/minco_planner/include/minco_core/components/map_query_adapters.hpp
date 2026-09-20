@@ -37,8 +37,10 @@ private:
 
 // Expands only true static lethal cells into a hard centerline-clearance mask.
 // Existing inflation costs retain their source semantics (including 253 being
-// non-traversable), and unknown cells remain unknown. The overlay is immutable
-// because PRIORMAP topology is static.
+// non-traversable), and unknown cells remain unknown. A known-free cell next
+// to an unknown island which touches a true lethal source receives a high
+// non-lethal guard cost. This keeps SMAC from selecting the anti-aliased map
+// boundary as a centerline while preserving fail-closed unknown semantics.
 class StaticObstacleClearanceQuery : public rog_map::MapQueryInterface
 {
 public:
@@ -64,6 +66,10 @@ public:
   bool evaluate(const Eigen::Vector3d & pos, double & dist, Eigen::Vector3d & grad) const override;
 
   size_t hardenedCellCount() const {return hardened_cell_count_;}
+  size_t unknownBoundaryGuardCellCount() const
+  {
+    return unknown_boundary_guard_cell_count_;
+  }
   double clearanceRadius() const {return clearance_radius_;}
 
 private:
@@ -76,6 +82,7 @@ private:
   mutable std::vector<unsigned char> merged_values_;
   mutable std::mutex merged_values_mutex_;
   size_t hardened_cell_count_{0U};
+  size_t unknown_boundary_guard_cell_count_{0U};
 };
 
 // Adds static costs from surveyed ground-height discontinuities to a global

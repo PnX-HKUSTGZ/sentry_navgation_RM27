@@ -20,6 +20,11 @@ struct PlannerModeParams
   std::string rog_frame{"camera_init"};
 
   bool priormap_use_nav2_global_search{true};
+  // Use measured ROG occupied cells as a local dynamic hard mask during the
+  // otherwise static global search. UNKNOWN/frontier cells are filtered by
+  // Astar/SMAC and never become topology obstacles through this switch.
+  bool priormap_dynamic_global_obstacle_enable{false};
+  double priormap_dynamic_global_collision_distance{0.0};
   bool priormap_clip_seed_by_rog_boundary{true};
   double priormap_rog_boundary_margin{0.8};
   double priormap_rog_boundary_sample_step{0.1};
@@ -61,6 +66,14 @@ public:
   bool directOdomPose() const { return direct_odom_pose_; }
 
   bool clipSeedByRogBoundary() const { return params_.priormap_clip_seed_by_rog_boundary; }
+  bool dynamicGlobalObstacleEnabled() const
+  {
+    return params_.priormap_dynamic_global_obstacle_enable;
+  }
+  double dynamicGlobalCollisionDistance() const
+  {
+    return params_.priormap_dynamic_global_collision_distance;
+  }
   double rogBoundaryMargin() const { return params_.priormap_rog_boundary_margin; }
   double rogBoundarySampleStep() const { return params_.priormap_rog_boundary_sample_step; }
 

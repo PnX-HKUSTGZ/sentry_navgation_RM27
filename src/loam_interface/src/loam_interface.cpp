@@ -114,6 +114,12 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
   out.pose.pose.position.z = origin.z();
   out.pose.pose.orientation = tf2::toMsg(tf_odom_to_lidar.getRotation());
 
+  // Point-LIO publishes twist in its child body frame. In the current robot
+  // model body/imu_link and left_mid360 are co-oriented, so the components are
+  // already expressed in the output child frame. Dropping them here made MPC
+  // observe a permanently stationary robot even while the chassis was moving.
+  out.twist = msg->twist;
+
   odom_pub_->publish(out);
 }
 

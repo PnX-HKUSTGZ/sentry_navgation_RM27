@@ -23,7 +23,11 @@ controller_server:
     MincoMpc:
       plugin: "minco_controller::MincoMpcController"
       opt_path_topic: minco/opt_path
-      odom_topic: /odometry
+      # The controller costmap is expressed in `odom`.  loam_interface
+      # converts Point-LIO's camera_init pose to this frame on
+      # /lidar_odometry; subscribing directly to /aft_mapped_to_init would
+      # trip the controller's ODOMETRY_FRAME_MISMATCH guard.
+      odom_topic: /lidar_odometry
       cmd_vel_mpc_topic: minco/cmd_vel_mpc
       odom_timeout: 0.25
       trajectory_timeout: 1.50
@@ -37,20 +41,20 @@ controller_server:
       # Break cold-start zero velocity without allowing the time cursor to
       # outrun the physical robot on a short observed-safe stopping prefix.
       reference_progress_max_lead_time: 0.25
-      # Keep the hardware ceiling unchanged on flat ground and reduce it only
-      # once measured chassis tilt confirms a ramp transition.
+      # Use the released flat-ground ceiling and reduce it only once measured
+      # chassis tilt confirms a ramp transition.
       slope_slowdown_start_angle: 0.08
       slope_full_slowdown_angle: 0.18
-      slope_speed_limit: 0.40
+      slope_speed_limit: 0.50
       Q: [3.0, 3.0, 2.0]
       q_along: 3.0
       q_cross: 12.0
       R: [1.5, 1.5, 1.0]
-      vx_min: -0.5
-      vx_max: 0.5
-      vy_min: -0.5
-      vy_max: 0.5
-      max_planar_speed: 0.5
+      vx_min: -1.5
+      vx_max: 1.5
+      vy_min: -1.5
+      vy_max: 1.5
+      max_planar_speed: 1.0
       omega_min: -0.8
       omega_max: 0.8
       use_acc_constraints: true
@@ -62,8 +66,10 @@ controller_server:
       alpha_max: 2.0
       odom_frame: odom
       map_frame: map
+      # Rigid transform from the chassis rotation center to MID360, expressed
+      # in base_link. MPC uses it for both pose and twist compensation.
       lidar_offset_x: 0.0
-      lidar_offset_y: 0.0
+      lidar_offset_y: -0.20
       lidar_roll_offset: 0.0
       performance:
         enable: true
@@ -80,12 +86,43 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      plugins: ["static_layer", "inflation_layer"]
+      # ROG publishes only measured obstruction evidence here. Unknown support
+      # and unverified headroom remain planner safety gates, not 2D obstacles.
+      plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
+      rog_dynamic_obstacle_layer:
+        plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
+        enabled: true
+        topic: /rog_map/dynamic_obstacles
+        obstacle_threshold: 65
+        stale_timeout: 0.75
+        tf_timeout: 0.10
+      # Keep the active MINCO profile self-contained. ROG writes lethal source
+      # cells first; this layer expands them in the merged local costmap.
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.40
 
 global_costmap:
   global_costmap:
     ros__parameters:
-      plugins: ["static_layer", "inflation_layer"]
+      # Global SMAC must see the same dynamic obstacle overlay; a local-only
+      # layer can stop a controller but cannot create a route around it.
+      plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
+      rog_dynamic_obstacle_layer:
+        plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
+        enabled: true
+        topic: /rog_map/dynamic_obstacles
+        obstacle_threshold: 65
+        stale_timeout: 0.75
+        tf_timeout: 0.10
+      # Global SMAC consumes the merged costmap after this inflation pass.
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.40
 
 planner_server:
   ros__parameters:
@@ -106,6 +143,12 @@ planner_server:
         physical_base_frame: base_link
       priormap:
         use_nav2_global_search: true
+        # Feed measured ROG occupied cells into the global search as a local
+        # dynamic hard mask. UNKNOWN/frontier cells are filtered in Astar/SMAC,
+        # so this does not route around an unobserved ROG window.
+        dynamic_global_obstacle:
+          enable: true
+          collision_distance: 0.26
         clip_seed_by_rog_boundary: true
         rog_boundary_margin: 0.30
         rog_boundary_sample_step: 0.10
@@ -135,8 +178,10 @@ planner_server:
       use_smac: true
       allow_unknown: false
       odom_topic: /aft_mapped_to_init
+      # base_link -> MID360 lever arm; keep it identical to the controller and
+      # the real robot description.
       lidar_offset_x: 0.0
-      lidar_offset_y: 0.18
+      lidar_offset_y: -0.20
       safety:
         footprint_length: 0.30
         footprint_width: 0.20
@@ -243,23 +288,42 @@ planner_server:
           ground_connectivity_bridge_max_height_delta: 0.06
           ground_connectivity_bridge_landing_min_length: 0.25
           ground_connectivity_bridge_landing_min_height_delta: 0.04
-          # Bootstrap only the current 0.40 x 0.30 m self-filter/safety
-          # envelope. Required-support mode still demands known-free static
-          # space, height-matching continuous support, and zero occupied
-          # evidence. A map without surveyed support therefore remains closed.
+          # Keep the same bounded support bridge on hardware, with the
+          # fail-closed occupied-return veto implemented in the projection
+          # layer. Increase the hysteresis in field tuning if returns flicker.
+          observed_ground_support_bridge_enable: true
+          observed_ground_support_bridge_min_neighbors: 3
+          observed_ground_support_bridge_max_height_delta: 0.04
+          observed_ground_support_bridge_hysteresis_count: 3
+          # Bootstrap the current 0.45 x 0.35 m self-filter/safety envelope.
+          # The extra 5 cm in length absorbs one 5 cm ROG cell. Required-support
+          # mode still demands known-free static space, height-matching
+          # continuous support, and zero occupied evidence; a real occupied
+          # return remains an unconditional veto.
           clear_robot_footprint_unknown: true
-          robot_footprint_clear_length: 0.40
-          robot_footprint_clear_width: 0.30
-          # /lidar_odometry describes the MID360 origin at base y=+0.18 m.
+          robot_footprint_clear_length: 0.45
+          robot_footprint_clear_width: 0.35
+          # Point-LIO's /aft_mapped_to_init pose is the IMU/body pose. The
+          # physical MID360/IMU frame is y=-0.20 m from base_link in the real
+          # robot description, so move the ROG clearance envelope +0.20 m back
+          # to the base footprint. Without this correction the body band is
+          # about one full chassis width away from the clearing window.
           robot_footprint_clear_offset_x: 0.0
-          robot_footprint_clear_offset_y: -0.18
-          # Legacy near-field 2D fill stays disabled.
-          near_field_prior_fill_enable: false
-          near_field_prior_fill_length: 0.80
-          near_field_prior_fill_width: 0.50
+          robot_footprint_clear_offset_y: 0.20
+          # Release only zero-hit cells in this bounded near-field envelope.
+          # The previous 0.70 x 0.45 m rectangle ended at x=0.35/y=0.225;
+          # the safety checker samples the rasterized footprint at about
+          # x=0.38..0.42 and y=0.26..0.34, so those cells were incorrectly
+          # reported as HEADROOM_UNVERIFIED on otherwise open ground.  The
+          # larger envelope is still fail-closed: static prior FREE,
+          # continuous height-matching support, and no occupied voxel are all
+          # required; a measured dynamic return remains an unconditional veto.
+          near_field_prior_fill_enable: true
+          near_field_prior_fill_length: 0.90
+          near_field_prior_fill_width: 0.70
           robot_origin_to_ground: 0.28
           vehicle_height: 0.42
-          headroom_margin: 0.05
+          headroom_margin: 0.03
           # Treat occupied voxels by their conservative upper/lower boundary
           # until bag measurements justify a sensor-specific smaller inset.
           headroom_voxel_inset_fraction: 0.5
@@ -269,10 +333,12 @@ planner_server:
           max_ground_step: 0.06
           max_ground_slope_deg: 28.0
           ground_seed_radius: 2.50
-          min_headroom_known_ratio: 0.80
-          # Real sensor data must verify the body band even when a roof return
-          # is present. Do not copy the Gazebo-only 0.0 override here.
-          min_observed_overhead_headroom_known_ratio: 0.80
+          min_headroom_known_ratio: 0.50
+          # A measured overhead return supplies a conservative lower roof
+          # boundary. Accept it from surveyed support when that boundary clears
+          # vehicle_height + headroom_margin; a lower return still blocks. This
+          # does not weaken empty columns, which keep the 0.50 gate above.
+          min_observed_overhead_headroom_known_ratio: 0.0
           clearance_unknown_as_occupied: true
           wall_height_delta_min: 0.35
           wall_occupancy_ratio_min: 0.80
@@ -286,7 +352,7 @@ planner_server:
           obstacle_hold_time: 0.50
           # One MID360 frame of zero-hit clearance dropout may reuse the last
           # verified result. Measured occupied returns bypass this hold.
-          clearance_dropout_hold_time: 0.15
+          clearance_dropout_hold_time: 0.20
           # Enable only after a real bag proves that one-cell holes dominate and
           # thin dynamic obstacles remain detected from every approach angle.
           clearance_hole_fill_enable: false
@@ -341,6 +407,14 @@ planner_server:
         robot_radius: 0.25
         extra_margin: 0.05
       smac_2d:
+        # Consume Nav2's merged inflation costs as a linear travel penalty.
+        # The previous hard-coded square reduced the radius edge (cost ~= 45)
+        # to only a 6% penalty and let the global seed hug obstacles.
+        # Real dynamic obstacles usually have open bypass space. Give their
+        # inflated band enough weight that a modest geometric shortcut no
+        # longer wins; simulation stays at 2.0 for its constrained tunnels.
+        cost_penalty: 6.0
+        use_quadratic_cost_penalty: false
         # The local ROG window is not a stable global topology source. Keep its
         # fail-closed frontier out of SMAC's global soft cost; downstream local
         # optimization and safety checks still enforce ROG obstacles.
@@ -349,6 +423,12 @@ planner_server:
         esdf_weight: 4.0
         esdf_decay: 0.30
         esdf_max_cost: 4.0
+      local_path:
+        # Sparsification may shorten the SMAC polyline only while staying in a
+        # comparable cost band. This preserves a dynamic-obstacle detour while
+        # still allowing shortcuts through uniformly inflated narrow passages.
+        shortcut_peak_cost_slack: 10.0
+        shortcut_mean_cost_slack: 5.0
       minco_optimizer:
         opt_freq: 20.0
         # Bound failure retries without reducing the independent 20 Hz
@@ -367,10 +447,10 @@ planner_server:
         # by 0.05 m on every side. Zero keeps this an exact occupied/UNKNOWN
         # test instead of applying a second, duplicate radial inflation.
         collision_dist: 0.0
-        # At 0.5 m/s this keeps a 5 s local horizon while avoiding a demand to
+        # At 0.7 m/s this keeps a 2.1 s local horizon while avoiding a demand to
         # validate the complete route from one LiDAR viewpoint.
         lookahead_dist: 1.5
-        max_velocity: 0.5
+        max_velocity: 0.8
         max_acceleration: 0.8
         max_yaw_dot: 0.8
         turn_angle_deadzone: 0.10
@@ -400,6 +480,9 @@ fake_vel_transform:
     # Active MINCO uses the independent ROG-map freshness safety gate.
     terrain_guard_enabled: false
     use_latest_odom_for_cmd: true
+    # Use the compensated odom-frame stream so fake_vel_transform and the
+    # controller share the same timestamp/frame contract.
+    odom_topic: /lidar_odometry
     odom_timeout: 0.20
     input_cmd_vel_topic: cmd_vel_nav2_result
     output_cmd_vel_topic: cmd_vel

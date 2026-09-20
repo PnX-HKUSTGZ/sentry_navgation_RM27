@@ -417,6 +417,14 @@ void ROGMap::refreshLayers() {
       cfg_.ground_connectivity_bridge_landing_min_length;
   layer_cfg.ground_connectivity_bridge_landing_min_height_delta =
       cfg_.ground_connectivity_bridge_landing_min_height_delta;
+  layer_cfg.observed_ground_support_bridge_en =
+      cfg_.observed_ground_support_bridge_en;
+  layer_cfg.observed_ground_support_bridge_min_neighbors =
+      cfg_.observed_ground_support_bridge_min_neighbors;
+  layer_cfg.observed_ground_support_bridge_max_height_delta =
+      cfg_.observed_ground_support_bridge_max_height_delta;
+  layer_cfg.observed_ground_support_bridge_hysteresis_count =
+      cfg_.observed_ground_support_bridge_hysteresis_count;
   layer_cfg.clear_robot_footprint_unknown = cfg_.clear_robot_footprint_unknown;
   layer_cfg.robot_footprint_clear_length = cfg_.robot_footprint_clear_length;
   layer_cfg.robot_footprint_clear_width = cfg_.robot_footprint_clear_width;

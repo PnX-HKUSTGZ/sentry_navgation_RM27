@@ -22,6 +22,7 @@
 #include <string>
 
 #include "nav2_costmap_2d/cost_values.hpp"
+#include "minco_core/components/dynamic_obstacle_evidence.hpp"
 
 #include <Eigen/Core>
 
@@ -54,6 +55,7 @@ void SmacPlanner2DSimple::setMap(const std::shared_ptr<rog_map::MapQueryInterfac
   ensureSearchBuffers();
   std::fill(esdf_cost_cache_id_.begin(), esdf_cost_cache_id_.end(), 0u);
   std::fill(esdf_distance_cache_id_.begin(), esdf_distance_cache_id_.end(), 0u);
+  std::fill(esdf_collision_cache_id_.begin(), esdf_collision_cache_id_.end(), 0u);
 }
 
 void SmacPlanner2DSimple::setESDFQuery(
@@ -63,6 +65,7 @@ void SmacPlanner2DSimple::setESDFQuery(
   planning_id_ = 0u;
   std::fill(esdf_cost_cache_id_.begin(), esdf_cost_cache_id_.end(), 0u);
   std::fill(esdf_distance_cache_id_.begin(), esdf_distance_cache_id_.end(), 0u);
+  std::fill(esdf_collision_cache_id_.begin(), esdf_collision_cache_id_.end(), 0u);
 }
 
 void SmacPlanner2DSimple::setCollisionDistance(double collision_distance)
@@ -71,6 +74,7 @@ void SmacPlanner2DSimple::setCollisionDistance(double collision_distance)
   planning_id_ = 0u;
   std::fill(esdf_cost_cache_id_.begin(), esdf_cost_cache_id_.end(), 0u);
   std::fill(esdf_distance_cache_id_.begin(), esdf_distance_cache_id_.end(), 0u);
+  std::fill(esdf_collision_cache_id_.begin(), esdf_collision_cache_id_.end(), 0u);
 }
 
 void SmacPlanner2DSimple::configure(rclcpp_lifecycle::LifecycleNode::SharedPtr node,
@@ -100,7 +104,7 @@ void SmacPlanner2DSimple::configure(rclcpp_lifecycle::LifecycleNode::SharedPtr n
     if (!node_->has_parameter(name)) {
       return node_->declare_parameter<T>(name, default_value);
     }
-    T value;
+    T value = default_value;
     node_->get_parameter(name, value);
     return value;
   };
@@ -109,10 +113,20 @@ void SmacPlanner2DSimple::configure(rclcpp_lifecycle::LifecycleNode::SharedPtr n
   esdf_weight_ = static_cast<float>(declare_or_get("smac_2d.esdf_weight", 1.0));
   esdf_decay_ = static_cast<float>(declare_or_get("smac_2d.esdf_decay", 0.5));
   esdf_max_cost_ = static_cast<float>(declare_or_get("smac_2d.esdf_max_cost", 5.0));
+  setInflationCostParameters(
+    static_cast<float>(declare_or_get("smac_2d.cost_penalty", 2.0)),
+    declare_or_get("smac_2d.use_quadratic_cost_penalty", false));
 
   if (esdf_decay_ <= 1e-3f) {
     esdf_decay_ = 1e-3f;
   }
+
+  RCLCPP_INFO(
+    node_->get_logger(),
+    "[SMAC 2D] costmap soft-cost bias: penalty=%.2f shaping=%s; ESDF bias=%s",
+    search_info_.cost_penalty,
+    search_info_.use_quadratic_cost_penalty ? "quadratic" : "linear",
+    use_esdf_cost_ ? "enabled" : "disabled");
 
   ensureSearchBuffers();
 }
@@ -122,6 +136,16 @@ void SmacPlanner2DSimple::setParameters(bool allow_unknown, int max_iterations, 
   allow_unknown_ = allow_unknown;
   max_iterations_ = max_iterations;
   tolerance_ = tolerance;
+}
+
+void SmacPlanner2DSimple::setInflationCostParameters(
+  float cost_penalty, bool use_quadratic_cost_penalty)
+{
+  if (!std::isfinite(cost_penalty) || cost_penalty < 0.0f) {
+    throw std::invalid_argument("smac_2d.cost_penalty must be finite and >= 0");
+  }
+  search_info_.cost_penalty = cost_penalty;
+  search_info_.use_quadratic_cost_penalty = use_quadratic_cost_penalty;
 }
 
 void SmacPlanner2DSimple::ensureSearchBuffers()
@@ -142,6 +166,9 @@ void SmacPlanner2DSimple::ensureSearchBuffers()
     esdf_cost_cache_id_.assign(size, 0u);
     esdf_distance_cache_.assign(size, 0.0);
     esdf_distance_cache_id_.assign(size, 0u);
+    esdf_evidence_cache_.assign(size, 0);
+    esdf_collision_cache_.assign(size, -1);
+    esdf_collision_cache_id_.assign(size, 0u);
   }
 }
 
@@ -203,6 +230,8 @@ bool SmacPlanner2DSimple::getESDFDistance(unsigned int mx, unsigned int my, doub
   }
 
   distance = result.distance;
+  esdf_evidence_cache_[idx] = !result.projection.valid ? 2 :
+    (dynamic_obstacle::hasMeasuredOccupiedEvidence(result) ? 1 : 0);
   esdf_distance_cache_[idx] = distance;
   esdf_distance_cache_id_[idx] = planning_id_;
   return true;
@@ -213,8 +242,51 @@ bool SmacPlanner2DSimple::isESDFCollision(unsigned int mx, unsigned int my)
   if (collision_distance_ <= 0.0) {
     return false;
   }
+  if (!esdf_query_ || mx >= size_x_ || my >= size_y_) {
+    return false;
+  }
+  const size_t idx = static_cast<size_t>(my) * static_cast<size_t>(size_x_) + mx;
+  if (idx >= esdf_collision_cache_.size() || idx >= esdf_collision_cache_id_.size()) {
+    return false;
+  }
+  if (esdf_collision_cache_id_[idx] == planning_id_) {
+    return esdf_collision_cache_[idx] > 0;
+  }
+
   double distance = 0.0;
-  return getESDFDistance(mx, my, distance) && distance < collision_distance_;
+  bool collision = false;
+  if (getESDFDistance(mx, my, distance)) {
+    if (esdf_evidence_cache_[idx] > 0) {
+      collision = distance < collision_distance_;
+    } else if (distance < collision_distance_) {
+      const double resolution = std::max(1.0e-3, map_->resolution());
+      const int radius_cells =
+        static_cast<int>(std::ceil(collision_distance_ / resolution));
+      for (int dy = -radius_cells; dy <= radius_cells && !collision; ++dy) {
+        for (int dx = -radius_cells; dx <= radius_cells && !collision; ++dx) {
+          if ((dx == 0 && dy == 0) ||
+              std::hypot(static_cast<double>(dx), static_cast<double>(dy)) * resolution >
+              collision_distance_ + 0.75 * resolution) {
+            continue;
+          }
+          const int sx = static_cast<int>(mx) + dx;
+          const int sy = static_cast<int>(my) + dy;
+          if (sx < 0 || sy < 0 || sx >= static_cast<int>(map_->sizeX()) ||
+              sy >= static_cast<int>(map_->sizeY())) {
+            continue;
+          }
+          double neighbor_distance = 0.0;
+          const size_t neighbor_index = static_cast<size_t>(sy) * size_x_ + sx;
+          collision = getESDFDistance(
+            static_cast<unsigned int>(sx), static_cast<unsigned int>(sy), neighbor_distance) &&
+            esdf_evidence_cache_[neighbor_index] == 1;
+        }
+      }
+    }
+  }
+  esdf_collision_cache_[idx] = collision ? 1 : 0;
+  esdf_collision_cache_id_[idx] = planning_id_;
+  return collision;
 }
 
 float SmacPlanner2DSimple::getESDFPotentialCost(unsigned int mx, unsigned int my)
@@ -263,11 +335,20 @@ float SmacPlanner2DSimple::evaluateInflationCost(unsigned char cell_cost)
     return 50.0f;
   }
 
+  const float shaped_cost = search_info_.use_quadratic_cost_penalty ?
+    normalized_cost * normalized_cost : normalized_cost;
+  const float configured_cost = 1.0f + search_info_.cost_penalty * shaped_cost;
+
+  // Preserve the existing steep inner-inflation barrier while allowing the
+  // lower-cost outer band to influence route selection. The former hard-coded
+  // quadratic shaping reduced a cost-45 cell to only a 6% travel penalty.
   if (cell_cost > 128u) {
-    return 1.0f + 20.0f * (normalized_cost * normalized_cost * normalized_cost);
+    const float inner_barrier =
+      1.0f + 20.0f * (normalized_cost * normalized_cost * normalized_cost);
+    return std::max(configured_cost, inner_barrier);
   }
 
-  return 1.0f + search_info_.cost_penalty * (normalized_cost * normalized_cost);
+  return configured_cost;
 }
 
 bool SmacPlanner2DSimple::createPath(const unsigned int & start_x,
@@ -308,6 +389,7 @@ bool SmacPlanner2DSimple::createPath(const unsigned int & start_x,
     std::fill(closed_.begin(), closed_.end(), 0u);
     std::fill(esdf_cost_cache_id_.begin(), esdf_cost_cache_id_.end(), 0u);
     std::fill(esdf_distance_cache_id_.begin(), esdf_distance_cache_id_.end(), 0u);
+    std::fill(esdf_collision_cache_id_.begin(), esdf_collision_cache_id_.end(), 0u);
     planning_id_ = 1u;
   }
 

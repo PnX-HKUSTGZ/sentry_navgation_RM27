@@ -14,6 +14,7 @@
 
 
 import os
+import sysconfig
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -22,6 +23,18 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
+
+
+def _system_library_path_first():
+    """Prefer the distro ABI for binary ROS packages without changing the shell."""
+    multiarch = sysconfig.get_config_var("MULTIARCH")
+    system_library_dir = (
+        os.path.join("/usr/lib", multiarch) if multiarch else "/usr/lib"
+    )
+    inherited = os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep)
+    ordered = [system_library_dir]
+    ordered.extend(path for path in inherited if path and path != system_library_dir)
+    return os.pathsep.join(ordered)
 
 
 def generate_launch_description():
@@ -37,7 +50,8 @@ def generate_launch_description():
     log_level = LaunchConfiguration("log_level")
 
     # Variables
-    lifecycle_nodes = ["map_saver"]
+    lifecycle_nodes = ["slam_toolbox", "map_saver"]
+    slam_lifecycle_params = {"use_lifecycle_manager": True}
 
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {"use_sim_time": use_sim_time}
@@ -134,13 +148,16 @@ def generate_launch_description():
         output="screen",
         respawn=use_respawn,
         respawn_delay=2.0,
-        parameters=[configured_params],
+        parameters=[configured_params, slam_lifecycle_params],
         arguments=["--ros-args", "--log-level", log_level],
         remappings=[
             ("/map", "map"),
             ("/map_metadata", "map_metadata"),
             ("/map_updates", "map_updates"),
         ],
+        # Vendor SDK setup adds /usr/local/lib before Ubuntu's libraries on this
+        # robot. The Jazzy plugin must load the matching distro Ceres ABI.
+        additional_env={"LD_LIBRARY_PATH": _system_library_path_first()},
     )
 
     start_point_lio_node = Node(
@@ -156,31 +173,6 @@ def generate_launch_description():
             {"pcd_save.pcd_save_en": True},
         ],
         arguments=["--ros-args", "--log-level", log_level],
-    )
-
-    start_static_transform_node = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="static_transform_publisher_map2odom",
-        output="screen",
-        arguments=[
-            "--x",
-            "0.0",
-            "--y",
-            "0.0",
-            "--z",
-            "0.0",
-            "--roll",
-            "0.0",
-            "--pitch",
-            "0.0",
-            "--yaw",
-            "0.0",
-            "--frame-id",
-            "map",
-            "--child-frame-id",
-            "odom",
-        ],
     )
 
     ld = LaunchDescription()
@@ -200,6 +192,5 @@ def generate_launch_description():
     ld.add_action(start_pointcloud_to_laserscan_node)
     ld.add_action(start_sync_slam_toolbox_node)
     ld.add_action(start_point_lio_node)
-    ld.add_action(start_static_transform_node)
 
     return ld

@@ -15,17 +15,6 @@
 
 namespace minco_planner {
 
-namespace {
-
-// PRIORMAP global topology comes from the complete Nav2 costmap. ROGMap is a
-// local sliding window, so treating its ESDF as a global hard-obstacle layer
-// both traps the robot in an unverified start region and fails open outside the
-// window. It remains available to SMAC as a soft cost and to the downstream
-// corridor, optimizer, and trajectory safety checker as a hard constraint.
-constexpr double kGlobalSearchEsdfCollisionDistance = 0.0;
-
-} // namespace
-
 using namespace color_text;
 
 MincoPlanner::MincoPlanner() : tf_(nullptr) {}
@@ -220,13 +209,19 @@ void MincoPlanner::rebuildModeDependentQueries() {
   }
   if (astar_planner_) {
     astar_planner_->setMap(mode_context_->globalQuery());
-    astar_planner_->setESDFQuery(nullptr);
-    astar_planner_->setCollisionDistance(kGlobalSearchEsdfCollisionDistance);
+    astar_planner_->setESDFQuery(
+      mode_context_->dynamicGlobalObstacleEnabled() ? mode_context_->dynamicQuery() : nullptr);
+    astar_planner_->setCollisionDistance(
+      mode_context_->dynamicGlobalObstacleEnabled() ?
+      mode_context_->dynamicGlobalCollisionDistance() : 0.0);
   }
   if (smac_planner_) {
     smac_planner_->setMap(mode_context_->globalQuery());
-    smac_planner_->setESDFQuery(mode_context_->dynamicQuery());
-    smac_planner_->setCollisionDistance(kGlobalSearchEsdfCollisionDistance);
+    smac_planner_->setESDFQuery(
+      mode_context_->dynamicGlobalObstacleEnabled() ? mode_context_->dynamicQuery() : nullptr);
+    smac_planner_->setCollisionDistance(
+      mode_context_->dynamicGlobalObstacleEnabled() ?
+      mode_context_->dynamicGlobalCollisionDistance() : 0.0);
   }
   if (minco_optimizer_) {
     minco_optimizer_->setMap(mode_context_->dynamicQuery());
@@ -250,6 +245,10 @@ void MincoPlanner::initPlannerMode(const std::string &planner_mode_param,
   mode_params_.rog_frame = rog_frame.empty() ? "camera_init" : rog_frame;
   mode_params_.priormap_use_nav2_global_search =
       priormap_use_nav2_global_search_;
+  mode_params_.priormap_dynamic_global_obstacle_enable =
+      priormap_dynamic_global_obstacle_enable_;
+  mode_params_.priormap_dynamic_global_collision_distance =
+      priormap_dynamic_global_collision_distance_;
   mode_params_.priormap_clip_seed_by_rog_boundary =
       priormap_clip_seed_by_rog_boundary_;
   mode_params_.priormap_rog_boundary_margin = priormap_rog_boundary_margin_;
@@ -364,6 +363,22 @@ void MincoPlanner::configure(
       rclcpp::ParameterValue(true));
   node->get_parameter(prefix + "priormap.use_nav2_global_search",
                       priormap_use_nav2_global_search_);
+
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "priormap.dynamic_global_obstacle.enable",
+      rclcpp::ParameterValue(false));
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "priormap.dynamic_global_obstacle.collision_distance",
+      rclcpp::ParameterValue(0.0));
+  node->get_parameter(prefix + "priormap.dynamic_global_obstacle.enable",
+                      priormap_dynamic_global_obstacle_enable_);
+  node->get_parameter(prefix + "priormap.dynamic_global_obstacle.collision_distance",
+                      priormap_dynamic_global_collision_distance_);
+  if (!std::isfinite(priormap_dynamic_global_collision_distance_) ||
+      priormap_dynamic_global_collision_distance_ < 0.0) {
+    throw std::invalid_argument(
+      prefix + "priormap.dynamic_global_obstacle.collision_distance must be finite and >= 0");
+  }
 
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "priormap.clip_seed_by_rog_boundary",
@@ -552,6 +567,24 @@ void MincoPlanner::configure(
   node->get_parameter(prefix + "minco_optimizer.traj_goal_tolerance",
                       traj_goal_tolerance_);
 
+  double shortcut_peak_cost_slack = 10.0;
+  double shortcut_mean_cost_slack = 5.0;
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "local_path.shortcut_peak_cost_slack",
+      rclcpp::ParameterValue(shortcut_peak_cost_slack));
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "local_path.shortcut_mean_cost_slack",
+      rclcpp::ParameterValue(shortcut_mean_cost_slack));
+  node->get_parameter(prefix + "local_path.shortcut_peak_cost_slack",
+                      shortcut_peak_cost_slack);
+  node->get_parameter(prefix + "local_path.shortcut_mean_cost_slack",
+                      shortcut_mean_cost_slack);
+  if (!std::isfinite(shortcut_peak_cost_slack) || shortcut_peak_cost_slack < 0.0 ||
+      !std::isfinite(shortcut_mean_cost_slack) || shortcut_mean_cost_slack < 0.0) {
+    throw std::invalid_argument(
+            prefix + "local_path shortcut cost slacks must be finite and non-negative");
+  }
+
   // --- Optimizer config ------------------------------------------------------
 
   nav2_util::declare_parameter_if_not_declared(
@@ -589,6 +622,8 @@ void MincoPlanner::configure(
       node, prefix + "safety.future_tolerance",
       rclcpp::ParameterValue(safety_config.future_tolerance));
   nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "safety.check_horizon", rclcpp::ParameterValue(2.0));
+  nav2_util::declare_parameter_if_not_declared(
       node, prefix + "safety.collision_cache_reuse_max_duration",
       rclcpp::ParameterValue(collision_cache_reuse_max_duration_));
   node->get_parameter(prefix + "safety.footprint_length",
@@ -601,6 +636,8 @@ void MincoPlanner::configure(
   node->get_parameter(prefix + "safety.map_timeout", safety_config.map_timeout);
   node->get_parameter(prefix + "safety.future_tolerance",
                       safety_config.future_tolerance);
+  node->get_parameter(prefix + "safety.check_horizon",
+                      safety_check_horizon_);
   node->get_parameter(prefix + "safety.collision_cache_reuse_max_duration",
                       collision_cache_reuse_max_duration_);
   if (!std::isfinite(collision_cache_reuse_max_duration_) ||
@@ -608,6 +645,10 @@ void MincoPlanner::configure(
     throw std::invalid_argument(
         "MincoPlanner safety.collision_cache_reuse_max_duration must be "
         "finite and nonnegative");
+  }
+  if (!std::isfinite(safety_check_horizon_) || safety_check_horizon_ <= 0.0) {
+    throw std::invalid_argument(
+        prefix + "safety.check_horizon must be finite and positive");
   }
   if (!std::isfinite(safety_config.footprint_length) ||
       safety_config.footprint_length <= 0.0 ||
@@ -834,8 +875,11 @@ void MincoPlanner::configure(
   const unsigned int init_size_y = global_query ? global_query->sizeY() : 1U;
   astar_planner_ = std::make_unique<Astar>(init_size_x, init_size_y);
   astar_planner_->setMap(global_query);
-  astar_planner_->setESDFQuery(nullptr);
-  astar_planner_->setCollisionDistance(kGlobalSearchEsdfCollisionDistance);
+  astar_planner_->setESDFQuery(
+    mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ? dynamic_query : nullptr);
+  astar_planner_->setCollisionDistance(
+    mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ?
+    mode_context_->dynamicGlobalCollisionDistance() : 0.0);
 
   if (use_smac_) {
     smac_planner_ =
@@ -843,15 +887,19 @@ void MincoPlanner::configure(
     smac_planner_->configure(node, costmap_ros_, prefix);
     smac_planner_->setParameters(allow_unknown_, 1000000, tolerance_);
     smac_planner_->setMap(global_query);
-    smac_planner_->setESDFQuery(dynamic_query);
-    smac_planner_->setCollisionDistance(kGlobalSearchEsdfCollisionDistance);
+    smac_planner_->setESDFQuery(
+      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ? dynamic_query : nullptr);
+    smac_planner_->setCollisionDistance(
+      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ?
+      mode_context_->dynamicGlobalCollisionDistance() : 0.0);
   }
 
   RCLCPP_INFO(
       logger_,
-      "[MincoPlanner] Global search hard obstacles come from the global map "
-      "only; "
-      "ROGMap ESDF hard collision checks remain downstream of global search.");
+      "[MincoPlanner] Global search dynamic ROG hard mask: enabled=%s "
+      "collision_distance=%.3f m; UNKNOWN/frontier cells are excluded.",
+      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ? "true" : "false",
+      mode_context_ ? mode_context_->dynamicGlobalCollisionDistance() : 0.0);
 
   global_path_searcher_ = std::make_unique<GlobalPathSearcher>();
   global_path_searcher_->configure(tf_, astar_planner_.get(),
@@ -862,6 +910,8 @@ void MincoPlanner::configure(
   local_path_processor_ = std::make_unique<LocalPathProcessor>();
   local_path_processor_->configure(lookahead_dist_, minco_config.max_vel,
                                    minco_config.max_acc, traj_goal_tolerance_,
+                                   shortcut_peak_cost_slack,
+                                   shortcut_mean_cost_slack,
                                    logger_, clock_);
 
   safety_checker_ = std::make_unique<TrajectorySafetyChecker>();
@@ -871,10 +921,12 @@ void MincoPlanner::configure(
               "[MincoPlanner] Safety footprint: length=%.3f width=%.3f "
               "margin_per_side=%.3f "
               "sample_dt=%.3f map_timeout=%.3f future_tolerance=%.3f "
+              "check_horizon=%.3f "
               "planning_frame=%s rog_frame=%s",
               safety_config.footprint_length, safety_config.footprint_width,
               safety_config.footprint_margin, safety_config.sample_dt,
               safety_config.map_timeout, safety_config.future_tolerance,
+              safety_check_horizon_,
               safety_config.planning_frame.c_str(),
               safety_config.rog_frame.c_str());
 
@@ -921,7 +973,7 @@ void MincoPlanner::configure(
       odom_options);
 
   visualizer_ = std::make_unique<Visualizer>();
-  visualizer_->configure(parent, output_frame_);
+  visualizer_->configure(parent, output_frame_, costmap_ros_);
 
   minco_optimizer_ = std::make_unique<MincoOptimizer>(minco_config);
   minco_optimizer_->setMap(mode_context_ ? mode_context_->dynamicQuery()
@@ -1006,6 +1058,9 @@ void MincoPlanner::activate() {
     pending_goal_session_ = 0U;
     latest_global_path_.clear();
     latest_global_path_session_ = 0U;
+    if (visualizer_) {
+      visualizer_->updateGlobalPath(nav_msgs::msg::Path{});
+    }
     publishBlockCommandLocked();
   }
   if (fsm_) {
@@ -1044,6 +1099,9 @@ void MincoPlanner::deactivate() {
     pending_goal_session_ = 0U;
     latest_global_path_.clear();
     latest_global_path_session_ = 0U;
+    if (visualizer_) {
+      visualizer_->updateGlobalPath(nav_msgs::msg::Path{});
+    }
     publishBlockCommandLocked();
   }
   // A callback that passed its initial active check must finish observing the
@@ -1085,6 +1143,9 @@ void MincoPlanner::cleanup() {
     pending_goal_session_ = 0U;
     latest_global_path_.clear();
     latest_global_path_session_ = 0U;
+    if (visualizer_) {
+      visualizer_->updateGlobalPath(nav_msgs::msg::Path{});
+    }
     publishBlockCommandLocked();
   }
   { std::lock_guard<std::mutex> lock(fsm_execution_mutex_); }
@@ -1180,6 +1241,9 @@ bool MincoPlanner::expirePlanningRequestLeaseLocked(
   pending_goal_session_ = 0U;
   latest_global_path_.clear();
   latest_global_path_session_ = 0U;
+  if (visualizer_) {
+    visualizer_->updateGlobalPath(nav_msgs::msg::Path{});
+  }
   emergency_stop_latched_ = true;
   is_traj_safe_.store(false);
   publishBlockCommandLocked(true);
@@ -1229,6 +1293,9 @@ MincoPlanner::PlanningSessionHandle MincoPlanner::acceptPlanningGoal(
   has_pending_goal_ = true;
   latest_global_path_.clear();
   latest_global_path_session_ = 0U;
+  if (visualizer_) {
+    visualizer_->updateGlobalPath(nav_msgs::msg::Path{});
+  }
   request_lease_.refresh(session, steady_now);
   publishBlockCommandLocked();
 
@@ -1249,6 +1316,9 @@ uint64_t MincoPlanner::beginPlanningSession() {
     pending_goal_session_ = 0U;
     latest_global_path_.clear();
     latest_global_path_session_ = 0U;
+    if (visualizer_) {
+      visualizer_->updateGlobalPath(nav_msgs::msg::Path{});
+    }
     publishBlockCommandLocked();
   }
   return session;
@@ -1277,6 +1347,8 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
                param_name == name_ + ".frames.rog_frame" ||
                param_name == name_ + ".frames.physical_base_frame" ||
                param_name == name_ + ".priormap.use_nav2_global_search" ||
+               param_name == name_ + ".priormap.dynamic_global_obstacle.enable" ||
+               param_name == name_ + ".priormap.dynamic_global_obstacle.collision_distance" ||
                param_name == name_ + ".priormap.clip_seed_by_rog_boundary" ||
                param_name == name_ + ".priormap.rog_boundary_margin" ||
                param_name == name_ + ".priormap.rog_boundary_sample_step" ||
@@ -1297,6 +1369,8 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
                param_name == name_ + ".exploration.boundary_sample_step" ||
                param_name == name_ + ".exploration.unknown_as_occupied" ||
                param_name == name_ + ".exploration.prefer_goal_direction" ||
+               param_name == name_ + ".local_path.shortcut_peak_cost_slack" ||
+               param_name == name_ + ".local_path.shortcut_mean_cost_slack" ||
                param_name == name_ + ".minco_optimizer.safe_dist" ||
                param_name == name_ + ".minco_optimizer.collision_dist" ||
                param_name == name_ + ".safety.footprint_length" ||
@@ -1305,6 +1379,7 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
                param_name == name_ + ".safety.sample_dt" ||
                param_name == name_ + ".safety.map_timeout" ||
                param_name == name_ + ".safety.future_tolerance" ||
+               param_name == name_ + ".safety.check_horizon" ||
                param_name ==
                    name_ + ".safety.collision_cache_reuse_max_duration" ||
                param_name == name_ + ".request_lease_timeout" ||
@@ -1614,13 +1689,26 @@ bool MincoPlanner::PlanGlobalPath(const geometry_msgs::msg::PoseStamped &start,
   }
   record_search_time();
 
-  std::scoped_lock lock(mutex_, path_mutex_);
-  if (!planning_session_.accepts(expected_session)) {
-    return false;
+  {
+    std::scoped_lock lock(mutex_, path_mutex_);
+    if (!planning_session_.accepts(expected_session)) {
+      return false;
+    }
+    latest_global_path_ = std::move(planned_path);
+    latest_global_path_session_ = expected_session;
+    if (latest_global_path_.size() < 2U) {
+      return false;
+    }
+
+    if (visualizer_) {
+      nav_msgs::msg::Path global_path_msg;
+      global_path_msg.header.stamp = rosNow();
+      global_path_msg.header.frame_id = output_frame_;
+      global_path_msg.poses = latest_global_path_;
+      visualizer_->updateGlobalPath(global_path_msg);
+    }
   }
-  latest_global_path_ = std::move(planned_path);
-  latest_global_path_session_ = expected_session;
-  return latest_global_path_.size() >= 2U;
+  return true;
 }
 
 bool MincoPlanner::ReplanLocal(
@@ -2282,10 +2370,44 @@ void MincoPlanner::prepareColdStart(
   start_state.setZero();
   start_state.col(0) =
       Eigen::Vector3d(start_pose.position.x, start_pose.position.y, 0.0);
-  (void)sparse_path;
   Eigen::Vector3d real_speed = getCurrentSpeed();
   real_speed.z() = 0.0;
-  const double planar_speed = real_speed.head<2>().norm();
+  Eigen::Vector2d speed_xy = real_speed.head<2>();
+  double planar_speed = speed_xy.norm();
+  if (!speed_xy.allFinite()) {
+    RCLCPP_WARN_THROTTLE(
+        logger_, *clock_, 1000,
+        "[MincoPlanner] Cold-start odometry velocity is non-finite; "
+        "starting the optimizer from rest.");
+    real_speed.head<2>().setZero();
+    planar_speed = 0.0;
+  }
+
+  // A cold start is used precisely after the previous optimizer seed was
+  // rejected.  Feeding its measured velocity through unchanged can preserve
+  // downhill slip or a reverse component that points against the new local
+  // path, producing the large path deviation seen in simulation.  Keep a
+  // trustworthy forward component, but discard a clearly opposing one.
+  if (sparse_path.size() >= 2U && planar_speed > 0.05) {
+    const Eigen::Vector2d first_segment =
+        (sparse_path[1] - sparse_path[0]).head<2>();
+    const double segment_length = first_segment.norm();
+    if (std::isfinite(segment_length) && segment_length > 1.0e-3) {
+      const Eigen::Vector2d path_direction = first_segment / segment_length;
+      const double longitudinal_speed = speed_xy.dot(path_direction);
+      const double direction_cos = longitudinal_speed / planar_speed;
+      if (!std::isfinite(direction_cos) || direction_cos < 0.25) {
+        RCLCPP_WARN_THROTTLE(
+            logger_, *clock_, 1000,
+            "[MincoPlanner] Cold-start velocity rejected against local path "
+            "(speed=%.3f m/s, direction_cos=%.3f); starting from rest.",
+            planar_speed, direction_cos);
+        real_speed.head<2>().setZero();
+        planar_speed = 0.0;
+      }
+    }
+  }
+
   if (std::isfinite(planar_speed) && planar_speed > minco_config.max_vel) {
     real_speed.head<2>() *= minco_config.max_vel / planar_speed;
     RCLCPP_WARN_THROTTLE(
@@ -2475,13 +2597,34 @@ bool MincoPlanner::checkCollision(const traj_opt::Trajectory &traj) {
     return false;
   }
 
-  return safety_checker_->checkTrajectory(traj);
+  const double check_end = std::min(dur, safety_check_horizon_);
+  if (check_end >= dur - 1.0e-6) {
+    return safety_checker_->checkTrajectory(traj);
+  }
+
+  return safety_checker_->checkTrajectoryFromTime(traj, 0.0, check_end);
 }
 
 bool MincoPlanner::checkCollision(const traj_opt::Trajectory &position_traj,
                                   const traj_opt::Trajectory &yaw_traj) {
-  return safety_checker_ &&
-         safety_checker_->checkTrajectory(position_traj, yaw_traj);
+  if (!safety_checker_ || position_traj.empty() || yaw_traj.empty()) {
+    return false;
+  }
+
+  const double position_duration = position_traj.getTotalDuration();
+  const double yaw_duration = yaw_traj.getTotalDuration();
+  if (!(std::isfinite(position_duration) && position_duration > 1.0e-6) ||
+      !(std::isfinite(yaw_duration) && yaw_duration + 1.0e-6 >= position_duration)) {
+    return false;
+  }
+
+  const double check_end = std::min(position_duration, safety_check_horizon_);
+  if (check_end >= position_duration - 1.0e-6) {
+    return safety_checker_->checkTrajectory(position_traj, yaw_traj);
+  }
+
+  return safety_checker_->checkTrajectoryFromTime(position_traj, yaw_traj, 0.0,
+                                                  check_end);
 }
 
 bool MincoPlanner::checkExecutableTrajectory(
@@ -2532,8 +2675,31 @@ bool MincoPlanner::checkExecutableTrajectory(
 bool MincoPlanner::checkCollisionFromTime(
     const traj_opt::Trajectory &position_traj,
     const traj_opt::Trajectory &yaw_traj, double start_time) {
-  return safety_checker_ && safety_checker_->checkTrajectoryFromTime(
-                                position_traj, yaw_traj, start_time);
+  if (!safety_checker_ || position_traj.empty() || yaw_traj.empty()) {
+    return false;
+  }
+
+  const double position_duration = position_traj.getTotalDuration();
+  const double yaw_duration = yaw_traj.getTotalDuration();
+  if (!(std::isfinite(position_duration) && position_duration > 1.0e-6) ||
+      !(std::isfinite(yaw_duration) && yaw_duration + 1.0e-6 >= position_duration) ||
+      !std::isfinite(start_time)) {
+    return false;
+  }
+
+  const double first_time = std::clamp(start_time, 0.0, position_duration);
+  const double check_end =
+      std::min(position_duration, first_time + safety_check_horizon_);
+  if (check_end <= first_time + 1.0e-6) {
+    return true;
+  }
+
+  if (first_time <= 1.0e-6 && check_end >= position_duration - 1.0e-6) {
+    return safety_checker_->checkTrajectory(position_traj, yaw_traj);
+  }
+
+  return safety_checker_->checkTrajectoryFromTime(
+      position_traj, yaw_traj, first_time, check_end);
 }
 
 bool MincoPlanner::evaluateCachedTrajectorySafety(
@@ -2883,6 +3049,9 @@ void MincoPlanner::completeGoal(uint64_t expected_session) {
   pending_goal_session_ = 0U;
   latest_global_path_.clear();
   latest_global_path_session_ = 0U;
+  if (visualizer_) {
+    visualizer_->updateGlobalPath(nav_msgs::msg::Path{});
+  }
   publishBlockCommandLocked();
 }
 

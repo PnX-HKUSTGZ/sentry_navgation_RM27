@@ -14,4 +14,4 @@ ros2 daemon stop 2>/dev/null || true
 ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
   slam:=False \
   navigation_mode:=minco \
-  world:=
+  world:=highbay3
