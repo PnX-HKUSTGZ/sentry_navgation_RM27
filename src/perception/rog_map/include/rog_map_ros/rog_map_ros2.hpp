@@ -150,17 +150,18 @@ class ROGMapROS : public ROGMap {
       if (std::isfinite(transform.tx) && std::isfinite(transform.ty) &&
           std::isfinite(transform.tz) && std::isfinite(transform.roll) &&
           std::isfinite(transform.pitch) && std::isfinite(transform.yaw) &&
-          std::abs(transform.roll) <= 1.0e-5 &&
-          std::abs(transform.pitch) <= 1.0e-5) {
+          std::abs(transform.roll) <= cfg_.prior_map_horizontal_tolerance &&
+          std::abs(transform.pitch) <= cfg_.prior_map_horizontal_tolerance) {
         return true;
       }
       RCLCPP_WARN_THROTTLE(
           node_logging_->get_logger(), *node_clock_->get_clock(), 2000,
           "[ROGMap] prior map TF from '%s' to '%s' is non-finite or "
           "non-horizontal "
-          "(roll=%.6f pitch=%.6f); ground support is fail-closed",
+          "(roll=%.6f pitch=%.6f tolerance=%.6f); ground support is "
+          "fail-closed",
           cfg_.frame_id.c_str(), cfg_.prior_map_frame.c_str(), transform.roll,
-          transform.pitch);
+          transform.pitch, cfg_.prior_map_horizontal_tolerance);
       return false;
     } catch (const tf2::TransformException &error) {
       RCLCPP_WARN_THROTTLE(

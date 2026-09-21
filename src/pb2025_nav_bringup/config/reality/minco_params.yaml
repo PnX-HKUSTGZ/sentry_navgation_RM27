@@ -148,7 +148,11 @@ planner_server:
         # so this does not route around an unobserved ROG window.
         dynamic_global_obstacle:
           enable: true
-          collision_distance: 0.26
+          # Match the rectangular footprint corner radius (0.25 m) plus the
+          # 5 cm raster guard.  The old 0.26 m mask allowed SMAC to return a
+          # path whose centerline was technically outside a ROG cell but whose
+          # MINCO smoothing still swept the chassis into it.
+          collision_distance: 0.34
         clip_seed_by_rog_boundary: true
         rog_boundary_margin: 0.30
         rog_boundary_sample_step: 0.10
@@ -189,6 +193,9 @@ planner_server:
         sample_dt: 0.05
         map_timeout: 0.50
         future_tolerance: 0.05
+        # Maximum amount of an old trajectory that may be reused after either
+        # a collision/safety rejection or a numerical MINCO failure.  Keeping
+        # this short prevents a failed route from being replayed for seconds.
         collision_cache_reuse_max_duration: 0.40
       performance:
         enable: true
@@ -313,14 +320,14 @@ planner_server:
           # Release only zero-hit cells in this bounded near-field envelope.
           # The previous 0.70 x 0.45 m rectangle ended at x=0.35/y=0.225;
           # the safety checker samples the rasterized footprint at about
-          # x=0.38..0.42 and y=0.26..0.34, so those cells were incorrectly
+          # x=0.38..0.50 and y=0.26..0.34, so those cells were incorrectly
           # reported as HEADROOM_UNVERIFIED on otherwise open ground.  The
           # larger envelope is still fail-closed: static prior FREE,
           # continuous height-matching support, and no occupied voxel are all
           # required; a measured dynamic return remains an unconditional veto.
           near_field_prior_fill_enable: true
-          near_field_prior_fill_length: 0.90
-          near_field_prior_fill_width: 0.70
+          near_field_prior_fill_length: 1.20
+          near_field_prior_fill_width: 0.80
           robot_origin_to_ground: 0.28
           vehicle_height: 0.42
           headroom_margin: 0.03
@@ -372,6 +379,9 @@ planner_server:
             ground_support_tolerance: 0.08
             transform_timeout: 0.50
             transform_future_tolerance: 0.20
+            # VIO/LIO TFs carry small roll/pitch noise while the platform is
+            # level; only larger tilt should invalidate prior-map support.
+            horizontal_tolerance: 0.01
         field:
           enable: true
           inflation_radius: 0.0
@@ -413,7 +423,7 @@ planner_server:
         # Real dynamic obstacles usually have open bypass space. Give their
         # inflated band enough weight that a modest geometric shortcut no
         # longer wins; simulation stays at 2.0 for its constrained tunnels.
-        cost_penalty: 6.0
+        cost_penalty: 8.0
         use_quadratic_cost_penalty: false
         # The local ROG window is not a stable global topology source. Keep its
         # fail-closed frontier out of SMAC's global soft cost; downstream local
@@ -447,11 +457,15 @@ planner_server:
         # by 0.05 m on every side. Zero keeps this an exact occupied/UNKNOWN
         # test instead of applying a second, duplicate radial inflation.
         collision_dist: 0.0
-        # At 0.7 m/s this keeps a 2.1 s local horizon while avoiding a demand to
+        # At 0.8 m/s this keeps a 1.9 s local horizon while avoiding a demand to
         # validate the complete route from one LiDAR viewpoint.
         lookahead_dist: 1.5
         max_velocity: 0.8
         max_acceleration: 0.8
+        # Leave room for the quintic's interior velocity peak. A terminal
+        # boundary at exactly 0.8 m/s cannot be repaired by time stretching
+        # and caused repeated 0.90..0.94 m/s feasibility failures while still.
+        terminal_velocity_ratio: 0.80
         max_yaw_dot: 0.8
         turn_angle_deadzone: 0.10
         turn_angle_saturation: 0.80

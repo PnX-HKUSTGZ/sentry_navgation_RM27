@@ -59,6 +59,9 @@ private:
   RetryClock::time_point follow_replan_not_before_{};
   bool has_follow_replan_deadline_{false};
   bool follow_replan_retry_deferred_{false};
+  // Keep the current global homotopy through numerical local failures. A new
+  // search is requested only after the cached route or trajectory is unsafe.
+  bool force_global_search_{true};
 
   // --- Goal Lifecycle ---
   bool has_goal_{false};

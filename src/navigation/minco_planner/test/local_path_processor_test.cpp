@@ -465,5 +465,28 @@ TEST(LocalPathProcessorTest, RollingReplanSeedStartsAtMeasuredPoseNotOldGlobalWa
   }
 }
 
+TEST(LocalPathProcessorTest, ChoosesNearestPolylineSegmentOverNearbyCornerVertex)
+{
+  auto query = std::make_shared<TestGridQuery>(
+    [](double, double) {return nav2_costmap_2d::FREE_SPACE;});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  const std::vector<geometry_msgs::msg::PoseStamped> path{
+    pose(0.0, 0.0), pose(3.5, 0.0), pose(1.8, 1.0), pose(1.8, 1.8)};
+
+  // The nearest stored vertex is (5, 1), but the robot is approaching the
+  // long horizontal segment at y=0 and should continue through its endpoint.
+  const auto seed = processor.buildSeed(
+    path, pose(1.8, 0.2), context,
+    [](const Eigen::Vector3d &, double) {return true;});
+
+  ASSERT_TRUE(seed.valid);
+  ASSERT_GE(seed.dense_path.size(), 2U);
+  EXPECT_NEAR(seed.dense_path.front().x(), 1.8, 1e-9);
+  EXPECT_NEAR(seed.dense_path.front().y(), 0.2, 1e-9);
+  EXPECT_NEAR(seed.dense_path[1].x(), 3.5, 1e-9);
+  EXPECT_NEAR(seed.dense_path[1].y(), 0.0, 1e-9);
+}
+
 }  // namespace
 }  // namespace minco_planner

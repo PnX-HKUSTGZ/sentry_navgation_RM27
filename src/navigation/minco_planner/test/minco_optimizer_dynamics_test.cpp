@@ -107,6 +107,19 @@ TEST(MincoOptimizerDynamicsTest, RejectsNonpositiveTimeAllocationIterations)
   EXPECT_THROW(MincoOptimizer optimizer(config), std::invalid_argument);
 }
 
+TEST(MincoOptimizerDynamicsTest, RejectsInvalidTerminalVelocityRatio)
+{
+  auto config = makeConfig();
+  config.terminal_velocity_ratio = 0.0;
+  EXPECT_THROW(MincoOptimizer optimizer(config), std::invalid_argument);
+
+  config.terminal_velocity_ratio = 1.01;
+  EXPECT_THROW(MincoOptimizer optimizer(config), std::invalid_argument);
+
+  config.terminal_velocity_ratio = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_THROW(MincoOptimizer optimizer(config), std::invalid_argument);
+}
+
 TEST(MincoOptimizerDynamicsTest, FailsClosedWhenBoundaryStateExceedsLimit)
 {
   auto config = makeConfig();

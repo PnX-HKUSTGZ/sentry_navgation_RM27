@@ -209,19 +209,23 @@ void MincoPlanner::rebuildModeDependentQueries() {
   }
   if (astar_planner_) {
     astar_planner_->setMap(mode_context_->globalQuery());
-    astar_planner_->setESDFQuery(
-      mode_context_->dynamicGlobalObstacleEnabled() ? mode_context_->dynamicQuery() : nullptr);
+    astar_planner_->setESDFQuery(mode_context_->dynamicGlobalObstacleEnabled()
+                                     ? mode_context_->dynamicQuery()
+                                     : nullptr);
     astar_planner_->setCollisionDistance(
-      mode_context_->dynamicGlobalObstacleEnabled() ?
-      mode_context_->dynamicGlobalCollisionDistance() : 0.0);
+        mode_context_->dynamicGlobalObstacleEnabled()
+            ? mode_context_->dynamicGlobalCollisionDistance()
+            : 0.0);
   }
   if (smac_planner_) {
     smac_planner_->setMap(mode_context_->globalQuery());
-    smac_planner_->setESDFQuery(
-      mode_context_->dynamicGlobalObstacleEnabled() ? mode_context_->dynamicQuery() : nullptr);
+    smac_planner_->setESDFQuery(mode_context_->dynamicGlobalObstacleEnabled()
+                                    ? mode_context_->dynamicQuery()
+                                    : nullptr);
     smac_planner_->setCollisionDistance(
-      mode_context_->dynamicGlobalObstacleEnabled() ?
-      mode_context_->dynamicGlobalCollisionDistance() : 0.0);
+        mode_context_->dynamicGlobalObstacleEnabled()
+            ? mode_context_->dynamicGlobalCollisionDistance()
+            : 0.0);
   }
   if (minco_optimizer_) {
     minco_optimizer_->setMap(mode_context_->dynamicQuery());
@@ -258,10 +262,8 @@ void MincoPlanner::initPlannerMode(const std::string &planner_mode_param,
       static_obstacle_clearance_radius;
   mode_params_.priormap_ground_edge_avoidance_enable =
       priormap_ground_edge_avoidance_enable_;
-  mode_params_.priormap_ground_edge_yaml_path =
-      priormap_ground_edge_yaml_path_;
-  mode_params_.priormap_ground_edge_pgm_path =
-      priormap_ground_edge_pgm_path_;
+  mode_params_.priormap_ground_edge_yaml_path = priormap_ground_edge_yaml_path_;
+  mode_params_.priormap_ground_edge_pgm_path = priormap_ground_edge_pgm_path_;
   mode_params_.priormap_ground_edge_frame = priormap_ground_edge_frame_;
   mode_params_.priormap_ground_edge_config.max_step =
       priormap_ground_edge_max_step_;
@@ -372,12 +374,14 @@ void MincoPlanner::configure(
       rclcpp::ParameterValue(0.0));
   node->get_parameter(prefix + "priormap.dynamic_global_obstacle.enable",
                       priormap_dynamic_global_obstacle_enable_);
-  node->get_parameter(prefix + "priormap.dynamic_global_obstacle.collision_distance",
+  node->get_parameter(prefix +
+                          "priormap.dynamic_global_obstacle.collision_distance",
                       priormap_dynamic_global_collision_distance_);
   if (!std::isfinite(priormap_dynamic_global_collision_distance_) ||
       priormap_dynamic_global_collision_distance_ < 0.0) {
-    throw std::invalid_argument(
-      prefix + "priormap.dynamic_global_obstacle.collision_distance must be finite and >= 0");
+    throw std::invalid_argument(prefix +
+                                "priormap.dynamic_global_obstacle.collision_"
+                                "distance must be finite and >= 0");
   }
 
   nav2_util::declare_parameter_if_not_declared(
@@ -422,9 +426,9 @@ void MincoPlanner::configure(
                       priormap_ground_edge_max_step_);
   node->get_parameter(prefix + "priormap.ground_edge_avoidance.max_slope_deg",
                       priormap_ground_edge_max_slope_deg_);
-  node->get_parameter(
-      prefix + "priormap.ground_edge_avoidance.clearance_radius",
-      priormap_ground_edge_clearance_radius_);
+  node->get_parameter(prefix +
+                          "priormap.ground_edge_avoidance.clearance_radius",
+                      priormap_ground_edge_clearance_radius_);
   node->get_parameter(
       prefix + "priormap.ground_edge_avoidance.lethal_clearance_radius",
       priormap_ground_edge_lethal_clearance_radius_);
@@ -579,10 +583,13 @@ void MincoPlanner::configure(
                       shortcut_peak_cost_slack);
   node->get_parameter(prefix + "local_path.shortcut_mean_cost_slack",
                       shortcut_mean_cost_slack);
-  if (!std::isfinite(shortcut_peak_cost_slack) || shortcut_peak_cost_slack < 0.0 ||
-      !std::isfinite(shortcut_mean_cost_slack) || shortcut_mean_cost_slack < 0.0) {
+  if (!std::isfinite(shortcut_peak_cost_slack) ||
+      shortcut_peak_cost_slack < 0.0 ||
+      !std::isfinite(shortcut_mean_cost_slack) ||
+      shortcut_mean_cost_slack < 0.0) {
     throw std::invalid_argument(
-            prefix + "local_path shortcut cost slacks must be finite and non-negative");
+        prefix +
+        "local_path shortcut cost slacks must be finite and non-negative");
   }
 
   // --- Optimizer config ------------------------------------------------------
@@ -636,8 +643,7 @@ void MincoPlanner::configure(
   node->get_parameter(prefix + "safety.map_timeout", safety_config.map_timeout);
   node->get_parameter(prefix + "safety.future_tolerance",
                       safety_config.future_tolerance);
-  node->get_parameter(prefix + "safety.check_horizon",
-                      safety_check_horizon_);
+  node->get_parameter(prefix + "safety.check_horizon", safety_check_horizon_);
   node->get_parameter(prefix + "safety.collision_cache_reuse_max_duration",
                       collision_cache_reuse_max_duration_);
   if (!std::isfinite(collision_cache_reuse_max_duration_) ||
@@ -646,6 +652,11 @@ void MincoPlanner::configure(
         "MincoPlanner safety.collision_cache_reuse_max_duration must be "
         "finite and nonnegative");
   }
+  RCLCPP_INFO(
+      logger_,
+      "[MincoPlanner] Cached trajectory reuse limit: %.2f s for collision, "
+      "safety, and optimizer-failure rejections.",
+      collision_cache_reuse_max_duration_);
   if (!std::isfinite(safety_check_horizon_) || safety_check_horizon_ <= 0.0) {
     throw std::invalid_argument(
         prefix + "safety.check_horizon must be finite and positive");
@@ -657,12 +668,14 @@ void MincoPlanner::configure(
       !std::isfinite(safety_config.footprint_margin) ||
       safety_config.footprint_margin <= 0.0) {
     throw std::invalid_argument(
-        prefix + "safety footprint dimensions and margin must be finite and positive");
+        prefix +
+        "safety footprint dimensions and margin must be finite and positive");
   }
 
   double grid_guard = 0.0;
   if (costmap_ros_ && costmap_ros_->getCostmap()) {
-    const double costmap_resolution = costmap_ros_->getCostmap()->getResolution();
+    const double costmap_resolution =
+        costmap_ros_->getCostmap()->getResolution();
     if (std::isfinite(costmap_resolution) && costmap_resolution > 0.0) {
       grid_guard = costmap_resolution;
     }
@@ -683,12 +696,12 @@ void MincoPlanner::configure(
                   configured_rog_frame, static_obstacle_clearance_radius);
   safety_config.planning_frame = planning_frame_;
   safety_config.rog_frame = rog_frame_;
-  RCLCPP_INFO(
-      logger_,
-      "[MincoPlanner] Global static hard-clearance radius %.3f m = "
-      "footprint corner %.3f m + grid guard %.3f m.",
-      static_obstacle_clearance_radius,
-      std::hypot(footprint_half_length, footprint_half_width), grid_guard);
+  RCLCPP_INFO(logger_,
+              "[MincoPlanner] Global static hard-clearance radius %.3f m = "
+              "footprint corner %.3f m + grid guard %.3f m.",
+              static_obstacle_clearance_radius,
+              std::hypot(footprint_half_length, footprint_half_width),
+              grid_guard);
 
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "minco_optimizer.max_velocity",
@@ -701,6 +714,19 @@ void MincoPlanner::configure(
       rclcpp::ParameterValue(4.0));
   node->get_parameter(prefix + "minco_optimizer.max_acceleration",
                       minco_config.max_acc);
+
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "minco_optimizer.terminal_velocity_ratio",
+      rclcpp::ParameterValue(0.8));
+  node->get_parameter(prefix + "minco_optimizer.terminal_velocity_ratio",
+                      minco_config.terminal_velocity_ratio);
+  if (!std::isfinite(minco_config.terminal_velocity_ratio) ||
+      minco_config.terminal_velocity_ratio <= 0.0 ||
+      minco_config.terminal_velocity_ratio > 1.0) {
+    throw std::invalid_argument(
+        prefix +
+        "minco_optimizer.terminal_velocity_ratio must be in (0, 1]");
+  }
 
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "minco_optimizer.turn_angle_deadzone",
@@ -876,10 +902,13 @@ void MincoPlanner::configure(
   astar_planner_ = std::make_unique<Astar>(init_size_x, init_size_y);
   astar_planner_->setMap(global_query);
   astar_planner_->setESDFQuery(
-    mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ? dynamic_query : nullptr);
+      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled()
+          ? dynamic_query
+          : nullptr);
   astar_planner_->setCollisionDistance(
-    mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ?
-    mode_context_->dynamicGlobalCollisionDistance() : 0.0);
+      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled()
+          ? mode_context_->dynamicGlobalCollisionDistance()
+          : 0.0);
 
   if (use_smac_) {
     smac_planner_ =
@@ -888,17 +917,21 @@ void MincoPlanner::configure(
     smac_planner_->setParameters(allow_unknown_, 1000000, tolerance_);
     smac_planner_->setMap(global_query);
     smac_planner_->setESDFQuery(
-      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ? dynamic_query : nullptr);
+        mode_context_ && mode_context_->dynamicGlobalObstacleEnabled()
+            ? dynamic_query
+            : nullptr);
     smac_planner_->setCollisionDistance(
-      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ?
-      mode_context_->dynamicGlobalCollisionDistance() : 0.0);
+        mode_context_ && mode_context_->dynamicGlobalObstacleEnabled()
+            ? mode_context_->dynamicGlobalCollisionDistance()
+            : 0.0);
   }
 
   RCLCPP_INFO(
       logger_,
       "[MincoPlanner] Global search dynamic ROG hard mask: enabled=%s "
       "collision_distance=%.3f m; UNKNOWN/frontier cells are excluded.",
-      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ? "true" : "false",
+      mode_context_ && mode_context_->dynamicGlobalObstacleEnabled() ? "true"
+                                                                     : "false",
       mode_context_ ? mode_context_->dynamicGlobalCollisionDistance() : 0.0);
 
   global_path_searcher_ = std::make_unique<GlobalPathSearcher>();
@@ -911,8 +944,7 @@ void MincoPlanner::configure(
   local_path_processor_->configure(lookahead_dist_, minco_config.max_vel,
                                    minco_config.max_acc, traj_goal_tolerance_,
                                    shortcut_peak_cost_slack,
-                                   shortcut_mean_cost_slack,
-                                   logger_, clock_);
+                                   shortcut_mean_cost_slack, logger_, clock_);
 
   safety_checker_ = std::make_unique<TrajectorySafetyChecker>();
   safety_checker_->configure(safety_config, logger_, clock_);
@@ -926,8 +958,7 @@ void MincoPlanner::configure(
               safety_config.footprint_length, safety_config.footprint_width,
               safety_config.footprint_margin, safety_config.sample_dt,
               safety_config.map_timeout, safety_config.future_tolerance,
-              safety_check_horizon_,
-              safety_config.planning_frame.c_str(),
+              safety_check_horizon_, safety_config.planning_frame.c_str(),
               safety_config.rog_frame.c_str());
 
   opt_path_pub_ =
@@ -994,9 +1025,9 @@ void MincoPlanner::configure(
   planner_handle_ = MincoPlanner::Ptr(this, [](MincoPlanner *) {});
 
   // High-level FSM @ 20Hz.
-  fsm_ = std::make_unique<MincoFsm>(
-      planner_handle_, recovery_server_, failed_replan_retry_period_,
-      successful_replan_period_);
+  fsm_ = std::make_unique<MincoFsm>(planner_handle_, recovery_server_,
+                                    failed_replan_retry_period_,
+                                    successful_replan_period_);
   fsm_timer_ = node->create_timer(
       std::chrono::duration<double>(1.0 / 20.0),
       [this]() {
@@ -1340,55 +1371,53 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
   result.successful = true;
 
   const std::string planner_mode_param = name_ + ".planner_mode";
-  const auto is_configure_time_param =
-      [this, &planner_mode_param](const std::string &param_name) {
-        return param_name == planner_mode_param ||
-               param_name == name_ + ".frames.map_frame" ||
-               param_name == name_ + ".frames.rog_frame" ||
-               param_name == name_ + ".frames.physical_base_frame" ||
-               param_name == name_ + ".priormap.use_nav2_global_search" ||
-               param_name == name_ + ".priormap.dynamic_global_obstacle.enable" ||
-               param_name == name_ + ".priormap.dynamic_global_obstacle.collision_distance" ||
-               param_name == name_ + ".priormap.clip_seed_by_rog_boundary" ||
-               param_name == name_ + ".priormap.rog_boundary_margin" ||
-               param_name == name_ + ".priormap.rog_boundary_sample_step" ||
-               param_name ==
-                   name_ + ".priormap.ground_edge_avoidance.enable" ||
-               param_name ==
-                   name_ + ".priormap.ground_edge_avoidance.max_step" ||
-               param_name ==
-                   name_ + ".priormap.ground_edge_avoidance.max_slope_deg" ||
-               param_name ==
-                   name_ + ".priormap.ground_edge_avoidance.clearance_radius" ||
-               param_name == name_ +
-                                 ".priormap.ground_edge_avoidance."
+  const auto is_configure_time_param = [this, &planner_mode_param](
+                                           const std::string &param_name) {
+    return param_name == planner_mode_param ||
+           param_name == name_ + ".frames.map_frame" ||
+           param_name == name_ + ".frames.rog_frame" ||
+           param_name == name_ + ".frames.physical_base_frame" ||
+           param_name == name_ + ".priormap.use_nav2_global_search" ||
+           param_name == name_ + ".priormap.dynamic_global_obstacle.enable" ||
+           param_name ==
+               name_ + ".priormap.dynamic_global_obstacle.collision_distance" ||
+           param_name == name_ + ".priormap.clip_seed_by_rog_boundary" ||
+           param_name == name_ + ".priormap.rog_boundary_margin" ||
+           param_name == name_ + ".priormap.rog_boundary_sample_step" ||
+           param_name == name_ + ".priormap.ground_edge_avoidance.enable" ||
+           param_name == name_ + ".priormap.ground_edge_avoidance.max_step" ||
+           param_name ==
+               name_ + ".priormap.ground_edge_avoidance.max_slope_deg" ||
+           param_name ==
+               name_ + ".priormap.ground_edge_avoidance.clearance_radius" ||
+           param_name == name_ + ".priormap.ground_edge_avoidance."
                                  "lethal_clearance_radius" ||
-               param_name ==
-                   name_ + ".priormap.ground_edge_avoidance.clearance_cost" ||
-               param_name == name_ + ".exploration.boundary_margin" ||
-               param_name == name_ + ".exploration.boundary_sample_step" ||
-               param_name == name_ + ".exploration.unknown_as_occupied" ||
-               param_name == name_ + ".exploration.prefer_goal_direction" ||
-               param_name == name_ + ".local_path.shortcut_peak_cost_slack" ||
-               param_name == name_ + ".local_path.shortcut_mean_cost_slack" ||
-               param_name == name_ + ".minco_optimizer.safe_dist" ||
-               param_name == name_ + ".minco_optimizer.collision_dist" ||
-               param_name == name_ + ".safety.footprint_length" ||
-               param_name == name_ + ".safety.footprint_width" ||
-               param_name == name_ + ".safety.footprint_margin" ||
-               param_name == name_ + ".safety.sample_dt" ||
-               param_name == name_ + ".safety.map_timeout" ||
-               param_name == name_ + ".safety.future_tolerance" ||
-               param_name == name_ + ".safety.check_horizon" ||
-               param_name ==
-                   name_ + ".safety.collision_cache_reuse_max_duration" ||
-               param_name == name_ + ".request_lease_timeout" ||
-               param_name ==
-                   name_ + ".minco_optimizer.failed_replan_retry_period" ||
-               param_name ==
-                   name_ + ".minco_optimizer.successful_replan_period" ||
-               param_name == name_ + ".minco_optimizer.time_allocation_iters";
-      };
+           param_name ==
+               name_ + ".priormap.ground_edge_avoidance.clearance_cost" ||
+           param_name == name_ + ".exploration.boundary_margin" ||
+           param_name == name_ + ".exploration.boundary_sample_step" ||
+           param_name == name_ + ".exploration.unknown_as_occupied" ||
+           param_name == name_ + ".exploration.prefer_goal_direction" ||
+           param_name == name_ + ".local_path.shortcut_peak_cost_slack" ||
+           param_name == name_ + ".local_path.shortcut_mean_cost_slack" ||
+           param_name == name_ + ".minco_optimizer.safe_dist" ||
+           param_name == name_ + ".minco_optimizer.collision_dist" ||
+           param_name ==
+               name_ + ".minco_optimizer.terminal_velocity_ratio" ||
+           param_name == name_ + ".safety.footprint_length" ||
+           param_name == name_ + ".safety.footprint_width" ||
+           param_name == name_ + ".safety.footprint_margin" ||
+           param_name == name_ + ".safety.sample_dt" ||
+           param_name == name_ + ".safety.map_timeout" ||
+           param_name == name_ + ".safety.future_tolerance" ||
+           param_name == name_ + ".safety.check_horizon" ||
+           param_name == name_ + ".safety.collision_cache_reuse_max_duration" ||
+           param_name == name_ + ".request_lease_timeout" ||
+           param_name ==
+               name_ + ".minco_optimizer.failed_replan_retry_period" ||
+           param_name == name_ + ".minco_optimizer.successful_replan_period" ||
+           param_name == name_ + ".minco_optimizer.time_allocation_iters";
+  };
   const std::string max_vel_param = name_ + ".minco_optimizer.max_velocity";
   const std::string max_acc_param = name_ + ".minco_optimizer.max_acceleration";
   const std::string penalty_pos_param =
@@ -1711,6 +1740,13 @@ bool MincoPlanner::PlanGlobalPath(const geometry_msgs::msg::PoseStamped &start,
   return true;
 }
 
+bool MincoPlanner::hasGlobalPath(uint64_t expected_session)
+{
+  std::lock_guard<std::mutex> lock(path_mutex_);
+  return latest_global_path_session_ == expected_session &&
+         latest_global_path_.size() >= 2U;
+}
+
 bool MincoPlanner::ReplanLocal(
     const geometry_msgs::msg::PoseStamped &current_pose,
     uint64_t expected_session) {
@@ -1736,6 +1772,8 @@ bool MincoPlanner::ReplanLocal(
       success = false;
       effective_reason = "SESSION_INVALIDATED";
     }
+    last_local_replan_optimizer_failure_.store(
+      !success && effective_reason == "OPTIMIZER_FAILED");
     // ReplanLocal is a public entry point, so fail-safe behavior must not
     // depend on every caller remembering to recheck the cached trajectory.
     if (!success) {
@@ -1914,8 +1952,15 @@ bool MincoPlanner::ReplanLocal(
           minco_config.turn_angle_deadzone, minco_config.turn_angle_saturation,
           minco_config.min_turn_vel, minco_config.decay_power);
     }
-    const double v_cmd = std::min(
-        {minco_config.max_vel, v_max_kinematic, dist_to_goal, local_end_vmax});
+    // A quintic with a terminal boundary exactly at the hard velocity limit
+    // generally develops a larger interior peak. Uniform time stretching
+    // cannot remove that peak because it preserves the terminal PVA. Keep a
+    // configurable boundary margin; the rolling horizon may still cruise at
+    // max_vel away from its artificial endpoint.
+    const double terminal_velocity_limit =
+        minco_config.max_vel * minco_config.terminal_velocity_ratio;
+    const double v_cmd = std::min({terminal_velocity_limit, v_max_kinematic,
+                                   dist_to_goal, local_end_vmax});
     end_state.col(1) = tangent * v_cmd;
     end_state.col(2).setZero();
   } else {
@@ -1974,23 +2019,28 @@ bool MincoPlanner::ReplanLocal(
     const double first_segment_length = first_segment.head<2>().norm();
     const double start_speed = start_state.col(1).head<2>().norm();
     const double direction_cosine =
-      (first_segment_length > 1.0e-6 && start_speed > 1.0e-6)
-        ? start_state.col(1).head<2>().dot(first_segment.head<2>()) /
-          (start_speed * first_segment_length)
-        : 1.0;
+        (first_segment_length > 1.0e-6 && start_speed > 1.0e-6)
+            ? start_state.col(1).head<2>().dot(first_segment.head<2>()) /
+                  (start_speed * first_segment_length)
+            : 1.0;
     RCLCPP_WARN_THROTTLE(
-      logger_, *clock_, 1000,
-      "[MincoPlanner] MINCO optimizer failed: ret=%d iterations=%d query_failures=%llu "
-      "state=%s waypoints=%zu stop_at_end=%s start=(%.3f,%.3f) speed=%.3f "
-      "first_segment=%.3f velocity_direction_cos=%.3f peak_v=%.3f peak_a=%.3f "
-      "retime_iters=%d.",
-      minco_optimizer_->lastReturnCode(), minco_optimizer_->lastIterationCount(),
-      static_cast<unsigned long long>(minco_optimizer_->lastQueryFailureCount()),
-      state == PlanningState::HOT_START ? "HOT" : "COLD", sparse_path.size(),
-      stop_at_local_end ? "true" : "false", start_state(0, 0), start_state(1, 0),
-      start_speed, first_segment_length, direction_cosine,
-      minco_optimizer_->lastPeakVelocity(), minco_optimizer_->lastPeakAcceleration(),
-      minco_optimizer_->lastTimeAllocationIterations());
+        logger_, *clock_, 1000,
+        "[MincoPlanner] MINCO optimizer failed: ret=%d iterations=%d "
+        "query_failures=%llu "
+        "state=%s waypoints=%zu stop_at_end=%s start=(%.3f,%.3f) speed=%.3f "
+        "first_segment=%.3f velocity_direction_cos=%.3f peak_v=%.3f "
+        "peak_a=%.3f "
+        "retime_iters=%d.",
+        minco_optimizer_->lastReturnCode(),
+        minco_optimizer_->lastIterationCount(),
+        static_cast<unsigned long long>(
+            minco_optimizer_->lastQueryFailureCount()),
+        state == PlanningState::HOT_START ? "HOT" : "COLD", sparse_path.size(),
+        stop_at_local_end ? "true" : "false", start_state(0, 0),
+        start_state(1, 0), start_speed, first_segment_length, direction_cosine,
+        minco_optimizer_->lastPeakVelocity(),
+        minco_optimizer_->lastPeakAcceleration(),
+        minco_optimizer_->lastTimeAllocationIterations());
 
     if (visualizer_) {
       visualizer_->clearCandidateTrajectory("OPTIMIZER_FAILED");
@@ -2614,7 +2664,8 @@ bool MincoPlanner::checkCollision(const traj_opt::Trajectory &position_traj,
   const double position_duration = position_traj.getTotalDuration();
   const double yaw_duration = yaw_traj.getTotalDuration();
   if (!(std::isfinite(position_duration) && position_duration > 1.0e-6) ||
-      !(std::isfinite(yaw_duration) && yaw_duration + 1.0e-6 >= position_duration)) {
+      !(std::isfinite(yaw_duration) &&
+        yaw_duration + 1.0e-6 >= position_duration)) {
     return false;
   }
 
@@ -2682,7 +2733,8 @@ bool MincoPlanner::checkCollisionFromTime(
   const double position_duration = position_traj.getTotalDuration();
   const double yaw_duration = yaw_traj.getTotalDuration();
   if (!(std::isfinite(position_duration) && position_duration > 1.0e-6) ||
-      !(std::isfinite(yaw_duration) && yaw_duration + 1.0e-6 >= position_duration) ||
+      !(std::isfinite(yaw_duration) &&
+        yaw_duration + 1.0e-6 >= position_duration) ||
       !std::isfinite(start_time)) {
     return false;
   }
@@ -2698,8 +2750,8 @@ bool MincoPlanner::checkCollisionFromTime(
     return safety_checker_->checkTrajectory(position_traj, yaw_traj);
   }
 
-  return safety_checker_->checkTrajectoryFromTime(
-      position_traj, yaw_traj, first_time, check_end);
+  return safety_checker_->checkTrajectoryFromTime(position_traj, yaw_traj,
+                                                  first_time, check_end);
 }
 
 bool MincoPlanner::evaluateCachedTrajectorySafety(
@@ -2819,21 +2871,20 @@ bool MincoPlanner::republishSafeCachedTrajectory(
     return false;
   }
 
-  const std::string_view reason = rejection_reason ? rejection_reason : "UNKNOWN";
+  const std::string_view reason =
+      rejection_reason ? rejection_reason : "UNKNOWN";
   const double remaining_duration = position_duration - elapsed;
   if (!cached_trajectory_policy::reuseDurationAllowed(
-          reason, remaining_duration,
-          collision_cache_reuse_max_duration_)) {
+          reason, remaining_duration, collision_cache_reuse_max_duration_)) {
     geometry_msgs::msg::PoseStamped stop_pose = fallback_stop_pose;
     (void)getRobotPose(stop_pose);
     publishEmergencyStopImpl(stop_pose, generation, true);
     RCLCPP_WARN_THROTTLE(
         logger_, *clock_, 1000,
         "[MincoPlanner] New trajectory rejected (%s) with %.2f s cached "
-        "motion remaining; collision-cache limit is %.2f s, so BLOCK was "
+        "motion remaining; cached-reuse limit is %.2f s, so BLOCK was "
         "published instead of extending the old trajectory.",
-        reason.data(), remaining_duration,
-        collision_cache_reuse_max_duration_);
+        reason.data(), remaining_duration, collision_cache_reuse_max_duration_);
     return false;
   }
 

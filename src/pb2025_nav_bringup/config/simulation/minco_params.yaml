@@ -416,6 +416,9 @@ planner_server:
             ground_support_tolerance: 0.08
             transform_timeout: 0.75
             transform_future_tolerance: 0.20
+            # Small roll/pitch noise from the simulated localization TF should
+            # not invalidate an otherwise usable surveyed ground map.
+            horizontal_tolerance: 0.01
         field:
           enable: true
           inflation_radius: 0.0
@@ -503,6 +506,7 @@ planner_server:
         lookahead_dist: 1.5
         max_velocity: 1.0
         max_acceleration: 1.0
+        terminal_velocity_ratio: 0.85
         max_yaw_dot: 1.2
         turn_angle_deadzone: 0.10
         turn_angle_saturation: 0.80

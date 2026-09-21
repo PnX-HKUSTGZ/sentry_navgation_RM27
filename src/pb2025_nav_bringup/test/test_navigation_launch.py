@@ -461,10 +461,8 @@ def test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps():
                 assert 0.25 <= inflation["inflation_radius"] <= 1.0
                 assert inflation["cost_scaling_factor"] > 0.0
 
-        smac = profile["planner_server"]["ros__parameters"]["MincoPlanner"][
-            "smac_2d"
-        ]
-        expected_cost_penalty = 2.0 if deployment == "simulation" else 6.0
+        smac = profile["planner_server"]["ros__parameters"]["MincoPlanner"]["smac_2d"]
+        expected_cost_penalty = 2.0 if deployment == "simulation" else 8.0
         assert smac["cost_penalty"] == pytest.approx(expected_cost_penalty)
         assert smac["use_quadratic_cost_penalty"] is False
         local_path = profile["planner_server"]["ros__parameters"]["MincoPlanner"][
@@ -556,8 +554,12 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
     real_mpc = reality["controller_server"]["ros__parameters"]["MincoMpc"]
 
     assert sim_optimizer["max_velocity"] == pytest.approx(1.0)
-    assert real_optimizer["max_velocity"] == pytest.approx(0.7)
-    assert real_optimizer["max_velocity"] == pytest.approx(real_mpc["max_planar_speed"])
+    assert real_optimizer["max_velocity"] == pytest.approx(0.8)
+    assert real_optimizer["max_velocity"] <= real_mpc["max_planar_speed"]
+    assert real_optimizer["terminal_velocity_ratio"] == pytest.approx(0.80)
+    assert sim_optimizer["terminal_velocity_ratio"] == pytest.approx(0.85)
+    assert 0.0 < real_optimizer["terminal_velocity_ratio"] < 1.0
+    assert 0.0 < sim_optimizer["terminal_velocity_ratio"] < 1.0
     assert real_mpc["slope_speed_limit"] < real_mpc["max_planar_speed"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vx_max"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vy_max"]
@@ -739,8 +741,7 @@ def test_rviz_keeps_heavy_scan_optional_and_minco_outputs_visible():
     inflated_costs = next(
         display
         for display in global_planner_group["Displays"]
-        if display.get("Name")
-        == "Final Inflation + Obstacle Cores (Point Cloud)"
+        if display.get("Name") == "Final Inflation + Obstacle Cores (Point Cloud)"
     )
     dynamic_inflation = next(
         display

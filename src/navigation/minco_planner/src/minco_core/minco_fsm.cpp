@@ -34,6 +34,7 @@ void MincoFsm::cancelGoal()
   clearGenerateRetry();
   has_follow_replan_deadline_ = false;
   follow_replan_retry_deferred_ = false;
+  force_global_search_ = true;
   has_goal_ = false;
   goal_session_ = 0U;
   if (recovery_server_) {
@@ -61,6 +62,7 @@ void MincoFsm::callMainFsmOnce()
     clearGenerateRetry();
     has_follow_replan_deadline_ = false;
     follow_replan_retry_deferred_ = false;
+    force_global_search_ = true;
     has_goal_ = false;
     goal_session_ = 0U;
     recovery_server_->clearMissionGoal();
@@ -80,6 +82,7 @@ void MincoFsm::callMainFsmOnce()
       goal_ = new_goal;
       goal_session_ = new_goal_session;
       has_goal_ = true;
+      force_global_search_ = true;
       recovery_server_->setMissionGoal(new_goal);
       changeState("NewGoal", State::GENERATE_TRAJ);
     }
@@ -122,6 +125,7 @@ void MincoFsm::callMainFsmOnce()
     auto handle_generate_replan_failure = [this, &current_pose](
                                             const char * escape_reason, const char * emer_reason) {
       if (!planner_->ensureTrajectorySafe(current_pose)) {
+        force_global_search_ = true;
         changeState("UNSAFE_OLD_TRAJECTORY_STOP", State::GENERATE_TRAJ);
         return;
       }
@@ -144,6 +148,7 @@ void MincoFsm::callMainFsmOnce()
       if (decision == RecoverServer::RecoveryDecision::ENTER_EMER_STOP) {
         // Disabled to prevent zero-velocity deadlock
         // changeState(emer_reason, State::EMER_STOP);
+        force_global_search_ = true;
         changeState(emer_reason, State::GENERATE_TRAJ);
         return;
       }
@@ -156,16 +161,23 @@ void MincoFsm::callMainFsmOnce()
       // }
     };
 
-    if (!planner_->PlanGlobalPath(current_pose, goal_, goal_session_)) {
-      handle_generate_replan_failure(
-        "GLOBAL_SEARCH_FAIL_TRIGGER_RECOVERING", "GLOBAL_SEARCH_FAIL_RECOVERY_FAIL");
-      if (state_ == State::GENERATE_TRAJ) {
-        deferGenerateRetry();
+    if (force_global_search_ || !planner_->hasGlobalPath(goal_session_)) {
+      if (!planner_->PlanGlobalPath(current_pose, goal_, goal_session_)) {
+        force_global_search_ = true;
+        handle_generate_replan_failure(
+          "GLOBAL_SEARCH_FAIL_TRIGGER_RECOVERING", "GLOBAL_SEARCH_FAIL_RECOVERY_FAIL");
+        if (state_ == State::GENERATE_TRAJ) {
+          deferGenerateRetry();
+        }
+        return;
       }
-      return;
+      force_global_search_ = false;
     }
     if (!planner_->ReplanLocal(current_pose, goal_session_)) {
       Eigen::Vector3d cur_p(current_pose.pose.position.x, current_pose.pose.position.y, 0.0);
+      if (!planner_->lastLocalReplanWasOptimizerFailure()) {
+        force_global_search_ = true;
+      }
       // double dist = planner_->getEsdfDistance(cur_p);
       // if (dist < 0.25) {
       handle_generate_replan_failure("GEN_STUCK_TRIGGER_RECOVERING", "GENERATE_RECOVERY_FAIL");
@@ -239,6 +251,8 @@ void MincoFsm::callMainFsmOnce()
       follow_replan_not_before_ = steady_now + failed_replan_retry_period_;
       has_follow_replan_deadline_ = true;
       follow_replan_retry_deferred_ = true;
+      const bool optimizer_failure =
+        planner_->lastLocalReplanWasOptimizerFailure();
       // Reuse only after checking the robot's actual footprint, its swept join
       // to the controller's spatial pickup point, and the remaining trajectory
       // through the endpoint. An unsafe cache has already emitted BLOCK here.
@@ -247,8 +261,17 @@ void MincoFsm::callMainFsmOnce()
         // obstructed, retrying only ReplanLocal() can never discover another
         // homotopy. Regenerate the global path so the latest ROG costmap
         // overlay and dynamic hard mask can route around the obstruction.
+        force_global_search_ = true;
         clearGenerateRetry();
         changeState("UNSAFE_LOCAL_REPLAN_GLOBAL_SEARCH", State::GENERATE_TRAJ);
+        return;
+      }
+      if (!optimizer_failure) {
+        // A collision/invalid seed means the cached homotopy is no longer a
+        // useful local route, even if its short certified remainder is safe.
+        force_global_search_ = true;
+        clearGenerateRetry();
+        changeState("UNSAFE_LOCAL_SEED_GLOBAL_SEARCH", State::GENERATE_TRAJ);
         return;
       }
       if (!planner_->isTrajectoryTimeExpired(now_s)) {
@@ -262,6 +285,7 @@ void MincoFsm::callMainFsmOnce()
       // 2. 诊断为安全 (ESDF >= 0.25m)：纯粹前方路障，立即绕路
       if (dist >= 0.25) {
         // recovery_server_->onReplanSuccess();  // 清空失败计数
+        force_global_search_ = true;
         changeState("PATH_BLOCKED_DETOUR", State::GENERATE_TRAJ);
         return;
       }
@@ -285,6 +309,7 @@ void MincoFsm::callMainFsmOnce()
       if (decision == RecoverServer::RecoveryDecision::ENTER_EMER_STOP) {
         // Disabled to prevent zero-velocity deadlock
         // changeState("FOLLOW_REPLAN_RECOVERY", State::EMER_STOP);
+        force_global_search_ = true;
         changeState("FOLLOW_REPLAN_RECOVERY", State::GENERATE_TRAJ);
         return;
       }
@@ -319,6 +344,7 @@ void MincoFsm::callMainFsmOnce()
     // 条件1: 成功挤出泥坑 (ESDF 距离恢复安全)
     if (dist > 0.40) {
       recovery_server_->finishRecovery(true, now_s);
+      force_global_search_ = true;
       changeState("ESCAPE_SUCCESS", State::GENERATE_TRAJ);
       return;
     }
@@ -328,6 +354,7 @@ void MincoFsm::callMainFsmOnce()
       recovery_server_->finishRecovery(false, now_s);
       // Disabled to prevent zero-velocity deadlock
       // changeState("ESCAPE_TIMEOUT", State::EMER_STOP);
+      force_global_search_ = true;
       changeState("ESCAPE_TIMEOUT", State::GENERATE_TRAJ);
       return;
     }

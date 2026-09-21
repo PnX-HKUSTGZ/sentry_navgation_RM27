@@ -355,15 +355,30 @@ std::vector<Eigen::Vector3d> LocalPathProcessor::extractLocalPath(
     return local_segment;
   }
 
-  size_t start_idx = 0;
+  // Choose the closest point on the polyline rather than the closest stored
+  // vertex. A sparse corner or nearby branch vertex can be closer in
+  // Euclidean distance than the segment the robot is actually approaching.
+  size_t nearest_segment = 0U;
+  double nearest_segment_t = 0.0;
   double min_dist_sq = std::numeric_limits<double>::max();
-  for (size_t i = 0; i < global_path.size(); ++i) {
-    const auto & pt = global_path[i].pose.position;
-    double dist_sq =
-      (cur_pos.x() - pt.x) * (cur_pos.x() - pt.x) + (cur_pos.y() - pt.y) * (cur_pos.y() - pt.y);
+  for (size_t i = 0U; i + 1U < global_path.size(); ++i) {
+    const auto & from = global_path[i].pose.position;
+    const auto & to = global_path[i + 1U].pose.position;
+    const Eigen::Vector2d segment(to.x - from.x, to.y - from.y);
+    const double segment_sq = segment.squaredNorm();
+    const Eigen::Vector2d offset(cur_pos.x() - from.x, cur_pos.y() - from.y);
+    const double ratio = segment_sq > 1.0e-12
+      ? std::clamp(offset.dot(segment) / segment_sq, 0.0, 1.0)
+      : 0.0;
+    const Eigen::Vector2d closest =
+      Eigen::Vector2d(from.x, from.y) + ratio * segment;
+    const double dist_sq =
+      (cur_pos.x() - closest.x()) * (cur_pos.x() - closest.x()) +
+      (cur_pos.y() - closest.y()) * (cur_pos.y() - closest.y());
     if (dist_sq < min_dist_sq) {
       min_dist_sq = dist_sq;
-      start_idx = i;
+      nearest_segment = i;
+      nearest_segment_t = ratio;
     }
   }
 
@@ -374,22 +389,11 @@ std::vector<Eigen::Vector3d> LocalPathProcessor::extractLocalPath(
   current.z() = 0.0;
   local_segment.push_back(current);
 
-  size_t first_forward_idx = start_idx + 1U;
-  Eigen::Vector2d tangent = Eigen::Vector2d::Zero();
-  if (start_idx + 1U < global_path.size()) {
-    const auto & here = global_path[start_idx].pose.position;
-    const auto & next = global_path[start_idx + 1U].pose.position;
-    tangent = Eigen::Vector2d(next.x - here.x, next.y - here.y);
-  } else if (start_idx > 0U) {
-    const auto & previous = global_path[start_idx - 1U].pose.position;
-    const auto & here = global_path[start_idx].pose.position;
-    tangent = Eigen::Vector2d(here.x - previous.x, here.y - previous.y);
-  }
-  const auto & nearest = global_path[start_idx].pose.position;
-  const Eigen::Vector2d to_nearest(nearest.x - current.x(), nearest.y - current.y());
-  if (tangent.squaredNorm() > 1e-12 && to_nearest.dot(tangent) > 1e-9) {
-    first_forward_idx = start_idx;
-  }
+  // Retain the segment's starting vertex only when the projection is at its
+  // beginning; otherwise continue at the segment endpoint. This keeps the
+  // existing rolling-horizon behavior while avoiding branch-vertex jumps.
+  const size_t first_forward_idx = nearest_segment +
+    (nearest_segment_t <= 1.0e-6 ? 0U : 1U);
 
   double accum_dist = 0.0;
   for (size_t i = first_forward_idx; i < global_path.size(); ++i) {

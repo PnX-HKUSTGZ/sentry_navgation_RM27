@@ -475,6 +475,7 @@ public:
     ground_support_tolerance = 0.08;
     prior_map_transform_timeout = 0.50;
     prior_map_transform_future_tolerance = 0.20;
+    prior_map_horizontal_tolerance = 0.01;
     load("projection.prior_map.enable", prior_map_enable);
     load("projection.prior_map.yaml_path", prior_map_yaml_path);
     load("projection.prior_map.pgm_path", prior_map_pgm_path);
@@ -487,6 +488,8 @@ public:
     load("projection.prior_map.transform_timeout", prior_map_transform_timeout);
     load("projection.prior_map.transform_future_tolerance",
          prior_map_transform_future_tolerance);
+    load("projection.prior_map.horizontal_tolerance",
+         prior_map_horizontal_tolerance);
     if (prior_map_enable && prior_map_yaml_path.empty()) {
       throw std::invalid_argument("projection.prior_map.yaml_path must not be "
                                   "empty when prior map fusion is enabled.");
@@ -516,6 +519,12 @@ public:
         ground_support_tolerance < 0.0) {
       throw std::invalid_argument(
           "projection.prior_map.ground_support_tolerance must be finite and "
+          "non-negative.");
+    }
+    if (!std::isfinite(prior_map_horizontal_tolerance) ||
+        prior_map_horizontal_tolerance < 0.0) {
+      throw std::invalid_argument(
+          "projection.prior_map.horizontal_tolerance must be finite and "
           "non-negative.");
     }
     if (prior_map_enable &&
@@ -881,6 +890,9 @@ public:
   double ground_support_tolerance{0.08};
   double prior_map_transform_timeout{0.50};
   double prior_map_transform_future_tolerance{0.20};
+  // Roll/pitch noise in the map-to-ROG TF is expected on a moving platform.
+  // This tolerance is in radians and only gates prior-map ground support.
+  double prior_map_horizontal_tolerance{0.01};
 
   bool cloud_filter_en{false};
   double cloud_filter_z_offset{0.0};

@@ -44,11 +44,16 @@ public:
   bool PlanGlobalPath(const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal,
     uint64_t expected_session);
+  bool hasGlobalPath(uint64_t expected_session);
 
   void setMap(const std::shared_ptr<rog_map::MapQueryInterface> & map);
 
   bool ReplanLocal(
     const geometry_msgs::msg::PoseStamped & current_pose, uint64_t expected_session);
+  bool lastLocalReplanWasOptimizerFailure() const
+  {
+    return last_local_replan_optimizer_failure_.load();
+  }
   bool makePlan(const geometry_msgs::msg::Pose & start,
     const geometry_msgs::msg::Pose & goal,
     double tolerance,
@@ -286,6 +291,7 @@ private:
   bool has_active_goal_{false};
   bool has_latest_odom_{false};
   std::atomic_bool is_traj_safe_{true};
+  std::atomic_bool last_local_replan_optimizer_failure_{false};
   uint64_t trajectory_generation_{0};
   uint64_t pending_goal_session_{0};
   uint64_t active_goal_session_{0};

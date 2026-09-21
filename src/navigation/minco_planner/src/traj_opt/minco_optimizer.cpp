@@ -137,6 +137,11 @@ void MincoOptimizer::validateConfig(const Config & cfg)
       cfg.max_acc > 0.0)) {
     throw std::invalid_argument("MincoOptimizer velocity and acceleration limits must be finite and positive");
   }
+  if (!std::isfinite(cfg.terminal_velocity_ratio) ||
+      cfg.terminal_velocity_ratio <= 0.0 || cfg.terminal_velocity_ratio > 1.0) {
+    throw std::invalid_argument(
+      "MincoOptimizer terminal_velocity_ratio must be finite and in (0, 1]");
+  }
 }
 
 bool MincoOptimizer::enforceDynamicFeasibility(geometry_utils::Trajectory & trajectory)

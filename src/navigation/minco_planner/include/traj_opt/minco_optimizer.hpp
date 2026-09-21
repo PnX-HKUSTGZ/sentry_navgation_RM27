@@ -37,6 +37,7 @@ public:
     double safe_dist{0.3};
     double max_vel{5.0};
     double max_acc{5.0};
+    double terminal_velocity_ratio{0.8};
     double turn_angle_deadzone{0.174};
     double turn_angle_saturation{1.57};
     double min_turn_vel{1.0};
