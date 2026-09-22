@@ -1,6 +1,10 @@
 # RM27 ROG-map + MINCO + MPC 导航架构
 
-本文只描述当前工作树中已经实现的接口、权威关系和安全边界。调试命令、验收顺序和调参方法见
+当前只支持 `navigation_mode:=legacy` 和 `navigation_mode:=minco`。下文历史章节仍保留旧
+`minco_shadow` 的设计记录；该模式、sidecar 和相关 BT 插件已经删除，不能再按旧命令运行。
+MINCO 实车只加载 `config/reality/minco_params.yaml`，仿真只加载
+`config/simulation/minco_params.yaml`；legacy 分别加载同目录的 `nav2_params.yaml`。
+调试命令、验收顺序和调参方法见
 [ROG-map + MINCO 调试与调参指南](./rog_minco_tuning_debug_guide.md)。
 
 > 重要结论：当前实现是“3D 占据感知 + 可信地面高程约束的垂直柱通行判断 + 2D 距离场 +
@@ -22,16 +26,15 @@
 
 只发布地图、轨迹或诊断话题，但不进入控制输出链的组件，不是权威组件。
 
-### 1.2 三种启动模式
+### 1.2 两种启动模式
 
-`navigation_mode` 只接受 `legacy`、`minco_shadow`、`minco`。它们是启动时选择的三个互斥
+`navigation_mode` 只接受 `legacy`、`minco`。它们是启动时选择的两个互斥
 profile，不是运行中的状态机。
 
-| 模式 | 主 planner | 主 controller | 动态障碍权威 | terrain 默认状态 | 旁路 MINCO | 最终控制权 |
+| 模式 | 主 planner | 主 controller | 动态障碍权威 | terrain 默认状态 | 最终控制权 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `legacy` | `GridBased` | `FollowPath` | `terrain_analysis -> IntensityVoxelLayer` | 开 | 无 | 旧链 |
-| `minco_shadow` | `GridBased` | `FollowPath` | `terrain_analysis -> IntensityVoxelLayer` | 开 | 独立 `/minco_shadow/planner_server` | 旧链 |
-| `minco` | BT 指定 `MincoPlanner` | BT 指定 `MincoMpc` | ROG 融合层和 MINCO 安全门 | 关 | 无 | 新链 |
+| `legacy` | `GridBased` | `FollowPath` | `terrain_analysis -> IntensityVoxelLayer` | 开 | 旧链 |
+| `minco` | BT 指定 `MincoPlanner` | BT 指定 `MincoMpc` | ROG 融合层和 MINCO 安全门 | 关 | 新链 |
 
 active `minco` 参数只把新插件注册到主 server：
 
@@ -40,10 +43,10 @@ planner_plugins: ["MincoPlanner"]
 controller_plugins: ["MincoMpc"]
 ~~~
 
-非 composition 的 active `minco` 和独立 shadow sidecar 都使用
+非 composition 的 active `minco` 使用
 `minco_planner/planner_server_mt`，由 8 线程 executor 调度 Nav2、ROG cloud/odom/map-update、
-可视化和 MINCO timer 回调；legacy 与 shadow 的权威主栈仍使用 Nav2 原生 `planner_server`。
-composition 模式的权威主栈使用 `component_container_mt`，shadow sidecar 仍保持独立进程。
+可视化和 MINCO timer 回调；legacy 使用 Nav2 原生 `planner_server`。
+composition 模式的权威主栈使用 `component_container_mt`。
 MINCO odom、FSM、安全检查、lease 和轨迹可视化各自使用独立 callback group；ROG odom、cloud、
 map-update 和可视化也各自独立。ROG 地图写入与体素可视化采样仍由同一地图互斥锁保护，但有地图
 更新等待或正在执行时，本轮可视化直接跳过；可视化 ROS publish 和体素点云序列化在解锁后执行。
@@ -442,10 +445,10 @@ Gazebo 保留了每条射线的 raster 行列和 `ring`，但无回波方向的 
 
 真值模式用于先隔离感知/规划问题，再引入 Point-LIO 漂移、PCD 对齐和重定位误差。
 
-### 5.4 Point-LIO 输入覆盖层
+### 5.4 Point-LIO 输入配置
 
-仿真基础 `minco_params.yaml` 默认是真值输入。仅当
-`use_ground_truth_odom:=false` 时，`minco_pointlio_params.yaml` 覆盖：
+仿真 `minco_params.yaml` 默认是真值输入。仅当 `use_ground_truth_odom:=false` 时，启动文件
+从同一份 YAML 的 `minco_input_profiles.point_lio` 生成最终参数文件，切换：
 
 ~~~yaml
 frames.rog_frame: camera_init
@@ -1567,24 +1570,17 @@ hash 位图和 touched-ID 列表合并 miss，保持“每帧每体素一次 mis
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/pb2025_nav_bringup/launch/navigation_launch.py` | 三模式解析、参数 overlay、terrain 开关、shadow sidecar 与 lifecycle |
+| `src/pb2025_nav_bringup/launch/navigation_launch.py` | 两模式解析、单文件参数选择、仿真 Point-LIO 输入切换与 terrain 开关 |
 | `src/pb2025_nav_bringup/launch/bringup_launch.py` | localization/navigation 组合及 SLAM 模式约束 |
 | `src/pb2025_nav_bringup/launch/rm_navigation_reality_launch.py` | 实车入口、map/PCD/模式参数 |
 | `src/pb2025_nav_bringup/launch/rm_navigation_simulation_launch.py` | 仿真定位选择、PCD 前置检查、真值 localizer |
 | `src/pb2025_nav_bringup/config/reality/nav2_params.yaml` | 实车 legacy 基线 |
 | `src/pb2025_nav_bringup/config/simulation/nav2_params.yaml` | 仿真 legacy 基线 |
-| `src/pb2025_nav_bringup/config/reality/minco_params.yaml` | 实车 active MINCO/ROG/MPC overlay |
-| `src/pb2025_nav_bringup/config/simulation/minco_params.yaml` | 仿真真值 active overlay |
-| `src/pb2025_nav_bringup/config/simulation/minco_pointlio_params.yaml` | 仿真 Point-LIO 输入 frame/topic 覆盖 |
-| `src/pb2025_nav_bringup/config/*/minco_shadow_params.yaml` | shadow 主栈保持 legacy 的 BT overlay |
-| `src/pb2025_nav_bringup/config/*/minco_shadow_sidecar_params.yaml` | 独立 sidecar 最终覆盖 |
+| `src/pb2025_nav_bringup/config/reality/minco_params.yaml` | 实车完整 MINCO/ROG/MPC 参数 |
+| `src/pb2025_nav_bringup/config/simulation/minco_params.yaml` | 仿真完整 MINCO 参数及 Point-LIO 输入选项 |
 | `src/pb2025_nav_bringup/behavior_trees/navigate_to_pose_w_minco_replanning.xml` | active 单目标 BT，固定 planner/controller ID |
 | `src/pb2025_nav_bringup/behavior_trees/navigate_through_poses_w_minco_replanning.xml` | active 多目标防御性 fail-closed BT；当前 navigator 未加载 |
-| `src/pb2025_nav_bringup/behavior_trees/navigate_to_pose_w_minco_shadow.xml` | shadow 单目标旁路后运行 legacy |
-| `src/pb2025_nav_bringup/behavior_trees/navigate_through_poses_w_minco_shadow.xml` | shadow 多目标纯 legacy 执行，不派发 MINCO 对照 |
-| `src/pb2025_nav_bringup/src/minco_shadow_goal_relay.cpp` | 非阻塞 action relay、accepted-cache、generation 与 lifecycle 重派 |
-| `src/pb2025_nav_bringup/test/test_navigation_launch.py` | 模式/overlay launch 测试 |
-| `src/pb2025_nav_bringup/test/test_minco_shadow_goal_relay.cpp` | shadow relay 行为测试 |
+| `src/pb2025_nav_bringup/test/test_navigation_launch.py` | 两模式/单文件 launch 测试 |
 
 ### 13.2 ROG-map
 

@@ -30,6 +30,7 @@ BRINGUP_DIR = Path(__file__).resolve().parents[1]
 LAUNCH_FILE = BRINGUP_DIR / "launch" / "navigation_launch.py"
 REALITY_LAUNCH_FILE = BRINGUP_DIR / "launch" / "rm_navigation_reality_launch.py"
 SIMULATION_LAUNCH_FILE = BRINGUP_DIR / "launch" / "rm_navigation_simulation_launch.py"
+BRINGUP_LAUNCH_FILE = BRINGUP_DIR / "launch" / "bringup_launch.py"
 SLAM_LAUNCH_FILE = BRINGUP_DIR / "launch" / "slam_launch.py"
 RMUC2026_MAP = BRINGUP_DIR / "map" / "simulation" / "RMUC2026.yaml"
 RMUC2026_ELEVATION_GENERATOR = BRINGUP_DIR / "tools" / "generate_rmuc2026_elevation.py"
@@ -375,7 +376,7 @@ def test_minco_rejects_missing_prior_map():
     module = load_navigation_launch()
     context = make_context("simulation", "minco", "/does/not/exist.yaml")
 
-    with pytest.raises(RuntimeError, match="require map"):
+    with pytest.raises(RuntimeError, match="requires map"):
         module._configure_navigation_mode(context, str(BRINGUP_DIR))
 
 
@@ -383,7 +384,6 @@ def test_minco_rejects_missing_prior_map():
     ("mode", "expected_package", "expected_executable"),
     [
         ("legacy", "nav2_planner", "planner_server"),
-        ("minco_shadow", "nav2_planner", "planner_server"),
         ("minco", "minco_planner", "planner_server_mt"),
     ],
 )
@@ -411,8 +411,181 @@ def test_legacy_does_not_require_prior_map_file():
 
     execute_configuration(module, context)
 
-    assert context.launch_configurations["start_minco_shadow"] == "false"
+    assert context.launch_configurations["selected_navigation_params_file"] == str(
+        BRINGUP_DIR / "config" / "simulation" / "nav2_params.yaml"
+    )
     assert context.launch_configurations["resolved_enable_legacy_terrain"] == "true"
+
+
+def test_removed_shadow_mode_is_rejected():
+    module = load_navigation_launch()
+    context = make_context("reality", "minco_shadow")
+
+    with pytest.raises(RuntimeError, match="legacy, minco"):
+        module._configure_navigation_mode(context, str(BRINGUP_DIR))
+
+
+def test_minco_rejects_custom_legacy_params_instead_of_silently_stacking(tmp_path):
+    module = load_navigation_launch()
+    context = make_context("reality", "minco")
+    custom = tmp_path / "custom_nav2_params.yaml"
+    custom.write_text((BRINGUP_DIR / "config/reality/nav2_params.yaml").read_text())
+    context.launch_configurations["params_file"] = str(custom)
+
+    with pytest.raises(RuntimeError, match="complete single-file profile"):
+        module._configure_navigation_mode(context, str(BRINGUP_DIR))
+
+
+def test_minco_uses_one_complete_deployment_profile():
+    module = load_navigation_launch()
+    for deployment in ("reality", "simulation"):
+        context = make_context(deployment, "minco")
+        execute_configuration(module, context)
+        path = Path(context.launch_configurations["selected_navigation_params_file"])
+        assert path == BRINGUP_DIR / "config" / deployment / "minco_params.yaml"
+
+        profile = yaml.safe_load(path.read_text())
+        base = yaml.safe_load(
+            (BRINGUP_DIR / "config" / deployment / "nav2_params.yaml").read_text()
+        )
+        for node in (
+            "point_lio",
+            "map_server",
+            "relocalization_manager",
+            "velocity_smoother",
+        ):
+            assert profile[node] == base[node]
+        sensor = (
+            "livox_ros_driver2"
+            if deployment == "reality"
+            else "rm27_ground_truth_localizer"
+        )
+        assert profile[sensor] == base[sensor]
+        assert profile["controller_server"]["ros__parameters"]["progress_checker"] == (
+            base["controller_server"]["ros__parameters"]["progress_checker"]
+        )
+        assert profile["planner_server"]["ros__parameters"]["planner_plugins"] == [
+            "MincoPlanner"
+        ]
+        assert "FollowPath" not in profile["controller_server"]["ros__parameters"]
+        assert "GridBased" not in profile["planner_server"]["ros__parameters"]
+        for costmap in ("local_costmap", "global_costmap"):
+            params = profile[costmap][costmap]["ros__parameters"]
+            assert "intensity_voxel_layer" not in params
+            assert "denoise_layer" not in params
+
+
+def test_simulation_pointlio_selects_inputs_from_same_profile():
+    module = load_navigation_launch()
+    context = make_context("simulation", "minco")
+    context.launch_configurations["use_ground_truth_odom"] = "false"
+    execute_configuration(module, context)
+
+    selected = Path(context.launch_configurations["selected_navigation_params_file"])
+    planner = yaml.safe_load(selected.read_text())["planner_server"]["ros__parameters"][
+        "MincoPlanner"
+    ]
+    point_lio = yaml.safe_load(
+        (BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text()
+    )["minco_input_profiles"]["ros__parameters"]["point_lio"]
+    assert planner["frames"]["rog_frame"] == point_lio["frames"]["rog_frame"]
+    assert planner["odom_topic"] == point_lio["odom_topic"]
+    assert planner["lidar_offset_x"] == point_lio["lidar_offset_x"]
+    assert planner["lidar_offset_y"] == point_lio["lidar_offset_y"]
+    assert planner["rog_map"]["frame_id"] == point_lio["rog_map"]["frame_id"]
+    assert planner["rog_map"]["ros_callback"]["cloud_topic"] == (
+        point_lio["rog_map"]["ros_callback"]["cloud_topic"]
+    )
+    assert planner["rog_map"]["ros_callback"]["odom_topic"] == (
+        point_lio["rog_map"]["ros_callback"]["odom_topic"]
+    )
+    assert planner["rog_map"]["visualization"]["frame_id"] == (
+        point_lio["rog_map"]["visualization"]["frame_id"]
+    )
+
+
+@pytest.mark.parametrize("deployment", ["reality", "simulation"])
+@pytest.mark.parametrize("mode", ["legacy", "minco"])
+def test_entry_points_select_one_profile_for_every_node(monkeypatch, deployment, mode):
+    path = REALITY_LAUNCH_FILE if deployment == "reality" else SIMULATION_LAUNCH_FILE
+    module = load_launch(path, f"rm27_{deployment}_{mode}_entry")
+    monkeypatch.setattr(
+        module, "get_package_share_directory", lambda _: str(BRINGUP_DIR)
+    )
+    context = make_context(deployment, mode)
+    context.launch_configurations["slam"] = "false"
+    validator = (
+        module._validate_launch_contract
+        if deployment == "reality"
+        else module._validate_localization_inputs
+    )
+    for action in validator(context):
+        action.execute(context)
+    suffix = "minco_params.yaml" if mode == "minco" else "nav2_params.yaml"
+    assert context.launch_configurations["params_file"] == str(
+        BRINGUP_DIR / "config" / deployment / suffix
+    )
+
+
+def test_entry_does_not_replace_explicit_custom_profile(tmp_path, monkeypatch):
+    module = load_launch(REALITY_LAUNCH_FILE, "rm27_reality_custom_entry")
+    monkeypatch.setattr(
+        module, "get_package_share_directory", lambda _: str(BRINGUP_DIR)
+    )
+    context = make_context("reality", "minco")
+    context.launch_configurations["slam"] = "false"
+    custom = tmp_path / "nav2_params.yaml"
+    custom.write_text((BRINGUP_DIR / "config/reality/minco_params.yaml").read_text())
+    context.launch_configurations["params_file"] = str(custom)
+
+    assert module._validate_launch_contract(context) == []
+    assert context.launch_configurations["params_file"] == str(custom)
+
+
+def test_direct_bringup_selects_minco_profile_for_localization_and_navigation(
+    monkeypatch,
+):
+    module = load_launch(BRINGUP_LAUNCH_FILE, "rm27_direct_bringup")
+    monkeypatch.setattr(
+        module, "get_package_share_directory", lambda _: str(BRINGUP_DIR)
+    )
+    context = make_context("simulation", "minco")
+    context.launch_configurations["slam"] = "false"
+    for action in module._validate_launch_contract(context):
+        action.execute(context)
+    assert context.launch_configurations["params_file"] == str(
+        BRINGUP_DIR / "config/simulation/minco_params.yaml"
+    )
+
+
+def test_direct_bringup_simulation_uses_sim_minco_with_default_params(monkeypatch):
+    module = load_launch(BRINGUP_LAUNCH_FILE, "rm27_direct_sim_default")
+    monkeypatch.setattr(
+        module, "get_package_share_directory", lambda _: str(BRINGUP_DIR)
+    )
+    context = make_context("simulation", "minco")
+    context.launch_configurations["slam"] = "false"
+    context.launch_configurations["params_file"] = str(
+        BRINGUP_DIR / "config/reality/nav2_params.yaml"
+    )
+    for action in module._validate_launch_contract(context):
+        action.execute(context)
+    assert context.launch_configurations["params_file"] == str(
+        BRINGUP_DIR / "config/simulation/minco_params.yaml"
+    )
+
+
+def test_direct_navigation_reality_uses_real_minco_with_default_params():
+    module = load_launch(LAUNCH_FILE, "rm27_direct_real_default")
+    context = make_context("reality", "minco")
+    context.launch_configurations["params_file"] = str(
+        BRINGUP_DIR / "config/simulation/nav2_params.yaml"
+    )
+    for action in module._configure_navigation_mode(context, str(BRINGUP_DIR)):
+        action.execute(context)
+    assert context.launch_configurations["selected_navigation_params_file"] == str(
+        BRINGUP_DIR / "config/reality/minco_params.yaml"
+    )
 
 
 def test_minco_profiles_keep_prior_map_placeholder():
@@ -723,16 +896,11 @@ def test_legacy_costmaps_fail_stale_terrain_inputs_closed():
         assert guard["terrain_map_topic"] == "terrain_map"
 
 
-def test_shadow_sidecar_uses_multithreaded_planner_executor():
+def test_navigation_nodes_load_only_one_parameter_file():
     launch_text = LAUNCH_FILE.read_text()
-    shadow_start = launch_text.index("start_minco_shadow_planner_cmd = Node(")
-    shadow_manager = launch_text.index(
-        "start_minco_shadow_lifecycle_manager_cmd = Node(", shadow_start
-    )
-    shadow_node = launch_text[shadow_start:shadow_manager]
-
-    assert 'package="minco_planner"' in shadow_node
-    assert 'executable="planner_server_mt"' in shadow_node
+    assert "navigation_parameters = [configured_params]" in launch_text
+    assert "minco_shadow" not in launch_text
+    assert "configured_minco_params" not in launch_text
 
 
 def test_legacy_terrain_consumers_use_sensor_data_qos():
@@ -811,14 +979,8 @@ def test_minco_multi_goal_paths_are_not_silently_mirrored_or_executed():
     active_tree = (
         BRINGUP_DIR / "behavior_trees" / "navigate_through_poses_w_minco_replanning.xml"
     ).read_text()
-    shadow_tree = (
-        BRINGUP_DIR / "behavior_trees" / "navigate_through_poses_w_minco_shadow.xml"
-    ).read_text()
-
     assert "<AlwaysFailure" in active_tree
     assert "ComputePathThroughPoses" not in active_tree
-    assert "SendMincoShadowGoalsThroughPoses" not in shadow_tree
-    assert 'planner_id="GridBased"' in shadow_tree
 
 
 def test_reality_entry_rejects_slam_with_minco_before_starting_drivers():
@@ -839,7 +1001,7 @@ def test_simulation_entry_rejects_slam_with_minco_before_starting_localization()
         {
             "namespace": "",
             "slam": "true",
-            "navigation_mode": "minco_shadow",
+            "navigation_mode": "minco",
             "use_ground_truth_odom": "false",
             "prior_pcd_file": "/does/not/matter.pcd",
             "world": "test",

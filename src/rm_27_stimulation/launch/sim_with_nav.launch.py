@@ -233,7 +233,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "navigation_mode",
                 default_value="legacy",
-                description="Select legacy, minco_shadow, or minco navigation",
+                description="Select legacy or minco navigation",
             ),
             DeclareLaunchArgument(
                 "enable_legacy_terrain",

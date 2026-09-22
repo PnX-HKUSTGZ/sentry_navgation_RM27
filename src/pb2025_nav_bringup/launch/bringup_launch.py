@@ -22,6 +22,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     OpaqueFunction,
     SetEnvironmentVariable,
+    SetLaunchConfiguration,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -45,12 +46,14 @@ def _validate_launch_contract(context):
         raise RuntimeError(
             "This RM27 navigation stack currently requires the namespace launch "
             "argument to keep its empty default. Its "
-            "sensor, localization, shadow-planner, and chassis topics use the "
+            "sensor, localization, and chassis topics use the "
             "single-robot global contract; a partial namespace would be unsafe."
         )
 
     slam = _as_bool(LaunchConfiguration("slam").perform(context))
     navigation_mode = LaunchConfiguration("navigation_mode").perform(context).lower()
+    if navigation_mode not in {"legacy", "minco"}:
+        raise RuntimeError("navigation_mode must be one of: legacy, minco")
     use_ground_truth = _as_bool(
         LaunchConfiguration("use_ground_truth_odom").perform(context)
     )
@@ -62,9 +65,31 @@ def _validate_launch_contract(context):
     if slam and navigation_mode != "legacy":
         raise RuntimeError(
             "slam:=true currently supports navigation_mode:=legacy only. MINCO "
-            "modes fuse the selected static map into ROG-map and require a stable "
+            "fuses the selected static map into ROG-map and requires a stable "
             "map-to-odometry frame relationship."
         )
+    params_file = LaunchConfiguration("params_file").perform(context)
+    if navigation_mode == "minco":
+        directory = os.path.join(
+            get_package_share_directory("pb2025_nav_bringup"),
+            "config",
+            LaunchConfiguration("deployment").perform(context).lower(),
+        )
+        default_base = os.path.join(
+            get_package_share_directory("pb2025_nav_bringup"),
+            "config",
+            "reality",
+            "nav2_params.yaml",
+        )
+        if os.path.realpath(params_file) in {
+            os.path.realpath(os.path.join(directory, "nav2_params.yaml")),
+            os.path.realpath(default_base),
+        }:
+            return [
+                SetLaunchConfiguration(
+                    "params_file", os.path.join(directory, "minco_params.yaml")
+                )
+            ]
     return []
 
 
@@ -200,7 +225,7 @@ def generate_launch_description():
     declare_navigation_mode_cmd = DeclareLaunchArgument(
         "navigation_mode",
         default_value="legacy",
-        description="Select legacy, minco_shadow, or minco navigation",
+        description="Select legacy or minco navigation",
     )
 
     declare_enable_legacy_terrain_cmd = DeclareLaunchArgument(

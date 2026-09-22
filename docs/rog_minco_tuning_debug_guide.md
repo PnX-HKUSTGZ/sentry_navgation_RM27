@@ -1,6 +1,9 @@
 # ROG-map + MINCO + MPC 调试、调参与发布指南
 
-本文面向 `sentry-navigation-RM27` 当前代码，给出从仿真到实车的可执行流程。命令默认在 ROS 2 Jazzy、仓库根目录 `/home/pnx/nav_ws/sentry-navigation-RM27` 下执行。
+当前只支持 `navigation_mode:=legacy` 和 `navigation_mode:=minco`。本文后续含旧版
+`minco_shadow` 的历史调试记录，相关模式、配置和插件已删除，**不得照历史 shadow 命令启动实车**。
+MINCO 实车与仿真各只加载其对应目录的 `minco_params.yaml`；legacy 使用同目录的
+`nav2_params.yaml`。其他命令默认在 ROS 2 Jazzy、仓库根目录 `/home/pnx/nav_ws/sentry-navigation-RM27` 下执行。
 
 实车当前的里程计 topic 合同需要特别区分：MincoPlanner/ROG 使用 Point-LIO 的
 `/aft_mapped_to_init`；MincoMpc、`fake_vel_transform` 和 legacy 控制器使用 `loam_interface`
@@ -32,7 +35,7 @@
 6. 本文把“单次开发联调结果”和“发布验收”分开记录。单次到达目标也不代表 P2/P3/P6 已通过；
    正反向重复、浮空障碍、取消、陈旧数据以及实车标定仍必须按第 10、14 节完成。
 
-## 1. 当前链路和三种模式
+## 1. 当前链路和模式（shadow 章节为历史记录）
 
 ### 1.1 旧链路
 
@@ -127,7 +130,6 @@ shadow 的 `NavigateThroughPoses` 仍由 legacy 主链执行，但不向 MINCO s
 
 ```text
 legacy
-minco_shadow
 minco
 ```
 
@@ -139,18 +141,16 @@ minco
   会把命令行中的空赋值写法折叠成 malformed launch argument，因此不要显式传空字符串。
 - `slam:=true` 只支持 `legacy`。
 - MINCO 模式必须有可加载的静态 OccupancyGrid YAML。
-- `enable_legacy_terrain:=auto` 时，`legacy/minco_shadow` 自动为 true，`minco` 自动为 false。
+- `enable_legacy_terrain:=auto` 时，`legacy` 自动为 true，`minco` 自动为 false。
 
 主要参数和入口文件：
 
 | 文件 | 用途 |
 |---|---|
-| `src/pb2025_nav_bringup/config/simulation/minco_params.yaml` | 仿真 active MINCO/ROG/MPC 基线，也是仿真 shadow sidecar 的主体参数 |
-| `src/pb2025_nav_bringup/config/reality/minco_params.yaml` | 实车 active 与 shadow sidecar 的主体参数 |
-| `src/pb2025_nav_bringup/config/*/minco_shadow_params.yaml` | shadow 主 Nav2 的旧链/BT overlay |
-| `src/pb2025_nav_bringup/config/*/minco_shadow_sidecar_params.yaml` | shadow planner 的 topic 与性能标签 overlay |
-| `src/pb2025_nav_bringup/config/*/nav2_params.yaml` | 原有 Nav2、costmap、旧 planner/controller 参数 |
-| `src/pb2025_nav_bringup/launch/navigation_launch.py` | 三种模式装配和 shadow sidecar |
+| `src/pb2025_nav_bringup/config/simulation/minco_params.yaml` | 仿真完整 MINCO/ROG/MPC 参数及 Point-LIO 输入选项 |
+| `src/pb2025_nav_bringup/config/reality/minco_params.yaml` | 实车完整 MINCO/ROG/MPC 参数 |
+| `src/pb2025_nav_bringup/config/*/nav2_params.yaml` | 仅 legacy 的 Nav2、costmap、旧 planner/controller 参数 |
+| `src/pb2025_nav_bringup/launch/navigation_launch.py` | 两种模式和单文件参数装配 |
 | `src/rm_27_stimulation/launch/sim_with_nav.launch.py` | Gazebo 与导航总入口 |
 | `src/rm_27_stimulation/config/worlds.yaml` | 仿真 world 到导航 map 的映射 |
 | `src/rm_27_stimulation/config/spawn_poses.yaml` | 仿真起始位姿 |

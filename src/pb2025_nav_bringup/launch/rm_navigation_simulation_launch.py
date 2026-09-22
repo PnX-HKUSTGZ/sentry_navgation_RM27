@@ -21,6 +21,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     OpaqueFunction,
+    SetLaunchConfiguration,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -52,13 +53,29 @@ def _validate_localization_inputs(context):
             "slam:=true and use_ground_truth_odom:=true are mutually exclusive: "
             "both pipelines would publish the map->odom localization transform."
         )
+    if navigation_mode not in {"legacy", "minco"}:
+        raise RuntimeError("navigation_mode must be one of: legacy, minco")
     if use_slam and navigation_mode != "legacy":
         raise RuntimeError(
             "slam:=true currently supports navigation_mode:=legacy only because "
             "MINCO requires the selected static map as its ROG prior map."
         )
+    params_file = LaunchConfiguration("params_file").perform(context)
+    actions = []
+    if navigation_mode == "minco":
+        directory = os.path.join(
+            get_package_share_directory("pb2025_nav_bringup"), "config", "simulation"
+        )
+        if os.path.realpath(params_file) == os.path.realpath(
+            os.path.join(directory, "nav2_params.yaml")
+        ):
+            actions.append(
+                SetLaunchConfiguration(
+                    "params_file", os.path.join(directory, "minco_params.yaml")
+                )
+            )
     if use_ground_truth or use_slam:
-        return []
+        return actions
 
     prior_pcd = LaunchConfiguration("prior_pcd_file").perform(context)
     if not os.path.isfile(prior_pcd):
@@ -68,7 +85,7 @@ def _validate_localization_inputs(context):
             f"PCD, but '{prior_pcd}' does not exist. Supply prior_pcd_file:=... and "
             "a matching relocalization init_pose, or use_ground_truth_odom:=true."
         )
-    return []
+    return actions
 
 
 def generate_launch_description():
@@ -212,7 +229,7 @@ def generate_launch_description():
     declare_navigation_mode_cmd = DeclareLaunchArgument(
         "navigation_mode",
         default_value="legacy",
-        description="Select legacy, minco_shadow, or minco navigation",
+        description="Select legacy or minco navigation",
     )
 
     declare_enable_legacy_terrain_cmd = DeclareLaunchArgument(

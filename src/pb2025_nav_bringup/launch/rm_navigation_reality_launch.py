@@ -21,6 +21,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     OpaqueFunction,
+    SetLaunchConfiguration,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -45,11 +46,26 @@ def _validate_launch_contract(context, *args, **kwargs):
         )
     slam = _as_bool(LaunchConfiguration("slam").perform(context))
     navigation_mode = LaunchConfiguration("navigation_mode").perform(context).lower()
+    if navigation_mode not in {"legacy", "minco"}:
+        raise RuntimeError("navigation_mode must be one of: legacy, minco")
     if slam and navigation_mode != "legacy":
         raise RuntimeError(
             "slam:=true currently supports navigation_mode:=legacy only because "
             "MINCO requires the selected static map as its ROG prior map."
         )
+    params_file = LaunchConfiguration("params_file").perform(context)
+    if navigation_mode == "minco":
+        directory = os.path.join(
+            get_package_share_directory("pb2025_nav_bringup"), "config", "reality"
+        )
+        if os.path.realpath(params_file) == os.path.realpath(
+            os.path.join(directory, "nav2_params.yaml")
+        ):
+            return [
+                SetLaunchConfiguration(
+                    "params_file", os.path.join(directory, "minco_params.yaml")
+                )
+            ]
     return []
 
 
@@ -165,7 +181,7 @@ def generate_launch_description():
     declare_navigation_mode_cmd = DeclareLaunchArgument(
         "navigation_mode",
         default_value="legacy",
-        description="Select legacy, minco_shadow, or minco navigation",
+        description="Select legacy or minco navigation",
     )
 
     declare_enable_legacy_terrain_cmd = DeclareLaunchArgument(
