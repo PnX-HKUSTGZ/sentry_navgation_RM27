@@ -96,6 +96,7 @@ local_costmap:
         obstacle_threshold: 65
         stale_timeout: 2.75
         tf_timeout: 0.10
+        footprint_clearing_enabled: true
 
 global_costmap:
   global_costmap:
@@ -108,6 +109,7 @@ global_costmap:
         obstacle_threshold: 65
         stale_timeout: 2.75
         tf_timeout: 0.10
+        footprint_clearing_enabled: true
       # The outer inflation remains a soft SMAC preference (cost 253 retains
       # Nav2's normal non-traversable meaning). The planner separately builds a
       # hard static-obstacle mask from the safety-footprint corner radius plus
@@ -342,9 +344,11 @@ planner_server:
           # Cover the short swept region between current odometry and MINCO's
           # first local seed. This removes the permanent zero-hit strip cast by
           # the chassis on a downhill exit. In required-support mode it cannot
-          # use a 2D-only prior: every released column must be statically free,
-          # have continuous height-matching support, and contain no occupied
-          # voxel. The 1.40 m forward envelope covers the 0.16 m hard-footprint
+          # use a 2D-only prior: every released column must be statically free
+          # with continuous height-matching support. Only a thin return at that
+          # support height is accepted when headroom rays are missing; body-band
+          # and low-ceiling returns stay blocked. The 1.40 m forward envelope
+          # covers the 0.16 m hard-footprint
           # half-length plus the 0.50 m stop distance at 1 m/s; the narrower
           # lateral envelope limits the static-prior-only release area.
           near_field_prior_fill_enable: true
@@ -477,6 +481,7 @@ planner_server:
         # Relative comparison keeps a uniformly narrow tunnel traversable.
         shortcut_peak_cost_slack: 10.0
         shortcut_mean_cost_slack: 5.0
+        observed_prefix_max_velocity: 0.35
       minco_optimizer:
         opt_freq: 20.0
         # The FSM safety loop remains at 20 Hz, but a failed global/local
@@ -507,6 +512,7 @@ planner_server:
         max_velocity: 1.0
         max_acceleration: 1.0
         terminal_velocity_ratio: 0.85
+        max_trajectory_duration: 10.0
         max_yaw_dot: 1.2
         turn_angle_deadzone: 0.10
         turn_angle_saturation: 0.80

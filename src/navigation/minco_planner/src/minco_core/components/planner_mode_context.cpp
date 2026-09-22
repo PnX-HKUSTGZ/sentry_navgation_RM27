@@ -2,7 +2,48 @@
 
 #include <cctype>
 
+#include "nav2_costmap_2d/costmap_layer.hpp"
+
 namespace minco_planner {
+
+namespace {
+
+std::shared_ptr<rog_map::MapQueryInterface> staticLayerQuery(
+  nav2_costmap_2d::Costmap2DROS * costmap_ros)
+{
+  if (!costmap_ros || !costmap_ros->getLayeredCostmap() ||
+    !costmap_ros->getLayeredCostmap()->getPlugins())
+  {
+    return nullptr;
+  }
+  for (const auto & plugin : *costmap_ros->getLayeredCostmap()->getPlugins()) {
+    if (!plugin) {
+      continue;
+    }
+    const std::string & name = plugin->getName();
+    const std::string static_layer_suffix = "static_layer";
+    const bool exact_name = name == static_layer_suffix;
+    const bool qualified_name =
+      name.size() > static_layer_suffix.size() &&
+      name[name.size() - static_layer_suffix.size() - 1U] == '.' &&
+      name.compare(
+        name.size() - static_layer_suffix.size(),
+        static_layer_suffix.size(),
+        static_layer_suffix) == 0;
+    if (!exact_name && !qualified_name)
+    {
+      continue;
+    }
+    const auto costmap_layer =
+      std::dynamic_pointer_cast<nav2_costmap_2d::CostmapLayer>(plugin);
+    if (costmap_layer) {
+      return std::make_shared<Nav2CostmapQuery>(costmap_layer.get());
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
 
 void PlannerModeContext::configure(const PlannerModeParams & params,
   const std::shared_ptr<rog_map::MapQueryInterface> & raw_rog_query,
@@ -75,16 +116,24 @@ void PlannerModeContext::rebuildQueries(const std::shared_ptr<rog_map::MapQueryI
     if (costmap_ros && costmap_ros->getCostmap()) {
       global_query_ = std::make_shared<Nav2CostmapQuery>(costmap_ros->getCostmap());
       if (params_.priormap_static_obstacle_clearance_radius > 0.0) {
-        auto static_clearance_query = std::make_shared<StaticObstacleClearanceQuery>(
-          global_query_, params_.priormap_static_obstacle_clearance_radius);
-        RCLCPP_INFO(
-          logger,
-          "[MincoPlanner] Static-obstacle global hard clearance: radius=%.3f m "
-          "newly_hardened_cells=%zu unknown_boundary_guard_cells=%zu",
-          static_clearance_query->clearanceRadius(),
-          static_clearance_query->hardenedCellCount(),
-          static_clearance_query->unknownBoundaryGuardCellCount());
-        global_query_ = std::move(static_clearance_query);
+        const auto static_source = staticLayerQuery(costmap_ros);
+        if (static_source) {
+          auto static_clearance_query = std::make_shared<StaticObstacleClearanceQuery>(
+            global_query_, static_source, params_.priormap_static_obstacle_clearance_radius);
+          RCLCPP_INFO(
+            logger,
+            "[MincoPlanner] Static-layer global hard clearance: radius=%.3f m "
+            "newly_hardened_cells=%zu unknown_boundary_guard_cells=%zu",
+            static_clearance_query->clearanceRadius(),
+            static_clearance_query->hardenedCellCount(),
+            static_clearance_query->unknownBoundaryGuardCellCount());
+          global_query_ = std::move(static_clearance_query);
+        } else {
+          RCLCPP_WARN(
+            logger,
+            "[MincoPlanner] static_layer is unavailable; skipping the static hard-clearance "
+            "snapshot so transient ROG obstacles cannot become permanent global obstacles.");
+        }
       }
       if (params_.priormap_ground_edge_avoidance_enable && ground_edge_prior_ready_) {
         auto ground_edge_query = std::make_shared<SurveyedGroundEdgeQuery>(

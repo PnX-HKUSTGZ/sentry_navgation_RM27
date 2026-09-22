@@ -47,6 +47,10 @@ public:
   StaticObstacleClearanceQuery(
     std::shared_ptr<rog_map::MapQueryInterface> base,
     double clearance_radius);
+  StaticObstacleClearanceQuery(
+    std::shared_ptr<rog_map::MapQueryInterface> base,
+    std::shared_ptr<rog_map::MapQueryInterface> static_source,
+    double clearance_radius);
 
   bool worldToMap(double wx, double wy, unsigned int & mx, unsigned int & my) const override;
   void mapToWorld(unsigned int mx, unsigned int my, double & wx, double & wy) const override;
@@ -77,6 +81,7 @@ private:
   void buildOverlay();
 
   std::shared_ptr<rog_map::MapQueryInterface> base_;
+  std::shared_ptr<rog_map::MapQueryInterface> static_source_;
   double clearance_radius_{0.0};
   std::vector<uint8_t> overlay_costs_;
   mutable std::vector<unsigned char> merged_values_;

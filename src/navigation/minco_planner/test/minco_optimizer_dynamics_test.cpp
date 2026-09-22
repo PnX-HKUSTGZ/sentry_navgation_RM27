@@ -67,8 +67,9 @@ void expectFeasible(const Eigen::Vector3d & start_velocity)
   VecDf local_velocity_limits(2);
   local_velocity_limits.setConstant(config.max_vel);
   geometry_utils::Trajectory trajectory;
-  const double result =
-    optimizer.optimize(waypoints, start_state, end_state, local_velocity_limits, trajectory);
+  const double result = optimizer.optimize(
+    waypoints, start_state, end_state, local_velocity_limits, trajectory,
+    config.max_vel);
 
   ASSERT_TRUE(std::isfinite(result));
   ASSERT_FALSE(trajectory.empty());
@@ -120,6 +121,56 @@ TEST(MincoOptimizerDynamicsTest, RejectsInvalidTerminalVelocityRatio)
   EXPECT_THROW(MincoOptimizer optimizer(config), std::invalid_argument);
 }
 
+TEST(MincoOptimizerDynamicsTest, RejectsTrajectoryThatRetimesIntoLongCrawl)
+{
+  auto config = makeConfig();
+  config.max_trajectory_duration = 0.1;
+  MincoOptimizer optimizer(config);
+  const std::vector<Eigen::Vector3d> waypoints{
+    Eigen::Vector3d::Zero(), Eigen::Vector3d(1.0, 0.0, 0.0)};
+  Eigen::Matrix3d start_state = Eigen::Matrix3d::Zero();
+  Eigen::Matrix3d end_state = Eigen::Matrix3d::Zero();
+  end_state.col(0) = waypoints.back();
+  VecDf local_velocity_limits(1);
+  local_velocity_limits << config.max_vel;
+  geometry_utils::Trajectory trajectory;
+
+  const double result = optimizer.optimize(
+    waypoints, start_state, end_state, local_velocity_limits, trajectory,
+    config.max_vel);
+
+  EXPECT_FALSE(std::isfinite(result));
+  EXPECT_TRUE(trajectory.empty());
+  EXPECT_GT(optimizer.lastTotalDuration(), config.max_trajectory_duration);
+}
+
+TEST(MincoOptimizerDynamicsTest, EnforcesPerTrajectoryVelocityLimit)
+{
+  auto config = makeConfig();
+  MincoOptimizer optimizer(config);
+  const std::vector<Eigen::Vector3d> waypoints{
+    Eigen::Vector3d::Zero(), Eigen::Vector3d(0.4, 0.0, 0.0)};
+  Eigen::Matrix3d start_state = Eigen::Matrix3d::Zero();
+  Eigen::Matrix3d end_state = Eigen::Matrix3d::Zero();
+  end_state.col(0) = waypoints.back();
+  VecDf initial_times(1);
+  initial_times << 0.5;
+  optimizer.setInitPsAndTs({}, initial_times);
+  constexpr double kBootstrapVelocity = 0.25;
+  VecDf local_velocity_limits(1);
+  local_velocity_limits << kBootstrapVelocity;
+  geometry_utils::Trajectory trajectory;
+
+  const double result = optimizer.optimize(
+    waypoints, start_state, end_state, local_velocity_limits, trajectory,
+    kBootstrapVelocity);
+
+  ASSERT_TRUE(std::isfinite(result));
+  ASSERT_FALSE(trajectory.empty());
+  EXPECT_LE(trajectory.getMaxVelRate(), kBootstrapVelocity * 1.001);
+  EXPECT_LE(trajectory.getMaxAccRate(), config.max_acc * 1.001);
+}
+
 TEST(MincoOptimizerDynamicsTest, FailsClosedWhenBoundaryStateExceedsLimit)
 {
   auto config = makeConfig();
@@ -134,8 +185,9 @@ TEST(MincoOptimizerDynamicsTest, FailsClosedWhenBoundaryStateExceedsLimit)
   local_velocity_limits << config.max_vel;
   geometry_utils::Trajectory trajectory;
 
-  const double result =
-    optimizer.optimize(waypoints, start_state, end_state, local_velocity_limits, trajectory);
+  const double result = optimizer.optimize(
+    waypoints, start_state, end_state, local_velocity_limits, trajectory,
+    config.max_vel);
 
   EXPECT_FALSE(std::isfinite(result));
   EXPECT_TRUE(trajectory.empty());

@@ -13,7 +13,8 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
   const Eigen::Matrix3d & start_state,
   const Eigen::Matrix3d & end_state,
   const VecDf & local_magnitudes,
-  geometry_utils::Trajectory & out_traj)
+  geometry_utils::Trajectory & out_traj,
+  double hard_velocity_limit)
 {
   // 1. Setup the optimization problem
   out_traj.clear();
@@ -24,7 +25,14 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
   last_time_allocation_iterations_ = 0;
   last_peak_velocity_ = std::numeric_limits<double>::quiet_NaN();
   last_peak_acceleration_ = std::numeric_limits<double>::quiet_NaN();
+  last_total_duration_ = std::numeric_limits<double>::quiet_NaN();
   opt_vars_.query_failure_count = 0;
+
+  if (!std::isfinite(hard_velocity_limit) || hard_velocity_limit <= 0.0 ||
+      hard_velocity_limit > cfg_.max_vel * (1.0 + 1.0e-6)) {
+    last_return_code_ = lbfgs::LBFGSERR_INVALIDPARAMETERS;
+    return INFINITY;
+  }
 
   if (!setupProblemAndCheck(waypoints, start_state, end_state)) {
     cout << YELLOW << " -- [TrajOpt] Error in setup problem, force return." << RESET << endl;
@@ -108,7 +116,14 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
     // stretching all piece times uniformly and rebuilding MINCO with the same
     // points and boundary PVA. This keeps the geometric seed and boundary
     // conditions while removing narrow peaks that quadrature can miss.
-    if (!enforceDynamicFeasibility(out_traj)) {
+    if (!enforceDynamicFeasibility(out_traj, hard_velocity_limit)) {
+      out_traj.clear();
+      last_objective_total_ = std::numeric_limits<double>::infinity();
+      return std::numeric_limits<double>::infinity();
+    }
+    last_total_duration_ = out_traj.getTotalDuration();
+    if (!std::isfinite(last_total_duration_) ||
+        last_total_duration_ > cfg_.max_trajectory_duration) {
       out_traj.clear();
       last_objective_total_ = std::numeric_limits<double>::infinity();
       return std::numeric_limits<double>::infinity();
@@ -142,9 +157,15 @@ void MincoOptimizer::validateConfig(const Config & cfg)
     throw std::invalid_argument(
       "MincoOptimizer terminal_velocity_ratio must be finite and in (0, 1]");
   }
+  if (!std::isfinite(cfg.max_trajectory_duration) ||
+      cfg.max_trajectory_duration <= 0.0) {
+    throw std::invalid_argument(
+      "MincoOptimizer max_trajectory_duration must be finite and positive");
+  }
 }
 
-bool MincoOptimizer::enforceDynamicFeasibility(geometry_utils::Trajectory & trajectory)
+bool MincoOptimizer::enforceDynamicFeasibility(
+  geometry_utils::Trajectory & trajectory, double velocity_limit)
 {
   constexpr double kRelativeTolerance = 1.0e-3;
   // Polynomial-extrema root finding is conservative near a repeated root and
@@ -158,7 +179,6 @@ bool MincoOptimizer::enforceDynamicFeasibility(geometry_utils::Trajectory & traj
   constexpr double kMaxScalePerIteration = 4.0;
   constexpr double kMaxPieceDuration = 1.0e3;
 
-  const double velocity_limit = cfg_.max_vel;
   const double acceleration_limit = cfg_.max_acc;
   const double boundary_velocity =
     std::max(opt_vars_.headPVA.col(1).norm(), opt_vars_.tailPVA.col(1).norm());

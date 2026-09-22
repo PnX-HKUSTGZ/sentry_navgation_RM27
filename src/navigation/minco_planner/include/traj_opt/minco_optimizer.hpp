@@ -38,6 +38,7 @@ public:
     double max_vel{5.0};
     double max_acc{5.0};
     double terminal_velocity_ratio{0.8};
+    double max_trajectory_duration{20.0};
     double turn_angle_deadzone{0.174};
     double turn_angle_saturation{1.57};
     double min_turn_vel{1.0};
@@ -95,13 +96,15 @@ public:
   int lastTimeAllocationIterations() const { return last_time_allocation_iterations_; }
   double lastPeakVelocity() const { return last_peak_velocity_; }
   double lastPeakAcceleration() const { return last_peak_acceleration_; }
+  double lastTotalDuration() const { return last_total_duration_; }
 
   // --- Trajectory Optimization ---
   double optimize(const std::vector<Eigen::Vector3d> & waypoints,
     const Eigen::Matrix3d & start_state,
     const Eigen::Matrix3d & end_state,
     const VecDf & local_magnitudes,
-    geometry_utils::Trajectory & out_traj);
+    geometry_utils::Trajectory & out_traj,
+    double hard_velocity_limit);
 
 private:
   // === Internal Types ===
@@ -160,7 +163,8 @@ private:
 
   static void validateConfig(const Config & cfg);
 
-  bool enforceDynamicFeasibility(geometry_utils::Trajectory & trajectory);
+  bool enforceDynamicFeasibility(
+    geometry_utils::Trajectory & trajectory, double velocity_limit);
 
   void DefaultInit();
 
@@ -202,6 +206,7 @@ private:
   int last_time_allocation_iterations_{0};
   double last_peak_velocity_{std::numeric_limits<double>::quiet_NaN()};
   double last_peak_acceleration_{std::numeric_limits<double>::quiet_NaN()};
+  double last_total_duration_{std::numeric_limits<double>::quiet_NaN()};
 };
 
 }  // namespace minco_planner

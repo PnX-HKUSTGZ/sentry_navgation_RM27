@@ -129,10 +129,7 @@ private:
   void PTAllocation(const std::vector<Eigen::Vector3d> & sparse_path,
     const Eigen::Matrix3d & start_state,
     bool stop_at_local_end,
-    PlanningState state,
-    bool has_shifted_seed,
-    const vec_Vec3f & shifted_waypoints,
-    const VecDf & shifted_durations,
+    double trajectory_max_velocity,
     vec_Vec3f & init_ps,
     VecDf & init_ts,
     VecDf & local_vmaxs) const;
@@ -253,6 +250,7 @@ private:
   double successful_replan_period_{1.0};
   double lookahead_dist_;
   double traj_goal_tolerance_{0.5};
+  double observed_prefix_max_velocity_{0.25};
   // Maximum future time certified against the rolling ROG snapshot.
   double safety_check_horizon_{2.0};
   double collision_cache_reuse_max_duration_{0.75};

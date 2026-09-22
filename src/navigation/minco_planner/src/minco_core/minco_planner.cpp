@@ -583,13 +583,21 @@ void MincoPlanner::configure(
                       shortcut_peak_cost_slack);
   node->get_parameter(prefix + "local_path.shortcut_mean_cost_slack",
                       shortcut_mean_cost_slack);
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "local_path.observed_prefix_max_velocity",
+      rclcpp::ParameterValue(observed_prefix_max_velocity_));
+  node->get_parameter(prefix + "local_path.observed_prefix_max_velocity",
+                      observed_prefix_max_velocity_);
   if (!std::isfinite(shortcut_peak_cost_slack) ||
       shortcut_peak_cost_slack < 0.0 ||
       !std::isfinite(shortcut_mean_cost_slack) ||
-      shortcut_mean_cost_slack < 0.0) {
+      shortcut_mean_cost_slack < 0.0 ||
+      !std::isfinite(observed_prefix_max_velocity_) ||
+      observed_prefix_max_velocity_ <= 0.0) {
     throw std::invalid_argument(
         prefix +
-        "local_path shortcut cost slacks must be finite and non-negative");
+        "local_path limits must be finite and observed-prefix velocity must "
+        "be positive");
   }
 
   // --- Optimizer config ------------------------------------------------------
@@ -726,6 +734,18 @@ void MincoPlanner::configure(
     throw std::invalid_argument(
         prefix +
         "minco_optimizer.terminal_velocity_ratio must be in (0, 1]");
+  }
+
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "minco_optimizer.max_trajectory_duration",
+      rclcpp::ParameterValue(20.0));
+  node->get_parameter(prefix + "minco_optimizer.max_trajectory_duration",
+                      minco_config.max_trajectory_duration);
+  if (!std::isfinite(minco_config.max_trajectory_duration) ||
+      minco_config.max_trajectory_duration <= 0.0) {
+    throw std::invalid_argument(
+        prefix +
+        "minco_optimizer.max_trajectory_duration must be positive");
   }
 
   nav2_util::declare_parameter_if_not_declared(
@@ -1400,10 +1420,13 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".exploration.prefer_goal_direction" ||
            param_name == name_ + ".local_path.shortcut_peak_cost_slack" ||
            param_name == name_ + ".local_path.shortcut_mean_cost_slack" ||
+           param_name == name_ + ".local_path.observed_prefix_max_velocity" ||
            param_name == name_ + ".minco_optimizer.safe_dist" ||
            param_name == name_ + ".minco_optimizer.collision_dist" ||
            param_name ==
                name_ + ".minco_optimizer.terminal_velocity_ratio" ||
+           param_name ==
+               name_ + ".minco_optimizer.max_trajectory_duration" ||
            param_name == name_ + ".safety.footprint_length" ||
            param_name == name_ + ".safety.footprint_width" ||
            param_name == name_ + ".safety.footprint_margin" ||
@@ -1861,17 +1884,16 @@ bool MincoPlanner::ReplanLocal(
 
   // 4. Determine state (HOT/COLD).
   PlanningState state = PlanningState::COLD_START;
-  traj_opt::Trajectory last_traj_snapshot;
-  bool has_last_traj_snapshot = false;
-  double last_traj_start_WT = 0.0;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     state = determinePlanningState(current_pose.pose, sparse_path);
-    if (has_last_traj_) {
-      last_traj_snapshot = last_traj_;
-      has_last_traj_snapshot = true;
-      last_traj_start_WT = last_traj_.start_WT;
-    }
+  }
+
+  // A clipped prefix ends at the current observation frontier. Use cold
+  // boundary handling so lateral or opposing measured velocity cannot pull
+  // this short stop trajectory back into the unobserved region.
+  if (seed.observed_prefix_clipped) {
+    state = PlanningState::COLD_START;
   }
 
   if (state == PlanningState::EMERGENCY_STOP) {
@@ -1880,28 +1902,10 @@ bool MincoPlanner::ReplanLocal(
 
   // 5. Prepare start state.
   Eigen::Matrix3d start_state;
-  vec_Vec3f shifted_waypoints;
-  VecDf shifted_durations;
-  bool has_shifted_seed = false;
   if (state == PlanningState::HOT_START) {
-    const double now = rosNow().seconds() + 0.005; // small buffer
-    const double t_dur = now - last_traj_start_WT;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       prepareHotStart(current_pose.pose, start_state);
-    }
-
-    // Extract remaining trajectory segment as shifted warm-start seed.
-    if (has_last_traj_snapshot) {
-      traj_opt::Trajectory remain;
-      const double total = last_traj_snapshot.getTotalDuration();
-      if (std::isfinite(t_dur) && t_dur > 0.0 && total > t_dur + 1e-3 &&
-          last_traj_snapshot.getPartialTrajectoryByTime(t_dur, total, remain)) {
-        shifted_waypoints = remain.getWaypoints();
-        shifted_durations = remain.getDurations();
-        has_shifted_seed =
-            (!shifted_waypoints.empty() && shifted_durations.size() > 0);
-      }
     }
   } else {
     prepareColdStart(current_pose.pose, start_state, sparse_path);
@@ -1980,14 +1984,34 @@ bool MincoPlanner::ReplanLocal(
   // 7.5 Initial guess Ps/Ts for optimizer (all cases).
   const int N = static_cast<int>(sparse_path.size()) - 1;
   VecDf local_vmaxs(N);
+  const double trajectory_max_velocity =
+      seed.observed_prefix_clipped
+          ? std::min(minco_config.max_vel, observed_prefix_max_velocity_)
+          : minco_config.max_vel;
+  const double boundary_start_speed = start_state.col(1).head<2>().norm();
+  const double hard_velocity_limit =
+      seed.observed_prefix_clipped
+          ? std::min(minco_config.max_vel,
+                     std::max(trajectory_max_velocity,
+                              std::isfinite(boundary_start_speed)
+                                  ? boundary_start_speed
+                                  : 0.0))
+          : minco_config.max_vel;
   if (N > 0) {
     vec_Vec3f init_ps;
     VecDf init_ts(N);
-    PTAllocation(sparse_path, start_state, stop_at_local_end, state,
-                 has_shifted_seed, shifted_waypoints, shifted_durations,
-                 init_ps, init_ts, local_vmaxs);
+    PTAllocation(sparse_path, start_state, stop_at_local_end,
+                 trajectory_max_velocity, init_ps, init_ts, local_vmaxs);
 
     minco_optimizer_->setInitPsAndTs(init_ps, init_ts);
+  }
+  if (seed.observed_prefix_clipped) {
+    RCLCPP_INFO_THROTTLE(
+        logger_, *clock_, 1000,
+        "[MincoPlanner] Observation-frontier bootstrap: prefix=%.3f m, "
+        "speed_limit=%.2f m/s, terminal_stop=true.",
+        (sparse_path.back() - sparse_path.front()).head<2>().norm(),
+        trajectory_max_velocity);
   }
 
   // 8. Optimize.
@@ -2001,7 +2025,8 @@ bool MincoPlanner::ReplanLocal(
   }
   auto opt_start_time = rosNow().seconds();
   double final_cost = minco_optimizer_->optimize(
-      sparse_path, start_state, end_state, local_vmaxs, opt_traj);
+      sparse_path, start_state, end_state, local_vmaxs, opt_traj,
+      hard_velocity_limit);
   if (perf) {
     perf->optimizer_time_ms =
         std::chrono::duration<double, std::milli>(
@@ -2029,7 +2054,7 @@ bool MincoPlanner::ReplanLocal(
         "query_failures=%llu "
         "state=%s waypoints=%zu stop_at_end=%s start=(%.3f,%.3f) speed=%.3f "
         "first_segment=%.3f velocity_direction_cos=%.3f peak_v=%.3f "
-        "peak_a=%.3f "
+        "peak_a=%.3f duration=%.3f/max=%.3f "
         "retime_iters=%d.",
         minco_optimizer_->lastReturnCode(),
         minco_optimizer_->lastIterationCount(),
@@ -2040,6 +2065,8 @@ bool MincoPlanner::ReplanLocal(
         start_state(1, 0), start_speed, first_segment_length, direction_cosine,
         minco_optimizer_->lastPeakVelocity(),
         minco_optimizer_->lastPeakAcceleration(),
+        minco_optimizer_->lastTotalDuration(),
+        minco_config.max_trajectory_duration,
         minco_optimizer_->lastTimeAllocationIterations());
 
     if (visualizer_) {
@@ -2195,10 +2222,8 @@ bool MincoPlanner::ReplanLocal(
 
 void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
                                 const Eigen::Matrix3d &start_state,
-                                bool stop_at_local_end, PlanningState state,
-                                bool has_shifted_seed,
-                                const vec_Vec3f &shifted_waypoints,
-                                const VecDf &shifted_durations,
+                                bool stop_at_local_end,
+                                double trajectory_max_velocity,
                                 vec_Vec3f &init_ps, VecDf &init_ts,
                                 VecDf &local_vmaxs) const {
   const int N = static_cast<int>(sparse_path.size()) - 1;
@@ -2209,7 +2234,8 @@ void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
     return;
   }
 
-  const double global_vmax = std::max(0.0, minco_config.max_vel);
+  const double global_vmax =
+      std::clamp(trajectory_max_velocity, 1.0e-3, minco_config.max_vel);
   const double amax = std::max(1e-3, minco_config.max_acc);
   const double kMinSegTime = 0.1;
   const double kBrakeSafety = 1.2;
@@ -2221,16 +2247,11 @@ void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
 
   init_ps.clear();
   init_ps.reserve(static_cast<size_t>(std::max(0, N - 1)));
-  int copyPs = 0;
-  if (state == PlanningState::HOT_START && has_shifted_seed) {
-    const int oldWp = static_cast<int>(shifted_waypoints.size());
-    const int oldPs = std::max(0, oldWp - 2);
-    copyPs = std::min(std::max(0, N - 1), oldPs);
-  }
-  for (int j = 0; j < copyPs; ++j) {
-    init_ps.emplace_back(shifted_waypoints[static_cast<size_t>(j + 1)]);
-  }
-  for (int j = copyPs; j < (N - 1); ++j) {
+  // A HOT start may come immediately after the dynamic global overlay selects
+  // a different homotopy. Seed every intermediate point from the current
+  // sparse route; copying points or multi-minute durations from the old route
+  // can pull MINCO across obstacles and make an otherwise short command crawl.
+  for (int j = 0; j < (N - 1); ++j) {
     init_ps.emplace_back(sparse_path[static_cast<size_t>(j + 1)]);
   }
 
@@ -2294,16 +2315,6 @@ void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
     init_ts(i) = utils::ComputeSegmentTime(L, v_curr, v_next, local_vmax, amax,
                                            kMinSegTime);
     v_curr = v_next;
-  }
-
-  if (state == PlanningState::HOT_START && has_shifted_seed) {
-    const int oldN = std::min(N, static_cast<int>(shifted_durations.size()));
-    for (int i = 0; i < oldN; ++i) {
-      const double t_seed = shifted_durations(i);
-      if (std::isfinite(t_seed) && t_seed > 0.02) {
-        init_ts(i) = std::max(init_ts(i), t_seed);
-      }
-    }
   }
 }
 

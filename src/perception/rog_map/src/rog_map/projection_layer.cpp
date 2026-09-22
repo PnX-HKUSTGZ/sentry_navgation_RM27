@@ -755,14 +755,26 @@ void ProjectionLayer::stageOneCell(int x, int y, double now,
           ProjectionClassReason::INSUFFICIENT_OBSERVATION ||
       cell.candidate_reason == ProjectionClassReason::HEADROOM_UNVERIFIED ||
       cell.candidate_reason == ProjectionClassReason::GROUND_UNVERIFIED;
+  const bool surveyed_ground_with_headroom_gap =
+      config.require_ground_support && config.near_field_prior_fill_en &&
+      cell.candidate_reason == ProjectionClassReason::HEADROOM_UNVERIFIED &&
+      cell.ground_candidate != 0U && stats.occupied_count > 0 &&
+      contains_occupied_voxel;
   if ((config.clearance_check_en || config.require_ground_support) &&
-      zero_hit_unverified && stats.occupied_count == 0 &&
-      !contains_occupied_voxel) {
+      zero_hit_unverified &&
+      ((stats.occupied_count == 0 && !contains_occupied_voxel) ||
+       surveyed_ground_with_headroom_gap)) {
+    // A matching, connected ground return is not an obstacle merely because
+    // the spinning LiDAR has not yet filled the body-height ray column above
+    // it. Let the bounded near-field branch below evaluate that case against
+    // surveyed free space and support height. A second body-band run or a low
+    // ceiling is classified HEADROOM_BLOCKED and remains an immediate veto.
     cell.footprint_clear_eligible = 1U;
   } else if (stats.occupied_count != 0 || contains_occupied_voxel ||
              !zero_hit_unverified) {
-    // A measured occupied return is an immediate veto. Do not allow a bridge
-    // confirmation accumulated before the return to leak into this frame.
+    // Any occupied return that was not classified as matching ground is an
+    // immediate veto. Do not allow a bridge confirmation accumulated before
+    // the return to leak into this frame.
     cell.ground_support_bridge_count = 0U;
   }
   cell_buffer_[static_cast<size_t>(hash_id)] = cell;
@@ -800,8 +812,9 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
       now < cell.clearance_dropout_deadline) {
     // Missing body-band miss rays are not new obstacle evidence. Retain a
     // recent clearance proof only for a bounded interval and only while the
-    // surveyed support remains continuous. Any occupied voxel makes the cell
-    // ineligible above and therefore blocks immediately.
+    // surveyed support remains continuous. Body-band, low-ceiling, or
+    // wrong-height occupied evidence makes the cell ineligible above and
+    // therefore blocks immediately.
     raw_type = previous_raw_type;
     raw_reason = ProjectionClassReason::CLEARANCE_DROPOUT_HOLD;
     cell.clearance_verified = 1U;
@@ -1324,6 +1337,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       ProjectionClassReason final_reason = cell.candidate_reason;
       const bool support_bridge_evidence =
           cell.footprint_clear_eligible != 0U &&
+          cell.ground_candidate == 0U &&
           has_observed_support_bridge(x, y);
       if (support_bridge_evidence) {
         cell.ground_support_bridge_eligible = 1U;
@@ -1338,8 +1352,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
           static_cast<int>(cell.ground_support_bridge_count) >=
               std::max(1, config.observed_ground_support_bridge_hysteresis_count);
       if (support_bridge_confirmed) {
-        // The current cell has no occupied voxel (eligibility is set only by
-        // stageOneCell after that veto), while two cardinal neighbors provide
+        // The current cell has no occupied voxel, while two cardinal neighbors provide
         // a continuous, height-consistent measured support surface. This is a
         // bounded one-cell bridge, not a general unknown-as-free rule.
         final_type = CellType::FREE;
@@ -1353,6 +1366,11 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       const bool disconnected_support = config.require_ground_support &&
                                         cell.clearance_verified != 0U &&
                                         !has_connected_ground_support(x, y);
+      const bool surveyed_ground_with_headroom_gap =
+          cell.ground_candidate != 0U && cell.ground_verified != 0U &&
+          cell.footprint_clear_eligible != 0U &&
+          cell.candidate_reason ==
+              ProjectionClassReason::HEADROOM_UNVERIFIED;
       if (!support_bridge_confirmed && disconnected_support) {
         final_type = CellType::OCCUPIED;
         final_reason = ProjectionClassReason::GROUND_UNVERIFIED;
@@ -1366,7 +1384,8 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
         final_type = CellType::OCCUPIED;
         final_reason = ProjectionClassReason::GROUND_UNVERIFIED;
         cell.clearance_verified = 0U;
-      } else if (cell.ground_candidate != 0U) {
+      } else if (cell.ground_candidate != 0U &&
+                 !surveyed_ground_with_headroom_gap) {
         cell.clearance_verified = (cell.ground_verified != 0U &&
                                    cell.candidate_type == CellType::PASSABLE)
                                       ? 1U
@@ -1408,9 +1427,9 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
               has_connected_ground_support(x, y);
           cell.continuous_ground_support =
               continuous_trusted_support ? 1U : 0U;
-          // This is the support gate for the bounded zero-hit clearance
-          // dropout hold in commitCell(). It does not itself clear the cell or
-          // alter the public ground_support_verified diagnostic.
+          // This is the support gate for the bounded clearance dropout hold in
+          // commitCell(). It does not itself clear the cell or alter the public
+          // ground_support_verified diagnostic.
           cell.clearance_dropout_eligible =
               continuous_trusted_support ? 1U : 0U;
           const double support_planar_distance =
@@ -1447,10 +1466,10 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
           cell.traversable = 1U;
           if (config.require_ground_support) {
             // The current footprint or explicitly configured near-field sweep
-            // may bootstrap a zero-hit blind spot. Surveyed, height-consistent
-            // support is still mandatory and occupied evidence always vetoes
-            // eligibility before this branch. Keep the near-field option off
-            // unless the deployment has separately bounded that blind region.
+            // may bootstrap a blind headroom column. Surveyed,
+            // height-consistent support is still mandatory. Only the matching
+            // ground return is tolerated; body-band or wrong-height occupied
+            // evidence vetoes eligibility before this branch.
             cell.ground_support_verified = 1U;
             cell.clearance_verified = 1U;
           }

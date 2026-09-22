@@ -96,6 +96,7 @@ local_costmap:
         obstacle_threshold: 65
         stale_timeout: 0.75
         tf_timeout: 0.10
+        footprint_clearing_enabled: true
       # Keep the active MINCO profile self-contained. ROG writes lethal source
       # cells first; this layer expands them in the merged local costmap.
       inflation_layer:
@@ -117,6 +118,7 @@ global_costmap:
         obstacle_threshold: 65
         stale_timeout: 0.75
         tf_timeout: 0.10
+        footprint_clearing_enabled: true
       # Global SMAC consumes the merged costmap after this inflation pass.
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -322,12 +324,15 @@ planner_server:
           # the safety checker samples the rasterized footprint at about
           # x=0.38..0.50 and y=0.26..0.34, so those cells were incorrectly
           # reported as HEADROOM_UNVERIFIED on otherwise open ground.  The
-          # larger envelope is still fail-closed: static prior FREE,
-          # continuous height-matching support, and no occupied voxel are all
-          # required; a measured dynamic return remains an unconditional veto.
+          # square envelope gives the holonomic chassis the same bootstrap
+          # reach for forward and sideways motion. It is still fail-closed:
+          # static prior FREE and continuous height-matching support are
+          # required. A thin matching-ground return may be released while
+          # headroom rays are missing; body-band, low-ceiling, and wrong-height
+          # returns remain unconditional vetoes.
           near_field_prior_fill_enable: true
           near_field_prior_fill_length: 1.20
-          near_field_prior_fill_width: 0.80
+          near_field_prior_fill_width: 1.20
           robot_origin_to_ground: 0.28
           vehicle_height: 0.42
           headroom_margin: 0.03
@@ -439,6 +444,11 @@ planner_server:
         # still allowing shortcuts through uniformly inflated narrow passages.
         shortcut_peak_cost_slack: 10.0
         shortcut_mean_cost_slack: 5.0
+        # If the seed reaches the observation frontier, move along the short
+        # prior-backed prefix slowly and stop there. Motion exposes fresh
+        # LiDAR volume, so the next rolling replan can extend the path without
+        # waiting for a manual gimbal sweep.
+        observed_prefix_max_velocity: 0.20
       minco_optimizer:
         opt_freq: 20.0
         # Bound failure retries without reducing the independent 20 Hz
@@ -462,10 +472,13 @@ planner_server:
         lookahead_dist: 1.5
         max_velocity: 0.8
         max_acceleration: 0.8
-        # Leave room for the quintic's interior velocity peak. A terminal
-        # boundary at exactly 0.8 m/s cannot be repaired by time stretching
-        # and caused repeated 0.90..0.94 m/s feasibility failures while still.
+        # Keep the rolling endpoint below the continuous 0.8 m/s bound. This
+        # prevents the independent 0.90..0.94 m/s failure seen with a fully
+        # observed seed; observation-frontier crawling is configured above.
         terminal_velocity_ratio: 0.80
+        # Reject numerically retimed trajectories that turn a 1.5 m rolling
+        # horizon into a minute-long near-static command.
+        max_trajectory_duration: 10.0
         max_yaw_dot: 0.8
         turn_angle_deadzone: 0.10
         turn_angle_saturation: 0.80

@@ -204,6 +204,30 @@ TEST(StaticObstacleClearanceQueryTest, GuardsKnownFreeSideOfUnknownObstacleBound
   EXPECT_GE(query.unknownBoundaryGuardCellCount(), 1U);
 }
 
+TEST(StaticObstacleClearanceQueryTest, DoesNotBakeMergedDynamicObstacleIntoStaticOverlay)
+{
+  constexpr unsigned int kSize = 9U;
+  nav2_costmap_2d::Costmap2D merged(
+    kSize, kSize, 1.0, 0.0, 0.0, nav2_costmap_2d::FREE_SPACE);
+  nav2_costmap_2d::Costmap2D static_layer(
+    kSize, kSize, 1.0, 0.0, 0.0, nav2_costmap_2d::FREE_SPACE);
+  merged.setCost(1U, 1U, nav2_costmap_2d::LETHAL_OBSTACLE);
+  merged.setCost(4U, 4U, nav2_costmap_2d::LETHAL_OBSTACLE);
+  static_layer.setCost(4U, 4U, nav2_costmap_2d::LETHAL_OBSTACLE);
+  auto base = std::make_shared<Nav2CostmapQuery>(&merged);
+  auto static_source = std::make_shared<Nav2CostmapQuery>(&static_layer);
+
+  StaticObstacleClearanceQuery query(base, static_source, 1.01);
+
+  EXPECT_EQ(query.value(1U, 1U), nav2_costmap_2d::LETHAL_OBSTACLE);
+  EXPECT_EQ(query.value(2U, 1U), nav2_costmap_2d::FREE_SPACE);
+  EXPECT_EQ(query.value(5U, 4U), nav2_costmap_2d::LETHAL_OBSTACLE);
+
+  merged.setCost(1U, 1U, nav2_costmap_2d::FREE_SPACE);
+  EXPECT_EQ(query.value(1U, 1U), nav2_costmap_2d::FREE_SPACE);
+  EXPECT_EQ(query.value(2U, 1U), nav2_costmap_2d::FREE_SPACE);
+}
+
 TEST(StaticObstacleClearanceQueryTest, RejectsInvalidRadius)
 {
   nav2_costmap_2d::Costmap2D costmap(

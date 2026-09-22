@@ -789,6 +789,38 @@ TEST(GroundSupportProjection,
   EXPECT_EQ(outside_footprint.clearance_verified, 1U);
 }
 
+TEST(GroundSupportProjection,
+     SurveyedNearFieldClearsMatchingGroundWhenHeadroomRaysAreMissing) {
+  rog_map::ProjectionLayer layer;
+  auto config = requiredSupportConfig();
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+  config.near_field_prior_fill_en = true;
+  config.near_field_prior_fill_length = 0.60;
+  config.near_field_prior_fill_width = 0.60;
+  config.reference_ground_z_abs = 0.0;
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+               [](int, int) {
+                 auto stats = groundColumn(0.0, kResolution);
+                 std::fill(stats.vertical_states.begin(),
+                           stats.vertical_states.end(),
+                           rog_map::VerticalVoxelState::UNKNOWN);
+                 stats.vertical_states.front() =
+                     rog_map::VerticalVoxelState::OCCUPIED;
+                 stats.observed_count = 1;
+                 attachSupport(stats, 0.0);
+                 return stats;
+               });
+
+  const auto &outside_footprint = layer.cells().at(2U * kWidth + 4U);
+  EXPECT_EQ(outside_footprint.type, rog_map::CellType::FREE);
+  EXPECT_EQ(outside_footprint.raw_reason,
+            rog_map::ProjectionClassReason::SURVEYED_NEAR_FIELD_CLEAR);
+  EXPECT_EQ(outside_footprint.ground_verified, 1U);
+  EXPECT_EQ(outside_footprint.clearance_verified, 1U);
+}
+
 TEST(GroundSupportProjection, SurveyedNearFieldIsFailClosedByDefault) {
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
@@ -812,7 +844,7 @@ TEST(GroundSupportProjection, SurveyedNearFieldIsFailClosedByDefault) {
 }
 
 TEST(GroundSupportProjection,
-     SurveyedNearFieldRejectsDiscontinuousSupportAndOccupiedReturns) {
+     SurveyedNearFieldRejectsDiscontinuousSupportAndWrongHeightReturns) {
   auto config = requiredSupportConfig();
   config.clear_robot_footprint_unknown = true;
   config.robot_footprint_clear_length = 0.20;
@@ -851,6 +883,29 @@ TEST(GroundSupportProjection,
   EXPECT_EQ(occupied.type, rog_map::CellType::OCCUPIED);
   EXPECT_NE(occupied.raw_reason,
             rog_map::ProjectionClassReason::SURVEYED_NEAR_FIELD_CLEAR);
+
+  rog_map::ProjectionLayer low_obstacle_layer;
+  low_obstacle_layer.update(
+      kWidth, kHeight, kResolution, kOrigin, 1.0, config, [](int x, int) {
+        if (x != 4) {
+          auto stats = emptyColumn(kResolution, false);
+          attachSupport(stats, 0.0);
+          return stats;
+        }
+        auto stats = groundColumn(0.0, kResolution);
+        stats.vertical_states.at(2U) = rog_map::VerticalVoxelState::OCCUPIED;
+        ++stats.observed_count;
+        ++stats.occupied_count;
+        stats.occupied_z_index_max = 2;
+        stats.occupied_z_max_abs = 0.15;
+        attachSupport(stats, 0.0);
+        return stats;
+      });
+  const auto &low_obstacle =
+      low_obstacle_layer.cells().at(2U * kWidth + 4U);
+  EXPECT_EQ(low_obstacle.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(low_obstacle.raw_reason,
+            rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
 }
 
 TEST(GroundSupportProjection, WrongHeightFloatingPlateIsBlocked) {

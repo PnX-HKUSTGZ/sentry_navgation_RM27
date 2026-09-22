@@ -454,6 +454,7 @@ def test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps():
             assert rog_layer["topic"] == "/rog_map/dynamic_obstacles"
             assert 0 < rog_layer["obstacle_threshold"] <= 100
             assert rog_layer["stale_timeout"] > 0.0
+            assert rog_layer["footprint_clearing_enabled"] is True
             if deployment == "reality":
                 inflation = params["inflation_layer"]
                 assert inflation["plugin"] == "nav2_costmap_2d::InflationLayer"
@@ -470,6 +471,13 @@ def test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps():
         ]
         assert local_path["shortcut_peak_cost_slack"] == pytest.approx(10.0)
         assert local_path["shortcut_mean_cost_slack"] == pytest.approx(5.0)
+        assert 0.0 < local_path["observed_prefix_max_velocity"]
+        assert (
+            local_path["observed_prefix_max_velocity"]
+            < profile["planner_server"]["ros__parameters"]["MincoPlanner"][
+                "minco_optimizer"
+            ]["max_velocity"]
+        )
 
 
 def test_active_minco_profiles_keep_physical_pose_and_bounded_reference_contracts():
@@ -560,6 +568,8 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
     assert sim_optimizer["terminal_velocity_ratio"] == pytest.approx(0.85)
     assert 0.0 < real_optimizer["terminal_velocity_ratio"] < 1.0
     assert 0.0 < sim_optimizer["terminal_velocity_ratio"] < 1.0
+    assert real_optimizer["max_trajectory_duration"] == pytest.approx(10.0)
+    assert sim_optimizer["max_trajectory_duration"] == pytest.approx(10.0)
     assert real_mpc["slope_speed_limit"] < real_mpc["max_planar_speed"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vx_max"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vy_max"]
@@ -630,6 +640,32 @@ def test_simulation_footprint_bootstrap_covers_one_rog_seed_step():
     ]["projection"]
     assert real_projection["robot_footprint_clear_length"] == pytest.approx(0.45)
     assert real_projection["robot_footprint_clear_width"] == pytest.approx(0.35)
+
+
+def test_reality_observation_bootstrap_is_holonomic_and_can_stop_inside_envelope():
+    reality = yaml.safe_load(
+        (BRINGUP_DIR / "config" / "reality" / "minco_params.yaml").read_text()
+    )
+    planner = reality["planner_server"]["ros__parameters"]["MincoPlanner"]
+    projection = planner["rog_map"]["projection"]
+    safety = planner["safety"]
+    optimizer = planner["minco_optimizer"]
+    bootstrap_speed = planner["local_path"]["observed_prefix_max_velocity"]
+    brake_distance = bootstrap_speed**2 / (2.0 * optimizer["max_acceleration"])
+    raster_guard = planner["rog_map"]["resolution"]
+
+    assert projection["near_field_prior_fill_length"] == pytest.approx(
+        projection["near_field_prior_fill_width"]
+    )
+    for dimension in ("length", "width"):
+        hard_footprint = (
+            safety[f"footprint_{dimension}"] + 2.0 * safety["footprint_margin"]
+        )
+        required_half_reach = 0.5 * hard_footprint + brake_distance + raster_guard
+        assert (
+            0.5 * projection[f"near_field_prior_fill_{dimension}"]
+            >= required_half_reach - 1.0e-9
+        )
 
 
 def test_active_minco_profiles_disable_unsafe_motion_entry_points():
