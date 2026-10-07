@@ -24,8 +24,8 @@
     
     <!-- 场景 -->
     <scene>
-      <ambient>0.16 0.18 0.22 1</ambient>
-      <background>0.06 0.08 0.12 1</background>
+      <ambient>0.60 0.60 0.60 1</ambient>
+      <background>0.09 0.12 0.16 1</background>
       <shadows>1</shadows>
     </scene>
 
@@ -38,8 +38,8 @@
         </gz-gui>
         <engine>ogre2</engine>
         <scene>scene</scene>
-        <ambient_light>0.16 0.18 0.22</ambient_light>
-        <background_color>0.06 0.08 0.12</background_color>
+        <ambient_light>0.60 0.60 0.60</ambient_light>
+        <background_color>0.09 0.12 0.16</background_color>
         <camera_pose>-14.5 2.9 8.0 0 1.2 0</camera_pose>
       </plugin>
       <plugin name='Scene Manager' filename='GzSceneManager'>
@@ -120,14 +120,14 @@
     
     <!-- 光源 -->
     <light name='sun' type='directional'>
-      <pose>0 0 10 0 0 0</pose>
-      <diffuse>0.55 0.55 0.55 1</diffuse>
-      <specular>0.05 0.05 0.05 1</specular>
-      <direction>-0.5 0.1 -0.9</direction>
+      <pose>0 0 20 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.15 0.15 0.15 1</specular>
+      <direction>-0.4 0.1 -0.9</direction>
       <cast_shadows>1</cast_shadows>
     </light>
 
-    <!-- 地面碰撞覆盖 RMUC2026 场地；传感器可见地面略内缩，避免 gpu_lidar 边缘采样扫到地图外地面。 -->
+    <!-- 地面只提供碰撞；可见地面由 RM27_battlefield_visual 提供，避免重面闪烁。 -->
     <model name='ground_plane'>
       <static>1</static>
       <pose>-0.025 1.640 0 0 0 0</pose>
@@ -140,19 +140,6 @@
             </plane>
           </geometry>
         </collision>
-        <visual name='visual'>
-          <cast_shadows>0</cast_shadows>
-          <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>28.90 14.75</size>
-            </plane>
-          </geometry>
-          <material>
-            <ambient>0.22 0.22 0.24 1</ambient>
-            <diffuse>0.32 0.32 0.34 1</diffuse>
-          </material>
-        </visual>
       </link>
     </model>
 
@@ -173,23 +160,19 @@
             </friction>
           </surface>
         </collision>
-        <visual name='visual'>
-          <geometry>
-            <mesh>
-              <uri>model://RMUC2026_world/meshes/RMUC2026.stl</uri>
-              <scale>1 1 1</scale>
-            </mesh>
-          </geometry>
-          <material>
-            <ambient>0.28 0.30 0.32 1</ambient>
-            <diffuse>0.58 0.60 0.62 1</diffuse>
-            <specular>0.04 0.04 0.04 1</specular>
-          </material>
-        </visual>
       </link>
       <!-- pose = x y z roll pitch yaw -->
       <pose>0 0 1.65 0 0 0</pose>
     </model>
+
+    <!-- High-detail RM27 appearance from the split Gazebo Harmonic bundle.
+         The source model is centered at y=0; this translation restores the
+         navigation map's original y coordinate. The imported model has no collisions. -->
+    <include>
+      <uri>model://RM27_battlefield_visual</uri>
+      <name>map_visual</name>
+      <pose>0 1.624344 0 0 0 0</pose>
+    </include>
 
     <!-- 隐形边界墙 (Invisible Boundaries) -->
     <model name='invisible_boundaries'>

@@ -306,8 +306,7 @@ TEST(GroundSupportProjection,
   EXPECT_EQ(center(layer).traversable, 1U);
 }
 
-TEST(GroundSupportProjection,
-     CurrentFootprintDoesNotBootstrapIsolatedSupport) {
+TEST(GroundSupportProjection, CurrentFootprintDoesNotBootstrapIsolatedSupport) {
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
   config.clear_robot_footprint_unknown = true;
@@ -391,8 +390,7 @@ TEST(GroundSupportProjection,
   EXPECT_EQ(center(layer).pending_count, 0U);
 }
 
-TEST(GroundSupportProjection,
-     ZeroHitUnknownDoesNotStartMeasuredObstacleHold) {
+TEST(GroundSupportProjection, ZeroHitUnknownDoesNotStartMeasuredObstacleHold) {
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
   config.clear_robot_footprint_unknown = false;
@@ -400,12 +398,12 @@ TEST(GroundSupportProjection,
   config.hysteresis_en = false;
   config.obstacle_hold_time = 0.50;
 
-  layer.update(
-      kWidth, kHeight, kResolution, kOrigin, 1.0, config, [](int, int) {
-        auto stats = emptyColumn(kResolution, false);
-        attachSupport(stats, 0.0);
-        return stats;
-      });
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+               [](int, int) {
+                 auto stats = emptyColumn(kResolution, false);
+                 attachSupport(stats, 0.0);
+                 return stats;
+               });
   ASSERT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
   ASSERT_EQ(center(layer).raw_reason,
             rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED);
@@ -413,12 +411,12 @@ TEST(GroundSupportProjection,
   config.clear_robot_footprint_unknown = true;
   config.robot_footprint_clear_length = 0.20;
   config.robot_footprint_clear_width = 0.20;
-  layer.update(
-      kWidth, kHeight, kResolution, kOrigin, 1.10, config, [](int, int) {
-        auto stats = emptyColumn(kResolution, false);
-        attachSupport(stats, 0.0);
-        return stats;
-      });
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.10, config,
+               [](int, int) {
+                 auto stats = emptyColumn(kResolution, false);
+                 attachSupport(stats, 0.0);
+                 return stats;
+               });
 
   EXPECT_EQ(center(layer).raw_reason,
             rog_map::ProjectionClassReason::ROBOT_FOOTPRINT_CLEAR);
@@ -800,18 +798,16 @@ TEST(GroundSupportProjection,
   config.near_field_prior_fill_length = 0.60;
   config.near_field_prior_fill_width = 0.60;
   config.reference_ground_z_abs = 0.0;
-  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
-               [](int, int) {
-                 auto stats = groundColumn(0.0, kResolution);
-                 std::fill(stats.vertical_states.begin(),
-                           stats.vertical_states.end(),
-                           rog_map::VerticalVoxelState::UNKNOWN);
-                 stats.vertical_states.front() =
-                     rog_map::VerticalVoxelState::OCCUPIED;
-                 stats.observed_count = 1;
-                 attachSupport(stats, 0.0);
-                 return stats;
-               });
+  layer.update(
+      kWidth, kHeight, kResolution, kOrigin, 1.0, config, [](int, int) {
+        auto stats = groundColumn(0.0, kResolution);
+        std::fill(stats.vertical_states.begin(), stats.vertical_states.end(),
+                  rog_map::VerticalVoxelState::UNKNOWN);
+        stats.vertical_states.front() = rog_map::VerticalVoxelState::OCCUPIED;
+        stats.observed_count = 1;
+        attachSupport(stats, 0.0);
+        return stats;
+      });
 
   const auto &outside_footprint = layer.cells().at(2U * kWidth + 4U);
   EXPECT_EQ(outside_footprint.type, rog_map::CellType::FREE);
@@ -858,8 +854,7 @@ TEST(GroundSupportProjection,
   step_layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
                     [](int x, int y) {
                       auto stats = emptyColumn(kResolution, false);
-                      attachSupport(stats,
-                                    x == 4 && y == 2 ? 0.10 : 0.0);
+                      attachSupport(stats, x == 4 && y == 2 ? 0.10 : 0.0);
                       return stats;
                     });
   const auto &step = step_layer.cells().at(2U * kWidth + 4U);
@@ -901,8 +896,7 @@ TEST(GroundSupportProjection,
         attachSupport(stats, 0.0);
         return stats;
       });
-  const auto &low_obstacle =
-      low_obstacle_layer.cells().at(2U * kWidth + 4U);
+  const auto &low_obstacle = low_obstacle_layer.cells().at(2U * kWidth + 4U);
   EXPECT_EQ(low_obstacle.type, rog_map::CellType::OCCUPIED);
   EXPECT_EQ(low_obstacle.raw_reason,
             rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
@@ -1100,18 +1094,19 @@ TEST(GroundSupportProjection,
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
   config.min_observed_overhead_headroom_known_ratio = 0.0;
-  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
-               [](int, int) {
-                 auto stats = column({6});
-                 std::fill(stats.vertical_states.begin(), stats.vertical_states.end(),
-                           rog_map::VerticalVoxelState::UNKNOWN);
-                 stats.vertical_states.at(6U) = rog_map::VerticalVoxelState::OCCUPIED;
-                 stats.observed_count = 1;
-                 attachSupport(stats, 0.05, true, false);
-                 return stats;
-               });
+  layer.update(
+      kWidth, kHeight, kResolution, kOrigin, 1.0, config, [](int, int) {
+        auto stats = column({6});
+        std::fill(stats.vertical_states.begin(), stats.vertical_states.end(),
+                  rog_map::VerticalVoxelState::UNKNOWN);
+        stats.vertical_states.at(6U) = rog_map::VerticalVoxelState::OCCUPIED;
+        stats.observed_count = 1;
+        attachSupport(stats, 0.05, true, false);
+        return stats;
+      });
   EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
-  EXPECT_EQ(center(layer).raw_reason, rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+  EXPECT_EQ(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
   EXPECT_EQ(center(layer).clearance_verified, 0U);
 }
 
@@ -1127,7 +1122,8 @@ TEST(GroundSupportProjection,
                  return stats;
                });
   EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
-  EXPECT_EQ(center(layer).raw_reason, rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+  EXPECT_EQ(center(layer).raw_reason,
+            rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
   EXPECT_EQ(center(layer).clearance_verified, 0U);
 }
 
@@ -1207,6 +1203,321 @@ TEST(ProjectionClearance, RejectsVerticalRunInsideVehicleBodyBand) {
   EXPECT_EQ(center(layer).clearance_verified, 0U);
   EXPECT_EQ(center(layer).traversable, 0U);
   EXPECT_EQ(layer.mask().at(2U * kWidth + 2U), 0U);
+}
+
+TEST(ProjectionClearance,
+     RechecksDownhillRoofAgainstConnectedLocalGroundInSameFrame) {
+  constexpr int width = 13;
+  constexpr int height = 9;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.575;
+  config.robot_y = 0.225;
+  config.reference_ground_z_abs = 0.15;
+  config.vehicle_height = 0.17;
+  config.headroom_margin = 0.0;
+  config.headroom_voxel_inset_fraction = 0.0;
+  config.surface_height_delta_max = 0.12;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.observed_empty_as_free = true;
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int y) {
+                 rog_map::ColumnStats stats;
+                 if (x == 4 && y == 4) {
+                   stats = groundColumn(0.0, resolution);
+                   for (const int index : {5, 6, 7, 8}) {
+                     stats.vertical_states.at(static_cast<size_t>(index)) =
+                         rog_map::VerticalVoxelState::OCCUPIED;
+                   }
+                   stats.vertical_states.at(0U) =
+                       rog_map::VerticalVoxelState::KNOWN_FREE;
+                   stats.occupied_count = 4;
+                   stats.occupied_z_index_min = 5;
+                   stats.occupied_z_index_max = 8;
+                   stats.occupied_z_min_abs = 0.225;
+                   stats.occupied_z_max_abs = 0.375;
+                 } else {
+                   stats = groundColumn(0.0, resolution);
+                 }
+                 stats.prior_known_free = 1U;
+                 return stats;
+               });
+
+  const auto &roof = layer.cells().at(4U * width + 4U);
+  EXPECT_EQ(roof.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(roof.raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_CLEARANCE_OK);
+  EXPECT_EQ(roof.clearance_verified, 1U);
+  EXPECT_NEAR(roof.reference_ground_z_abs, -0.025F, 1.0e-5F);
+  EXPECT_NEAR(roof.headroom, 0.250F, 1.0e-5F);
+}
+
+TEST(ProjectionClearance,
+     RechecksRoofOverStaticProjectionWithoutAuthorizingDisconnectedGround) {
+  constexpr int width = 15;
+  constexpr int height = 9;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.725;
+  config.robot_y = 0.225;
+  config.reference_ground_z_abs = 0.15;
+  config.vehicle_height = 0.17;
+  config.headroom_margin = 0.0;
+  config.headroom_voxel_inset_fraction = 0.0;
+  config.surface_height_delta_max = 0.12;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.observed_empty_as_free = true;
+  config.bridge_observed_empty_for_ground_connectivity = false;
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int y) {
+                 rog_map::ColumnStats stats;
+                 if (x == 4 && y == 4) {
+                   stats = groundColumn(0.0, resolution);
+                   for (const int index : {5, 6, 7, 8}) {
+                     stats.vertical_states.at(static_cast<size_t>(index)) =
+                         rog_map::VerticalVoxelState::OCCUPIED;
+                   }
+                   stats.vertical_states.at(0U) =
+                       rog_map::VerticalVoxelState::KNOWN_FREE;
+                   stats.occupied_count = 4;
+                   stats.occupied_z_index_min = 5;
+                   stats.occupied_z_index_max = 8;
+                   stats.occupied_z_min_abs = 0.225;
+                   stats.occupied_z_max_abs = 0.375;
+                 } else if (x <= 6) {
+                   stats = groundColumn(0.0, resolution);
+                 } else if (x <= 12) {
+                   stats = emptyColumn(resolution);
+                 } else {
+                   stats = groundColumn(0.15, resolution);
+                 }
+                 stats.prior_known_free = (x == 4 && y == 4) ? 0U : 1U;
+                 return stats;
+               });
+
+  const auto &roof = layer.cells().at(4U * width + 4U);
+  const auto &disconnected_ground = layer.cells().at(4U * width + 3U);
+  EXPECT_EQ(roof.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(roof.raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_CLEARANCE_OK);
+  EXPECT_EQ(disconnected_ground.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(disconnected_ground.raw_reason,
+            rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+  EXPECT_EQ(disconnected_ground.ground_verified, 0U);
+}
+
+TEST(ProjectionClearance, LocalGroundRecheckKeepsLowReturnBlocked) {
+  constexpr int width = 13;
+  constexpr int height = 9;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.575;
+  config.robot_y = 0.225;
+  config.reference_ground_z_abs = 0.15;
+  config.vehicle_height = 0.17;
+  config.headroom_margin = 0.0;
+  config.headroom_voxel_inset_fraction = 0.0;
+  config.surface_height_delta_max = 0.08;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.observed_empty_as_free = true;
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int y) {
+                 rog_map::ColumnStats stats;
+                 if (x == 4 && y == 4) {
+                   stats = groundColumn(0.0, resolution);
+                   for (const int index : {3, 4, 5}) {
+                     stats.vertical_states.at(static_cast<size_t>(index)) =
+                         rog_map::VerticalVoxelState::OCCUPIED;
+                   }
+                   stats.vertical_states.at(0U) =
+                       rog_map::VerticalVoxelState::KNOWN_FREE;
+                   stats.occupied_count = 3;
+                   stats.occupied_z_index_min = 3;
+                   stats.occupied_z_index_max = 5;
+                   stats.occupied_z_min_abs = 0.125;
+                   stats.occupied_z_max_abs = 0.225;
+                 } else {
+                   stats = groundColumn(0.0, resolution);
+                 }
+                 stats.prior_known_free = 1U;
+                 return stats;
+               });
+
+  const auto &obstacle = layer.cells().at(4U * width + 4U);
+  EXPECT_EQ(obstacle.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(obstacle.raw_reason,
+            rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+  EXPECT_EQ(obstacle.clearance_verified, 0U);
+}
+
+TEST(ProjectionClearance, NavigationOverlayIsNeutralUnlessEvidenceIsStrong) {
+  rog_map::CellData neutral;
+  neutral.raw_type = rog_map::CellType::OCCUPIED;
+  neutral.raw_reason = rog_map::ProjectionClassReason::GROUND_UNVERIFIED;
+  neutral.occupied_z_min_abs = 0.0F;
+  neutral.occupied_z_max_abs = 0.05F;
+  EXPECT_EQ(rog_map::navigationOverlayValue(neutral), -1);
+
+  auto measured_low_obstacle = neutral;
+  measured_low_obstacle.raw_reason =
+      rog_map::ProjectionClassReason::HEADROOM_BLOCKED;
+  EXPECT_EQ(rog_map::navigationOverlayValue(measured_low_obstacle), 100);
+
+  rog_map::CellData verified_roof;
+  verified_roof.type = rog_map::CellType::PASSABLE;
+  verified_roof.raw_type = rog_map::CellType::PASSABLE;
+  verified_roof.raw_reason =
+      rog_map::ProjectionClassReason::OVERHEAD_CLEARANCE_OK;
+  verified_roof.clearance_verified = 1U;
+  verified_roof.traversable = 1U;
+  verified_roof.ceiling_z_abs = 0.225F;
+  verified_roof.headroom = 0.178F;
+  EXPECT_EQ(rog_map::navigationOverlayValue(verified_roof), 0);
+
+  verified_roof.raw_type = rog_map::CellType::OCCUPIED;
+  EXPECT_EQ(rog_map::navigationOverlayValue(verified_roof), -1);
+
+  rog_map::CellData verified_empty;
+  verified_empty.type = rog_map::CellType::FREE;
+  verified_empty.raw_type = rog_map::CellType::FREE;
+  verified_empty.raw_reason = rog_map::ProjectionClassReason::EMPTY_COLUMN;
+  verified_empty.clearance_verified = 1U;
+  verified_empty.traversable = 1U;
+  verified_empty.headroom_known_ratio = 0.667F;
+  EXPECT_EQ(rog_map::navigationOverlayValue(verified_empty), -1);
+  verified_empty.clearance_verified = 0U;
+  EXPECT_EQ(rog_map::navigationOverlayValue(verified_empty), -1);
+}
+
+TEST(ProjectionClearance,
+     LocalGroundRecheckRejectsOneSidedTerrainWithoutStaticFreeEvidence) {
+  constexpr int width = 13;
+  constexpr int height = 9;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.125;
+  config.robot_y = 0.225;
+  config.reference_ground_z_abs = 0.15;
+  config.vehicle_height = 0.17;
+  config.headroom_margin = 0.0;
+  config.headroom_voxel_inset_fraction = 0.0;
+  config.surface_height_delta_max = 0.12;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.observed_empty_as_free = true;
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+  const auto one_sided_scan = [resolution](int x, int y) {
+    rog_map::ColumnStats stats;
+    if (x == 4 && y == 4) {
+      stats = groundColumn(0.0, resolution);
+      for (const int index : {5, 6, 7, 8}) {
+        stats.vertical_states.at(static_cast<size_t>(index)) =
+            rog_map::VerticalVoxelState::OCCUPIED;
+      }
+      stats.vertical_states.at(0U) = rog_map::VerticalVoxelState::KNOWN_FREE;
+      stats.occupied_count = 4;
+      stats.occupied_z_index_min = 5;
+      stats.occupied_z_index_max = 8;
+      stats.occupied_z_min_abs = 0.225;
+      stats.occupied_z_max_abs = 0.375;
+    } else if (x < 4) {
+      stats = groundColumn(0.0, resolution);
+    } else {
+      stats = emptyColumn(resolution, false);
+    }
+    stats.prior_known_free = (x == 4 && y == 4) ? 0U : 1U;
+    return stats;
+  };
+  layer.update(width, height, resolution, kOrigin, 1.0, config, one_sided_scan);
+
+  const auto &roof_without_surrounding_ground =
+      layer.cells().at(4U * width + 4U);
+  EXPECT_EQ(roof_without_surrounding_ground.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(roof_without_surrounding_ground.raw_reason,
+            rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+  EXPECT_EQ(roof_without_surrounding_ground.clearance_verified, 0U);
+
+  rog_map::ProjectionLayer static_free_layer;
+  static_free_layer.update(width, height, resolution, kOrigin, 1.0, config,
+                           [&one_sided_scan](int x, int y) {
+                             auto stats = one_sided_scan(x, y);
+                             stats.prior_known_free = 1U;
+                             return stats;
+                           });
+  const auto &roof_with_static_free_evidence =
+      static_free_layer.cells().at(4U * width + 4U);
+  EXPECT_EQ(roof_with_static_free_evidence.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(roof_with_static_free_evidence.raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_CLEARANCE_OK);
+  EXPECT_EQ(roof_with_static_free_evidence.clearance_verified, 1U);
+}
+
+TEST(ProjectionClearance, LocalGroundRecheckKeepsRealityHeadroomGate) {
+  constexpr int width = 11;
+  constexpr int height = 9;
+  constexpr double resolution = 0.10;
+  auto config = clearanceConfig();
+  config.robot_x = 0.85;
+  config.robot_y = 0.45;
+  config.reference_ground_z_abs = 0.17;
+  config.vehicle_height = 0.42;
+  config.headroom_margin = 0.03;
+  config.headroom_voxel_inset_fraction = 0.5;
+  config.surface_height_delta_max = 0.12;
+  config.ground_seed_radius = 2.5;
+  config.ground_seed_tolerance = 0.18;
+  config.observed_empty_as_free = true;
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+
+  const auto scan = [resolution](int roof_begin, int x, int y) {
+    rog_map::ColumnStats stats;
+    if (x == 4 && y == 4) {
+      stats = groundColumn(0.0, resolution);
+      for (int index = roof_begin; index <= roof_begin + 2; ++index) {
+        stats.vertical_states.at(static_cast<size_t>(index)) =
+            rog_map::VerticalVoxelState::OCCUPIED;
+      }
+      stats.vertical_states.at(0U) = rog_map::VerticalVoxelState::KNOWN_FREE;
+      stats.occupied_count = 3;
+      stats.occupied_z_index_min = roof_begin;
+      stats.occupied_z_index_max = roof_begin + 2;
+      stats.occupied_z_min_abs =
+          -0.5 * resolution + static_cast<double>(roof_begin) * resolution;
+      stats.occupied_z_max_abs = stats.occupied_z_min_abs + 2.0 * resolution;
+    } else {
+      stats = groundColumn(0.0, resolution);
+    }
+    stats.prior_known_free = 1U;
+    return stats;
+  };
+
+  rog_map::ProjectionLayer clear_layer;
+  clear_layer.update(width, height, resolution, kOrigin, 1.0, config,
+                     [&scan](int x, int y) { return scan(6, x, y); });
+  const auto &clear_roof = clear_layer.cells().at(4U * width + 4U);
+  EXPECT_EQ(clear_roof.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(clear_roof.raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_CLEARANCE_OK);
+  EXPECT_NEAR(clear_roof.headroom, 0.50F, 1.0e-5F);
+
+  rog_map::ProjectionLayer low_layer;
+  low_layer.update(width, height, resolution, kOrigin, 1.0, config,
+                   [&scan](int x, int y) { return scan(5, x, y); });
+  const auto &low_roof = low_layer.cells().at(4U * width + 4U);
+  EXPECT_EQ(low_roof.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(low_roof.raw_reason,
+            rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+  EXPECT_EQ(low_roof.clearance_verified, 0U);
 }
 
 TEST(ProjectionClearance, RejectsHighVerticalRunWithUnknownBodyBand) {
@@ -1338,6 +1649,9 @@ TEST(ProjectionClearance, RejectsEightCentimeterFloatingPlateInsideSeedRadius) {
   config.robot_x = 0.09;
   config.robot_y = 0.09;
   config.reference_ground_z_abs = 0.0;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = 0.0;
+  config.reference_ground_slope_y = 0.0;
   config.ground_seed_radius = 0.08;
   // Deliberately include the plate in the height tolerance. It must still not
   // become a second seed disconnected from the lower support surface.
@@ -1358,6 +1672,504 @@ TEST(ProjectionClearance, RejectsEightCentimeterFloatingPlateInsideSeedRadius) {
   EXPECT_EQ(plate.ground_verified, 0U);
   EXPECT_EQ(layer.cells().at(4U * width + 2U).type,
             rog_map::CellType::PASSABLE);
+}
+
+TEST(ProjectionClearance, RobotTangentPlaneSeedsObservedDownhillTerrain) {
+  constexpr int width = 21;
+  constexpr int height = 9;
+  constexpr double resolution = 0.05;
+  auto config = clearanceConfig();
+  config.robot_x = 0.925;
+  config.robot_y = 0.225;
+  config.reference_ground_z_abs = 0.20;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.observed_empty_as_free = true;
+  config.bridge_observed_empty_for_ground_connectivity = false;
+
+  const auto scan = [resolution](int x, int) {
+    if (x >= 8 && x <= 12) {
+      auto stats = emptyColumn(resolution);
+      stats.prior_known_free = 1U;
+      return stats;
+    }
+    const double wx = (static_cast<double>(x) + 0.5) * resolution;
+    const double plane_z = 0.20 + 0.20 * (wx - 0.925);
+    const double quantized_z = std::round(plane_z / resolution) * resolution;
+    auto stats = groundColumn(quantized_z, resolution);
+    stats.prior_known_free = 1U;
+    return stats;
+  };
+
+  rog_map::ProjectionLayer horizontal_reference_layer;
+  horizontal_reference_layer.update(width, height, resolution, kOrigin, 1.0,
+                                    config, scan);
+  const auto &disconnected_downhill =
+      horizontal_reference_layer.cells().at(4U * width + 2U);
+  EXPECT_EQ(disconnected_downhill.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(disconnected_downhill.raw_reason,
+            rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = 0.20;
+  config.reference_ground_slope_y = 0.0;
+  rog_map::ProjectionLayer tangent_reference_layer;
+  tangent_reference_layer.update(width, height, resolution, kOrigin, 1.0,
+                                 config, scan);
+  const auto &verified_downhill =
+      tangent_reference_layer.cells().at(4U * width + 2U);
+  EXPECT_EQ(verified_downhill.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(verified_downhill.ground_verified, 1U);
+  EXPECT_NEAR(verified_downhill.reference_ground_z_abs, 0.04F, 1.0e-5F);
+  EXPECT_LE(verified_downhill.support_match_error,
+            verified_downhill.support_match_tolerance + 1.0e-6F);
+}
+
+TEST(ProjectionClearance,
+     CurrentFootprintUsesConfiguredToleranceForVerifiedRampGround) {
+  constexpr int width = 13;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  constexpr double robot_x = 0.325;
+  constexpr double robot_y = 0.125;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = robot_x;
+  config.robot_y = robot_y;
+  config.reference_ground_z_abs = 0.0;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = 0.20;
+  config.reference_ground_slope_y = 0.0;
+  config.ground_seed_radius = 0.50;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.30;
+  config.robot_footprint_clear_width = 0.20;
+
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 const double wx = (static_cast<double>(x) + 0.5) * resolution;
+                 const double offset_ramp_z = 0.20 * (wx - robot_x) + 0.10;
+                 return groundColumn(offset_ramp_z, resolution);
+               });
+
+  const auto &under_robot = layer.cells().at(2U * width + 6U);
+  EXPECT_EQ(under_robot.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(under_robot.ground_verified, 1U);
+  EXPECT_EQ(under_robot.inside_current_footprint, 1U);
+  EXPECT_LE(under_robot.support_match_error, 0.05F);
+  EXPECT_NEAR(under_robot.support_match_tolerance, 0.18F, 1.0e-6F);
+}
+
+TEST(ProjectionClearance,
+     FootprintGroundCalibratesPlaneInterceptAcrossSensorBlindGap) {
+  constexpr int width = 25;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  constexpr double robot_x = 0.325;
+  constexpr double robot_y = 0.125;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = robot_x;
+  config.robot_y = robot_y;
+  config.reference_ground_z_abs = 0.0;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = 0.20;
+  config.reference_ground_slope_y = 0.0;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.30;
+  config.robot_footprint_clear_width = 0.20;
+
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 if (x > 8 && x < 14) {
+                   rog_map::ColumnStats stats;
+                   stats.vertical_states.assign(
+                       40U, rog_map::VerticalVoxelState::UNKNOWN);
+                   return stats;
+                 }
+                 const double wx = (static_cast<double>(x) + 0.5) * resolution;
+                 return groundColumn(0.20 * (wx - robot_x) + 0.10, resolution);
+               });
+
+  const auto &ground_beyond_blind_gap = layer.cells().at(2U * width + 16U);
+  EXPECT_EQ(ground_beyond_blind_gap.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(ground_beyond_blind_gap.ground_verified, 1U);
+  EXPECT_EQ(ground_beyond_blind_gap.inside_current_footprint, 0U);
+  EXPECT_LE(ground_beyond_blind_gap.support_match_error, 0.05F);
+  EXPECT_NEAR(ground_beyond_blind_gap.support_match_tolerance, 0.06F, 1.0e-6F);
+}
+
+TEST(ProjectionClearance,
+     ConfiguredToleranceDoesNotSeedDisconnectedGroundOutsideFootprint) {
+  constexpr int width = 13;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.125;
+  config.robot_y = 0.125;
+  config.reference_ground_z_abs = 0.0;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = 0.20;
+  config.reference_ground_slope_y = 0.0;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 if (x < 8) {
+                   rog_map::ColumnStats stats;
+                   stats.vertical_states.assign(
+                       40U, rog_map::VerticalVoxelState::UNKNOWN);
+                   return stats;
+                 }
+                 const double wx = (static_cast<double>(x) + 0.5) * resolution;
+                 return groundColumn(0.20 * (wx - 0.125) + 0.10, resolution);
+               });
+
+  const auto &disconnected = layer.cells().at(2U * width + 10U);
+  EXPECT_EQ(disconnected.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(disconnected.raw_reason,
+            rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+  EXPECT_EQ(disconnected.ground_verified, 0U);
+  EXPECT_EQ(disconnected.inside_current_footprint, 0U);
+  EXPECT_NEAR(disconnected.support_match_tolerance, 0.06F, 1.0e-6F);
+}
+
+TEST(ProjectionClearance,
+     BootstrapsNearRampBeyondStrictPlaneGateWithSlopeEvidence) {
+  constexpr int width = 17;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.125;
+  config.robot_y = 0.125;
+  config.reference_ground_z_abs = 0.0;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = 0.0;
+  config.reference_ground_slope_y = 0.0;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.08;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+  config.ground_connectivity_bridge_max_length = 0.45;
+  config.ground_connectivity_bridge_max_height_delta = 0.15;
+  config.ground_connectivity_bridge_landing_min_length = 0.15;
+  config.ground_connectivity_bridge_landing_min_height_delta = 0.04;
+
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 if (x == 5 || x == 6) {
+                   rog_map::ColumnStats stats;
+                   stats.vertical_states.assign(
+                       40U, rog_map::VerticalVoxelState::UNKNOWN);
+                   return stats;
+                 }
+                 double ground_z = 0.0;
+                 if (x >= 7) {
+                   ground_z = 0.10;
+                 }
+                 if (x >= 9) {
+                   ground_z = 0.15;
+                 }
+                 if (x >= 11) {
+                   ground_z = 0.20;
+                 }
+                 if (x >= 13) {
+                   ground_z = 0.25;
+                 }
+                 return groundColumn(ground_z, resolution);
+               });
+
+  const auto &ramp_foot = layer.cells().at(2U * width + 7U);
+  const auto &ramp = layer.cells().at(2U * width + 14U);
+  EXPECT_EQ(ramp_foot.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(ramp_foot.ground_verified, 1U);
+  EXPECT_EQ(ramp_foot.ground_bridge_verified, 1U);
+  EXPECT_GT(ramp_foot.support_match_error, ramp_foot.support_match_tolerance);
+  EXPECT_EQ(ramp.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(ramp.ground_verified, 1U);
+}
+
+TEST(ProjectionClearance, SlopeEvidenceMayBridgeBeyondConfiguredSeedTolerance) {
+  constexpr int width = 17;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.125;
+  config.robot_y = 0.125;
+  config.reference_ground_z_abs = 0.0;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = -0.20;
+  config.reference_ground_slope_y = 0.0;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_height_delta = 0.35;
+  config.max_ground_step = 0.08;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+  config.ground_connectivity_bridge_max_length = 0.45;
+  config.ground_connectivity_bridge_max_height_delta = 0.15;
+  config.ground_connectivity_bridge_landing_min_length = 0.15;
+  config.ground_connectivity_bridge_landing_min_height_delta = 0.04;
+
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 if (x == 5 || x == 6) {
+                   rog_map::ColumnStats stats;
+                   stats.vertical_states.assign(
+                       40U, rog_map::VerticalVoxelState::UNKNOWN);
+                   return stats;
+                 }
+                 double ground_z = 0.05;
+                 if (x >= 7) {
+                   ground_z = 0.20;
+                 }
+                 if (x >= 9) {
+                   ground_z = 0.25;
+                 }
+                 if (x >= 11) {
+                   ground_z = 0.30;
+                 }
+                 return groundColumn(ground_z, resolution);
+               });
+
+  const auto &ramp_foot = layer.cells().at(2U * width + 7U);
+  EXPECT_GT(ramp_foot.support_match_error, config.ground_seed_tolerance);
+  EXPECT_EQ(ramp_foot.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(ramp_foot.ground_verified, 1U);
+  EXPECT_EQ(ramp_foot.ground_bridge_verified, 1U);
+}
+
+TEST(ProjectionClearance, NearPlaneGateBootstrapRejectsFlatStep) {
+  constexpr int width = 17;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.125;
+  config.robot_y = 0.125;
+  config.reference_ground_z_abs = 0.0;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = 0.0;
+  config.reference_ground_slope_y = 0.0;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.08;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.20;
+  config.robot_footprint_clear_width = 0.20;
+  config.ground_connectivity_bridge_max_length = 0.45;
+  config.ground_connectivity_bridge_max_height_delta = 0.15;
+  config.ground_connectivity_bridge_landing_min_length = 0.15;
+  config.ground_connectivity_bridge_landing_min_height_delta = 0.04;
+
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 if (x == 5 || x == 6) {
+                   rog_map::ColumnStats stats;
+                   stats.vertical_states.assign(
+                       40U, rog_map::VerticalVoxelState::UNKNOWN);
+                   return stats;
+                 }
+                 return groundColumn(x >= 7 ? 0.10 : 0.0, resolution);
+               });
+
+  const auto &step = layer.cells().at(2U * width + 7U);
+  EXPECT_EQ(step.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(step.ground_verified, 0U);
+  EXPECT_EQ(step.raw_reason, rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+}
+
+TEST(ProjectionClearance, AdjacentLowTerrainDoesNotHijackRobotHeightSeed) {
+  constexpr int width = 9;
+  constexpr int height = 9;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.225;
+  config.robot_y = 0.225;
+  config.reference_ground_z_abs = 0.175;
+  config.ground_seed_radius = 0.35;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.min_headroom_known_ratio = 0.80;
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 return groundColumn(x == 0 ? 0.05 : 0.20, resolution);
+               });
+
+  const auto &robot_height_ground = layer.cells().at(4U * width + 4U);
+  EXPECT_EQ(robot_height_ground.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(robot_height_ground.ground_verified, 1U);
+
+  const auto &disconnected_low_ground = layer.cells().at(4U * width);
+  EXPECT_EQ(disconnected_low_ground.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(disconnected_low_ground.raw_reason,
+            rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+  EXPECT_EQ(disconnected_low_ground.ground_verified, 0U);
+}
+
+TEST(ProjectionClearance, BridgesOneVoxelizedRampFootWithContinuingSlope) {
+  constexpr int width = 13;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.125;
+  config.robot_y = 0.125;
+  config.reference_ground_z_abs = 0.0;
+  config.ground_seed_radius = 0.12;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.ground_connectivity_bridge_max_height_delta = 0.15;
+  config.ground_connectivity_bridge_landing_min_length = 0.25;
+  config.ground_connectivity_bridge_landing_min_height_delta = 0.04;
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 double height = 0.0;
+                 if (x >= 4) {
+                   height = 0.10;
+                 }
+                 if (x >= 7) {
+                   height = 0.15;
+                 }
+                 if (x >= 10) {
+                   height = 0.20;
+                 }
+                 return groundColumn(height, resolution);
+               });
+
+  const auto &ramp_foot = layer.cells().at(2U * width + 4U);
+  const auto &ramp = layer.cells().at(2U * width + 12U);
+  EXPECT_EQ(ramp_foot.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(ramp_foot.ground_bridge_verified, 1U);
+  EXPECT_EQ(ramp.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(ramp.ground_verified, 1U);
+}
+
+TEST(ProjectionClearance,
+     BridgesDescendingVoxelizedRampFootWithSlopeBeforeLanding) {
+  constexpr int width = 13;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.625;
+  config.robot_y = 0.125;
+  config.reference_ground_z_abs = 0.20;
+  config.ground_seed_radius = 0.12;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.ground_connectivity_bridge_max_height_delta = 0.15;
+  config.ground_connectivity_bridge_landing_min_length = 0.25;
+  config.ground_connectivity_bridge_landing_min_height_delta = 0.04;
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 double height = 0.0;
+                 if (x >= 4) {
+                   height = 0.10;
+                 }
+                 if (x >= 7) {
+                   height = 0.15;
+                 }
+                 if (x >= 10) {
+                   height = 0.20;
+                 }
+                 return groundColumn(height, resolution);
+               });
+
+  const auto &lower_floor = layer.cells().at(2U * width);
+  const auto &ramp_foot = layer.cells().at(2U * width + 3U);
+  EXPECT_EQ(ramp_foot.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(ramp_foot.ground_bridge_verified, 1U);
+  EXPECT_EQ(lower_floor.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(lower_floor.ground_verified, 1U);
+}
+
+TEST(ProjectionClearance, AllowsOneBlindBandBeforeOneQuantizedRampFoot) {
+  constexpr int width = 17;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.125;
+  config.robot_y = 0.125;
+  config.reference_ground_z_abs = 0.0;
+  config.ground_seed_radius = 0.12;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.observed_empty_as_free = true;
+  config.bridge_observed_empty_for_ground_connectivity = true;
+  config.ground_connectivity_bridge_max_length = 0.11;
+  config.ground_connectivity_bridge_max_height_delta = 0.15;
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 if (x == 4) {
+                   return emptyColumn(resolution);
+                 }
+                 double height = 0.0;
+                 if (x >= 7) {
+                   height = 0.10;
+                 }
+                 if (x >= 10) {
+                   height = 0.15;
+                 }
+                 if (x >= 13) {
+                   height = 0.20;
+                 }
+                 return groundColumn(height, resolution);
+               });
+
+  const auto &blind_band_landing = layer.cells().at(2U * width + 5U);
+  const auto &ramp_foot = layer.cells().at(2U * width + 7U);
+  const auto &ramp = layer.cells().at(2U * width + 16U);
+  EXPECT_EQ(blind_band_landing.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(blind_band_landing.ground_bridge_verified, 1U);
+  EXPECT_EQ(ramp_foot.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(ramp_foot.ground_bridge_verified, 1U);
+  EXPECT_EQ(ramp.type, rog_map::CellType::PASSABLE);
+}
+
+TEST(ProjectionClearance, QuantizedRampBridgeRejectsFlatStepLanding) {
+  constexpr int width = 13;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.robot_x = 0.125;
+  config.robot_y = 0.125;
+  config.reference_ground_z_abs = 0.0;
+  config.ground_seed_radius = 0.12;
+  config.ground_seed_tolerance = 0.18;
+  config.max_ground_step = 0.06;
+  config.ground_connectivity_bridge_max_height_delta = 0.15;
+  config.ground_connectivity_bridge_landing_min_length = 0.25;
+  config.ground_connectivity_bridge_landing_min_height_delta = 0.04;
+  layer.update(width, height, resolution, kOrigin, 1.0, config,
+               [resolution](int x, int) {
+                 return groundColumn(x >= 4 ? 0.10 : 0.0, resolution);
+               });
+
+  const auto &step = layer.cells().at(2U * width + 4U);
+  EXPECT_EQ(step.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(step.ground_verified, 0U);
+  EXPECT_EQ(step.raw_reason, rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
 }
 
 TEST(ProjectionClearance, SeedsCoplanarGroundArcsSplitBySensorBlindRegion) {
@@ -1709,8 +2521,7 @@ TEST(ProjectionClearance,
             rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED);
 }
 
-TEST(ProjectionClearance, BridgesOnePriorNoDataCellFromTwoCardinalSupports)
-{
+TEST(ProjectionClearance, BridgesOnePriorNoDataCellFromTwoCardinalSupports) {
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
   config.clear_robot_footprint_unknown = true;
@@ -1742,8 +2553,7 @@ TEST(ProjectionClearance, BridgesOnePriorNoDataCellFromTwoCardinalSupports)
   EXPECT_EQ(center(layer).ground_support_bridge_count, 2U);
 }
 
-TEST(ProjectionClearance, ObservedSupportBridgeRejectsOccupiedReturn)
-{
+TEST(ProjectionClearance, ObservedSupportBridgeRejectsOccupiedReturn) {
   rog_map::ProjectionLayer layer;
   auto config = requiredSupportConfig();
   config.clear_robot_footprint_unknown = true;
@@ -2136,9 +2946,9 @@ TEST(PriorMapFusion, KnownFreeFillsOnlyDynamicUnknown) {
   const std::vector<uint8_t> dynamic_unknown_mask = {1U, 0U, 0U, 1U};
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
-  rog_map::fusePriorMapProjection(true, true, prior, dynamic_mask,
-                                  dynamic_values, dynamic_unknown_mask,
-                                  {0U, 0U, 0U, 0U}, fused_mask, fused_values);
+  rog_map::fusePriorMapProjection(
+      true, true, prior, dynamic_mask, dynamic_values, dynamic_unknown_mask,
+      {0U, 0U, 0U, 0U}, {0U, 0U, 0U, 0U}, fused_mask, fused_values);
 
   EXPECT_EQ(fused_mask, (std::vector<uint8_t>{1U, 0U, 0U, 0U}));
   EXPECT_EQ(fused_values, (std::vector<uint8_t>{0U, 254U, 254U, 254U}));
@@ -2155,10 +2965,28 @@ TEST(PriorMapFusion, DoesNotTrustStaticFreeUnlessExplicitlyEnabled) {
   std::vector<uint8_t> fused_values;
 
   rog_map::fusePriorMapProjection(true, false, prior, {0U}, {254U}, {1U}, {0U},
-                                  fused_mask, fused_values);
+                                  {0U}, fused_mask, fused_values);
 
   EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U}));
   EXPECT_EQ(fused_values, (std::vector<uint8_t>{254U}));
+}
+
+TEST(PriorMapFusion, VerifiedNavigationClearanceOverridesOnlyItsPriorCell) {
+  rog_map::PriorMapData prior;
+  prior.loaded = true;
+  prior.transform_ready = true;
+  prior.projection_cache_ready = true;
+  prior.cached_mask = {0U, 0U, 0U};
+  prior.cached_free_mask = {0U, 0U, 0U};
+  std::vector<uint8_t> fused_mask;
+  std::vector<uint8_t> fused_values;
+
+  rog_map::fusePriorMapProjection(true, false, prior, {1U, 1U, 0U},
+                                  {0U, 50U, 254U}, {0U, 0U, 0U}, {0U, 0U, 0U},
+                                  {1U, 0U, 0U}, fused_mask, fused_values);
+
+  EXPECT_EQ(fused_mask, (std::vector<uint8_t>{1U, 0U, 0U}));
+  EXPECT_EQ(fused_values, (std::vector<uint8_t>{0U, 254U, 254U}));
 }
 
 TEST(PriorMapFusion, RequiredSupportDisablesEveryTwoDimensionalFreeFill) {
@@ -2172,7 +3000,7 @@ TEST(PriorMapFusion, RequiredSupportDisablesEveryTwoDimensionalFreeFill) {
   std::vector<uint8_t> fused_values;
 
   rog_map::fusePriorMapProjection(true, true, prior, {0U}, {254U}, {1U}, {1U},
-                                  fused_mask, fused_values, true);
+                                  {0U}, fused_mask, fused_values, true);
 
   EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U}));
   EXPECT_EQ(fused_values, (std::vector<uint8_t>{254U}));
@@ -2188,9 +3016,9 @@ TEST(PriorMapFusion, BoundedNearFieldFillRequiresKnownStaticFree) {
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
 
-  rog_map::fusePriorMapProjection(true, false, prior, {0U, 0U, 0U},
-                                  {254U, 254U, 254U}, {0U, 0U, 0U},
-                                  {1U, 1U, 1U}, fused_mask, fused_values);
+  rog_map::fusePriorMapProjection(
+      true, false, prior, {0U, 0U, 0U}, {254U, 254U, 254U}, {0U, 0U, 0U},
+      {1U, 1U, 1U}, {0U, 0U, 0U}, fused_mask, fused_values);
 
   EXPECT_EQ(fused_mask, (std::vector<uint8_t>{1U, 0U, 0U}));
   EXPECT_EQ(fused_values, (std::vector<uint8_t>{0U, 254U, 254U}));
@@ -2203,7 +3031,8 @@ TEST(PriorMapFusion, MissingTransformBlocksEveryCell) {
   std::vector<uint8_t> fused_values;
 
   rog_map::fusePriorMapProjection(true, false, prior, {1U, 1U}, {0U, 0U},
-                                  {0U, 0U}, {0U, 0U}, fused_mask, fused_values);
+                                  {0U, 0U}, {0U, 0U}, {0U, 0U}, fused_mask,
+                                  fused_values);
 
   EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U, 0U}));
   EXPECT_EQ(fused_values, (std::vector<uint8_t>{254U, 254U}));

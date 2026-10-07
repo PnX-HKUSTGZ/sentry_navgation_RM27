@@ -79,7 +79,8 @@ private:
   // Find the nearest point on cached trajectory and build horizon reference
   // sequence.
   bool buildReferenceFromOptPath(const State &curr,
-                                 std::vector<ReferencePoint> &out_ref) const;
+                                 std::vector<ReferencePoint> &out_ref,
+                                 bool &stationary_startup_active) const;
 
   bool transformPathToOdom(
       const ros_interfaces::msg::MpcPositionCommand::SharedPtr &opt,
@@ -187,6 +188,13 @@ private:
   double deadzone_speed_threshold_{0.02};
   double control_delay_compensation_{0.25};
   double reference_progress_max_lead_time_{0.25};
+  double reference_startup_max_lead_time_{1.50};
+  double reference_startup_target_speed_{0.08};
+  double reference_startup_min_command_speed_{0.08};
+  double uphill_startup_min_grade_{0.08};
+  double uphill_full_assist_grade_{0.18};
+  double uphill_assist_min_reference_speed_{0.08};
+  double uphill_startup_min_command_speed_{0.08};
   double slope_slowdown_start_angle_{0.08};
   double slope_full_slowdown_angle_{0.18};
   double slope_speed_limit_{1.0};

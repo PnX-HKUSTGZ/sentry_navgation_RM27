@@ -272,8 +272,8 @@ void MincoMpcController::configure(
                                                rclcpp::ParameterValue(-1.0));
   nav2_util::declare_parameter_if_not_declared(node, name + ".vy_max",
                                                rclcpp::ParameterValue(1.0));
-  nav2_util::declare_parameter_if_not_declared(
-      node, name + ".max_planar_speed", rclcpp::ParameterValue(1.0));
+  nav2_util::declare_parameter_if_not_declared(node, name + ".max_planar_speed",
+                                               rclcpp::ParameterValue(1.0));
   nav2_util::declare_parameter_if_not_declared(node, name + ".omega_min",
                                                rclcpp::ParameterValue(-2.0));
   nav2_util::declare_parameter_if_not_declared(node, name + ".omega_max",
@@ -294,11 +294,28 @@ void MincoMpcController::configure(
       node, name + ".reference_progress_max_lead_time",
       rclcpp::ParameterValue(0.25));
   nav2_util::declare_parameter_if_not_declared(
-      node, name + ".slope_slowdown_start_angle",
+      node, name + ".reference_startup_max_lead_time",
+      rclcpp::ParameterValue(1.50));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".reference_startup_target_speed",
       rclcpp::ParameterValue(0.08));
   nav2_util::declare_parameter_if_not_declared(
-      node, name + ".slope_full_slowdown_angle",
-      rclcpp::ParameterValue(0.18));
+      node, name + ".reference_startup_min_command_speed",
+      rclcpp::ParameterValue(0.08));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".uphill_startup_min_grade", rclcpp::ParameterValue(0.08));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".uphill_full_assist_grade", rclcpp::ParameterValue(0.18));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".uphill_assist_min_reference_speed",
+      rclcpp::ParameterValue(0.08));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".uphill_startup_min_command_speed",
+      rclcpp::ParameterValue(0.08));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".slope_slowdown_start_angle", rclcpp::ParameterValue(0.08));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".slope_full_slowdown_angle", rclcpp::ParameterValue(0.18));
   nav2_util::declare_parameter_if_not_declared(
       node, name + ".slope_speed_limit", rclcpp::ParameterValue(1.0));
   nav2_util::declare_parameter_if_not_declared(
@@ -378,8 +395,7 @@ void MincoMpcController::configure(
   node->get_parameter(name + ".vx_max", mpc_config_.vx_max);
   node->get_parameter(name + ".vy_min", mpc_config_.vy_min);
   node->get_parameter(name + ".vy_max", mpc_config_.vy_max);
-  node->get_parameter(name + ".max_planar_speed",
-                      mpc_config_.max_planar_speed);
+  node->get_parameter(name + ".max_planar_speed", mpc_config_.max_planar_speed);
   node->get_parameter(name + ".omega_min", mpc_config_.omega_min);
   node->get_parameter(name + ".omega_max", mpc_config_.omega_max);
   node->get_parameter(name + ".fixed_wz", fixed_wz_);
@@ -393,6 +409,20 @@ void MincoMpcController::configure(
                       control_delay_compensation_);
   node->get_parameter(name + ".reference_progress_max_lead_time",
                       reference_progress_max_lead_time_);
+  node->get_parameter(name + ".reference_startup_max_lead_time",
+                      reference_startup_max_lead_time_);
+  node->get_parameter(name + ".reference_startup_target_speed",
+                      reference_startup_target_speed_);
+  node->get_parameter(name + ".reference_startup_min_command_speed",
+                      reference_startup_min_command_speed_);
+  node->get_parameter(name + ".uphill_startup_min_grade",
+                      uphill_startup_min_grade_);
+  node->get_parameter(name + ".uphill_full_assist_grade",
+                      uphill_full_assist_grade_);
+  node->get_parameter(name + ".uphill_assist_min_reference_speed",
+                      uphill_assist_min_reference_speed_);
+  node->get_parameter(name + ".uphill_startup_min_command_speed",
+                      uphill_startup_min_command_speed_);
   node->get_parameter(name + ".slope_slowdown_start_angle",
                       slope_slowdown_start_angle_);
   node->get_parameter(name + ".slope_full_slowdown_angle",
@@ -424,6 +454,24 @@ void MincoMpcController::configure(
       future_stamp_tolerance_ < 0.0 ||
       !std::isfinite(reference_progress_max_lead_time_) ||
       reference_progress_max_lead_time_ < 0.0 ||
+      !std::isfinite(reference_startup_max_lead_time_) ||
+      reference_startup_max_lead_time_ < reference_progress_max_lead_time_ ||
+      !std::isfinite(reference_startup_target_speed_) ||
+      reference_startup_target_speed_ <= deadzone_speed_threshold_ ||
+      !std::isfinite(reference_startup_min_command_speed_) ||
+      reference_startup_min_command_speed_ <= deadzone_speed_threshold_ ||
+      reference_startup_min_command_speed_ > mpc_config_.max_planar_speed ||
+      !std::isfinite(uphill_startup_min_grade_) ||
+      uphill_startup_min_grade_ < 0.0 || uphill_startup_min_grade_ >= 1.0 ||
+      !std::isfinite(uphill_full_assist_grade_) ||
+      uphill_full_assist_grade_ <= uphill_startup_min_grade_ ||
+      uphill_full_assist_grade_ > 1.0 ||
+      !std::isfinite(uphill_assist_min_reference_speed_) ||
+      uphill_assist_min_reference_speed_ <= deadzone_speed_threshold_ ||
+      uphill_assist_min_reference_speed_ > mpc_config_.max_planar_speed ||
+      !std::isfinite(uphill_startup_min_command_speed_) ||
+      uphill_startup_min_command_speed_ <= deadzone_speed_threshold_ ||
+      uphill_startup_min_command_speed_ > mpc_config_.max_planar_speed ||
       !std::isfinite(slope_slowdown_start_angle_) ||
       slope_slowdown_start_angle_ < 0.0 ||
       !std::isfinite(slope_full_slowdown_angle_) ||
@@ -433,9 +481,16 @@ void MincoMpcController::configure(
       mpc_config_.max_planar_speed <= 0.0) {
     throw std::invalid_argument("MincoMpcController timeouts must be finite "
                                 "(timeouts > 0, future tolerance/reference "
-                                "lead/slope start >= 0), slope full angle must "
-                                "exceed its start angle, and speed limits must "
-                                "be finite and positive");
+                                "lead/slope start >= 0), startup lead must not "
+                                "be shorter than normal lead, startup target "
+                                "speed and minimum command must exceed the "
+                                "command deadzone, the minimum command must "
+                                "not exceed max planar speed, uphill grades "
+                                "must define an increasing range within [0,1], "
+                                "uphill reference and command speeds must be "
+                                "within the command limits, slope "
+                                "full angle must exceed its start angle, and "
+                                "speed limits must be finite and positive");
   }
   slope_speed_limit_ =
       std::min(slope_speed_limit_, mpc_config_.max_planar_speed);
@@ -481,7 +536,10 @@ void MincoMpcController::configure(
   RCLCPP_INFO(logger_,
               "%s: MincoMpcController configured (dt=%.3f, "
               "lookahead_time=%.3f, deadzone=%.3f, delay_comp=%.3f, "
-              "reference_max_lead=%.3f, slope_slowdown=[%.3f,%.3f]rad, "
+              "reference_max_lead=%.3f, startup_lead=%.3f, "
+              "startup_target_speed=%.3f, startup_min_command=%.3f, "
+              "uphill_assist=[grade=%.3f..%.3f,ref>=%.3f,max_command=%.3f], "
+              "slope_slowdown=[%.3f,%.3f]rad, "
               "slope_speed_limit=%.3f, "
               "small_gyro=%s, fixed_wz=%.3f, odom_timeout=%.3f, "
               "trajectory_timeout=%.3f, future_tolerance=%.3f, "
@@ -490,8 +548,11 @@ void MincoMpcController::configure(
               "opt_path_topic=%s, odom_topic=%s, cmd_vel_mpc_topic=%s)",
               name_.c_str(), dt, lookahead_time, deadzone_speed_threshold_,
               control_delay_compensation_, reference_progress_max_lead_time_,
-              slope_slowdown_start_angle_, slope_full_slowdown_angle_,
-              slope_speed_limit_,
+              reference_startup_max_lead_time_, reference_startup_target_speed_,
+              reference_startup_min_command_speed_, uphill_startup_min_grade_,
+              uphill_full_assist_grade_, uphill_assist_min_reference_speed_,
+              uphill_startup_min_command_speed_, slope_slowdown_start_angle_,
+              slope_full_slowdown_angle_, slope_speed_limit_,
               use_small_gyro_mode_ ? "true" : "false", fixed_wz_, odom_timeout_,
               trajectory_timeout_, future_stamp_tolerance_, mpc_config_.q_along,
               mpc_config_.q_cross, lidar_offset_x_, lidar_offset_y_,
@@ -568,7 +629,8 @@ void MincoMpcController::cleanup() {
 
 void MincoMpcController::activate() {
   auto node = node_.lock();
-  const rclcpp::Time now = node ? node->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
+  const rclcpp::Time now =
+      node ? node->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
   {
     std::scoped_lock lock(data_mtx_, plan_mtx_);
     global_plan_ = nav_msgs::msg::Path{};
@@ -606,7 +668,8 @@ void MincoMpcController::deactivate() {
 
 void MincoMpcController::setPlan(const nav_msgs::msg::Path &path) {
   auto node = node_.lock();
-  const rclcpp::Time now = node ? node->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
+  const rclcpp::Time now =
+      node ? node->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
   const uint64_t plan_token = sessionToken(path.header.stamp);
   const auto steady_now = std::chrono::steady_clock::now();
   bool promoted_pending = false;
@@ -633,11 +696,12 @@ void MincoMpcController::setPlan(const nav_msgs::msg::Path &path) {
       has_tracked_ref_ = false;
 
       if (pending_opt_path_ && has_pending_opt_path_rx_time_ && node &&
-          trajectory_session_gate_.classifyNormal(sessionToken(
-              pending_opt_path_->planning_stamp)) ==
+          trajectory_session_gate_.classifyNormal(
+              sessionToken(pending_opt_path_->planning_stamp)) ==
               TrajectorySessionGate::NormalDisposition::ACCEPT) {
         const double receive_age = std::chrono::duration<double>(
-            steady_now - pending_opt_path_rx_time_).count();
+                                       steady_now - pending_opt_path_rx_time_)
+                                       .count();
         const bool receive_fresh = std::isfinite(receive_age) &&
                                    receive_age >= 0.0 &&
                                    receive_age <= trajectory_timeout_;
@@ -680,8 +744,9 @@ void MincoMpcController::setPlan(const nav_msgs::msg::Path &path) {
   if (refreshed || promoted_pending) {
     return;
   }
-  (void)failClosedCommand(
-      now, path.poses.empty() ? "EMPTY_PLAN" : "NEW_PLAN_WAITING_FOR_TRAJECTORY");
+  (void)failClosedCommand(now, path.poses.empty()
+                                   ? "EMPTY_PLAN"
+                                   : "NEW_PLAN_WAITING_FOR_TRAJECTORY");
 }
 
 void MincoMpcController::setSpeedLimit(const double &speed_limit,
@@ -714,9 +779,9 @@ void MincoMpcController::onOptPath(
     if (block_accepted || planning_token == 0U) {
       const rclcpp::Time stamp =
           node ? node->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
-      (void)failClosedCommand(
-          stamp, planning_token == 0U ? "BLOCK_WITH_INVALID_SESSION"
-                                     : "BLOCK_COMMAND");
+      (void)failClosedCommand(stamp, planning_token == 0U
+                                         ? "BLOCK_WITH_INVALID_SESSION"
+                                         : "BLOCK_COMMAND");
     }
     return;
   }
@@ -802,11 +867,11 @@ void MincoMpcController::onOptPath(
 
   if (ignored_stale_session) {
     if (node) {
-      RCLCPP_WARN_THROTTLE(
-          logger_, *node->get_clock(), 1000,
-          "Minco MPC ignored trajectory for stale session token=%llu expected=%llu",
-          static_cast<unsigned long long>(planning_token),
-          static_cast<unsigned long long>(expected_token));
+      RCLCPP_WARN_THROTTLE(logger_, *node->get_clock(), 1000,
+                           "Minco MPC ignored trajectory for stale session "
+                           "token=%llu expected=%llu",
+                           static_cast<unsigned long long>(planning_token),
+                           static_cast<unsigned long long>(expected_token));
     }
     return;
   }
@@ -903,7 +968,9 @@ bool MincoMpcController::transformPathToOdom(
 }
 
 bool MincoMpcController::buildReferenceFromOptPath(
-    const State &curr, std::vector<ReferencePoint> &out_ref) const {
+    const State &curr, std::vector<ReferencePoint> &out_ref,
+    bool &stationary_startup_active) const {
+  stationary_startup_active = false;
   auto node = node_.lock();
   if (!node) {
     return false;
@@ -993,12 +1060,42 @@ bool MincoMpcController::buildReferenceFromOptPath(
   double current_spatial_idx = 0.0;
   if (!computeReferenceIndex(
           nearest_idx_float, same_opt_traj, tracked_spatial_idx,
-          tracked_ref_idx,
-          elapsed_since_update, planner_dt,
-          static_cast<double>(n_cmds - 1),
-          reference_progress_max_lead_time_, current_spatial_idx,
-          current_idx_float)) {
+          tracked_ref_idx, elapsed_since_update, planner_dt,
+          static_cast<double>(n_cmds - 1), reference_progress_max_lead_time_,
+          current_spatial_idx, current_idx_float)) {
     return false;
+  }
+
+  const double reference_index_before_startup = current_idx_float;
+  const double measured_speed = std::hypot(curr.vx, curr.vy);
+  if (measured_speed <= deadzone_speed_threshold_) {
+    std::vector<double> reference_speeds;
+    reference_speeds.reserve(n_cmds);
+    for (const auto &command : cmds) {
+      reference_speeds.push_back(
+          std::hypot(command.velocity.x, command.velocity.y));
+    }
+    if (!applyStationaryStartupReferenceFloor(
+            reference_speeds, measured_speed, deadzone_speed_threshold_,
+            reference_startup_target_speed_, planner_dt,
+            reference_startup_max_lead_time_, current_spatial_idx,
+            static_cast<double>(n_cmds - 1U), current_idx_float)) {
+      return false;
+    }
+    const size_t selected_index = static_cast<size_t>(
+        std::clamp(std::floor(current_idx_float), 0.0,
+                   static_cast<double>(reference_speeds.size() - 1U)));
+    stationary_startup_active = reference_speeds[selected_index] + 1.0e-9 >=
+                                reference_startup_target_speed_;
+  }
+  if (current_idx_float > reference_index_before_startup + 1.0e-6) {
+    RCLCPP_INFO_THROTTLE(
+        logger_, *node->get_clock(), 1000,
+        "Minco MPC stationary startup reference: spatial=%.2f regular=%.2f "
+        "startup=%.2f (%.2f s, target_speed=%.2f m/s)",
+        current_spatial_idx, reference_index_before_startup, current_idx_float,
+        (current_idx_float - current_spatial_idx) * planner_dt,
+        reference_startup_target_speed_);
   }
 
   {
@@ -1213,12 +1310,10 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
   // offset is base -> lidar in the base frame, so subtract its world-frame
   // projection to obtain the base position. extractGlobalVelocityAndYaw()
   // applies the matching rigid-body velocity compensation.
-  const double offset_global_x =
-      std::cos(curr.yaw) * lidar_offset_x_ -
-      std::sin(curr.yaw) * lidar_offset_y_;
-  const double offset_global_y =
-      std::sin(curr.yaw) * lidar_offset_x_ +
-      std::cos(curr.yaw) * lidar_offset_y_;
+  const double offset_global_x = std::cos(curr.yaw) * lidar_offset_x_ -
+                                 std::sin(curr.yaw) * lidar_offset_y_;
+  const double offset_global_y = std::sin(curr.yaw) * lidar_offset_x_ +
+                                 std::cos(curr.yaw) * lidar_offset_y_;
   curr.x -= offset_global_x;
   curr.y -= offset_global_y;
 
@@ -1302,7 +1397,8 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
 
   // 2) 构造参考序列：优先 /opt_path
   std::vector<ReferencePoint> ref;
-  bool ok_ref = buildReferenceFromOptPath(curr, ref);
+  bool stationary_startup_active = false;
+  bool ok_ref = buildReferenceFromOptPath(curr, ref, stationary_startup_active);
 
   if (!ok_ref) {
     return stop("NO_REFERENCE");
@@ -1396,6 +1492,59 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
   double sin_phase = std::sin(phase_delay);
   double vx = cos_phase * vx_mpc + sin_phase * vy_mpc;
   double vy = -sin_phase * vx_mpc + cos_phase * vy_mpc;
+  const double speed_before_startup_floor = std::hypot(vx, vy);
+  if (!applyStationaryStartupCommandFloor(
+          stationary_startup_active, reference_startup_min_command_speed_,
+          ref.front().vel.x(), ref.front().vel.y(), vx, vy)) {
+    return stop("INVALID_STARTUP_COMMAND_FLOOR");
+  }
+  const double speed_after_startup_floor = std::hypot(vx, vy);
+  if (speed_after_startup_floor > speed_before_startup_floor + 1.0e-6) {
+    RCLCPP_INFO_THROTTLE(logger_, *node->get_clock(), 1000,
+                         "Minco MPC startup command floor: %.3f -> %.3f m/s",
+                         speed_before_startup_floor, speed_after_startup_floor);
+  }
+
+  tf2::Quaternion attitude;
+  tf2::fromMsg(latest_odom->pose.pose.orientation, attitude);
+  double roll = 0.0;
+  double pitch = 0.0;
+  double attitude_yaw = 0.0;
+  tf2::Matrix3x3(attitude).getRPY(roll, pitch, attitude_yaw);
+  roll -= lidar_roll_offset_;
+  double peak_reference_speed = 0.0;
+  for (const auto &point : ref) {
+    peak_reference_speed =
+        std::max(peak_reference_speed, point.vel.head<2>().norm());
+  }
+  // Keep assistance after the chassis leaves the startup deadzone when the
+  // trajectory contains a normal driving-speed segment. This threshold is
+  // independent of the full-assist command, otherwise raising the steep-ramp
+  // target would make assistance drop out as soon as the chassis starts.
+  const bool uphill_assist_active =
+      tilt_speed_limit::shouldApplyUphillCommandFloor(
+          stationary_startup_active, peak_reference_speed,
+          uphill_assist_min_reference_speed_);
+  const double speed_before_uphill_floor = std::hypot(vx, vy);
+  double uphill_grade = 0.0;
+  double uphill_command_floor = 0.0;
+  if (!tilt_speed_limit::applyUphillCommandFloor(
+          uphill_assist_active, uphill_startup_min_grade_,
+          uphill_full_assist_grade_, uphill_startup_min_command_speed_, roll,
+          pitch, attitude_yaw, vx, vy, uphill_grade, uphill_command_floor)) {
+    return stop("INVALID_UPHILL_COMMAND_FLOOR");
+  }
+  const double speed_after_uphill_floor = std::hypot(vx, vy);
+  if (uphill_assist_active &&
+      speed_after_uphill_floor > speed_before_uphill_floor + 1.0e-6) {
+    RCLCPP_INFO_THROTTLE(logger_, *node->get_clock(), 1000,
+                         "Minco MPC uphill command floor: grade=%.3f roll=%.3f "
+                         "pitch=%.3f ref_peak=%.3f floor=%.3f speed %.3f -> "
+                         "%.3f m/s",
+                         uphill_grade, roll, pitch, peak_reference_speed,
+                         uphill_command_floor, speed_before_uphill_floor,
+                         speed_after_uphill_floor);
+  }
   // 5) 处理 Nav2 setSpeedLimit
   if (speed_limit_ > 1e-6) {
     const double v_norm = std::hypot(vx, vy);
@@ -1411,13 +1560,6 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
     }
   }
 
-  tf2::Quaternion attitude;
-  tf2::fromMsg(latest_odom->pose.pose.orientation, attitude);
-  double roll = 0.0;
-  double pitch = 0.0;
-  double attitude_yaw = 0.0;
-  tf2::Matrix3x3(attitude).getRPY(roll, pitch, attitude_yaw);
-  roll -= lidar_roll_offset_;
   const double tilt_limit = tilt_speed_limit::speedLimit(
       roll, pitch, slope_slowdown_start_angle_, slope_full_slowdown_angle_,
       mpc_config_.max_planar_speed, slope_speed_limit_);
@@ -1426,15 +1568,16 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
     return stop("INVALID_TILT_SPEED_LIMIT");
   }
   if (speed_before_tilt_limit > tilt_limit + 1.0e-3) {
-    RCLCPP_INFO_THROTTLE(
-        logger_, *node->get_clock(), 2000,
-        "Minco MPC slope limit active: roll=%.3f pitch=%.3f speed %.3f -> %.3f m/s",
-        roll, pitch, speed_before_tilt_limit, tilt_limit);
+    RCLCPP_INFO_THROTTLE(logger_, *node->get_clock(), 2000,
+                         "Minco MPC slope limit active: roll=%.3f pitch=%.3f "
+                         "speed %.3f -> %.3f m/s",
+                         roll, pitch, speed_before_tilt_limit, tilt_limit);
   }
 
   // 6) 死区截断
   const double deadzone = deadzone_speed_threshold_;
-  if (std::hypot(vx, vy) < deadzone) {
+  if (shouldSuppressPlanarCommand(std::hypot(vx, vy), deadzone,
+                                  stationary_startup_active)) {
     vx = 0.0;
     vy = 0.0;
   }

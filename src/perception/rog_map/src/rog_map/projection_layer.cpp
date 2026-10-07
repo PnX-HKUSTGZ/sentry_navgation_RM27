@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 
@@ -882,7 +883,8 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
     double bridge_distance;
     int bridge_start_view_id;
     bool is_empty_bridge;
-    bool bridge_used;
+    bool empty_bridge_used;
+    bool quantized_ramp_transition_used;
   };
   std::queue<ConnectivityNode> open;
   std::vector<double> best_empty_bridge_distance(
@@ -896,8 +898,27 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
   std::vector<SeedCandidate> seed_candidates;
   double seed_ground_z = std::numeric_limits<double>::infinity();
   double seed_distance = std::numeric_limits<double>::infinity();
+  double seed_reference_error = std::numeric_limits<double>::infinity();
   constexpr double kPi = 3.14159265358979323846;
   const double slope = std::tan(config.max_ground_slope_deg * kPi / 180.0);
+  const bool use_reference_ground_plane =
+      !config.require_ground_support && config.reference_ground_plane_valid &&
+      std::isfinite(config.reference_ground_slope_x) &&
+      std::isfinite(config.reference_ground_slope_y) &&
+      std::hypot(config.reference_ground_slope_x,
+                 config.reference_ground_slope_y) <= slope + 1.0e-6;
+  double reference_ground_offset = 0.0;
+  const auto reference_ground_at = [&](double wx, double wy) {
+    if (!use_reference_ground_plane) {
+      return config.reference_ground_z_abs;
+    }
+    return config.reference_ground_z_abs + reference_ground_offset +
+           config.reference_ground_slope_x * (wx - config.robot_x) +
+           config.reference_ground_slope_y * (wy - config.robot_y);
+  };
+  const double strict_plane_seed_tolerance =
+      std::min(config.ground_seed_tolerance,
+               std::max(config.max_ground_step, resolution_));
   const auto has_connected_ground_support = [&](int x, int y) {
     const CellData &cell =
         cell_buffer_[static_cast<size_t>(hashIndexFromLocal(x, y))];
@@ -996,11 +1017,62 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       support_min = std::min(support_min, support_z);
       support_max = std::max(support_max, support_z);
     }
-    return support_count >= config.observed_ground_support_bridge_min_neighbors &&
+    return support_count >=
+               config.observed_ground_support_bridge_min_neighbors &&
            std::isfinite(support_min) && std::isfinite(support_max) &&
            support_max - support_min <=
                config.observed_ground_support_bridge_max_height_delta + 1.0e-6;
   };
+
+  // Roll and pitch provide a useful local ground direction, but the absolute
+  // contact height can be biased by suspension travel, chassis attitude and a
+  // fixed robot-origin-to-ground calibration. Re-anchor only the plane
+  // intercept from independently clearance-verified thin returns underneath
+  // the current chassis. The median rejects isolated returns, and the existing
+  // strict seed gate remains in force everywhere outside the footprint.
+  if (use_reference_ground_plane && config.clear_robot_footprint_unknown) {
+    std::vector<double> footprint_plane_residuals;
+    for (int y = 0; y < height_; ++y) {
+      for (int x = 0; x < width_; ++x) {
+        const CellData &cell =
+            cell_buffer_[static_cast<size_t>(hashIndexFromLocal(x, y))];
+        if (cell.ground_candidate == 0U ||
+            cell.candidate_type != CellType::PASSABLE ||
+            cell.clearance_verified == 0U ||
+            !std::isfinite(cell.ground_z_abs)) {
+          continue;
+        }
+        const double wx =
+            origin_.x() + (static_cast<double>(x) + 0.5) * resolution_;
+        const double wy =
+            origin_.y() + (static_cast<double>(y) + 0.5) * resolution_;
+        if (!insideRobotEnvelope(
+                wx, wy, config, config.robot_footprint_clear_length,
+                config.robot_footprint_clear_width, resolution_)) {
+          continue;
+        }
+        const double uncalibrated_ground =
+            config.reference_ground_z_abs +
+            config.reference_ground_slope_x * (wx - config.robot_x) +
+            config.reference_ground_slope_y * (wy - config.robot_y);
+        const double residual =
+            static_cast<double>(cell.ground_z_abs) - uncalibrated_ground;
+        if (std::abs(residual) <= config.ground_seed_tolerance + 1.0e-6) {
+          footprint_plane_residuals.push_back(residual);
+        }
+      }
+    }
+    const size_t minimum_samples = static_cast<size_t>(
+        std::max(3, config.ground_connectivity_quantile_min_samples));
+    if (footprint_plane_residuals.size() >= minimum_samples) {
+      const size_t median_index = footprint_plane_residuals.size() / 2U;
+      std::nth_element(footprint_plane_residuals.begin(),
+                       footprint_plane_residuals.begin() + median_index,
+                       footprint_plane_residuals.end());
+      reference_ground_offset = footprint_plane_residuals[median_index];
+    }
+  }
+
   for (int y = 0; y < height_; ++y) {
     for (int x = 0; x < width_; ++x) {
       CellData &cell =
@@ -1027,21 +1099,65 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       const double distance =
           std::hypot(wx - config.robot_x, wy - config.robot_y);
       const double ground_z = static_cast<double>(cell.ground_z_abs);
+      const double local_reference_ground = reference_ground_at(wx, wy);
+      const double envelope_dx = wx - config.robot_x;
+      const double envelope_dy = wy - config.robot_y;
+      const double envelope_cos_yaw = std::cos(config.robot_yaw);
+      const double envelope_sin_yaw = std::sin(config.robot_yaw);
+      cell.envelope_body_x = static_cast<float>(envelope_cos_yaw * envelope_dx +
+                                                envelope_sin_yaw * envelope_dy);
+      cell.envelope_body_y = static_cast<float>(
+          -envelope_sin_yaw * envelope_dx + envelope_cos_yaw * envelope_dy);
+      const bool inside_current_footprint =
+          config.clear_robot_footprint_unknown &&
+          insideRobotEnvelope(wx, wy, config,
+                              config.robot_footprint_clear_length,
+                              config.robot_footprint_clear_width, resolution_);
+      cell.inside_current_footprint = inside_current_footprint ? 1U : 0U;
+      const bool verified_footprint_ground_seed =
+          inside_current_footprint &&
+          cell.candidate_type == CellType::PASSABLE &&
+          cell.clearance_verified != 0U;
+      const double seed_match_tolerance =
+          use_reference_ground_plane && !verified_footprint_ground_seed
+              ? strict_plane_seed_tolerance
+              : config.ground_seed_tolerance;
+      cell.reference_ground_z_abs = static_cast<float>(local_reference_ground);
+      cell.support_match_error =
+          static_cast<float>(std::abs(ground_z - local_reference_ground));
+      cell.support_match_tolerance = static_cast<float>(seed_match_tolerance);
       if (distance > config.ground_seed_radius ||
-          std::abs(ground_z - config.reference_ground_z_abs) >
-              config.ground_seed_tolerance + 1.0e-6) {
+          std::abs(ground_z - local_reference_ground) >
+              seed_match_tolerance + 1.0e-6) {
         continue;
       }
       seed_candidates.push_back({y * width_ + x, ground_z, distance});
 
-      // The lowest reference-consistent candidate anchors a narrow seed height
-      // band. Multiple coplanar seeds are needed when the LiDAR blind ring or a
-      // wall splits the first observed ground ring into disconnected arcs.
-      if (ground_z < seed_ground_z - 1.0e-6 ||
-          (std::abs(ground_z - seed_ground_z) <= 1.0e-6 &&
-           distance < seed_distance)) {
+      // The strict, footprint-calibrated tangent-plane gate remains
+      // authoritative outside the current footprint. Under the chassis,
+      // however, a thin return with independently verified body clearance is
+      // the measured support surface itself. Allow the configured seed
+      // tolerance there so voxel quantization cannot disconnect a ramp under a
+      // climbing vehicle. Thick returns, low ceilings and unverified headroom
+      // never reach this branch.
+
+      // Anchor the seed band to the surface closest to the robot's estimated
+      // contact height. With a large seed radius, choosing the absolute lowest
+      // candidate lets an adjacent depression or a stale low return disconnect
+      // otherwise valid ramp ground. The narrow band and connectivity walk
+      // below still prevent a height-disconnected plate from becoming a second
+      // seed. Prefer the lower surface only when two candidates are equally
+      // consistent with the robot reference.
+      const double reference_error =
+          std::abs(ground_z - local_reference_ground);
+      if (reference_error < seed_reference_error - 1.0e-6 ||
+          (std::abs(reference_error - seed_reference_error) <= 1.0e-6 &&
+           (ground_z < seed_ground_z - 1.0e-6 ||
+            (std::abs(ground_z - seed_ground_z) <= 1.0e-6 &&
+             distance < seed_distance)))) {
         seed_ground_z = ground_z;
         seed_distance = distance;
+        seed_reference_error = reference_error;
       }
     }
   }
@@ -1049,8 +1165,9 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
   const double seed_height_band =
       std::min(std::max(0.0, config.max_ground_step), resolution_);
   for (const auto &candidate : seed_candidates) {
-    if (std::abs(candidate.ground_z - seed_ground_z) >
-        seed_height_band + 1.0e-6) {
+    if (!use_reference_ground_plane &&
+        std::abs(candidate.ground_z - seed_ground_z) >
+            seed_height_band + 1.0e-6) {
       continue;
     }
     const int seed_x = candidate.view_id % width_;
@@ -1059,7 +1176,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
         cell_buffer_[static_cast<size_t>(hashIndexFromLocal(seed_x, seed_y))];
     seed.ground_verified = 1U;
     open.push({candidate.view_id, candidate.ground_z, 0.0, candidate.view_id,
-               false, false});
+               false, false, false});
   }
 
   const auto has_consistent_landing_evidence = [&](int start_view_id,
@@ -1084,59 +1201,270 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
     const double height_sign = bridge_height > 0.0 ? 1.0 : -1.0;
     const double unit_x = direction_x / direction_norm;
     const double unit_y = direction_y / direction_norm;
+    const int lateral_cells = std::max(
+        0,
+        static_cast<int>(std::ceil(
+            config.ground_connectivity_quantile_lateral_radius / resolution_)));
+    const auto ground_quantile_at =
+        [&](double center_x, double center_y) -> std::optional<double> {
+      std::vector<double> heights;
+      std::vector<int> sampled_view_ids;
+      heights.reserve(static_cast<size_t>(2 * lateral_cells + 1));
+      sampled_view_ids.reserve(static_cast<size_t>(2 * lateral_cells + 1));
+      for (int lateral = -lateral_cells; lateral <= lateral_cells; ++lateral) {
+        const int sample_x = static_cast<int>(
+            std::llround(center_x - unit_y * static_cast<double>(lateral)));
+        const int sample_y = static_cast<int>(
+            std::llround(center_y + unit_x * static_cast<double>(lateral)));
+        if (sample_x < 0 || sample_x >= width_ || sample_y < 0 ||
+            sample_y >= height_) {
+          continue;
+        }
+        const int sample_view_id = sample_y * width_ + sample_x;
+        if (std::find(sampled_view_ids.begin(), sampled_view_ids.end(),
+                      sample_view_id) != sampled_view_ids.end()) {
+          continue;
+        }
+        sampled_view_ids.push_back(sample_view_id);
+        const CellData &sample = cell_buffer_[static_cast<size_t>(
+            hashIndexFromLocal(sample_x, sample_y))];
+        if (sample.ground_candidate == 0U ||
+            sample.candidate_type != CellType::PASSABLE ||
+            sample.clearance_verified == 0U ||
+            !std::isfinite(sample.ground_z_abs)) {
+          continue;
+        }
+        heights.push_back(static_cast<double>(sample.ground_z_abs));
+      }
+      if (heights.size() <
+          static_cast<size_t>(
+              config.ground_connectivity_quantile_min_samples)) {
+        return std::nullopt;
+      }
+      std::sort(heights.begin(), heights.end());
+      const size_t quantile_index = std::min(
+          heights.size() - 1U,
+          static_cast<size_t>(std::floor(config.ground_connectivity_quantile *
+                                         static_cast<double>(heights.size()))));
+      return heights[quantile_index];
+    };
+
+    const auto landing_quantile = ground_quantile_at(
+        static_cast<double>(landing_x), static_cast<double>(landing_y));
+    if (!landing_quantile.has_value() ||
+        std::abs(*landing_quantile - landing_ground_z) >
+            config.ground_connectivity_fit_residual_tolerance + 1.0e-6) {
+      return false;
+    }
+    const double connection_distance = direction_norm * resolution_;
     const int sample_count =
         std::max(1, static_cast<int>(std::ceil(
                         config.ground_connectivity_bridge_landing_min_length /
                         resolution_)));
-    int previous_x = landing_x;
-    int previous_y = landing_y;
-    double previous_z = landing_ground_z;
-    double sampled_length = 0.0;
-    double signed_height_progress = 0.0;
-    for (int sample_index = 1; sample_index <= sample_count; ++sample_index) {
-      const int sample_x = static_cast<int>(
-          std::llround(static_cast<double>(landing_x) +
-                       unit_x * static_cast<double>(sample_index)));
-      const int sample_y = static_cast<int>(
-          std::llround(static_cast<double>(landing_y) +
-                       unit_y * static_cast<double>(sample_index)));
-      if (sample_x < 0 || sample_x >= width_ || sample_y < 0 ||
-          sample_y >= height_) {
-        return false;
+    struct ProfileSample {
+      double distance;
+      double height;
+    };
+    const auto profile_matches_slope =
+        [&](const std::vector<ProfileSample> &profile,
+            double signed_height_progress) {
+          if (signed_height_progress + 1.0e-6 <
+              config.ground_connectivity_bridge_landing_min_height_delta) {
+            return false;
+          }
+          double mean_distance = 0.0;
+          double mean_height = 0.0;
+          for (const auto &sample : profile) {
+            mean_distance += sample.distance;
+            mean_height += sample.height;
+          }
+          mean_distance /= static_cast<double>(profile.size());
+          mean_height /= static_cast<double>(profile.size());
+          double covariance = 0.0;
+          double distance_variance = 0.0;
+          for (const auto &sample : profile) {
+            const double centered_distance = sample.distance - mean_distance;
+            covariance += centered_distance * (sample.height - mean_height);
+            distance_variance += centered_distance * centered_distance;
+          }
+          if (distance_variance <= 1.0e-12) {
+            return false;
+          }
+          const double fitted_slope = covariance / distance_variance;
+          if (height_sign * fitted_slope <= 1.0e-6 ||
+              std::abs(fitted_slope) > slope + 1.0e-6) {
+            return false;
+          }
+          const double fitted_intercept =
+              mean_height - fitted_slope * mean_distance;
+          for (const auto &sample : profile) {
+            const double residual =
+                std::abs(sample.height -
+                         (fitted_intercept + fitted_slope * sample.distance));
+            if (residual >
+                config.ground_connectivity_fit_residual_tolerance + 1.0e-6) {
+              return false;
+            }
+          }
+          return true;
+        };
+    const auto has_continuing_slope = [&](bool beyond_landing) {
+      std::vector<ProfileSample> profile;
+      profile.reserve(static_cast<size_t>(2 + sample_count));
+      profile.push_back({0.0, start_ground_z});
+      profile.push_back({connection_distance, *landing_quantile});
+      double previous_z = beyond_landing ? *landing_quantile : start_ground_z;
+      double signed_height_progress = 0.0;
+      for (int sample_index = 1; sample_index <= sample_count; ++sample_index) {
+        const double direction = beyond_landing ? 1.0 : -1.0;
+        const double origin_x = beyond_landing ? static_cast<double>(landing_x)
+                                               : static_cast<double>(start_x);
+        const double origin_y = beyond_landing ? static_cast<double>(landing_y)
+                                               : static_cast<double>(start_y);
+        const double sample_x =
+            origin_x + direction * unit_x * static_cast<double>(sample_index);
+        const double sample_y =
+            origin_y + direction * unit_y * static_cast<double>(sample_index);
+        const auto sample_quantile = ground_quantile_at(sample_x, sample_y);
+        if (!sample_quantile.has_value()) {
+          return false;
+        }
+        const double sample_z = *sample_quantile;
+        const double signed_increment =
+            beyond_landing ? height_sign * (sample_z - previous_z)
+                           : height_sign * (previous_z - sample_z);
+        if (signed_increment <
+            -config.ground_connectivity_fit_residual_tolerance - 1.0e-6) {
+          return false;
+        }
+        const double sample_distance =
+            beyond_landing ? connection_distance +
+                                 static_cast<double>(sample_index) * resolution_
+                           : -static_cast<double>(sample_index) * resolution_;
+        profile.push_back({sample_distance, sample_z});
+        signed_height_progress =
+            beyond_landing ? height_sign * (sample_z - *landing_quantile)
+                           : height_sign * (start_ground_z - sample_z);
+        previous_z = sample_z;
       }
-      if (sample_x == previous_x && sample_y == previous_y) {
-        continue;
-      }
-      const CellData &sample = cell_buffer_[static_cast<size_t>(
-          hashIndexFromLocal(sample_x, sample_y))];
-      if (sample.ground_candidate == 0U ||
-          sample.candidate_type != CellType::PASSABLE ||
-          sample.clearance_verified == 0U ||
-          !std::isfinite(sample.ground_z_abs)) {
-        return false;
-      }
-      const double segment_length =
-          resolution_ *
-          std::hypot(sample_x - previous_x, sample_y - previous_y);
-      const double sample_z = static_cast<double>(sample.ground_z_abs);
-      const double height_step = sample_z - previous_z;
-      const double allowed_step =
-          std::max(config.max_ground_step, slope * segment_length);
-      if (std::abs(height_step) > allowed_step + 1.0e-6 ||
-          height_sign * height_step < -1.0e-6) {
-        return false;
-      }
-      sampled_length += segment_length;
-      signed_height_progress = height_sign * (sample_z - landing_ground_z);
-      previous_x = sample_x;
-      previous_y = sample_y;
-      previous_z = sample_z;
-    }
-    return sampled_length + 1.0e-6 >=
-               config.ground_connectivity_bridge_landing_min_length &&
-           signed_height_progress + 1.0e-6 >=
-               config.ground_connectivity_bridge_landing_min_height_delta;
+      return profile_matches_slope(profile, signed_height_progress);
+    };
+
+    // The quantized jump can occur at either end of a ramp. Checking only
+    // beyond the landing makes an uphill traversal pass but rejects the same
+    // surface when descending onto the lower flat. A real step has no
+    // continuing slope on either side and therefore remains disconnected.
+    return has_continuing_slope(true) || has_continuing_slope(false);
   };
+
+  // A short ramp can start just outside the footprint and outside the strict
+  // tangent-plane seed band before the connectivity walk has a chance to
+  // reach it. Bootstrap exactly one such near-field transition when a strict
+  // seed closer to the robot and a continuing measured slope jointly confirm
+  // it. The transition consumes both one-shot bridge allowances, so it cannot
+  // chain through another blind band or height jump. A flat ledge has no
+  // continuing slope and remains unverified.
+  if (use_reference_ground_plane &&
+      config.ground_seed_tolerance > strict_plane_seed_tolerance + 1.0e-6) {
+    const double footprint_radius =
+        0.5 * std::hypot(config.robot_footprint_clear_length,
+                         config.robot_footprint_clear_width) +
+        resolution_;
+    const double bootstrap_radius = std::min(
+        config.ground_seed_radius,
+        footprint_radius + config.ground_connectivity_bridge_max_length);
+    const int bridge_search_cells = std::max(
+        1, static_cast<int>(std::ceil(
+               config.ground_connectivity_bridge_max_length / resolution_)));
+    for (int landing_y = 0; landing_y < height_; ++landing_y) {
+      for (int landing_x = 0; landing_x < width_; ++landing_x) {
+        CellData &landing = cell_buffer_[static_cast<size_t>(
+            hashIndexFromLocal(landing_x, landing_y))];
+        if (landing.ground_verified != 0U || landing.ground_candidate == 0U ||
+            landing.candidate_type != CellType::PASSABLE ||
+            landing.clearance_verified == 0U ||
+            !std::isfinite(landing.ground_z_abs)) {
+          continue;
+        }
+        const double landing_wx =
+            origin_.x() + (static_cast<double>(landing_x) + 0.5) * resolution_;
+        const double landing_wy =
+            origin_.y() + (static_cast<double>(landing_y) + 0.5) * resolution_;
+        const double landing_robot_distance = std::hypot(
+            landing_wx - config.robot_x, landing_wy - config.robot_y);
+        const double landing_reference_ground =
+            reference_ground_at(landing_wx, landing_wy);
+        const double landing_reference_error =
+            std::abs(static_cast<double>(landing.ground_z_abs) -
+                     landing_reference_ground);
+        if (landing_robot_distance > bootstrap_radius + 1.0e-6 ||
+            landing_reference_error <= strict_plane_seed_tolerance + 1.0e-6 ||
+            landing_reference_error > config.max_ground_height_delta + 1.0e-6) {
+          continue;
+        }
+
+        bool accepted = false;
+        for (int dy = -bridge_search_cells;
+             dy <= bridge_search_cells && !accepted; ++dy) {
+          for (int dx = -bridge_search_cells;
+               dx <= bridge_search_cells && !accepted; ++dx) {
+            if ((dx == 0 && dy == 0) || landing_x + dx < 0 ||
+                landing_x + dx >= width_ || landing_y + dy < 0 ||
+                landing_y + dy >= height_) {
+              continue;
+            }
+            const double connection_distance = resolution_ * std::hypot(dx, dy);
+            if (connection_distance >
+                config.ground_connectivity_bridge_max_length + 1.0e-6) {
+              continue;
+            }
+            const int seed_x = landing_x + dx;
+            const int seed_y = landing_y + dy;
+            const CellData &seed = cell_buffer_[static_cast<size_t>(
+                hashIndexFromLocal(seed_x, seed_y))];
+            if (seed.ground_verified == 0U ||
+                seed.ground_bridge_verified != 0U ||
+                seed.ground_candidate == 0U ||
+                seed.candidate_type != CellType::PASSABLE ||
+                seed.clearance_verified == 0U ||
+                !std::isfinite(seed.ground_z_abs)) {
+              continue;
+            }
+            const double seed_wx =
+                origin_.x() + (static_cast<double>(seed_x) + 0.5) * resolution_;
+            const double seed_wy =
+                origin_.y() + (static_cast<double>(seed_y) + 0.5) * resolution_;
+            const double seed_robot_distance =
+                std::hypot(seed_wx - config.robot_x, seed_wy - config.robot_y);
+            if (seed_robot_distance + resolution_ >
+                landing_robot_distance + 1.0e-6) {
+              continue;
+            }
+            const double height_delta =
+                static_cast<double>(landing.ground_z_abs) -
+                static_cast<double>(seed.ground_z_abs);
+            if (std::abs(height_delta) >
+                    config.ground_connectivity_bridge_max_height_delta +
+                        1.0e-6 ||
+                !has_consistent_landing_evidence(
+                    seed_y * width_ + seed_x, landing_y * width_ + landing_x,
+                    static_cast<double>(seed.ground_z_abs),
+                    static_cast<double>(landing.ground_z_abs))) {
+              continue;
+            }
+
+            landing.ground_verified = 1U;
+            landing.ground_bridge_verified = 1U;
+            open.push({landing_y * width_ + landing_x,
+                       static_cast<double>(landing.ground_z_abs), 0.0,
+                       landing_y * width_ + landing_x, false, true, true});
+            accepted = true;
+          }
+        }
+      }
+    }
+  }
+
   while (!open.empty()) {
     const ConnectivityNode node = open.front();
     open.pop();
@@ -1156,7 +1484,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
         if (neighbor.ground_candidate == 0U) {
           const bool verified_observed_empty =
               config.bridge_observed_empty_for_ground_connectivity &&
-              !config.require_ground_support && !node.bridge_used &&
+              !config.require_ground_support && !node.empty_bridge_used &&
               neighbor.candidate_type == CellType::FREE &&
               neighbor.candidate_reason ==
                   ProjectionClassReason::EMPTY_COLUMN &&
@@ -1173,7 +1501,8 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
             const int bridge_start_view_id =
                 node.is_empty_bridge ? node.bridge_start_view_id : node.view_id;
             open.push({neighbor_view_id, node.ground_z, bridge_distance,
-                       bridge_start_view_id, true, false});
+                       bridge_start_view_id, true, node.empty_bridge_used,
+                       node.quantized_ramp_transition_used});
           }
           continue;
         }
@@ -1205,8 +1534,20 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
               std::min(allowed_height_step,
                        config.ground_connectivity_bridge_max_height_delta);
         }
-        if (std::abs(static_cast<double>(neighbor.ground_z_abs) -
-                     node.ground_z) > allowed_height_step + 1.0e-6) {
+        const double height_delta =
+            static_cast<double>(neighbor.ground_z_abs) - node.ground_z;
+        const bool quantized_ramp_transition =
+            !config.require_ground_support && !node.is_empty_bridge &&
+            !node.quantized_ramp_transition_used &&
+            std::abs(height_delta) <=
+                std::min(config.ground_connectivity_bridge_max_height_delta,
+                         2.0 * config.max_ground_step) +
+                    1.0e-6 &&
+            has_consistent_landing_evidence(
+                node.view_id, neighbor_view_id, node.ground_z,
+                static_cast<double>(neighbor.ground_z_abs));
+        if (std::abs(height_delta) > allowed_height_step + 1.0e-6 &&
+            !quantized_ramp_transition) {
           continue;
         }
         const bool multi_cell_bridge =
@@ -1221,10 +1562,188 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
         neighbor.ground_verified = 1U;
         neighbor.ground_support_verified =
             config.require_ground_support ? 1U : 0U;
-        neighbor.ground_bridge_verified = node.is_empty_bridge ? 1U : 0U;
-        open.push({neighbor_view_id, static_cast<double>(neighbor.ground_z_abs),
-                   0.0, neighbor_view_id, false,
-                   node.bridge_used || node.is_empty_bridge});
+        neighbor.ground_bridge_verified =
+            (node.is_empty_bridge || quantized_ramp_transition) ? 1U : 0U;
+        open.push(
+            {neighbor_view_id, static_cast<double>(neighbor.ground_z_abs), 0.0,
+             neighbor_view_id, false,
+             node.empty_bridge_used || node.is_empty_bridge,
+             node.quantized_ramp_transition_used || quantized_ramp_transition});
+      }
+    }
+  }
+
+  // The first-pass overhead test uses the robot contact height because ground
+  // connectivity is not available yet. On a descent that reference can be
+  // substantially above the ground under a forward roof return, causing the
+  // roof face to be reported as a low obstacle for one frame. Re-evaluate only
+  // those blocked returns for which the current scan has established a
+  // locally two-sided terrain surface. The samples need not be connected to
+  // the robot yet and the 2D prior may mark the target or samples occupied:
+  // this pass uses live 3D geometry only to decide whether the occupied run is
+  // a roof. The sampled ground cells retain their independent connectivity
+  // gate. This remains fail-closed for low walls, ledges and one-sided
+  // extrapolation, and never consumes surveyed elevation in no-prior mode.
+  if (!config.require_ground_support && config.observed_empty_as_free &&
+      config.min_observed_overhead_headroom_known_ratio <= 1.0e-6) {
+    struct GroundSample {
+      double dx;
+      double dy;
+      double z;
+    };
+    const double search_radius =
+        std::max(2.0 * resolution_,
+                 2.0 * config.ground_connectivity_quantile_lateral_radius);
+    const int search_cells =
+        std::max(1, static_cast<int>(std::ceil(search_radius / resolution_)));
+    const int min_samples =
+        std::max(3, config.ground_connectivity_quantile_min_samples);
+    const double required_headroom =
+        config.vehicle_height + config.headroom_margin;
+    for (int y = 0; y < height_; ++y) {
+      for (int x = 0; x < width_; ++x) {
+        CellData &cell =
+            cell_buffer_[static_cast<size_t>(hashIndexFromLocal(x, y))];
+        if (cell.candidate_type != CellType::OCCUPIED ||
+            cell.candidate_reason != ProjectionClassReason::HEADROOM_BLOCKED ||
+            cell.ground_candidate != 0U || !std::isfinite(cell.ceiling_z_abs)) {
+          continue;
+        }
+
+        std::vector<GroundSample> samples;
+        size_t connected_sample_count = 0U;
+        samples.reserve(static_cast<size_t>((2 * search_cells + 1) *
+                                            (2 * search_cells + 1)));
+        for (int dy = -search_cells; dy <= search_cells; ++dy) {
+          for (int dx = -search_cells; dx <= search_cells; ++dx) {
+            if ((dx == 0 && dy == 0) || x + dx < 0 || x + dx >= width_ ||
+                y + dy < 0 || y + dy >= height_) {
+              continue;
+            }
+            const double sample_dx = static_cast<double>(dx) * resolution_;
+            const double sample_dy = static_cast<double>(dy) * resolution_;
+            if (std::hypot(sample_dx, sample_dy) > search_radius + 1.0e-6) {
+              continue;
+            }
+            const CellData &sample = cell_buffer_[static_cast<size_t>(
+                hashIndexFromLocal(x + dx, y + dy))];
+            if (sample.ground_candidate == 0U ||
+                sample.candidate_type != CellType::PASSABLE ||
+                sample.clearance_verified == 0U ||
+                !std::isfinite(sample.ground_z_abs)) {
+              continue;
+            }
+            samples.push_back({sample_dx, sample_dy,
+                               static_cast<double>(sample.ground_z_abs)});
+            if (sample.ground_verified != 0U) {
+              ++connected_sample_count;
+            }
+          }
+        }
+        if (samples.size() < static_cast<size_t>(min_samples)) {
+          continue;
+        }
+
+        // Require the queried column to lie inside the angular hull of the
+        // measured samples. A single visible bank beside a wall or cliff is
+        // not enough evidence to extrapolate support under an occupied return.
+        std::vector<double> sample_angles;
+        sample_angles.reserve(samples.size());
+        for (const auto &sample : samples) {
+          sample_angles.push_back(std::atan2(sample.dy, sample.dx));
+        }
+        std::sort(sample_angles.begin(), sample_angles.end());
+        double max_angular_gap = 0.0;
+        for (size_t i = 1; i < sample_angles.size(); ++i) {
+          max_angular_gap = std::max(max_angular_gap,
+                                     sample_angles[i] - sample_angles[i - 1U]);
+        }
+        max_angular_gap =
+            std::max(max_angular_gap,
+                     sample_angles.front() + 2.0 * kPi - sample_angles.back());
+        const bool surrounded_by_observed_ground =
+            max_angular_gap <= kPi + 1.0e-6;
+        const bool one_sided_static_free_support =
+            cell.prior_known_free != 0U &&
+            connected_sample_count >= static_cast<size_t>(min_samples);
+        if (!surrounded_by_observed_ground && !one_sided_static_free_support) {
+          continue;
+        }
+
+        double mean_x = 0.0;
+        double mean_y = 0.0;
+        double mean_z = 0.0;
+        for (const auto &sample : samples) {
+          mean_x += sample.dx;
+          mean_y += sample.dy;
+          mean_z += sample.z;
+        }
+        const double sample_count = static_cast<double>(samples.size());
+        mean_x /= sample_count;
+        mean_y /= sample_count;
+        mean_z /= sample_count;
+
+        double xx = 0.0;
+        double xy = 0.0;
+        double yy = 0.0;
+        double xz = 0.0;
+        double yz = 0.0;
+        for (const auto &sample : samples) {
+          const double centered_x = sample.dx - mean_x;
+          const double centered_y = sample.dy - mean_y;
+          const double centered_z = sample.z - mean_z;
+          xx += centered_x * centered_x;
+          xy += centered_x * centered_y;
+          yy += centered_y * centered_y;
+          xz += centered_x * centered_z;
+          yz += centered_y * centered_z;
+        }
+        const double determinant = xx * yy - xy * xy;
+        const double spread = xx + yy;
+        if (spread <= 1.0e-12 || determinant <= 1.0e-6 * spread * spread) {
+          continue;
+        }
+        const double plane_x = (xz * yy - yz * xy) / determinant;
+        const double plane_y = (yz * xx - xz * xy) / determinant;
+        if (std::hypot(plane_x, plane_y) > slope + 1.0e-6) {
+          continue;
+        }
+        const double fitted_ground =
+            mean_z - plane_x * mean_x - plane_y * mean_y;
+        double max_positive_residual = 0.0;
+        double max_abs_residual = 0.0;
+        for (const auto &sample : samples) {
+          const double fitted_z =
+              fitted_ground + plane_x * sample.dx + plane_y * sample.dy;
+          const double residual = sample.z - fitted_z;
+          max_positive_residual = std::max(max_positive_residual, residual);
+          max_abs_residual = std::max(max_abs_residual, std::abs(residual));
+        }
+        if (max_abs_residual >
+            config.ground_connectivity_fit_residual_tolerance + 1.0e-6) {
+          continue;
+        }
+
+        // Bias support upward by the measured positive residual. The resulting
+        // clearance is the conservative side of the local plane fit.
+        const double inferred_ground = fitted_ground + max_positive_residual;
+        if (!std::isfinite(inferred_ground) ||
+            std::abs(inferred_ground - config.reference_ground_z_abs) >
+                config.max_ground_height_delta + 1.0e-6) {
+          continue;
+        }
+        const double local_headroom =
+            static_cast<double>(cell.ceiling_z_abs) - inferred_ground;
+        if (local_headroom + 1.0e-6 < required_headroom) {
+          continue;
+        }
+
+        cell.candidate_type = CellType::PASSABLE;
+        cell.candidate_reason = ProjectionClassReason::OVERHEAD_CLEARANCE_OK;
+        cell.reference_ground_z_abs = static_cast<float>(inferred_ground);
+        cell.headroom = static_cast<float>(local_headroom);
+        cell.clearance_verified = 1U;
+        cell.traversable = 1U;
       }
     }
   }
@@ -1336,8 +1855,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       CellType final_type = cell.candidate_type;
       ProjectionClassReason final_reason = cell.candidate_reason;
       const bool support_bridge_evidence =
-          cell.footprint_clear_eligible != 0U &&
-          cell.ground_candidate == 0U &&
+          cell.footprint_clear_eligible != 0U && cell.ground_candidate == 0U &&
           has_observed_support_bridge(x, y);
       if (support_bridge_evidence) {
         cell.ground_support_bridge_eligible = 1U;
@@ -1350,11 +1868,13 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       const bool support_bridge_confirmed =
           support_bridge_evidence &&
           static_cast<int>(cell.ground_support_bridge_count) >=
-              std::max(1, config.observed_ground_support_bridge_hysteresis_count);
+              std::max(1,
+                       config.observed_ground_support_bridge_hysteresis_count);
       if (support_bridge_confirmed) {
-        // The current cell has no occupied voxel, while two cardinal neighbors provide
-        // a continuous, height-consistent measured support surface. This is a
-        // bounded one-cell bridge, not a general unknown-as-free rule.
+        // The current cell has no occupied voxel, while two cardinal neighbors
+        // provide a continuous, height-consistent measured support surface.
+        // This is a bounded one-cell bridge, not a general unknown-as-free
+        // rule.
         final_type = CellType::FREE;
         final_reason = ProjectionClassReason::GROUND_BRIDGE_CLEARANCE_OK;
         cell.ground_bridge_verified = 1U;
@@ -1369,8 +1889,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       const bool surveyed_ground_with_headroom_gap =
           cell.ground_candidate != 0U && cell.ground_verified != 0U &&
           cell.footprint_clear_eligible != 0U &&
-          cell.candidate_reason ==
-              ProjectionClassReason::HEADROOM_UNVERIFIED;
+          cell.candidate_reason == ProjectionClassReason::HEADROOM_UNVERIFIED;
       if (!support_bridge_confirmed && disconnected_support) {
         final_type = CellType::OCCUPIED;
         final_reason = ProjectionClassReason::GROUND_UNVERIFIED;
@@ -1412,21 +1931,18 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
             config.robot_footprint_clear_width, resolution_);
         const bool inside_surveyed_near_field =
             config.require_ground_support && config.near_field_prior_fill_en &&
-            insideRobotEnvelope(wx, wy, config,
-                                config.near_field_prior_fill_length,
-                                config.near_field_prior_fill_width,
-                                resolution_);
+            insideRobotEnvelope(
+                wx, wy, config, config.near_field_prior_fill_length,
+                config.near_field_prior_fill_width, resolution_);
         cell.inside_current_footprint = inside_current_footprint ? 1U : 0U;
-        cell.inside_surveyed_near_field =
-            inside_surveyed_near_field ? 1U : 0U;
+        cell.inside_surveyed_near_field = inside_surveyed_near_field ? 1U : 0U;
         bool footprint_clear_authorized = !config.require_ground_support;
         if (config.require_ground_support) {
           const bool continuous_trusted_support =
               cell.prior_known_free != 0U && cell.ground_support_known != 0U &&
               std::isfinite(cell.ground_support_z_abs) &&
               has_connected_ground_support(x, y);
-          cell.continuous_ground_support =
-              continuous_trusted_support ? 1U : 0U;
+          cell.continuous_ground_support = continuous_trusted_support ? 1U : 0U;
           // This is the support gate for the bounded clearance dropout hold in
           // commitCell(). It does not itself clear the cell or alter the public
           // ground_support_verified diagnostic.
@@ -1434,9 +1950,8 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
               continuous_trusted_support ? 1U : 0U;
           const double support_planar_distance =
               std::hypot(wx - config.robot_x, wy - config.robot_y);
-          const double support_match_tolerance =
-              std::max(config.ground_support_tolerance,
-                       slope * support_planar_distance);
+          const double support_match_tolerance = std::max(
+              config.ground_support_tolerance, slope * support_planar_distance);
           const double support_match_error =
               std::isfinite(cell.ground_support_z_abs) &&
                       std::isfinite(config.reference_ground_z_abs)
@@ -1451,8 +1966,7 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
           const bool support_matches_robot =
               continuous_trusted_support &&
               std::isfinite(config.reference_ground_z_abs) &&
-              support_match_error <=
-                  support_match_tolerance + 1.0e-6;
+              support_match_error <= support_match_tolerance + 1.0e-6;
           footprint_clear_authorized = support_matches_robot;
         }
         const bool clear_current_footprint =

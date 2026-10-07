@@ -19,16 +19,16 @@ MINCO 实车与仿真各只加载其对应目录的 `minco_params.yaml`；legacy
 
 1. 当前新链路不是全状态三维轨迹规划。ROG-map 维护三维概率占据，随后按 XY 列提取地面和净空，MINCO 优化的是平面 `x/y/yaw` 轨迹，MPC 跟踪的是 SE(2) 参考。因此它是“3D 感知 + 2.5D 可通行投影 + 平面轨迹优化”，不会显式规划车身俯仰、侧倾或完整三维扫掠体积。
 2. 系统采用 fail-closed：地图、TF、时间戳、净空、轨迹或 MPC 输入不可确认时，应该拒绝轨迹并输出零速。调试目标是找到拒绝发生在哪一层，不是绕开拒绝。
-3. 仿真和实车 MINCO profile 都启用
-   `projection.prior_map.require_ground_support: true`。候选地面必须与已测绘的地面高程相符；
-   无地面回波的盲区列也必须同时具备二维地图 known-free、地面高程和已观测车身净空。
+3. 仿真和实车 MINCO profile 都使用无先验高程的实时地面连续性判定
+   `projection.prior_map.require_ground_support: false`。候选地面由实时回波种子和连续坡面传播确认；
+   无地面回波的仿真盲区列只有在真值 360 x 96 no-return 重建提供方向性 miss 证据时才可释放。
    `RMUC2026.yaml` 当前带 5 cm 全图高程栅格，实车 `highbay.yaml` 带 map-frame `z=0` 平地支撑，
    `tunnel_ramp_test.yaml` 另带坡面/平台 patch。新增实车坡道必须先测绘并写入 grid 或 patch，不能
    通过放宽 unknown 或沿用平地高度处理。
-4. 仿真 `projection.min_headroom_known_ratio: 0.25` 用于空列，
+4. 仿真 `projection.min_headroom_known_ratio: 0.0` 仅用于完整 no-return 重建下的已观测空列，
    `projection.min_observed_overhead_headroom_known_ratio: 0.0` 只用于已测到且最低边界高于车体的顶板列；
-   实车两项当前都是 `0.50`。车身体积内的 occupied 和静态先验 occupied 始终硬否决。
-   **禁止把两个仿真补偿值直接下放实车。**
+   实车 `min_headroom_known_ratio: 0.40`，顶板项为 `0.0`。车身体积内的 occupied 和静态先验
+   occupied 始终硬否决。**禁止把仿真空列放行规则直接下放实车或 Point-LIO 仿真。**
 5. active `minco` 当前只支持 `NavigateToPose`。`NavigateThroughPoses` 未加载；运动型
    behavior action（spin/backup/drive-on-heading/assisted-teleop）也未加载，避免绕过
    ROG + planning-token + MincoMpc 安全链。
@@ -1325,10 +1325,12 @@ allowed_height_step = max(max_ground_step,
 
 | 环境 | 当前值 | 允许探索范围 | 硬约束 |
 |---|---:|---:|---|
-| 仿真 | `0.25` | 0.25-0.50 | 只可向更严格方向验证；不得低于 0.25 |
-| 实车 | `0.50` | 0.50-0.80 | 不得低于 0.50；提高只会更保守 |
+| 仿真真值 no-return | `0.00` | 0.00-0.50 | 仅限完整 360 x 96 miss-ray；有限 occupied 和普通 UNKNOWN 仍硬拒 |
+| 实车/仿真 Point-LIO | `0.40` | 0.40-0.80 | 不得降到 0；提高只会更保守 |
 
-仿真 0.25 只补偿规则射线对车侧近地列的离散覆盖不足；所需车体净空带内的 occupied 检查仍然硬拒绝。实车当前 0.50 必须通过至少 30 次真实正例观测统计、完整负例拦截和评审记录；任何浮空障碍漏检都立即提高阈值并回退 active MINCO。
+仿真真值配置的 0.0 只适用于方向性 no-return 已完整恢复的已观测空列；所需车体净空带内的有限
+occupied 检查仍然硬拒绝，普通 UNKNOWN 也不会因此变成 free。实车当前 0.40 必须通过真实正例、
+完整负例拦截和评审记录；任何浮空障碍漏检都立即提高阈值并回退 active MINCO。
 
 ### 6.5 第 4 层：动态层、静态先验与最终融合
 
@@ -1877,7 +1879,8 @@ odom 的 `x=-0.398` 查图。对同一位置的观测为：
 3. 同一 XY 列中所需车身高度带达到
    `min_observed_overhead_headroom_known_ratio`。当前仿真和实车均为 0，表示“已测顶板”由
    保守顶板下边界和可信 support 的几何净高做判定；它不适用于没有顶板回波的空列。
-   空列仍必须分别达到仿真 `min_headroom_known_ratio=0.25` 和实车 `0.50`。
+   仿真真值空列由完整 miss-ray 证据释放；实车空列仍必须达到
+   `min_headroom_known_ratio=0.40`。
 
 不做跨 XY 列的顶棚“桥接放行”；低于所需净空、同列 body band 观测不足或高程支撑缺失时均
 fail-closed。顶棚放行列的诊断组合应为 `layer_type=66`、`headroom_known_ratio`
@@ -3045,25 +3048,24 @@ commit/diff、改前值、改后值、理论理由、预期、实测分位数、
 | `projection.obstacle_hold_time` | 仿真 0.0 s；实车 0.50 s | 仿真动态障碍从 0.10 起；实车按 bag 漏检上界 | 移动障碍产生长残影或实车漏检窗口未覆盖 |
 | `projection.hysteresis_count` | 2 帧 | 1 帧步进，范围 1-4 | 放行延迟超过制动预算或障碍闪烁 |
 
-required-support=true 时，`ground_seed_tolerance/ground_seed_radius` 服务于兼容 BFS，不是当前坡道
-旋钮。`max_ground_step/max_ground_slope_deg` 则仍校验八邻域 support 连续性：先把坡道高度和斜率
-准确写进 map YAML，再确认邻格差满足几何门；地面回波相对测绘面的误差由
-`ground_support_tolerance` 单独控制。
+无先验高程模式下，`ground_seed_tolerance/ground_seed_radius` 从实时回波选择初始地面，
+`max_ground_step/max_ground_slope_deg` 继续校验八邻域 support 连续性；分位数坡面桥接只吸收
+稀疏回波造成的单点高度跳变，不能替代实际地面回波或释放 UNKNOWN。
 
 ### 11.3 地面高程、净空和盲区
 
 | 参数 | 仿真策略 | 实车策略 |
 |---|---|---|
-| `projection.prior_map.require_ground_support` | 必须 true | 必须 true；无高程时保持闭锁 |
+| `projection.prior_map.require_ground_support` | false；实时坡面连续性 | false；实时坡面连续性 |
 | `projection.prior_map.ground_support_tolerance` | 0.08 m 起 | 由测绘/TF/点云误差预算，0.01 m 小步验证 |
-| `projection.min_headroom_known_ratio` | 0.25；约束空列，不应降为 0 | 0.50，不得低于当前验证基线 |
+| `projection.min_headroom_known_ratio` | 0.00；仅完整真值 miss-ray 空列 | 0.40，不得降为 0 |
 | `projection.min_observed_overhead_headroom_known_ratio` | 0.0；仅限已测顶板列 | 0.0；仅限有顶板回波、可信 support 且保守净高通过的列 |
 | `projection.headroom_voxel_inset_fraction` | 0.0；规则仿真射线按 voxel center | 0.5；按 occupied voxel 边界保守估计 |
 | `projection.prior_map.free_fills_unknown` | 保持 false | 必须为 false |
-| `projection.observed_empty_as_free` | 保持 false | 必须为 false |
-| `projection.bridge_observed_empty_for_ground_connectivity` | 保持 false | 必须为 false |
+| `projection.observed_empty_as_free` | true；仅已观测空列 | true；仅已观测空列 |
+| `projection.bridge_observed_empty_for_ground_connectivity` | true；有界坡面桥接 | true；有界坡面桥接 |
 | `projection.clear_robot_footprint_unknown` | true；只允许严格 current-footprint bootstrap | true；测绘支撑完成前仍会闭锁 |
-| `projection.near_field_prior_fill_enable` | RMUC2026 仿真为 true，限严格支撑的 `1.40 x 1.00 m` 短扫掠区 | 必须为 false |
+| `projection.near_field_prior_fill_enable` | false | false |
 
 先从数据估计支撑容差，而不是反复增大直到能走：
 
@@ -3087,8 +3089,8 @@ patch 边界还必须满足八邻域连续性。以 `0.05 m` 投影分辨率、`
 
 - 正例无法通过但已知比例低：先改善视角、射线覆盖和传感器安装，不先降低阈值。
 - 任一低梁负例被放行：立即恢复更严格值，停止 release。
-- 仿真 0.25 当前只适用于已验证的 360x320 规则射线，任何分辨率或传感器模型变化都要重做统计。
-- 实车降到 0.75 也需要至少 30 次正例、全部负例和人工审查，绝不允许直接设 0.25。
+- 旧仿真 0.25 只适用于历史离散射线；当前真值仿真只有在完整 360x96 no-return 重建时才允许 0.0，任何分辨率或传感器模型变化都要重做统计。
+- 实车当前为 0.40；降低前需要至少 30 次正例、全部负例和人工审查，绝不允许直接设 0。
 - `status=100` 且候选 Z 与 support Z 有固定偏差：先修高程/TF/z offset，不改 known ratio。
 - `status=0`：先查 PGM known-free、ground_elevation 与 TF；它不是 MPC 问题。
 - `status=4`：只证明静态先验支撑和上方空闲证据，不证明测绘后没有出现新坑。
@@ -3611,7 +3613,7 @@ ros2 service call \
    ground-connectivity bridge 和 `free_fills_unknown` 均为 false。有界 observed-support bridge、
    current-footprint bootstrap 和 near-field 只在 prior FREE、高程连续、零 occupied voxel
    条件下启用，尺寸、offset、迟滞和 occupied veto 已由参数 dump、单测与负例共同证明。
-6. 仿真 0.25 与实车 0.50 参数分离已由第二人复核。
+6. 真值仿真 0.0、Point-LIO 仿真 0.40 与实车 0.40 的参数分离已由第二人复核。
 7. 实车 raw 点云高度、外参、自滤除框和车辆完整包络已测量记录。
 8. 若运行域有坑/坠落边缘，下视支撑否决传感器已接入并完成动态坑负例；否则相关区域已在地图封闭。
 9. 实车 shadow 连续运行至少 30 分钟，无错误放行、无地图长时间 stale、无 TF 跳变。
@@ -3900,8 +3902,8 @@ ros2 param get /planner_server \
    分辨率 `0.05 m`。
 4. `clearance_hole_fill_max_width` 是允许插值的观测缺口上限，不是洞口宽度参数。仿真不得超过
    `0.10 m`；需要更大值说明 no-return 射线、视场、TF 或高程仍有上游问题。
-5. 不要为消除绕行把 `min_headroom_known_ratio` 降到 0、关闭
-   `clearance_unknown_as_occupied` 或增大车体自滤框；这些会改变真实障碍的放行边界。
+5. 只有完整真值 no-return 重建的仿真空列允许 `min_headroom_known_ratio=0`；实车和 Point-LIO
+   不要为消除绕行降到 0，也不能关闭 `clearance_unknown_as_occupied` 或增大车体自滤框。
 
 全局 SMAC 的 `use_esdf_cost` 在实车和仿真都保持 `false`。这是因为 ROG 是局部滚动安全场，边界的
 UNKNOWN 会随车辆和射线相位移动，不应改变全局拓扑。需要动态全局绕障时，使用
@@ -4017,8 +4019,9 @@ ros2 run tf2_ros tf2_echo map odom
 3. `lethal_clearance_radius` 从上述几何下限开始，每次最多增加一个高程栅格，并始终满足
    `lethal_clearance_radius <= clearance_radius`。硬半径过大会封窄路，不能把它当作通用障碍膨胀。
 4. `clearance_cost` 只作用于硬内圈外的软缓冲，建议保持 `220-252`，当前为 `240`。
-5. 不要降低 `min_headroom_known_ratio` 到 0、关闭 `clearance_unknown_as_occupied`、扩大车体自滤框，
-   也不要让裁剪轨迹以非零末速度结束。这些改动会直接削弱浮空障碍物或轨迹终点安全性。
+5. 实车和 Point-LIO 不要降低 `min_headroom_known_ratio` 到 0、关闭
+   `clearance_unknown_as_occupied`、扩大车体自滤框，也不要让裁剪轨迹以非零末速度结束。
+   真值仿真为 0 仅因为 no-return 方向证据已完整恢复；其他配置照搬会削弱浮空障碍物或终点安全性。
 
 最终验收应在相同起终点分别做冷启动和暖图，正向、反向各至少 5 次，并同时保留低梁、浮空板、
 墙角和坡边负例。只有暖图仍在同一坐标反复 `HEADROOM_UNVERIFIED`，才继续查射线覆盖；只有
@@ -4437,9 +4440,9 @@ BLOCK、双向过洞和坡上停车。不要同时提高 MPC 上限、follow sca
 
 ### 22.2 当前代码与参数
 
-- `config/reality/minco_params.yaml`：`min_observed_overhead_headroom_known_ratio` 从 `0.50` 改为 `0.0`。
+- `config/reality/minco_params.yaml`：`min_observed_overhead_headroom_known_ratio` 为 `0.0`。
   只有该柱最低 occupied run 的保守下边界满足 `vehicle_height + headroom_margin`，且有可信静态自由
-  地面高程支撑时才接受顶板。空列仍用 `min_headroom_known_ratio=0.50`；低位占据仍拒绝。
+  地面高程支撑时才接受顶板。空列仍用 `min_headroom_known_ratio=0.40`；低位占据仍拒绝。
 - Astar/SMAC 共用 `dynamic_obstacle_evidence.hpp`：动态障碍核必须有有限 occupied 高度区间和
   `SOLID_VERTICAL_WALL/AMBIGUOUS_OCCUPIED/HEADROOM_BLOCKED` 原因；未知、去噪后未知和补洞结果不能
   封锁全局拓扑。局部轨迹安全仍闭锁这些未知单元。证据缓存每轮重置，邻域检查不重复查询同一 cell。

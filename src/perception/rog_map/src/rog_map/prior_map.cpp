@@ -118,8 +118,7 @@ RawPgm loadRawPgm(const std::string &path) {
       input.get();
     }
     const size_t bytes_per_pixel = raster.max_value < 256 ? 1U : 2U;
-    if (pixel_count >
-        std::numeric_limits<size_t>::max() / bytes_per_pixel) {
+    if (pixel_count > std::numeric_limits<size_t>::max() / bytes_per_pixel) {
       throw std::runtime_error(
           "[PriorMap] PGM raster byte count overflows in '" + path + "'");
     }
@@ -138,12 +137,12 @@ RawPgm loadRawPgm(const std::string &path) {
           "'");
     }
     for (size_t i = 0; i < pixel_count; ++i) {
-      const uint16_t value = bytes_per_pixel == 1U
-                                 ? static_cast<uint16_t>(raw[i])
-                                 : static_cast<uint16_t>(
-                                       (static_cast<uint16_t>(raw[2U * i])
-                                        << 8U) |
-                                       static_cast<uint16_t>(raw[2U * i + 1U]));
+      const uint16_t value =
+          bytes_per_pixel == 1U
+              ? static_cast<uint16_t>(raw[i])
+              : static_cast<uint16_t>(
+                    (static_cast<uint16_t>(raw[2U * i]) << 8U) |
+                    static_cast<uint16_t>(raw[2U * i + 1U]));
       if (value > raster.max_value) {
         throw std::runtime_error(
             "[PriorMap] PGM pixel exceeds maximum gray value in '" + path +
@@ -181,9 +180,9 @@ std::vector<uint8_t> loadPgm(const std::string &path, int &width, int &height) {
   height = raster.height;
   std::vector<uint8_t> pixels(raster.pixels.size(), 0U);
   for (size_t i = 0; i < raster.pixels.size(); ++i) {
-    pixels[i] = static_cast<uint8_t>(std::lround(
-        static_cast<double>(raster.pixels[i]) * 255.0 /
-        static_cast<double>(raster.max_value)));
+    pixels[i] = static_cast<uint8_t>(
+        std::lround(static_cast<double>(raster.pixels[i]) * 255.0 /
+                    static_cast<double>(raster.max_value)));
   }
   return pixels;
 }
@@ -261,8 +260,8 @@ bool groundElevationAtMapPoint(const PriorMapData &prior_map, double map_x,
   if (prior_map.ground_elevation_grid_loaded) {
     const double dx = map_x - prior_map.origin_x;
     const double dy = map_y - prior_map.origin_y;
-    const double local_x = prior_map.fast_origin_yaw_cos * dx +
-                           prior_map.fast_origin_yaw_sin * dy;
+    const double local_x =
+        prior_map.fast_origin_yaw_cos * dx + prior_map.fast_origin_yaw_sin * dy;
     const double local_y = -prior_map.fast_origin_yaw_sin * dx +
                            prior_map.fast_origin_yaw_cos * dy;
     const int image_col =
@@ -280,10 +279,10 @@ bool groundElevationAtMapPoint(const PriorMapData &prior_map, double map_x,
                       prior_map.ground_elevation_grid[index] !=
                           prior_map.ground_elevation_grid_no_data;
       if (support_known) {
-        support_z_map = prior_map.ground_elevation_grid_offset +
-                        prior_map.ground_elevation_grid_scale *
-                            static_cast<double>(
-                                prior_map.ground_elevation_grid[index]);
+        support_z_map =
+            prior_map.ground_elevation_grid_offset +
+            prior_map.ground_elevation_grid_scale *
+                static_cast<double>(prior_map.ground_elevation_grid[index]);
       }
     }
   }
@@ -292,9 +291,9 @@ bool groundElevationAtMapPoint(const PriorMapData &prior_map, double map_x,
         map_y + 1.0e-9 < patch.min_y || map_y - 1.0e-9 > patch.max_y) {
       continue;
     }
-    support_z_map =
-        patch.reference_z + patch.slope_x * (map_x - patch.reference_x) +
-        patch.slope_y * (map_y - patch.reference_y);
+    support_z_map = patch.reference_z +
+                    patch.slope_x * (map_x - patch.reference_x) +
+                    patch.slope_y * (map_y - patch.reference_y);
     support_known = true;
   }
   return support_known && std::isfinite(support_z_map);
@@ -540,14 +539,13 @@ PriorMapData loadPriorMap(const std::string &yaml_path,
               "[0, 65535] in '" +
               yaml_path + "'");
         }
-        prior.ground_elevation_grid_no_data =
-            static_cast<uint16_t>(no_data);
+        prior.ground_elevation_grid_no_data = static_cast<uint16_t>(no_data);
         ground_elevation_grid_requested = true;
       }
       if (elevation["patches"] && !elevation["patches"].IsSequence()) {
-        throw std::runtime_error(
-            "[PriorMap] YAML 'ground_elevation.patches' must be a sequence in '" +
-            yaml_path + "'");
+        throw std::runtime_error("[PriorMap] YAML 'ground_elevation.patches' "
+                                 "must be a sequence in '" +
+                                 yaml_path + "'");
       }
       if (elevation["patches"]) {
         for (const YAML::Node &node : elevation["patches"]) {
@@ -560,18 +558,16 @@ PriorMapData loadPriorMap(const std::string &yaml_path,
               requireFiniteSequence<4>(node, "bounds", yaml_path);
           const auto reference =
               requireFiniteSequence<3>(node, "reference", yaml_path);
-          const auto slope =
-              requireFiniteSequence<2>(node, "slope", yaml_path);
+          const auto slope = requireFiniteSequence<2>(node, "slope", yaml_path);
           if (bounds[0] >= bounds[2] || bounds[1] >= bounds[3]) {
             throw std::runtime_error(
                 "[PriorMap] ground-elevation patch bounds must satisfy "
                 "min_x < max_x and min_y < max_y in '" +
                 yaml_path + "'");
           }
-          prior.ground_elevation_patches.push_back(
-              GroundElevationPatch{bounds[0], bounds[1], bounds[2], bounds[3],
-                                   reference[0], reference[1], reference[2],
-                                   slope[0], slope[1]});
+          prior.ground_elevation_patches.push_back(GroundElevationPatch{
+              bounds[0], bounds[1], bounds[2], bounds[3], reference[0],
+              reference[1], reference[2], slope[0], slope[1]});
         }
       }
       prior.ground_elevation_loaded = true;
@@ -673,8 +669,7 @@ bool priorMapGroundSupport(const PriorMapData &prior_map, double rog_x,
   }
   double map_x = 0.0;
   double map_y = 0.0;
-  transformPriorMapPoint(prior_map.fixed_transform, rog_x, rog_y, map_x,
-                         map_y);
+  transformPriorMapPoint(prior_map.fixed_transform, rog_x, rog_y, map_x, map_y);
   if (priorMapStateWithRotation(prior_map, map_x, map_y,
                                 prior_map.fast_origin_yaw_cos,
                                 prior_map.fast_origin_yaw_sin) != 1U) {
@@ -705,8 +700,7 @@ bool updatePriorMapTransform(PriorMapData &prior_map,
       !std::isfinite(transform.yaw) || !std::isfinite(transform.tz) ||
       !std::isfinite(transform.roll) || !std::isfinite(transform.pitch) ||
       !std::isfinite(prior_map.origin_yaw) ||
-      std::abs(transform.roll) > 1.0e-5 ||
-      std::abs(transform.pitch) > 1.0e-5) {
+      std::abs(transform.roll) > 1.0e-5 || std::abs(transform.pitch) > 1.0e-5) {
     return invalidatePriorMapTransform(prior_map);
   }
 
@@ -903,16 +897,18 @@ void fusePriorMapProjection(
     const std::vector<uint8_t> &dynamic_values,
     const std::vector<uint8_t> &dynamic_unknown_mask,
     const std::vector<uint8_t> &dynamic_near_field_prior_fill_mask,
+    const std::vector<uint8_t> &dynamic_prior_clearance_override_mask,
     std::vector<uint8_t> &fused_mask, std::vector<uint8_t> &fused_values,
     bool require_ground_support) {
   if (dynamic_mask.size() != dynamic_values.size() ||
       dynamic_mask.size() != dynamic_unknown_mask.size() ||
-      dynamic_mask.size() != dynamic_near_field_prior_fill_mask.size()) {
+      dynamic_mask.size() != dynamic_near_field_prior_fill_mask.size() ||
+      dynamic_mask.size() != dynamic_prior_clearance_override_mask.size()) {
     fused_mask.clear();
     fused_values.clear();
     throw std::invalid_argument(
-        "fusePriorMapProjection: dynamic mask, value, unknown-mask, and "
-        "near-field-mask sizes differ");
+        "fusePriorMapProjection: dynamic mask, value, unknown-mask, "
+        "near-field-mask, and clearance-override-mask sizes differ");
   }
 
   fused_mask = dynamic_mask;
@@ -930,7 +926,14 @@ void fusePriorMapProjection(
   }
 
   for (size_t index = 0; index < prior_map.cached_mask.size(); ++index) {
-    if (prior_map.cached_mask[index] == 0U) {
+    if (dynamic_prior_clearance_override_mask[index] != 0U) {
+      // A 2D occupancy projection cannot represent an overhead platform and
+      // the drivable surface below it at the same XY. Let a current, measured
+      // 3D navigation-clearance proof supersede only that cell. Every other
+      // prior occupied/unknown cell remains fail-closed.
+      fused_mask[index] = dynamic_mask[index];
+      fused_values[index] = dynamic_values[index];
+    } else if (prior_map.cached_mask[index] == 0U) {
       fused_mask[index] = 0U;
       fused_values[index] = 254U;
     } else if (!require_ground_support &&

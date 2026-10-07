@@ -2,6 +2,7 @@
 
 #include <Eigen/Core>
 
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -102,6 +103,27 @@ struct CellData {
   double clearance_dropout_deadline{0.0};
 };
 
+inline bool hasVerifiedOverheadClearance(const CellData &cell) {
+  if ((cell.type != CellType::FREE && cell.type != CellType::PASSABLE) ||
+      cell.raw_type == CellType::OCCUPIED || cell.clearance_verified == 0U ||
+      cell.traversable == 0U) {
+    return false;
+  }
+  return cell.raw_reason == ProjectionClassReason::OVERHEAD_CLEARANCE_OK &&
+         std::isfinite(cell.ceiling_z_abs) && std::isfinite(cell.headroom);
+}
+
+inline int8_t navigationOverlayValue(const CellData &cell) {
+  const bool measured_height = std::isfinite(cell.occupied_z_min_abs) &&
+                               std::isfinite(cell.occupied_z_max_abs);
+  if (cell.raw_type == CellType::OCCUPIED && measured_height &&
+      (isMeasuredObstacleReason(cell.raw_reason) ||
+       isMeasuredObstacleReason(cell.candidate_reason))) {
+    return 100;
+  }
+  return hasVerifiedOverheadClearance(cell) ? 0 : -1;
+}
+
 struct ProjectionLayerConfig {
   bool unknown_as_occupied{false};
   int min_observed_voxels{2};
@@ -131,6 +153,10 @@ struct ProjectionLayerConfig {
   double ground_connectivity_bridge_max_height_delta{0.06};
   double ground_connectivity_bridge_landing_min_length{0.25};
   double ground_connectivity_bridge_landing_min_height_delta{0.04};
+  double ground_connectivity_quantile{0.20};
+  double ground_connectivity_quantile_lateral_radius{0.15};
+  int ground_connectivity_quantile_min_samples{3};
+  double ground_connectivity_fit_residual_tolerance{0.05};
   // A zero-hit prior/no-data cell may be released only when the current
   // footprint has a short, measured support bridge on both sides. This is
   // deliberately separate from the legacy empty-column bridge and is only
@@ -162,6 +188,9 @@ struct ProjectionLayerConfig {
   double robot_y{0.0};
   double robot_yaw{0.0};
   double reference_ground_z_abs{0.0};
+  bool reference_ground_plane_valid{false};
+  double reference_ground_slope_x{0.0};
+  double reference_ground_slope_y{0.0};
 };
 
 struct ColumnStats {

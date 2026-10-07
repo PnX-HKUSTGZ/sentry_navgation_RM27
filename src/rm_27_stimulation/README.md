@@ -25,6 +25,25 @@ colcon build --packages-select rm_27_stimulation --symlink-install --cmake-args 
 source install/setup.bash
 ```
 
+## RMUC2026 场地视觉资源
+
+`RMUC2026` 的物理碰撞和先验高程继续使用原始
+`meshes/RMUC2026_world/meshes/RMUC2026.stl`。Gazebo 外观改用
+`RM27_Gazebo_Harmonic_part1.tar.xz` 和 `part2.tar.xz` 中的详细场地：85 份 DAE、
+185 个视觉对象，并保留源模型的颜色、结构细节和红蓝标线。
+
+导入脚本会自动移除源包中的全部碰撞节点，只生成
+`meshes/RM27_battlefield_visual`。因此外观模型不会重复碰撞或改变导航几何。
+需要从压缩包重新导入时运行：
+
+```bash
+cd /home/pnx/nav_ws/sentry-navigation-RM27
+python3 src/rm_27_stimulation/tools/import_rm27_battlefield_visual.py --force
+```
+
+源视觉场地以 `y=0` 为中心，world 使用 `y=1.624344 m` 的整体平移恢复现有地图坐标；
+地面仍为 `z=0`。不得单独调整该 pose，否则画面、碰撞、雷达量测和导航地图会错位。
+
 ## 启动
 
 只启动 Gazebo：

@@ -26,17 +26,20 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
   last_peak_velocity_ = std::numeric_limits<double>::quiet_NaN();
   last_peak_acceleration_ = std::numeric_limits<double>::quiet_NaN();
   last_total_duration_ = std::numeric_limits<double>::quiet_NaN();
+  last_failure_reason_ = FailureReason::NONE;
   opt_vars_.query_failure_count = 0;
 
   if (!std::isfinite(hard_velocity_limit) || hard_velocity_limit <= 0.0 ||
       hard_velocity_limit > cfg_.max_vel * (1.0 + 1.0e-6)) {
     last_return_code_ = lbfgs::LBFGSERR_INVALIDPARAMETERS;
+    last_failure_reason_ = FailureReason::INVALID_INPUT;
     return INFINITY;
   }
 
   if (!setupProblemAndCheck(waypoints, start_state, end_state)) {
     cout << YELLOW << " -- [TrajOpt] Error in setup problem, force return." << RESET << endl;
     last_return_code_ = lbfgs::LBFGSERR_INVALIDPARAMETERS;
+    last_failure_reason_ = FailureReason::INVALID_INPUT;
     return INFINITY;
   }
 
@@ -59,6 +62,7 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
     cout << opt_vars_.tailPVA << endl;
     cout << " -- Times: " << endl;
     cout << opt_vars_.times.transpose() << endl;
+    last_failure_reason_ = FailureReason::INVALID_INPUT;
     return INFINITY;
   }
 
@@ -119,6 +123,7 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
     if (!enforceDynamicFeasibility(out_traj, hard_velocity_limit)) {
       out_traj.clear();
       last_objective_total_ = std::numeric_limits<double>::infinity();
+      last_failure_reason_ = FailureReason::DYNAMIC_FEASIBILITY;
       return std::numeric_limits<double>::infinity();
     }
     last_total_duration_ = out_traj.getTotalDuration();
@@ -126,6 +131,7 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
         last_total_duration_ > cfg_.max_trajectory_duration) {
       out_traj.clear();
       last_objective_total_ = std::numeric_limits<double>::infinity();
+      last_failure_reason_ = FailureReason::DURATION_LIMIT;
       return std::numeric_limits<double>::infinity();
     }
 
@@ -139,6 +145,7 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
   } else {
     // 5'. Optimization failed
     minCostFunctional = INFINITY;
+    last_failure_reason_ = FailureReason::OPTIMIZATION;
   }
   return minCostFunctional;
 }

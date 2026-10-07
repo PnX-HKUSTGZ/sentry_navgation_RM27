@@ -94,6 +94,11 @@ bool makeEscapeTrajectories(const geometry_msgs::msg::PoseStamped & current_pose
   traj_opt::Trajectory & position_traj,
   traj_opt::Trajectory & yaw_traj);
 
+bool selectSafeEscapeVelocity(
+  const Eigen::Vector2d & requested_velocity,
+  const std::function<bool(const Eigen::Vector2d &)> & is_safe,
+  Eigen::Vector2d & selected_velocity);
+
 // === Costmap Utilities ===
 // --- Collision / Visibility Checks ---
 

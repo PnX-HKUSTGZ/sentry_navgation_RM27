@@ -1,5 +1,7 @@
 #include "minco_core/minco_utils.hpp"
 
+#include <array>
+
 #include "data_structure/base/trajectory.h"
 
 namespace minco_planner::utils {
@@ -288,6 +290,42 @@ bool makeEscapeTrajectories(const geometry_msgs::msg::PoseStamped & current_pose
   yMat(0, 5) = current_yaw;
   yaw_traj.emplace_back(duration, yMat);
   return true;
+}
+
+bool selectSafeEscapeVelocity(
+  const Eigen::Vector2d & requested_velocity,
+  const std::function<bool(const Eigen::Vector2d &)> & is_safe,
+  Eigen::Vector2d & selected_velocity)
+{
+  selected_velocity.setZero();
+  const double speed = requested_velocity.norm();
+  if (!requested_velocity.allFinite() || !std::isfinite(speed) || speed <= 1.0e-6 || !is_safe) {
+    return false;
+  }
+
+  if (is_safe(requested_velocity)) {
+    selected_velocity = requested_velocity;
+    return true;
+  }
+
+  constexpr int kAngularSamples = 12;
+  constexpr double kPi = 3.14159265358979323846;
+  const double requested_angle = std::atan2(requested_velocity.y(), requested_velocity.x());
+  for (int offset = 1; offset <= kAngularSamples / 2; ++offset) {
+    const double delta = 2.0 * kPi * static_cast<double>(offset) /
+      static_cast<double>(kAngularSamples);
+    const std::array<double, 2> signs{{1.0, -1.0}};
+    const int sign_count = offset == kAngularSamples / 2 ? 1 : 2;
+    for (int sign_index = 0; sign_index < sign_count; ++sign_index) {
+      const double angle = requested_angle + signs[static_cast<size_t>(sign_index)] * delta;
+      const Eigen::Vector2d candidate(speed * std::cos(angle), speed * std::sin(angle));
+      if (is_safe(candidate)) {
+        selected_velocity = candidate;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 std::vector<Eigen::Vector3d> getSparseWaypoints(const std::vector<Eigen::Vector3d> & path,

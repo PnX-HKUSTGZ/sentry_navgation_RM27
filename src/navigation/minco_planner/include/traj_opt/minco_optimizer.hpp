@@ -30,6 +30,15 @@ using namespace color_text;
 class MincoOptimizer
 {
 public:
+  enum class FailureReason
+  {
+    NONE,
+    INVALID_INPUT,
+    OPTIMIZATION,
+    DYNAMIC_FEASIBILITY,
+    DURATION_LIMIT
+  };
+
   // === Internal Types ===
   // --- Optimizer Configuration ---
   struct Config
@@ -97,6 +106,7 @@ public:
   double lastPeakVelocity() const { return last_peak_velocity_; }
   double lastPeakAcceleration() const { return last_peak_acceleration_; }
   double lastTotalDuration() const { return last_total_duration_; }
+  FailureReason lastFailureReason() const { return last_failure_reason_; }
 
   // --- Trajectory Optimization ---
   double optimize(const std::vector<Eigen::Vector3d> & waypoints,
@@ -207,6 +217,7 @@ private:
   double last_peak_velocity_{std::numeric_limits<double>::quiet_NaN()};
   double last_peak_acceleration_{std::numeric_limits<double>::quiet_NaN()};
   double last_total_duration_{std::numeric_limits<double>::quiet_NaN()};
+  FailureReason last_failure_reason_{FailureReason::NONE};
 };
 
 }  // namespace minco_planner

@@ -101,7 +101,8 @@ costmap 中动态层投影日志的 `source/marked/outside/transform_failed`；�
 `/minco/global_costmap_soft_costs` 和 `/minco/dynamic_costmap_inflation` 区分
 软代价和动态障碍周围代价。某个洞不被选择时先分别检查洞口的静态占据、动态
 lethal、膨胀软代价和 `astar_path_vis`，确认它到底是硬阻塞还是被路线代价避开；
-不要先关 `ground_edge_avoidance` 或缩小车体尺寸。
+无高程模式下 `ground_edge_avoidance` 固定关闭，坡面安全由 ROG 连通性判断；不要通过
+缩小车体尺寸或放行 unknown 来解决卡住。
 
 ## 4. `planner_server`：全局种子、ROG 校验和局部轨迹
 
@@ -117,8 +118,8 @@ lethal、膨胀软代价和 `astar_path_vis`，确认它到底是硬阻塞还是
 | `smac_2d.cost_penalty` | 8.0 | 放大膨胀软代价的绕行倾向；过大可能宁可走远洞，过小可能贴障碍/贴洞边。对照 `/astar_path_vis` 调整，必须保持硬碰撞检查。 |
 | `smac_2d.use_esdf_cost` | false | 当前不把 ROG 未观测边界当作 SMAC 全局软代价；下方 `esdf_weight/decay/max_cost` 在 false 时不应视为当前选路旋钮。 |
 | `priormap.dynamic_global_obstacle.enable`, `.collision_distance` | true, 0.34 m | 让已测 ROG 占据参与全局搜索硬遮罩；距离是障碍周围搜索中心线的缓冲，不等同 Nav2 0.40 m 软膨胀。距离过大会封窄洞，过小有扫碰风险。 |
-| `priormap.ground_edge_avoidance.enable`, `.max_step`, `.max_slope_deg` | true, 0.06 m, 28 deg | 根据**测绘的地面高程**标记台阶/坡度不可行区域；坡道高程缺失或坐标错位，应修地图而非提高阈值。 |
-| `priormap.ground_edge_avoidance.lethal_clearance_radius`, `.clearance_radius`, `.clearance_cost` | 0.30 m, 0.30 m, 240 | 危险地面边缘的硬/软缓冲。路线被坡边挤走先核实地面 patch、坡度、足迹和栅格分辨率。 |
+| `priormap.ground_edge_avoidance.enable` | false | 当前实车不使用先验高程，因此全局搜索不生成测绘坡边层；二维静态墙体仍正常参与搜索。 |
+| `rog_map.projection.max_ground_step`, `.max_ground_slope_deg` | 0.06 m, 28 deg | 实时点云地面的相邻台阶与坡度上限；这是无高程模式的局部硬门，不要为消除停顿直接放大。 |
 | `priormap.clip_seed_by_rog_boundary`, `.rog_boundary_margin` | true, 0.30 m | 全局路径进入 ROG 未观察区域时截短当前局部种子；不应为消除停顿直接关掉。 |
 | `local_path.observed_prefix_max_velocity` | 0.20 m/s | 已观测安全前缀到观察边界时的慢速推进上限；适合行进中缓慢摆动云台继续获取点云，不保证盲区可通行。 |
 | `local_path.shortcut_peak_cost_slack`, `.shortcut_mean_cost_slack` | 10, 5 | 局部路径抄近路可接受的代价峰值/均值增量；奇怪的贴障碍捷径先尝试减小容忍度并对照全局种子。 |
@@ -135,16 +136,23 @@ lethal、膨胀软代价和 `astar_path_vis`，确认它到底是硬阻塞还是
 | 参数（`MincoPlanner.` 后缀） | 当前值 | 含义与调整方向 |
 |---|---:|---|
 | `minco_optimizer.max_velocity`, `.max_acceleration`, `.max_yaw_dot` | 0.8 m/s, 0.8 m/s², 0.8 rad/s | 规划轨迹的速度/加速度/偏航上限；不要只提高控制器速度上限，二者须按实测能力配套。 |
-| `minco_optimizer.terminal_velocity_ratio`, `.max_trajectory_duration` | 0.80, 10 s | 局部终点速度比例与轨迹最大时长；若轨迹时间被拉得极长、车几乎不动，先记录优化器失败原因和观测缺口。 |
+| `minco_optimizer.terminal_velocity_ratio`, `.max_trajectory_duration` | 0.80, 20 s | 局部终点速度比例与轨迹最大时长；20 s 接纳经动力学重定时的坡面轨迹，非有限值仍会拒绝。若车长期低速，检查优化器日志而不是继续增大。 |
 | `minco_optimizer.safe_dist` | 0.30 m | 优化器避障偏好/代价距离；不是硬碰撞判定，也不能代替矩形车体检查。 |
 | `minco_optimizer.collision_dist` | 0.0 m | 安全检查在矩形足迹之外的额外距离；本配置避免重复径向膨胀，不能理解为“关闭碰撞检查”。 |
 | `safety.footprint_length`, `.footprint_width`, `.footprint_margin` | 0.30, 0.20, 0.05 m | 矩形轨迹硬校验的本体尺寸及额外边距；与车体外形、凸出物核对，不要为穿洞擅自减小。 |
-| `safety.sample_dt`, `.map_timeout`, `.collision_cache_reuse_max_duration` | 0.05 s, 0.50 s, 0.40 s | 轨迹采样、新鲜地图与失败后旧轨迹短暂复用上限；卡顿时先分辨是地图过期、碰撞还是优化失败。 |
+| `safety.sample_dt`, `.map_timeout`, `.check_horizon` | 0.05 s, 0.50 s, 2.0 s | 轨迹采样、地图新鲜度与滚动安全校验时域。 |
+| `safety.collision_cache_reuse_max_duration`, `.optimizer_failure_cache_reuse_max_duration` | 0.40 s, 2.0 s | 碰撞拒绝只允许极短尾段；数值优化失败可在每次通过最新 ROG 足迹校验后续行，且不得超过 `check_horizon`。 |
 | `rog_map.projection.vehicle_height`, `.headroom_margin` | 0.42, 0.03 m | 高度是**距局部地面的车体高度**与头顶余量：净空判断约需 0.45 m；不是固定 map-frame Z，也不是 LiDAR 高度。 |
 | `rog_map.projection.robot_origin_to_ground` | 0.28 m | 传感/车体原点到地面参考高度；与车体安装标定区分，不能拿它替代 `vehicle_height`。 |
-| `rog_map.projection.min_headroom_known_ratio` | 0.50 | 车身体积内需要的已观测净空比例；观察不足时会拒绝，不宜为了消除等待盲目降低。 |
-| `rog_map.projection.prior_map.require_ground_support` | true | 先验图的可走区域还必须有匹配的地面高程；已知空地不等于已验证坡面。 |
-| `rog_map.projection.near_field_prior_fill_length`, `.near_field_prior_fill_width` | 1.20 x 1.20 m | 有先验 known-free、连续匹配地面且没有占据回波时，对近场无回波列有限补充；不是允许任意 unknown 通行。 |
+| `rog_map.projection.min_headroom_known_ratio` | 0.15 | 车身体积内需要的已观测净空比例。降低可减少 MID360 启动时的 `HEADROOM_UNVERIFIED`，但会接受更多未观测体素；实际占用回波和低净空仍然会拒绝。 |
+| `rog_map.projection.prior_map.require_ground_support` | false | 不使用先验高程；地面必须由车体接地点高度附近的实时候选种子及连续坡面传播确认。 |
+| `rog_map.projection.ground_seed_tolerance`, `.ground_seed_radius` | 0.18 m, 2.50 m | 首个地面种子相对车体接地点的高度窗与搜索半径。当前车身下方净空已验证的薄地面会先用中位数校准姿态切平面的高度截距；包络外仍按 `max(max_ground_step, resolution)` 的严格误差门槛匹配校准后的平面，避免远处独立薄板自封为地面。 |
+| `rog_map.projection.ground_connectivity_quantile` | 0.20 | 仅在普通地面连通失败时，对坡面横向窄带高度取较低分位数，抑制稀疏回波和体素离散造成的单点高度跳变。不要调到 0，否则一个异常低点就可能主导坡面。 |
+| `rog_map.projection.ground_connectivity_quantile_lateral_radius` | 0.15 m | 坡面分位数的横向采样半径，总宽度约 0.30 m。过小对缺点敏感，过大会跨到坡边或相邻平台。 |
+| `rog_map.projection.ground_connectivity_quantile_min_samples` | 3 | 每个坡面截面至少需要的净空已验证地面格数量；不足时保持阻塞。 |
+| `rog_map.projection.ground_connectivity_fit_residual_tolerance` | 0.05 m | 分位数高度相对拟合坡面的最大残差，应与 ROG 体素分辨率同量级；增大可能把真实台阶拟合成坡。 |
+| `rog_map.projection.observed_empty_as_free`, `.bridge_observed_empty_for_ground_connectivity` | true, true | 仅放行车身体积已观测为空的列，并允许一次最长 0.60 m、有落地点与连续坡面证据的盲带桥接；UNKNOWN 和占据列不能参与。 |
+| `rog_map.projection.near_field_prior_fill_enable` | false | 该路径依赖先验高程，无高程模式必须关闭。 |
 | `rog_map.decay.keep_time`, `.clear_time` | 3 / 5 s | ROG 占据证据的保留/清理时标；云台慢转时短暂消失的障碍不能立刻当作 free。 |
 
 洞口净空不足时，先测**最高的实际车体部件及其运动姿态**，核对
@@ -162,8 +170,8 @@ lethal、膨胀软代价和 `astar_path_vis`，确认它到底是硬阻塞还是
 |---|---:|---|
 | `controller_frequency` | 20 Hz | 控制器调用频率；需与 CPU、里程计和 costmap 更新匹配，不是规划器轨迹发布频率。 |
 | `failure_tolerance` | 0.30 s | 控制插件抛异常后允许的最长持续时间，超时 FollowPath 失败；不是传感器新鲜度阈值。 |
-| `progress_checker.required_movement_radius`, `.movement_time_allowance` | 0.50 m / 10 s | SimpleProgressChecker 在时间窗内期望的位置变化；云台扫描导致短暂停车时可能报警，先确认阻塞源再考虑调时间窗，不要设得无界。 |
-| `general_goal_checker.xy_goal_tolerance`, `.yaw_goal_tolerance` | 0.20 m, 6.28 rad | Nav2 目标完成阈值；MINCO `minco_optimizer.traj_goal_tolerance: 0.15 m` 应严格小于 XY 目标容差。 |
+| `progress_checker.required_movement_radius`, `.movement_time_allowance` | 0.05 m / 20 s | SimpleProgressChecker 在时间窗内期望的位置变化；当前窗口允许坡上慢速净位移和短暂观测停顿，不应因尚未移动 0.10 m 就反复中止并清图。 |
+| `general_goal_checker.xy_goal_tolerance`, `.yaw_goal_tolerance` | 0.10 m, 6.28 rad | Nav2 目标完成阈值；MINCO `minco_optimizer.traj_goal_tolerance: 0.08 m` 严格小于 XY 目标容差，避免内部 FSM 先停而 FollowPath 无法完成，也避免车辆仍在坡面时过早结束。 |
 | `MincoMpc.odom_topic`, `.odom_timeout` | `/lidar_odometry`, 0.25 s | 控制器用补偿后 `odom` 里程计；接收时间**和消息时间戳**都需新鲜。超时先查 Point-LIO/loam_interface/时钟。 |
 | `MincoMpc.trajectory_timeout`, `.future_stamp_tolerance` | 1.50 / 0.05 s | NORMAL 轨迹接收与时间戳的新鲜度、未来时间容忍；调大仅延迟停机，无法制造有效新轨迹。 |
 | `MincoMpc.dt`, `.lookahead_time` | 0.05 / 0.50 s | MPC 离散步长和预测时域，当前约 10 步；提高预测时域或缩小步长会增加求解负载。 |
@@ -172,8 +180,14 @@ lethal、膨胀软代价和 `astar_path_vis`，确认它到底是硬阻塞还是
 | `MincoMpc.use_acc_constraints`, `.ax/ay_min/max`, `.alpha_min/max` | true, ±0.8 m/s², ±2 rad/s² | MPC 动力学变化限制；起步拖沓先查死区、参考推进和底盘反馈，再按实测加速度调。 |
 | `MincoMpc.control_delay_compensation` | 0.05 s | 外推车体状态/参考时刻以补偿控制延迟；改动前用时间戳和实际跟踪滞后估计，不要拿来修方向反转。 |
 | `MincoMpc.reference_progress_max_lead_time` | 0.25 s | 时间参考允许领先空间进度的上限；可缓解零速冷启动，但过大可能要求车追逐尚未到达的轨迹。 |
+| `MincoMpc.reference_startup_max_lead_time` | 1.50 s | 里程计平移速度不高于死区时使用的启动搜索窗口；与 `lookahead_time` 之和不得超过规划器 `safety.check_horizon`，车辆越过死区后恢复普通领先限制。 |
+| `MincoMpc.reference_startup_target_speed` | 0.08 m/s | 低速启动时搜索的首个参考速度，必须高于 `deadzone_speed_threshold`，但不能高于安全前缀的速度上限。只有找到该参考点才允许启动补偿。 |
+| `MincoMpc.reference_startup_min_command_speed` | 0.20 m/s | 实车克服静摩擦的启动命令下限，只在车速不高于死区且已有安全参考方向时生效；该值与观测前沿速度上限一致，使车辆能先接触短坡，再由姿态触发上坡助推。 |
+| `MincoMpc.uphill_startup_min_grade`, `.uphill_full_assist_grade` | 0.03, 0.18 | 上坡平滑补偿的起点与满助推坡度，约为 1.7 deg 和 10.2 deg。两者之间使用两端斜率为零的平滑曲线，不再跨过阈值就硬跳速度。 |
+| `MincoMpc.uphill_assist_min_reference_speed` | 0.30 m/s | 车辆离开启动死区后，轨迹峰值至少达到此值才持续上坡助推。它独立于最大助推速度，避免助推随车速反复开关，同时排除最高仅 0.20 m/s 的观测前缀停车轨迹。 |
+| `MincoMpc.uphill_startup_min_command_speed` | 0.90 m/s | 参数名为兼容旧配置保留；当前含义是陡坡满助推目标。实际命令从 MPC 原始值随坡度平滑靠近该值，并继续受 Nav2 动态限速、`max_planar_speed` 和 `slope_speed_limit` 约束。 |
 | `MincoMpc.deadzone_speed_threshold` | 0.05 m/s | 求解出的平移速度低于阈值时置零；若小速度指令被截断，先与底盘实际可动阈值比对。 |
-| `MincoMpc.slope_slowdown_start_angle`, `.slope_full_slowdown_angle`, `.slope_speed_limit` | 0.08 rad, 0.18 rad, 0.50 m/s | 按实测 roll/pitch 倾角从平地速度逐步限到坡道速度。坡道卡住先看坡面支撑/限速是否触发，再调速度。 |
+| `MincoMpc.slope_slowdown_start_angle`, `.slope_full_slowdown_angle`, `.slope_speed_limit` | 0.08 rad, 0.18 rad, 0.90 m/s | 按实测 roll/pitch 倾角从平地速度逐步限到坡道速度。坡道卡住先看坡面支撑/限速是否触发，再调速度。 |
 
 实车低速调试建议先检查 `/minco/cmd_vel_mpc`（原始控制调试输出）、
 `/cmd_vel_nav2_result` 和最终 `/cmd_vel`，并与 `/lidar_odometry` 比较。

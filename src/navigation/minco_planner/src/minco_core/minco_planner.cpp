@@ -641,6 +641,9 @@ void MincoPlanner::configure(
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "safety.collision_cache_reuse_max_duration",
       rclcpp::ParameterValue(collision_cache_reuse_max_duration_));
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "safety.optimizer_failure_cache_reuse_max_duration",
+      rclcpp::ParameterValue(optimizer_failure_cache_reuse_max_duration_));
   node->get_parameter(prefix + "safety.footprint_length",
                       safety_config.footprint_length);
   node->get_parameter(prefix + "safety.footprint_width",
@@ -654,21 +657,37 @@ void MincoPlanner::configure(
   node->get_parameter(prefix + "safety.check_horizon", safety_check_horizon_);
   node->get_parameter(prefix + "safety.collision_cache_reuse_max_duration",
                       collision_cache_reuse_max_duration_);
+  node->get_parameter(
+      prefix + "safety.optimizer_failure_cache_reuse_max_duration",
+      optimizer_failure_cache_reuse_max_duration_);
   if (!std::isfinite(collision_cache_reuse_max_duration_) ||
       collision_cache_reuse_max_duration_ < 0.0) {
     throw std::invalid_argument(
         "MincoPlanner safety.collision_cache_reuse_max_duration must be "
         "finite and nonnegative");
   }
-  RCLCPP_INFO(
-      logger_,
-      "[MincoPlanner] Cached trajectory reuse limit: %.2f s for collision, "
-      "safety, and optimizer-failure rejections.",
-      collision_cache_reuse_max_duration_);
+  if (!std::isfinite(optimizer_failure_cache_reuse_max_duration_) ||
+      optimizer_failure_cache_reuse_max_duration_ < 0.0) {
+    throw std::invalid_argument(
+        "MincoPlanner safety.optimizer_failure_cache_reuse_max_duration "
+        "must be finite and nonnegative");
+  }
   if (!std::isfinite(safety_check_horizon_) || safety_check_horizon_ <= 0.0) {
     throw std::invalid_argument(
         prefix + "safety.check_horizon must be finite and positive");
   }
+  if (optimizer_failure_cache_reuse_max_duration_ >
+      safety_check_horizon_ + 1.0e-9) {
+    throw std::invalid_argument(
+        "MincoPlanner safety.optimizer_failure_cache_reuse_max_duration "
+        "must not exceed safety.check_horizon");
+  }
+  RCLCPP_INFO(
+      logger_,
+      "[MincoPlanner] Cached trajectory reuse limits: %.2f s for collision/"
+      "safety rejection, %.2f s for optimizer failure.",
+      collision_cache_reuse_max_duration_,
+      optimizer_failure_cache_reuse_max_duration_);
   if (!std::isfinite(safety_config.footprint_length) ||
       safety_config.footprint_length <= 0.0 ||
       !std::isfinite(safety_config.footprint_width) ||
@@ -1435,6 +1454,8 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".safety.future_tolerance" ||
            param_name == name_ + ".safety.check_horizon" ||
            param_name == name_ + ".safety.collision_cache_reuse_max_duration" ||
+           param_name ==
+               name_ + ".safety.optimizer_failure_cache_reuse_max_duration" ||
            param_name == name_ + ".request_lease_timeout" ||
            param_name ==
                name_ + ".minco_optimizer.failed_replan_retry_period" ||
@@ -2027,6 +2048,34 @@ bool MincoPlanner::ReplanLocal(
   double final_cost = minco_optimizer_->optimize(
       sparse_path, start_state, end_state, local_vmaxs, opt_traj,
       hard_velocity_limit);
+  bool terminal_stop_fallback = false;
+  const auto first_failure = minco_optimizer_->lastFailureReason();
+  const bool retryable_boundary_failure =
+      first_failure == MincoOptimizer::FailureReason::DYNAMIC_FEASIBILITY ||
+      first_failure == MincoOptimizer::FailureReason::DURATION_LIMIT;
+  if (!std::isfinite(final_cost) && retryable_boundary_failure &&
+      end_state.col(1).head<2>().norm() > 1.0e-3) {
+    RCLCPP_WARN_THROTTLE(
+        logger_, *clock_, 1000,
+        "[MincoPlanner] Rolling-horizon terminal velocity made the trajectory "
+        "dynamically infeasible (peak_v=%.3f duration=%.3f); retrying with a "
+        "stationary local endpoint.",
+        minco_optimizer_->lastPeakVelocity(),
+        minco_optimizer_->lastTotalDuration());
+    end_state.col(1).setZero();
+    end_state.col(2).setZero();
+    if (N > 0) {
+      vec_Vec3f fallback_init_ps;
+      VecDf fallback_init_ts(N);
+      PTAllocation(sparse_path, start_state, true, trajectory_max_velocity,
+                   fallback_init_ps, fallback_init_ts, local_vmaxs);
+      minco_optimizer_->setInitPsAndTs(fallback_init_ps, fallback_init_ts);
+    }
+    final_cost = minco_optimizer_->optimize(
+        sparse_path, start_state, end_state, local_vmaxs, opt_traj,
+        hard_velocity_limit);
+    terminal_stop_fallback = true;
+  }
   if (perf) {
     perf->optimizer_time_ms =
         std::chrono::duration<double, std::milli>(
@@ -2055,7 +2104,7 @@ bool MincoPlanner::ReplanLocal(
         "state=%s waypoints=%zu stop_at_end=%s start=(%.3f,%.3f) speed=%.3f "
         "first_segment=%.3f velocity_direction_cos=%.3f peak_v=%.3f "
         "peak_a=%.3f duration=%.3f/max=%.3f "
-        "retime_iters=%d.",
+        "retime_iters=%d terminal_stop_fallback=%s.",
         minco_optimizer_->lastReturnCode(),
         minco_optimizer_->lastIterationCount(),
         static_cast<unsigned long long>(
@@ -2067,7 +2116,8 @@ bool MincoPlanner::ReplanLocal(
         minco_optimizer_->lastPeakAcceleration(),
         minco_optimizer_->lastTotalDuration(),
         minco_config.max_trajectory_duration,
-        minco_optimizer_->lastTimeAllocationIterations());
+        minco_optimizer_->lastTimeAllocationIterations(),
+        terminal_stop_fallback ? "true" : "false");
 
     if (visualizer_) {
       visualizer_->clearCandidateTrajectory("OPTIMIZER_FAILED");
@@ -2886,7 +2936,11 @@ bool MincoPlanner::republishSafeCachedTrajectory(
       rejection_reason ? rejection_reason : "UNKNOWN";
   const double remaining_duration = position_duration - elapsed;
   if (!cached_trajectory_policy::reuseDurationAllowed(
-          reason, remaining_duration, collision_cache_reuse_max_duration_)) {
+          reason, remaining_duration, collision_cache_reuse_max_duration_,
+          optimizer_failure_cache_reuse_max_duration_)) {
+    const double reuse_limit = cached_trajectory_policy::isNumericalFailure(reason)
+                                   ? optimizer_failure_cache_reuse_max_duration_
+                                   : collision_cache_reuse_max_duration_;
     geometry_msgs::msg::PoseStamped stop_pose = fallback_stop_pose;
     (void)getRobotPose(stop_pose);
     publishEmergencyStopImpl(stop_pose, generation, true);
@@ -2895,7 +2949,7 @@ bool MincoPlanner::republishSafeCachedTrajectory(
         "[MincoPlanner] New trajectory rejected (%s) with %.2f s cached "
         "motion remaining; cached-reuse limit is %.2f s, so BLOCK was "
         "published instead of extending the old trajectory.",
-        reason.data(), remaining_duration, collision_cache_reuse_max_duration_);
+        reason.data(), remaining_duration, reuse_limit);
     return false;
   }
 
@@ -3270,13 +3324,6 @@ bool MincoPlanner::publishEscapeCommand(
     if (!planning_session_.accepts(expected_session)) {
       return false;
     }
-    if (emergency_stop_latched_) {
-      publishBlockCommandLocked();
-      RCLCPP_WARN_THROTTLE(logger_, *clock_, 2000,
-                           "[MincoPlanner] Escape command suppressed while "
-                           "emergency stop is latched.");
-      return false;
-    }
     expected_generation = trajectory_generation_;
   }
 
@@ -3317,16 +3364,38 @@ bool MincoPlanner::publishEscapeCommand(
   constexpr double command_step = 0.05;
   traj_opt::Trajectory escape_traj;
   traj_opt::Trajectory yaw_traj;
-  if (!utils::makeEscapeTrajectories(current_pose, escape_vel, current_yaw,
-                                     escape_duration, escape_traj, yaw_traj)) {
-    return reject_escape("INVALID_ESCAPE_TRAJECTORY");
+  Eigen::Vector2d selected_escape_vel = Eigen::Vector2d::Zero();
+  const bool found_safe_escape = utils::selectSafeEscapeVelocity(
+      escape_vel,
+      [this, &current_pose, current_yaw, escape_duration, &escape_traj,
+       &yaw_traj](const Eigen::Vector2d &candidate_velocity) {
+        traj_opt::Trajectory candidate_traj;
+        traj_opt::Trajectory candidate_yaw_traj;
+        if (!utils::makeEscapeTrajectories(
+                current_pose, candidate_velocity, current_yaw, escape_duration,
+                candidate_traj, candidate_yaw_traj)) {
+          return false;
+        }
+        // Every candidate uses the same full body + yaw + fused prior/ROG
+        // freshness gate as an optimized trajectory.
+        if (!checkCollision(candidate_traj, candidate_yaw_traj)) {
+          return false;
+        }
+        escape_traj = std::move(candidate_traj);
+        yaw_traj = std::move(candidate_yaw_traj);
+        return true;
+      },
+      selected_escape_vel);
+  if (!found_safe_escape) {
+    return reject_escape("TRAJECTORY_SAFETY_CHECK_FAILED");
   }
 
-  // This is the same full body + yaw + ROG snapshot freshness gate used for
-  // optimized trajectories. It samples the current footprint, prediction, and
-  // endpoint.
-  if (!checkCollision(escape_traj, yaw_traj)) {
-    return reject_escape("TRAJECTORY_SAFETY_CHECK_FAILED");
+  if ((selected_escape_vel - escape_vel).norm() > 1.0e-6) {
+    RCLCPP_WARN_THROTTLE(
+        logger_, *clock_, 1000,
+        "[MincoPlanner] Requested escape direction was blocked; selected a "
+        "fused-map-safe alternative velocity (%.3f, %.3f).",
+        selected_escape_vel.x(), selected_escape_vel.y());
   }
 
   bool published = false;
@@ -3334,8 +3403,7 @@ bool MincoPlanner::publishEscapeCommand(
     std::scoped_lock lock(mutex_, goal_mutex_, path_mutex_);
     (void)expirePlanningRequestLeaseLocked(PlanningRequestLease::Clock::now());
     if (!planning_session_.accepts(expected_session) ||
-        trajectory_generation_ != expected_generation ||
-        emergency_stop_latched_) {
+        trajectory_generation_ != expected_generation) {
       return false;
     }
 
@@ -3362,7 +3430,7 @@ bool MincoPlanner::publishEscapeCommand(
   }
 
   if (published && visualizer_) {
-    visualizer_->publishRecoveryDebug(current_pose, escape_vel,
+    visualizer_->publishRecoveryDebug(current_pose, selected_escape_vel,
                                       escape_duration);
   }
   return published;

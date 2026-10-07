@@ -367,6 +367,10 @@ public:
     ground_connectivity_bridge_max_height_delta = 0.06;
     ground_connectivity_bridge_landing_min_length = 0.25;
     ground_connectivity_bridge_landing_min_height_delta = 0.04;
+    ground_connectivity_quantile = 0.20;
+    ground_connectivity_quantile_lateral_radius = 0.15;
+    ground_connectivity_quantile_min_samples = 3;
+    ground_connectivity_fit_residual_tolerance = 0.05;
     observed_ground_support_bridge_en = false;
     observed_ground_support_bridge_min_neighbors = 2;
     observed_ground_support_bridge_max_height_delta = 0.06;
@@ -429,6 +433,14 @@ public:
          ground_connectivity_bridge_landing_min_length);
     load("projection.ground_connectivity_bridge_landing_min_height_delta",
          ground_connectivity_bridge_landing_min_height_delta);
+    load("projection.ground_connectivity_quantile",
+         ground_connectivity_quantile);
+    load("projection.ground_connectivity_quantile_lateral_radius",
+         ground_connectivity_quantile_lateral_radius);
+    load("projection.ground_connectivity_quantile_min_samples",
+         ground_connectivity_quantile_min_samples);
+    load("projection.ground_connectivity_fit_residual_tolerance",
+         ground_connectivity_fit_residual_tolerance);
     load("projection.observed_ground_support_bridge_enable",
          observed_ground_support_bridge_en);
     load("projection.observed_ground_support_bridge_min_neighbors",
@@ -627,6 +639,17 @@ public:
         ground_connectivity_bridge_landing_min_height_delta < 0.0 ||
         ground_connectivity_bridge_landing_min_height_delta >
             max_ground_height_delta ||
+        !std::isfinite(ground_connectivity_quantile) ||
+        ground_connectivity_quantile < 0.0 ||
+        ground_connectivity_quantile >= 1.0 ||
+        !std::isfinite(ground_connectivity_quantile_lateral_radius) ||
+        ground_connectivity_quantile_lateral_radius < 0.0 ||
+        ground_connectivity_quantile_min_samples < 1 ||
+        ground_connectivity_quantile_min_samples > 31 ||
+        !std::isfinite(ground_connectivity_fit_residual_tolerance) ||
+        ground_connectivity_fit_residual_tolerance <= 0.0 ||
+        ground_connectivity_fit_residual_tolerance >
+            ground_connectivity_bridge_max_height_delta ||
         observed_ground_support_bridge_min_neighbors < 2 ||
         observed_ground_support_bridge_min_neighbors > 4 ||
         !std::isfinite(observed_ground_support_bridge_max_height_delta) ||
@@ -651,7 +674,9 @@ public:
           "non-negative margins, headroom_voxel_inset_fraction in [0, 0.5], "
           "max_ground_height_delta >= "
           "ground_seed_tolerance and bridge height deltas, positive bridge "
-          "and landing lengths, "
+          "and landing lengths, ground-connectivity quantile in [0, 1), "
+          "non-negative lateral radius, 1..31 samples, positive fit residual "
+          "not exceeding the bridge height delta, "
           "max_ground_slope_deg in [0, 90), headroom known ratios in [0, 1], "
           "and a positive one-cell hole-fill width.");
     }
@@ -855,6 +880,10 @@ public:
   double ground_connectivity_bridge_max_height_delta{0.06};
   double ground_connectivity_bridge_landing_min_length{0.25};
   double ground_connectivity_bridge_landing_min_height_delta{0.04};
+  double ground_connectivity_quantile{0.20};
+  double ground_connectivity_quantile_lateral_radius{0.15};
+  int ground_connectivity_quantile_min_samples{3};
+  double ground_connectivity_fit_residual_tolerance{0.05};
   bool observed_ground_support_bridge_en{false};
   int observed_ground_support_bridge_min_neighbors{2};
   double observed_ground_support_bridge_max_height_delta{0.06};

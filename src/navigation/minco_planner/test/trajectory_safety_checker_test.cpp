@@ -654,6 +654,36 @@ TEST(TrajectorySafetyCheckerTest,
   EXPECT_NEAR(diagnostic.center.x(), 0.2, 1e-12);
 }
 
+TEST(TrajectorySafetyCheckerTest, EscapeVelocityKeepsRequestedDirectionWhenSafe) {
+  const Eigen::Vector2d requested(0.0, -0.2);
+  Eigen::Vector2d selected;
+
+  ASSERT_TRUE(utils::selectSafeEscapeVelocity(
+      requested, [](const Eigen::Vector2d &) { return true; }, selected));
+  EXPECT_TRUE(selected.isApprox(requested, 1.0e-12));
+}
+
+TEST(TrajectorySafetyCheckerTest, EscapeVelocityFindsAlternativeDirection) {
+  const Eigen::Vector2d requested(0.0, -0.2);
+  Eigen::Vector2d selected;
+
+  ASSERT_TRUE(utils::selectSafeEscapeVelocity(
+      requested,
+      [](const Eigen::Vector2d &candidate) { return candidate.x() > 0.15; },
+      selected));
+  EXPECT_NEAR(selected.norm(), requested.norm(), 1.0e-12);
+  EXPECT_GT(selected.x(), 0.15);
+}
+
+TEST(TrajectorySafetyCheckerTest, EscapeVelocityFailsClosedWithoutSafeDirection) {
+  Eigen::Vector2d selected(1.0, 1.0);
+
+  EXPECT_FALSE(utils::selectSafeEscapeVelocity(
+      Eigen::Vector2d(0.2, 0.0),
+      [](const Eigen::Vector2d &) { return false; }, selected));
+  EXPECT_TRUE(selected.isZero(1.0e-12));
+}
+
 TEST(TrajectorySafetyCheckerTest, EscapeCandidateChecksCurrentFootprint) {
   TrajectorySafetyChecker::Config config;
   config.safe_dist = 0.01;

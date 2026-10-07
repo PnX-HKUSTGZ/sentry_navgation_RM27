@@ -254,6 +254,7 @@ private:
   // Maximum future time certified against the rolling ROG snapshot.
   double safety_check_horizon_{2.0};
   double collision_cache_reuse_max_duration_{0.75};
+  double optimizer_failure_cache_reuse_max_duration_{2.0};
   double request_lease_timeout_{0.0};
   MincoOptimizer::Config minco_config;
   RecoverServer::Config recovery_server_config_{};

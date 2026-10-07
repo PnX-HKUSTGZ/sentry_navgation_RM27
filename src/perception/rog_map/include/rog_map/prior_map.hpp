@@ -110,6 +110,7 @@ void fusePriorMapProjection(
     const std::vector<uint8_t> &dynamic_values,
     const std::vector<uint8_t> &dynamic_unknown_mask,
     const std::vector<uint8_t> &dynamic_near_field_prior_fill_mask,
+    const std::vector<uint8_t> &dynamic_prior_clearance_override_mask,
     std::vector<uint8_t> &fused_mask, std::vector<uint8_t> &fused_values,
     bool require_ground_support = false);
 

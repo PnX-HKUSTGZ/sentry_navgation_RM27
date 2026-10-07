@@ -281,39 +281,37 @@ def test_rmuc2026_ground_elevation_grid_is_current_generator_output():
     assert elevation_path.read_bytes() == output
 
 
-def test_simulation_minco_global_seed_keeps_ramp_corner_clearance():
+def test_simulation_minco_uses_no_elevation_ground_connectivity():
     config = yaml.safe_load(
         (BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text()
     )
     planner = config["planner_server"]["ros__parameters"]["MincoPlanner"]
-    inflation = config["global_costmap"]["global_costmap"]["ros__parameters"][
-        "inflation_layer"
-    ]
     smac = planner["smac_2d"]
     ground_edge = planner["priormap"]["ground_edge_avoidance"]
     projection = planner["rog_map"]["projection"]
 
-    assert inflation["inflation_radius"] == pytest.approx(0.35)
-    assert inflation["cost_scaling_factor"] == pytest.approx(5.0)
     assert smac["use_esdf_cost"] is False
-    assert ground_edge["enable"] is True
-    # The global seed may conservatively route around surveyed roughness that
-    # the local body-clearance classifier can still call passable. It must
-    # never be more permissive than the final local safety gate.
-    assert 0.0 < ground_edge["max_step"] <= projection["max_ground_step"]
-    assert 0.0 < ground_edge["max_slope_deg"] <= projection["max_ground_slope_deg"]
-    assert ground_edge["max_step"] == pytest.approx(0.042)
-    assert ground_edge["max_slope_deg"] == pytest.approx(20.0)
-    footprint_corner_radius = math.hypot(
-        0.5 * planner["safety"]["footprint_length"]
-        + planner["safety"]["footprint_margin"],
-        0.5 * planner["safety"]["footprint_width"]
-        + planner["safety"]["footprint_margin"],
+    assert ground_edge["enable"] is False
+    assert projection["prior_map"]["require_ground_support"] is False
+    assert projection["observed_empty_as_free"] is True
+    assert projection["bridge_observed_empty_for_ground_connectivity"] is True
+    # Simulation publishes a complete organized no-return ray lattice. An
+    # observed empty column with no finite occupied height must not become a
+    # false downhill-hole obstacle solely because its body band is sparse.
+    assert projection["min_headroom_known_ratio"] == pytest.approx(0.0)
+    assert projection["near_field_prior_fill_enable"] is False
+    assert projection["ground_seed_tolerance"] <= projection["max_ground_height_delta"]
+    assert (
+        projection["ground_connectivity_bridge_max_length"]
+        < projection["ground_seed_radius"]
     )
-    assert ground_edge["lethal_clearance_radius"] >= footprint_corner_radius + 0.05
-    assert ground_edge["clearance_radius"] >= footprint_corner_radius + 0.05
-    assert ground_edge["lethal_clearance_radius"] <= ground_edge["clearance_radius"]
-    assert 0 < ground_edge["clearance_cost"] < 253
+    assert 0.0 <= projection["ground_connectivity_quantile"] < 1.0
+    assert projection["ground_connectivity_quantile_lateral_radius"] > 0.0
+    assert projection["ground_connectivity_quantile_min_samples"] >= 3
+    assert (
+        projection["ground_connectivity_fit_residual_tolerance"]
+        <= projection["ground_connectivity_bridge_max_height_delta"]
+    )
 
 
 def test_rmuc2026_physics_supports_holonomic_ramp_contacts():
@@ -356,7 +354,18 @@ def test_reality_global_seed_ignores_rolling_rog_frontier():
     projection = planner["rog_map"]["projection"]
 
     assert smac["use_esdf_cost"] is False
-    assert ground_edge["enable"] is True
+    assert ground_edge["enable"] is False
+    assert projection["prior_map"]["require_ground_support"] is False
+    assert projection["observed_empty_as_free"] is True
+    assert projection["bridge_observed_empty_for_ground_connectivity"] is True
+    assert projection["near_field_prior_fill_enable"] is False
+    assert 0.0 <= projection["ground_connectivity_quantile"] < 1.0
+    assert projection["ground_connectivity_quantile_lateral_radius"] > 0.0
+    assert projection["ground_connectivity_quantile_min_samples"] >= 3
+    assert (
+        projection["ground_connectivity_fit_residual_tolerance"]
+        <= projection["ground_connectivity_bridge_max_height_delta"]
+    )
     assert ground_edge["max_step"] == pytest.approx(projection["max_ground_step"])
     assert ground_edge["max_slope_deg"] == pytest.approx(
         projection["max_ground_slope_deg"]
@@ -488,6 +497,10 @@ def test_simulation_pointlio_selects_inputs_from_same_profile():
     point_lio = yaml.safe_load(
         (BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text()
     )["minco_input_profiles"]["ros__parameters"]["point_lio"]
+    assert planner["rog_map"]["projection"]["min_headroom_known_ratio"] == pytest.approx(
+        point_lio["projection"]["min_headroom_known_ratio"]
+    )
+    assert planner["rog_map"]["projection"]["min_headroom_known_ratio"] > 0.0
     assert planner["frames"]["rog_frame"] == point_lio["frames"]["rog_frame"]
     assert planner["odom_topic"] == point_lio["odom_topic"]
     assert planner["lidar_offset_x"] == point_lio["lidar_offset_x"]
@@ -628,6 +641,14 @@ def test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps():
             assert 0 < rog_layer["obstacle_threshold"] <= 100
             assert rog_layer["stale_timeout"] > 0.0
             assert rog_layer["footprint_clearing_enabled"] is True
+            expected_range = (
+                0.60
+                if deployment == "simulation" and costmap_name == "global_costmap"
+                else 0.0
+            )
+            assert rog_layer["obstacle_marking_max_range"] == pytest.approx(
+                expected_range
+            )
             if deployment == "reality":
                 inflation = params["inflation_layer"]
                 assert inflation["plugin"] == "nav2_costmap_2d::InflationLayer"
@@ -639,6 +660,10 @@ def test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps():
         expected_cost_penalty = 2.0 if deployment == "simulation" else 8.0
         assert smac["cost_penalty"] == pytest.approx(expected_cost_penalty)
         assert smac["use_quadratic_cost_penalty"] is False
+        dynamic_global = profile["planner_server"]["ros__parameters"]["MincoPlanner"][
+            "priormap"
+        ]["dynamic_global_obstacle"]
+        assert dynamic_global["enable"] is (deployment == "reality")
         local_path = profile["planner_server"]["ros__parameters"]["MincoPlanner"][
             "local_path"
         ]
@@ -670,6 +695,25 @@ def test_active_minco_profiles_keep_physical_pose_and_bounded_reference_contract
         assert planner["frames"]["physical_base_frame"] == "base_link"
         assert planner["rog_map"]["cloud_filter"]["filter_mode"] == "transform_cloud"
         assert 0.0 < controller["reference_progress_max_lead_time"] <= 0.5
+        assert (
+            controller["reference_progress_max_lead_time"]
+            <= controller["reference_startup_max_lead_time"]
+        )
+        assert (
+            controller["reference_startup_max_lead_time"]
+            + controller["lookahead_time"]
+            <= planner["safety"]["check_horizon"]
+        )
+        assert (
+            controller["deadzone_speed_threshold"]
+            < controller["reference_startup_target_speed"]
+            <= planner["local_path"]["observed_prefix_max_velocity"]
+        )
+        assert (
+            controller["deadzone_speed_threshold"]
+            < controller["reference_startup_min_command_speed"]
+            <= controller["max_planar_speed"]
+        )
         assert 0.0 < planner["minco_optimizer"]["successful_replan_period"] <= 0.5
         assert planner["minco_optimizer"]["enable_yaw_opt"] is True
         assert (
@@ -683,6 +727,76 @@ def test_active_minco_profiles_keep_physical_pose_and_bounded_reference_contract
             < planner["minco_optimizer"]["traj_goal_tolerance"]
             < nav2_goal_tolerance
         )
+
+    reality = yaml.safe_load(
+        (BRINGUP_DIR / "config" / "reality" / "minco_params.yaml").read_text()
+    )
+    real_controller = reality["controller_server"]["ros__parameters"]
+    assert real_controller["progress_checker"]["required_movement_radius"] <= 0.10
+    assert real_controller["progress_checker"]["movement_time_allowance"] >= 15.0
+
+
+def test_reality_short_ramp_speed_and_connectivity_contract():
+    reality = yaml.safe_load(
+        (BRINGUP_DIR / "config/reality/minco_params.yaml").read_text()
+    )
+    planner = reality["planner_server"]["ros__parameters"]["MincoPlanner"]
+    controller = reality["controller_server"]["ros__parameters"]["MincoMpc"]
+    projection = planner["rog_map"]["projection"]
+
+    assert controller["reference_startup_min_command_speed"] == pytest.approx(
+        planner["local_path"]["observed_prefix_max_velocity"]
+    )
+    assert controller["uphill_startup_min_grade"] == pytest.approx(0.03)
+    assert controller["uphill_full_assist_grade"] == pytest.approx(0.18)
+    assert controller["uphill_assist_min_reference_speed"] > planner["local_path"][
+        "observed_prefix_max_velocity"
+    ]
+    assert controller["uphill_startup_min_command_speed"] == pytest.approx(0.90)
+    assert reality["controller_server"]["ros__parameters"]["progress_checker"][
+        "required_movement_radius"
+    ] == pytest.approx(0.05)
+    assert projection["ground_connectivity_bridge_max_length"] == pytest.approx(0.60)
+
+
+def test_simulation_minco_gate_clearance_accounts_for_voxel_quantization():
+    simulation = yaml.safe_load(
+        (BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text()
+    )
+    reality = yaml.safe_load(
+        (BRINGUP_DIR / "config/reality/minco_params.yaml").read_text()
+    )
+    simulation_projection = simulation["planner_server"]["ros__parameters"][
+        "MincoPlanner"
+    ]["rog_map"]["projection"]
+    reality_projection = reality["planner_server"]["ros__parameters"][
+        "MincoPlanner"
+    ]["rog_map"]["projection"]
+
+    # The RMUC2026 gate produces a 0.178 m projected gap after 5 cm voxel
+    # quantization. The simulated collision height is about 0.165 m; 0.17 m
+    # keeps that allowance without rejecting the valid gate as a low ceiling.
+    assert simulation_projection["vehicle_height"] == pytest.approx(0.17)
+    assert simulation_projection["headroom_margin"] == pytest.approx(0.0)
+    assert simulation_projection["headroom_voxel_inset_fraction"] == pytest.approx(
+        0.0
+    )
+    assert (
+        simulation_projection["vehicle_height"]
+        + simulation_projection["headroom_margin"]
+        < 0.178
+    )
+
+    # The simulator's deterministic quantization budget must not weaken the
+    # independently calibrated hardware clearance policy.
+    assert reality_projection["headroom_margin"] > 0.0
+    assert reality_projection["min_headroom_known_ratio"] > simulation_projection[
+        "min_headroom_known_ratio"
+    ]
+    assert (
+        reality_projection["headroom_voxel_inset_fraction"]
+        > simulation_projection["headroom_voxel_inset_fraction"]
+    )
 
 
 def test_simulated_no_return_rays_match_embedded_rog_range_and_resolution():
@@ -741,8 +855,8 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
     assert sim_optimizer["terminal_velocity_ratio"] == pytest.approx(0.85)
     assert 0.0 < real_optimizer["terminal_velocity_ratio"] < 1.0
     assert 0.0 < sim_optimizer["terminal_velocity_ratio"] < 1.0
-    assert real_optimizer["max_trajectory_duration"] == pytest.approx(10.0)
-    assert sim_optimizer["max_trajectory_duration"] == pytest.approx(10.0)
+    assert real_optimizer["max_trajectory_duration"] == pytest.approx(20.0)
+    assert sim_optimizer["max_trajectory_duration"] == pytest.approx(20.0)
     assert real_mpc["slope_speed_limit"] < real_mpc["max_planar_speed"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vx_max"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vy_max"]
@@ -750,6 +864,19 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
     assert sim_mpc["slope_speed_limit"] < sim_mpc["max_planar_speed"]
     assert sim_optimizer["max_acceleration"] <= sim_mpc["ax_max"]
     assert sim_optimizer["max_acceleration"] <= sim_mpc["ay_max"]
+    for planner in (
+        sim_planner,
+        reality["planner_server"]["ros__parameters"]["MincoPlanner"],
+    ):
+        safety = planner["safety"]
+        assert (
+            safety["collision_cache_reuse_max_duration"]
+            < safety["optimizer_failure_cache_reuse_max_duration"]
+        )
+        assert (
+            safety["optimizer_failure_cache_reuse_max_duration"]
+            <= safety["check_horizon"]
+        )
 
     brake_distance = sim_optimizer["max_velocity"] ** 2 / (
         2.0 * sim_optimizer["max_acceleration"]
@@ -779,40 +906,35 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
     assert sim_projection["clearance_hole_fill_max_width"] <= hard_footprint_length
 
 
-def test_simulation_footprint_bootstrap_covers_one_rog_seed_step():
+def test_active_footprint_bootstrap_covers_one_rog_seed_step():
     simulation = yaml.safe_load(
         (BRINGUP_DIR / "config" / "simulation" / "minco_params.yaml").read_text()
     )
     reality = yaml.safe_load(
         (BRINGUP_DIR / "config" / "reality" / "minco_params.yaml").read_text()
     )
-    sim_planner = simulation["planner_server"]["ros__parameters"]["MincoPlanner"]
-    sim_projection = sim_planner["rog_map"]["projection"]
-    sim_safety = sim_planner["safety"]
-    seed_step = sim_planner["priormap"]["rog_boundary_sample_step"]
+    for profile in (simulation, reality):
+        planner = profile["planner_server"]["ros__parameters"]["MincoPlanner"]
+        projection = planner["rog_map"]["projection"]
+        safety = planner["safety"]
+        seed_step = planner["priormap"]["rog_boundary_sample_step"]
 
-    required_length = (
-        sim_safety["footprint_length"]
-        + 2.0 * sim_safety["footprint_margin"]
-        + 2.0 * seed_step
-    )
-    required_width = (
-        sim_safety["footprint_width"]
-        + 2.0 * sim_safety["footprint_margin"]
-        + 2.0 * seed_step
-    )
-    assert sim_projection["robot_footprint_clear_length"] == pytest.approx(
-        required_length
-    )
-    assert sim_projection["robot_footprint_clear_width"] == pytest.approx(
-        required_width
-    )
-
-    real_projection = reality["planner_server"]["ros__parameters"]["MincoPlanner"][
-        "rog_map"
-    ]["projection"]
-    assert real_projection["robot_footprint_clear_length"] == pytest.approx(0.45)
-    assert real_projection["robot_footprint_clear_width"] == pytest.approx(0.35)
+        required_length = (
+            safety["footprint_length"]
+            + 2.0 * safety["footprint_margin"]
+            + 2.0 * seed_step
+        )
+        required_width = (
+            safety["footprint_width"]
+            + 2.0 * safety["footprint_margin"]
+            + 2.0 * seed_step
+        )
+        assert projection["robot_footprint_clear_length"] == pytest.approx(
+            required_length
+        )
+        assert projection["robot_footprint_clear_width"] == pytest.approx(
+            required_width
+        )
 
 
 def test_reality_observation_bootstrap_is_holonomic_and_can_stop_inside_envelope():

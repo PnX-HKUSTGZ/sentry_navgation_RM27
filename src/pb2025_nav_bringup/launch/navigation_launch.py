@@ -132,9 +132,11 @@ def _configure_navigation_mode(context, bringup_dir):
                 point_lio = profile["minco_input_profiles"]["ros__parameters"][
                     "point_lio"
                 ]
+                point_lio_projection = point_lio["projection"]
             except (KeyError, TypeError) as exc:
                 raise RuntimeError(
-                    "simulation MINCO profile is missing minco_input_profiles.point_lio"
+                    "simulation MINCO profile is missing minco_input_profiles.point_lio "
+                    "or its projection contract"
                 ) from exc
             planner = "planner_server.ros__parameters.MincoPlanner"
             rewrites = {
@@ -152,6 +154,9 @@ def _configure_navigation_mode(context, bringup_dir):
                 f"{planner}.rog_map.visualization.frame_id": point_lio["rog_map"][
                     "visualization"
                 ]["frame_id"],
+                f"{planner}.rog_map.projection.min_headroom_known_ratio": point_lio_projection[
+                    "min_headroom_known_ratio"
+                ],
             }
             selected_params_file = RewrittenYaml(
                 source_file=selected_params_file,

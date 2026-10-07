@@ -536,16 +536,18 @@ class ROGMapROS : public ROGMap {
                       pending_frame->value.sensor_stamp);
     nav_msgs::msg::OccupancyGrid dynamic_obstacles;
     size_t dynamic_obstacle_count = 0U;
-    const bool publish_dynamic_obstacles =
-        fillDynamicObstacleGrid(dynamic_obstacles, dynamic_obstacle_count);
+    size_t verified_clearance_count = 0U;
+    const bool publish_dynamic_obstacles = fillDynamicObstacleGrid(
+        dynamic_obstacles, dynamic_obstacle_count, verified_clearance_count);
     map_lock.unlock();
     if (publish_dynamic_obstacles) {
       dynamic_obstacles_pub_->publish(std::move(dynamic_obstacles));
       RCLCPP_INFO_THROTTLE(
           node_logging_->get_logger(), *node_clock_->get_clock(), 5000,
           "[ROGMap] dynamic obstacle grid published: frame='%s' "
-          "measured_obstacles=%zu subscribers=%zu",
+          "measured_obstacles=%zu verified_clearances=%zu subscribers=%zu",
           cfg_.visualization_frame_id.c_str(), dynamic_obstacle_count,
+          verified_clearance_count,
           dynamic_obstacles_pub_->get_subscription_count());
     }
   }
@@ -969,6 +971,22 @@ class ROGMapROS : public ROGMap {
     }
   }
 
+  void fillLayerGrid(const std::vector<int8_t> &data,
+                     nav_msgs::msg::OccupancyGrid &grid) {
+    grid.header.stamp = now();
+    grid.header.frame_id = cfg_.visualization_frame_id;
+    grid.info.resolution = static_cast<float>(layer_->resolution());
+    grid.info.width = static_cast<uint32_t>(layer_->width());
+    grid.info.height = static_cast<uint32_t>(layer_->height());
+    grid.info.origin.position.x = layer_->origin().x();
+    grid.info.origin.position.y = layer_->origin().y();
+    grid.info.origin.orientation.w = 1.0;
+    grid.data.resize(data.size());
+    for (size_t i = 0; i < data.size(); ++i) {
+      grid.data[i] = data[i] < 0 ? -1 : std::min<int8_t>(100, data[i]);
+    }
+  }
+
   void fillLayerMaskGrid(const std::vector<uint8_t> &mask,
                          nav_msgs::msg::OccupancyGrid &grid) {
     std::vector<uint8_t> occupancy(mask.size(), 0U);
@@ -979,23 +997,27 @@ class ROGMapROS : public ROGMap {
   }
 
   bool fillDynamicObstacleGrid(nav_msgs::msg::OccupancyGrid &grid,
-                               size_t &obstacle_count) {
+                               size_t &obstacle_count,
+                               size_t &clearance_count) {
     obstacle_count = 0U;
+    clearance_count = 0U;
     if (!dynamic_obstacles_pub_ || !layer_ || layer_->empty()) {
       return false;
     }
 
-    std::vector<uint8_t> occupancy(layer_->cells().size(), 0U);
+    // Tri-state contract for the Nav2 layer: -1 leaves the static master
+    // untouched, 0 is a measured overhead-clearance override, and 100 is a
+    // measured obstacle. Empty columns stay neutral so rolling observations
+    // cannot erase PGM walls or their inflation.
+    std::vector<int8_t> occupancy(layer_->cells().size(), -1);
     const auto &cells = layer_->cells();
     for (size_t i = 0; i < cells.size(); ++i) {
       const auto &cell = cells[i];
-      const bool measured_height = std::isfinite(cell.occupied_z_min_abs) &&
-                                   std::isfinite(cell.occupied_z_max_abs);
-      if (cell.raw_type == CellType::OCCUPIED && measured_height &&
-          (isMeasuredObstacleReason(cell.raw_reason) ||
-           isMeasuredObstacleReason(cell.candidate_reason))) {
-        occupancy[i] = 100U;
+      occupancy[i] = navigationOverlayValue(cell);
+      if (occupancy[i] == 100) {
         ++obstacle_count;
+      } else if (occupancy[i] == 0) {
+        ++clearance_count;
       }
     }
 

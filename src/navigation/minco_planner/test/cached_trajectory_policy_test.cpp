@@ -7,16 +7,17 @@
 namespace minco_planner::cached_trajectory_policy {
 
 TEST(CachedTrajectoryPolicy, BoundsCollisionRelatedReuse) {
-  EXPECT_TRUE(reuseDurationAllowed("FOOTPRINT_COLLISION", 0.75, 0.75));
-  EXPECT_FALSE(reuseDurationAllowed("FOOTPRINT_COLLISION", 0.751, 0.75));
-  EXPECT_FALSE(reuseDurationAllowed("LOCAL_SEED_COLLISION", 2.0, 0.75));
+  EXPECT_TRUE(reuseDurationAllowed("FOOTPRINT_COLLISION", 0.75, 0.75, 2.0));
+  EXPECT_FALSE(reuseDurationAllowed("FOOTPRINT_COLLISION", 0.751, 0.75, 2.0));
+  EXPECT_FALSE(reuseDurationAllowed("LOCAL_SEED_COLLISION", 2.0, 0.75, 2.0));
 }
 
 TEST(CachedTrajectoryPolicy, BoundsNumericalFailureReuse) {
-  EXPECT_TRUE(reuseDurationAllowed("OPTIMIZER_FAILED", 0.75, 0.75));
-  EXPECT_FALSE(reuseDurationAllowed("OPTIMIZER_FAILED", 0.751, 0.75));
+  EXPECT_TRUE(reuseDurationAllowed("OPTIMIZER_FAILED", 2.0, 0.75, 2.0));
+  EXPECT_FALSE(reuseDurationAllowed("OPTIMIZER_FAILED", 2.001, 0.75, 2.0));
   EXPECT_FALSE(reuseDurationAllowed(
-      "OPTIMIZER_FAILED", std::numeric_limits<double>::quiet_NaN(), 0.75));
+      "OPTIMIZER_FAILED", std::numeric_limits<double>::quiet_NaN(), 0.75,
+      2.0));
 }
 
 } // namespace minco_planner::cached_trajectory_policy

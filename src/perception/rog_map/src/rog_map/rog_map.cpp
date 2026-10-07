@@ -377,6 +377,7 @@ void ROGMap::refreshLayers() {
     fused_projection_values_.clear();
     dynamic_unknown_mask_.clear();
     dynamic_near_field_prior_fill_mask_.clear();
+    dynamic_prior_clearance_override_mask_.clear();
     prior_projection_mask_.clear();
     runtime_stats_.projection_refresh_reason = "layer_disabled";
     return;
@@ -417,6 +418,13 @@ void ROGMap::refreshLayers() {
       cfg_.ground_connectivity_bridge_landing_min_length;
   layer_cfg.ground_connectivity_bridge_landing_min_height_delta =
       cfg_.ground_connectivity_bridge_landing_min_height_delta;
+  layer_cfg.ground_connectivity_quantile = cfg_.ground_connectivity_quantile;
+  layer_cfg.ground_connectivity_quantile_lateral_radius =
+      cfg_.ground_connectivity_quantile_lateral_radius;
+  layer_cfg.ground_connectivity_quantile_min_samples =
+      cfg_.ground_connectivity_quantile_min_samples;
+  layer_cfg.ground_connectivity_fit_residual_tolerance =
+      cfg_.ground_connectivity_fit_residual_tolerance;
   layer_cfg.observed_ground_support_bridge_en =
       cfg_.observed_ground_support_bridge_en;
   layer_cfg.observed_ground_support_bridge_min_neighbors =
@@ -457,6 +465,33 @@ void ROGMap::refreshLayers() {
                       robot_cos_yaw * cfg_.robot_footprint_clear_offset_y;
   layer_cfg.reference_ground_z_abs =
       robot_state.p.z() - cfg_.robot_origin_to_ground;
+  if (robot_state.rcv && std::isfinite(robot_state.q.norm()) &&
+      robot_state.q.norm() > 1.0e-6F) {
+    const Quatf orientation = robot_state.q.normalized();
+    const Vec3f ground_normal = orientation * Vec3f::UnitZ();
+    const double normal_z = static_cast<double>(ground_normal.z());
+    if (std::isfinite(ground_normal.x()) && std::isfinite(ground_normal.y()) &&
+        std::isfinite(normal_z) && normal_z > 1.0e-6) {
+      const double slope_x = -static_cast<double>(ground_normal.x()) / normal_z;
+      const double slope_y = -static_cast<double>(ground_normal.y()) / normal_z;
+      constexpr double kPi = 3.14159265358979323846;
+      const double max_slope =
+          std::tan(cfg_.max_ground_slope_deg * kPi / 180.0);
+      if (std::hypot(slope_x, slope_y) <= max_slope + 1.0e-6) {
+        const double plane_constant =
+            static_cast<double>(ground_normal.dot(robot_state.p)) -
+            cfg_.robot_origin_to_ground;
+        layer_cfg.reference_ground_z_abs =
+            (plane_constant -
+             static_cast<double>(ground_normal.x()) * layer_cfg.robot_x -
+             static_cast<double>(ground_normal.y()) * layer_cfg.robot_y) /
+            normal_z;
+        layer_cfg.reference_ground_plane_valid = true;
+        layer_cfg.reference_ground_slope_x = slope_x;
+        layer_cfg.reference_ground_slope_y = slope_y;
+      }
+    }
+  }
 
   const int width = mapWidth();
   const int height = mapHeight();
@@ -970,6 +1005,7 @@ void ROGMap::rebuildFusedProjection(bool prior_enabled) {
     fused_projection_values_.clear();
     dynamic_unknown_mask_.clear();
     dynamic_near_field_prior_fill_mask_.clear();
+    dynamic_prior_clearance_override_mask_.clear();
     prior_projection_mask_.clear();
     return;
   }
@@ -989,11 +1025,18 @@ void ROGMap::rebuildFusedProjection(bool prior_enabled) {
     std::fill(dynamic_near_field_prior_fill_mask_.begin(),
               dynamic_near_field_prior_fill_mask_.end(), 0U);
   }
+  dynamic_prior_clearance_override_mask_.resize(layer_->cells().size());
+  std::transform(layer_->cells().begin(), layer_->cells().end(),
+                 dynamic_prior_clearance_override_mask_.begin(),
+                 [](const CellData &cell) {
+                   return hasVerifiedOverheadClearance(cell) ? 1U : 0U;
+                 });
 
   fusePriorMapProjection(
       prior_enabled, cfg_.prior_map_free_fills_unknown, prior_map_,
       layer_->mask(), layer_->values(), dynamic_unknown_mask_,
-      dynamic_near_field_prior_fill_mask_, fused_projection_mask_,
+      dynamic_near_field_prior_fill_mask_,
+      dynamic_prior_clearance_override_mask_, fused_projection_mask_,
       fused_projection_values_, cfg_.require_ground_support);
 }
 
@@ -1061,16 +1104,16 @@ void ROGMap::refreshQuery() {
   snapshot->inside_current_footprint.resize(layer_->cells().size(), 0U);
   snapshot->inside_surveyed_near_field.resize(layer_->cells().size(), 0U);
   snapshot->continuous_ground_support.resize(layer_->cells().size(), 0U);
-  snapshot->reference_ground_z.resize(
-      layer_->cells().size(), std::numeric_limits<float>::quiet_NaN());
+  snapshot->reference_ground_z.resize(layer_->cells().size(),
+                                      std::numeric_limits<float>::quiet_NaN());
   snapshot->support_match_tolerance.resize(
       layer_->cells().size(), std::numeric_limits<float>::quiet_NaN());
-  snapshot->support_match_error.resize(
-      layer_->cells().size(), std::numeric_limits<float>::quiet_NaN());
-  snapshot->envelope_body_x.resize(
-      layer_->cells().size(), std::numeric_limits<float>::quiet_NaN());
-  snapshot->envelope_body_y.resize(
-      layer_->cells().size(), std::numeric_limits<float>::quiet_NaN());
+  snapshot->support_match_error.resize(layer_->cells().size(),
+                                       std::numeric_limits<float>::quiet_NaN());
+  snapshot->envelope_body_x.resize(layer_->cells().size(),
+                                   std::numeric_limits<float>::quiet_NaN());
+  snapshot->envelope_body_y.resize(layer_->cells().size(),
+                                   std::numeric_limits<float>::quiet_NaN());
   for (size_t i = 0; i < layer_->cells().size(); ++i) {
     snapshot->types[i] = static_cast<uint8_t>(layer_->cells()[i].type);
     snapshot->raw_types[i] = static_cast<uint8_t>(layer_->cells()[i].raw_type);
@@ -1117,8 +1160,7 @@ void ROGMap::refreshQuery() {
         layer_->cells()[i].inside_surveyed_near_field;
     snapshot->continuous_ground_support[i] =
         layer_->cells()[i].continuous_ground_support;
-    snapshot->reference_ground_z[i] =
-        layer_->cells()[i].reference_ground_z_abs;
+    snapshot->reference_ground_z[i] = layer_->cells()[i].reference_ground_z_abs;
     snapshot->support_match_tolerance[i] =
         layer_->cells()[i].support_match_tolerance;
     snapshot->support_match_error[i] = layer_->cells()[i].support_match_error;

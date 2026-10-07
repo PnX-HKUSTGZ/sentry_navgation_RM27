@@ -1332,9 +1332,9 @@ detector 解析球体与三角网格接触；这同时保留重力/坡面姿态�
 | `ground_support_tolerance` | 0.08 m | 0.08 m | 回波表面与测绘高程容差 |
 | blind bridge | 关闭 | 关闭 | 不作为轮下支撑证明 |
 | current-footprint / near-field fill | 严格 bootstrap / near-field 关闭 | `0.52 x 0.51 m` bootstrap / `1.40 x 1.00 m` 仿真短扫掠区 | 均须 prior-free、连续匹配高程、零 occupied |
-| `min_headroom_known_ratio` | **0.50** | **0.25** | 仿真离散 ray 专用补偿 |
-| `min_observed_overhead_headroom_known_ratio` | **0.0** | **0.0** | 仅适用于已测到顶板回波的列；仍要求可信高程支撑且保守顶板下边界高于车体，空列继续用上一项闭锁 |
-| `headroom_margin` | **0.05 m** | **0.02 m** | 净空余量；仿真仍保留 2 cm，不得复制体素模型到实车 |
+| `min_headroom_known_ratio` | **0.40** | **0.00** | 仿真完整 360 x 96 no-return lattice 下，只有无有限占据高度的已观测空列可免 body-band 比例门；实车仍保持非零比例 |
+| `min_observed_overhead_headroom_known_ratio` | **0.0** | **0.0** | 仅适用于已测到顶板回波的列；仍要求可信高程支撑且保守顶板下边界高于车体；仿真空列由完整 miss-ray 证据释放 |
+| `headroom_margin` | **0.03 m** | **0.00 m** | 实车保留独立标定余量；仿真 `vehicle_height=0.17 m` 已覆盖约 0.165 m 碰撞高度，5 cm voxel-center 对 RMUC2026 洞口另有约 3 cm 保守量化，不得把仿真值复制到实车 |
 | `headroom_voxel_inset_fraction` | **0.5** | **0.0** | 实车按 occupied voxel 边界保守估计；规则仿真射线按 voxel center 估计 |
 | `obstacle_hold_time` | 0.50 s | 0.0 s | 仿真靠 2 帧 hysteresis；实车按漏检上界保守保持 |
 | prior `transform_timeout` | 0.50 s | 0.75 s | 仿真负载容差 |
@@ -1362,24 +1362,24 @@ optimizer safe_dist         0.30 m
 hard collision_dist         0.0 m
 ~~~
 
-### 10.1 为什么仿真 known ratio 是 0.25
+### 10.1 为什么仿真空列 known ratio 为 0
 
 Gazebo MID360 当前是 10 Hz、水平 `360`、垂直 `96` 的规则 gpu_lidar，总计
-`34560` 条 ray/frame，垂直 FOV 为 `-7.22 ... +55.22 deg`。在当前仿真 `0.20 m` 车高、
-`0.05 m` 体素和规则射线模型下，车侧部分近地柱可能只有 4 个车体高度体素中的 1 个被标成
-known，所以仿真门限设为 `0.25`。
+`34560` 条 ray/frame，垂直 FOV 为 `-7.22 ... +55.22 deg`。真值 localizer 对每个组织化
+方向恢复 no-return miss ray，并以 `1 x 1` stride 发布完整方向性空域证据。因此，对没有任何
+有限 `occupied_z` 的已观测空列，不再用稀疏 body-band 比例重复闭锁，仿真门限为 `0.0`。
 
 96 条垂直 ray 在当前安装高度和俯视边界处的相邻地面回波间距约 `1.8 cm`；当前 miss stride 为
 1，小于一个 ROG 体素。stride 只作用于 no-return，有限的洞顶、坡面和障碍命中不会被抽样。
 该选择用于把 Gazebo、DDS 和 ROG 输入负载限制
 在当前开发机能持续处理的范围内，不是实车 MID360 扫描模式的替代品。
 
-这只是 **Gazebo 规则离散射线模型补偿**：
+这只是 **Gazebo 完整 no-return 语义的仿真特例**：
 
 - 它不改变“所需车体净空带内的任意 occupied return 都硬否决”的逻辑；
 - 它不放开 `INSUFFICIENT_OBSERVATION` 的普通全局 unknown；
 - 它不单独证明轮下支撑；支撑资格来自已测绘的 `ground_elevation`；
-- 它绝不能复制到实车；实车当前为 `0.50`，仍需用真实 bag 完成正负例验证。
+- 它绝不能复制到实车或仿真 Point-LIO；实车当前为 `0.40`，仍需用真实 bag 完成正负例验证。
 
 最低俯视角在水平地面上的首个回波约为 `1.55 m`；在坡前遮挡叠加后，实测未持续获得地面回波的
 区间约可达到 `2.35 m`。旧 `ground_seed_radius` 即使覆盖首圈回波也不能证明盲区内支撑，所以
@@ -1803,8 +1803,9 @@ RMUC2026 高程中存在约 `3 cm` 的局部坡面突起。仿真全局覆盖层
 
 日志中的两种停止需要分开判断：`GROUND_UNVERIFIED` 且查询点紧邻高程突变，通常是坡边引导
 不足、高程错误或全局/局部坡度阈值不一致；`HEADROOM_UNVERIFIED` 且 `occupied_z` 为空，通常是
-首次经过时车体高度带的 free-ray 证据尚未覆盖。前者可通过高程和几何缓冲修复，后者应等待视场
-扩展或改善传感器布置，不能通过关闭 unknown 闭锁来消除。
+首次经过时车体高度带的 free-ray 证据尚未覆盖。实车和仿真 Point-LIO 仍应等待视场扩展或改善
+传感器布置，不能通过关闭 unknown 闭锁来消除；只有当前仿真的 360 x 96 真值 no-return 重建能
+完整提供方向性 miss 证据时，才允许把这类无有限占据高度的已观测空列释放，避免把下坡洞口当成实体障碍。
 
 ## 17. 冷启动近场与坡面自回波闭环
 

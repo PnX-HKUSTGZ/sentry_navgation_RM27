@@ -1,0 +1,92 @@
+<?xml version='1.0' encoding='utf-8'?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <contributor>
+      <authoring_tool>RM27 reviewed Blender visual export</authoring_tool>
+    </contributor>
+    <created>2026-10-07T00:00:00Z</created>
+    <modified>2026-10-07T00:00:00Z</modified>
+    <unit name="meter" meter="1" />
+    <up_axis>Z_UP</up_axis>
+  </asset>
+  <library_effects>
+    <effect id="fx">
+      <profile_COMMON>
+        <technique sid="common">
+          <phong>
+            <emission>
+              <color>0 0 0 1</color>
+            </emission>
+            <ambient>
+              <color>1 0 0 1</color>
+            </ambient>
+            <diffuse>
+              <color>1 0 0 1</color>
+            </diffuse>
+            <specular>
+              <color>0.08 0.08 0.08 1</color>
+            </specular>
+            <shininess>
+              <float>12</float>
+            </shininess>
+          </phong>
+        </technique>
+      </profile_COMMON>
+    </effect>
+  </library_effects>
+  <library_materials>
+    <material id="mat" name="source_color">
+      <instance_effect url="#fx" />
+    </material>
+  </library_materials>
+  <library_geometries>
+    <geometry id="geometry" name="geometry">
+      <mesh>
+        <source id="positions">
+          <float_array id="positions-array" count="24">-0.948669731617 -0.53487098217 0.0867950245738 -0.948669731617 0.534870028496 0.0867950245738 -0.924290001392 -0.592601895332 0.0867950245738 -0.924290001392 0.592602014542 0.0867950245738 -0.489130318165 -0.53487098217 1.81005930901 -0.489130318165 0.534870028496 1.81005930901 -0.46583968401 -0.592601895332 1.8059527874 -0.46583968401 0.592602014542 1.8059527874</float_array>
+          <technique_common>
+            <accessor source="#positions-array" count="8" stride="3">
+              <param name="X" type="float" />
+              <param name="Y" type="float" />
+              <param name="Z" type="float" />
+            </accessor>
+          </technique_common>
+        </source>
+        <source id="normals">
+          <float_array id="normals-array" count="12">-0.89462686 0.37779337 0.23856834 -0.89462388 -0.37779912 0.23857066 -0.89459479 0.37787288 0.23856288 -0.89459306 -0.37787914 0.23855934</float_array>
+          <technique_common>
+            <accessor source="#normals-array" count="4" stride="3">
+              <param name="X" type="float" />
+              <param name="Y" type="float" />
+              <param name="Z" type="float" />
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="vertices">
+          <input semantic="POSITION" source="#positions" />
+        </vertices>
+        <triangles count="4" material="MATERIAL">
+          <input semantic="VERTEX" source="#vertices" offset="0" />
+          <input semantic="NORMAL" source="#normals" offset="1" />
+          <p>6 1 0 1 2 1 4 3 0 3 6 3 5 0 3 0 1 0 7 2 3 2 5 2</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="Object" name="Object" type="NODE">
+        <instance_geometry url="#geometry">
+          <bind_material>
+            <technique_common>
+              <instance_material symbol="MATERIAL" target="#mat" />
+            </technique_common>
+          </bind_material>
+        </instance_geometry>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene" />
+  </scene>
+</COLLADA>

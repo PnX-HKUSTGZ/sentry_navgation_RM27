@@ -48,6 +48,86 @@ TEST(MpcSolver, ValidProblemProducesFiniteBoundedControl) {
   EXPECT_EQ(prediction.size(), 4U);
 }
 
+TEST(MpcSolver, StationaryFrontierBootstrapReachesCommandDeadzone) {
+  auto config = testConfig();
+  config.dt = 0.05;
+  config.horizon = 10;
+  config.Q = Eigen::Vector3d(3.0, 3.0, 2.0);
+  config.q_along = 3.0;
+  config.q_cross = 12.0;
+  config.R = Eigen::Vector3d(1.5, 1.5, 1.0);
+  config.use_acc_constraints = true;
+  config.ax_min = -1.0;
+  config.ax_max = 1.0;
+  config.ay_min = -1.0;
+  config.ay_max = 1.0;
+
+  constexpr double kLength = 0.739;
+  constexpr double kDuration = 4.0;
+  constexpr double kBootstrapTime = 0.65;
+  std::vector<minco_controller::ReferencePoint> reference(
+      static_cast<size_t>(config.horizon));
+  for (int i = 0; i < config.horizon; ++i) {
+    const double t = kBootstrapTime + static_cast<double>(i) * config.dt;
+    const double ratio = std::clamp(t / kDuration, 0.0, 1.0);
+    const double ratio2 = ratio * ratio;
+    const double ratio3 = ratio2 * ratio;
+    const double ratio4 = ratio3 * ratio;
+    const double ratio5 = ratio4 * ratio;
+    reference[static_cast<size_t>(i)].pos.x() =
+        kLength * (10.0 * ratio3 - 15.0 * ratio4 + 6.0 * ratio5);
+    reference[static_cast<size_t>(i)].vel.x() =
+        (kLength / kDuration) * (30.0 * ratio2 - 60.0 * ratio3 + 30.0 * ratio4);
+  }
+
+  minco_controller::MpcSolver solver(config);
+  minco_controller::State state;
+  minco_controller::Control control;
+  ASSERT_TRUE(solver.solve(state, reference, control));
+  EXPECT_GE(control.vx, 0.05 - 1.0e-8);
+}
+
+TEST(MpcSolver, HardwareFrontierBootstrapProducesAccelerationLimitedKick) {
+  auto config = testConfig();
+  config.dt = 0.05;
+  config.horizon = 10;
+  config.Q = Eigen::Vector3d(3.0, 3.0, 2.0);
+  config.q_along = 3.0;
+  config.q_cross = 12.0;
+  config.R = Eigen::Vector3d(1.5, 1.5, 1.0);
+  config.use_acc_constraints = true;
+  config.ax_min = -0.8;
+  config.ax_max = 0.8;
+  config.ay_min = -0.8;
+  config.ay_max = 0.8;
+
+  constexpr double kLength = 0.739;
+  constexpr double kDuration = 7.0;
+  constexpr double kBootstrapTime = 1.40;
+  std::vector<minco_controller::ReferencePoint> reference(
+      static_cast<size_t>(config.horizon));
+  for (int i = 0; i < config.horizon; ++i) {
+    const double t = kBootstrapTime + static_cast<double>(i) * config.dt;
+    const double ratio = std::clamp(t / kDuration, 0.0, 1.0);
+    const double ratio2 = ratio * ratio;
+    const double ratio3 = ratio2 * ratio;
+    const double ratio4 = ratio3 * ratio;
+    const double ratio5 = ratio4 * ratio;
+    reference[static_cast<size_t>(i)].pos.x() =
+        kLength * (10.0 * ratio3 - 15.0 * ratio4 + 6.0 * ratio5);
+    reference[static_cast<size_t>(i)].vel.x() =
+        (kLength / kDuration) * (30.0 * ratio2 - 60.0 * ratio3 + 30.0 * ratio4);
+  }
+
+  minco_controller::MpcSolver solver(config);
+  minco_controller::State state;
+  minco_controller::Control control;
+  ASSERT_TRUE(solver.solve(state, reference, control));
+  EXPECT_GT(control.vx, 0.0);
+  EXPECT_LE(control.vx, config.ax_max * config.dt + 1.0e-8);
+  EXPECT_LT(control.vx, 0.05);
+}
+
 TEST(MpcSolver, RadialSpeedLimitClosesIndependentAxisConstraintCorners) {
   auto config = testConfig();
   config.max_planar_speed = 0.4;

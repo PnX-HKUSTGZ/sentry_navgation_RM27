@@ -142,6 +142,8 @@ TEST(MincoOptimizerDynamicsTest, RejectsTrajectoryThatRetimesIntoLongCrawl)
   EXPECT_FALSE(std::isfinite(result));
   EXPECT_TRUE(trajectory.empty());
   EXPECT_GT(optimizer.lastTotalDuration(), config.max_trajectory_duration);
+  EXPECT_EQ(optimizer.lastFailureReason(),
+            MincoOptimizer::FailureReason::DURATION_LIMIT);
 }
 
 TEST(MincoOptimizerDynamicsTest, EnforcesPerTrajectoryVelocityLimit)
@@ -191,6 +193,48 @@ TEST(MincoOptimizerDynamicsTest, FailsClosedWhenBoundaryStateExceedsLimit)
 
   EXPECT_FALSE(std::isfinite(result));
   EXPECT_TRUE(trajectory.empty());
+  EXPECT_EQ(optimizer.lastFailureReason(),
+            MincoOptimizer::FailureReason::DYNAMIC_FEASIBILITY);
+}
+
+TEST(MincoOptimizerDynamicsTest, StationaryLocalEndpointRecoversRollingBoundaryFailure)
+{
+  auto config = makeConfig();
+  config.max_vel = 1.5;
+  config.max_acc = 1.0;
+  config.terminal_velocity_ratio = 0.85;
+  config.magnitudeBounds << 0.3, config.max_vel, config.max_acc;
+  MincoOptimizer optimizer(config);
+  const std::vector<Eigen::Vector3d> waypoints{
+    Eigen::Vector3d(0.0, 0.0, 0.0),
+    Eigen::Vector3d(0.37, 0.0, 0.0),
+    Eigen::Vector3d(0.74, 0.0, 0.0),
+    Eigen::Vector3d(1.11, 0.0, 0.0),
+    Eigen::Vector3d(1.48, 0.0, 0.0)};
+  Eigen::Matrix3d start_state = Eigen::Matrix3d::Zero();
+  start_state.col(0) = waypoints.front();
+  Eigen::Matrix3d end_state = Eigen::Matrix3d::Zero();
+  end_state.col(0) = waypoints.back();
+  end_state.col(1) = Eigen::Vector3d(
+    config.max_vel * config.terminal_velocity_ratio, 0.0, 0.0);
+  VecDf local_velocity_limits(waypoints.size() - 1U);
+  local_velocity_limits.setConstant(config.max_vel);
+  geometry_utils::Trajectory trajectory;
+
+  const double rolling_result = optimizer.optimize(
+    waypoints, start_state, end_state, local_velocity_limits, trajectory,
+    config.max_vel);
+  ASSERT_FALSE(std::isfinite(rolling_result));
+  EXPECT_EQ(optimizer.lastFailureReason(),
+            MincoOptimizer::FailureReason::DURATION_LIMIT);
+
+  end_state.col(1).setZero();
+  const double stopped_result = optimizer.optimize(
+    waypoints, start_state, end_state, local_velocity_limits, trajectory,
+    config.max_vel);
+  EXPECT_TRUE(std::isfinite(stopped_result));
+  EXPECT_FALSE(trajectory.empty());
+  EXPECT_LE(trajectory.getMaxVelRate(), config.max_vel * 1.001);
 }
 
 }  // namespace

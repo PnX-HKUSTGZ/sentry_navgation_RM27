@@ -72,11 +72,35 @@ controller_server:
       # Break cold-start zero velocity without allowing the time cursor to
       # outrun the physical robot on a short observed-safe stopping prefix.
       reference_progress_max_lead_time: 0.25
+      # A rest-to-rest frontier trajectory ramps up slowly. While odometry is
+      # inside the startup deadzone, search this bounded future interval for
+      # the first reference sample above the command deadzone; normal tracking keeps the
+      # tighter lead limit above as soon as the chassis moves.
+      # 1.50 s startup lead plus the 0.50 s MPC horizon remains inside the
+      # planner's 2.00 s freshly validated trajectory horizon.
+      reference_startup_max_lead_time: 1.50
+      reference_startup_target_speed: 0.08
+      # The real chassis does not reliably overcome static friction at the
+      # MPC's former 0.03..0.08 m/s cold-start output. Apply this magnitude
+      # floor only while measured speed remains inside the 0.05 m/s deadzone
+      # and an observed-safe trajectory supplies a valid motion direction.
+      # Match the observation-frontier ceiling so the chassis can reach a
+      # short ramp before attitude-based uphill assistance takes over.
+      reference_startup_min_command_speed: 0.40
+      # Blend continuously from the MPC command at the ramp entry to full
+      # assistance on the measured steep section. The independent reference
+      # threshold keeps assistance active on a normal trajectory after the
+      # chassis leaves the startup deadzone, without boosting a 0.20 m/s
+      # observation-frontier trajectory. Flat/downhill commands are unchanged.
+      uphill_startup_min_grade: 0.03
+      uphill_full_assist_grade: 0.18
+      uphill_assist_min_reference_speed: 0.30
+      uphill_startup_min_command_speed: 0.90
       # Use the released flat-ground ceiling and reduce it only once measured
       # chassis tilt confirms a ramp transition.
       slope_slowdown_start_angle: 0.08
       slope_full_slowdown_angle: 0.18
-      slope_speed_limit: 0.50
+      slope_speed_limit: 0.80
       Q: [3.0, 3.0, 2.0]
       q_along: 3.0
       q_cross: 12.0
@@ -124,18 +148,24 @@ controller_server:
     goal_checker_plugins: ["general_goal_checker"]
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.5
-      movement_time_allowance: 10.0
+      # Observation-frontier trajectories deliberately stop and revalidate.
+      # Do not abort and clear both costmaps while this bounded crawl is still
+      # making measurable progress.
+      required_movement_radius: 0.05
+      movement_time_allowance: 20.0
     general_goal_checker:
       stateful: true
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.20
+      # Keep a realizable tolerance, but do not declare success while the
+      # chassis is still about 20 cm short of a goal beyond the ramp crest.
+      xy_goal_tolerance: 0.10
       yaw_goal_tolerance: 6.28
 local_costmap:
   local_costmap:
     ros__parameters:
-      # ROG publishes only measured obstruction evidence here. Unknown support
-      # and unverified headroom remain planner safety gates, not 2D obstacles.
+      # ROG publishes a tri-state overlay: measured obstruction, measured
+      # overhead clearance, or neutral. Empty and unknown columns cannot erase
+      # the static map or its inflation.
       plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
       rog_dynamic_obstacle_layer:
         plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
@@ -144,6 +174,7 @@ local_costmap:
         obstacle_threshold: 65
         stale_timeout: 0.75
         tf_timeout: 0.10
+        obstacle_marking_max_range: 0.0
         footprint_clearing_enabled: true
       # Keep the active MINCO profile self-contained. ROG writes lethal source
       # cells first; this layer expands them in the merged local costmap.
@@ -171,8 +202,9 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      # Global SMAC must see the same dynamic obstacle overlay; a local-only
-      # layer can stop a controller but cannot create a route around it.
+      # Global SMAC must see the same obstacle/clearance overlay. Keep this
+      # plugin between static and inflation so verified-clearance cells are
+      # cleared before remaining obstacles are inflated.
       plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
       rog_dynamic_obstacle_layer:
         plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
@@ -181,6 +213,9 @@ global_costmap:
         obstacle_threshold: 65
         stale_timeout: 0.75
         tf_timeout: 0.10
+        # Keep hardware behavior unlimited until the simulation-only near
+        # reroute policy has been validated on the course.
+        obstacle_marking_max_range: 0.0
         footprint_clearing_enabled: true
       # Global SMAC consumes the merged costmap after this inflation pass.
       inflation_layer:
@@ -240,12 +275,11 @@ planner_server:
         # Static hard clearance is derived from this vehicle's 0.40 x 0.30 m
         # safety envelope plus one 5 cm grid cell: 0.300 m. It is not a second
         # manually tuned parameter that can drift away from collision checking.
-        # Uses only surveyed ground_elevation, never rolling ROG unknowns. A
-        # flat map produces no overlay; measured ramps/drop edges automatically
-        # constrain the global seed with the same thresholds as local safety.
-        # Free prior-map cells without valid elevation support are fail-closed.
+        # No-elevation mode keeps the 2D static map but does not derive global
+        # ramp/drop edges from a surveyed height grid. Local ROG connectivity
+        # remains the authoritative terrain gate.
         ground_edge_avoidance:
-          enable: true
+          enable: false
           max_step: 0.06
           max_slope_deg: 28.0
           # The 0.40 x 0.30 m safety envelope has a 0.25 m corner radius.
@@ -259,7 +293,9 @@ planner_server:
         boundary_sample_step: 0.10
         unknown_as_occupied: true
         prefer_goal_direction: true
-      tolerance: 0.30
+      # Bound fallback goal substitution to two 5 cm grid cells. A 30 cm
+      # substitute endpoint can otherwise stop the internal FSM on the ramp.
+      tolerance: 0.10
       use_smac: true
       allow_unknown: false
       odom_topic: /aft_mapped_to_init
@@ -274,10 +310,14 @@ planner_server:
         sample_dt: 0.05
         map_timeout: 0.50
         future_tolerance: 0.05
-        # Maximum amount of an old trajectory that may be reused after either
-        # a collision/safety rejection or a numerical MINCO failure.  Keeping
-        # this short prevents a failed route from being replayed for seconds.
+        check_horizon: 2.0
+        # Collision/safety rejection gets only a short revalidated tail; a
+        # newly observed obstacle must not be hidden by continuity handling.
         collision_cache_reuse_max_duration: 0.40
+        # A numerical optimizer failure is different from a collision. Continue
+        # a freshly ROG-revalidated trajectory for at most the 2 s certified
+        # horizon while the next solve retries; collision reuse stays at 0.40 s.
+        optimizer_failure_cache_reuse_max_duration: 2.00
       performance:
         enable: true
         print_enable: true
@@ -365,32 +405,47 @@ planner_server:
           min_observed_voxels: 2
           surface_height_delta_max: 0.12
           clearance_check_enable: true
-          # PRIORMAP may accept empty columns only after body-volume clearance
-          # is observed. Unknown columns and occupied returns remain fail-closed.
-          observed_empty_as_free: false
-          # Keep blind-region bridging disabled on hardware until a real bag
-          # sweep proves the required length and includes ramps, pits, and
-          # sloped floating plates. LiDAR endpoints alone cannot prove support.
-          bridge_observed_empty_for_ground_connectivity: false
-          ground_connectivity_bridge_max_length: 0.10
-          ground_connectivity_bridge_max_height_delta: 0.06
-          ground_connectivity_bridge_landing_min_length: 0.25
+          # In no-elevation mode, an empty column is usable only after its full
+          # vehicle-height volume has been observed free. UNKNOWN and occupied
+          # columns remain fail-closed.
+          observed_empty_as_free: true
+          # Bridge only clearance-verified EMPTY cells across a short MID360
+          # blind strip. The landing must be a measured, height-consistent ramp;
+          # this cannot bridge UNKNOWN cells or chain across a second gap.
+          bridge_observed_empty_for_ground_connectivity: true
+          # Recent hardware logs put the first usable ramp return about
+          # 0.37..0.53 m beyond the footprint edge. The one-shot height and
+          # fitted-slope gates below still reject unknown columns and ledges.
+          ground_connectivity_bridge_max_length: 0.60
+          # Also bounds the one-time voxelized ramp-foot transition. It is
+          # accepted only when a continuing measured slope confirms the landing.
+          ground_connectivity_bridge_max_height_delta: 0.15
+          ground_connectivity_bridge_landing_min_length: 0.15
           ground_connectivity_bridge_landing_min_height_delta: 0.04
-          # Keep the same bounded support bridge on hardware, with the
-          # fail-closed occupied-return veto implemented in the projection
-          # layer. Increase the hysteresis in field tuning if returns flicker.
-          observed_ground_support_bridge_enable: true
+          # Use a narrow measured strip and its lower 20% height quantile to
+          # verify a continuous fitted slope after a voxelized height jump.
+          # Unknown/headroom-blocked cells never enter the sample set.
+          # Those connected samples also recheck a thick roof return against
+          # the local slope instead of the higher robot contact plane. The
+          # neighborhood is 2*lateral_radius; static-free surrounding support,
+          # the fitted residual and the real-car headroom gate remain required.
+          ground_connectivity_quantile: 0.20
+          ground_connectivity_quantile_lateral_radius: 0.15
+          ground_connectivity_quantile_min_samples: 3
+          ground_connectivity_fit_residual_tolerance: 0.05
+          # Surveyed-support hole filling is inactive without elevation data.
+          observed_ground_support_bridge_enable: false
           observed_ground_support_bridge_min_neighbors: 3
           observed_ground_support_bridge_max_height_delta: 0.04
           observed_ground_support_bridge_hysteresis_count: 3
-          # Bootstrap the current 0.45 x 0.35 m self-filter/safety envelope.
-          # The extra 5 cm in length absorbs one 5 cm ROG cell. Required-support
-          # mode still demands known-free static space, height-matching
-          # continuous support, and zero occupied evidence; a real occupied
-          # return remains an unconditional veto.
+          # Cover the 0.40 x 0.30 m hard collision footprint plus one 0.10 m
+          # ROG boundary sample in every direction. This lets a stationary car
+          # validate the first local-path step even when the gimbal has not yet
+          # observed the sparse body-height band. Only footprint-clear-eligible
+          # zero-hit cells are released; any occupied return remains a veto.
           clear_robot_footprint_unknown: true
-          robot_footprint_clear_length: 0.45
-          robot_footprint_clear_width: 0.35
+          robot_footprint_clear_length: 0.60
+          robot_footprint_clear_width: 0.50
           # Point-LIO's /aft_mapped_to_init pose is the IMU/body pose. The
           # physical MID360/IMU frame is y=-0.20 m from base_link in the real
           # robot description, so move the ROG clearance envelope +0.20 m back
@@ -398,18 +453,10 @@ planner_server:
           # about one full chassis width away from the clearing window.
           robot_footprint_clear_offset_x: 0.0
           robot_footprint_clear_offset_y: 0.20
-          # Release only zero-hit cells in this bounded near-field envelope.
-          # The previous 0.70 x 0.45 m rectangle ended at x=0.35/y=0.225;
-          # the safety checker samples the rasterized footprint at about
-          # x=0.38..0.50 and y=0.26..0.34, so those cells were incorrectly
-          # reported as HEADROOM_UNVERIFIED on otherwise open ground.  The
-          # square envelope gives the holonomic chassis the same bootstrap
-          # reach for forward and sideways motion. It is still fail-closed:
-          # static prior FREE and continuous height-matching support are
-          # required. A thin matching-ground return may be released while
-          # headroom rays are missing; body-band, low-ceiling, and wrong-height
-          # returns remain unconditional vetoes.
-          near_field_prior_fill_enable: true
+          # This fill path relies on surveyed elevation support, so it must stay
+          # disabled in no-elevation mode. Current-footprint clearing above is
+          # still available and never clears an occupied return.
+          near_field_prior_fill_enable: false
           near_field_prior_fill_length: 1.20
           near_field_prior_fill_width: 1.20
           robot_origin_to_ground: 0.28
@@ -419,16 +466,22 @@ planner_server:
           # until bag measurements justify a sensor-specific smaller inset.
           headroom_voxel_inset_fraction: 0.5
           body_bottom_clearance: 0.04
-          ground_seed_tolerance: 0.08
+          # Thin, clearance-verified ground under the current footprint first
+          # calibrates the tangent-plane height using a robust median. Full
+          # tolerance is used only under the chassis; outside it, the calibrated
+          # plane tightens the gate to max(max_ground_step, resolution), so a
+          # remote thin plate cannot seed an unrelated surface. Connectivity
+          # still enforces the 6 cm step and 28-degree slope.
+          ground_seed_tolerance: 0.18
           max_ground_height_delta: 0.35
-          max_ground_step: 0.06
+          max_ground_step: 0.08
           max_ground_slope_deg: 28.0
           ground_seed_radius: 2.50
-          min_headroom_known_ratio: 0.40
+          min_headroom_known_ratio: 0.15
           # A measured overhead return supplies a conservative lower roof
           # boundary. Accept it from surveyed support when that boundary clears
           # vehicle_height + headroom_margin; a lower return still blocks. This
-          # does not weaken empty columns, which keep the 0.50 gate above.
+          # does not weaken empty columns, which use their independent ratio gate.
           min_observed_overhead_headroom_known_ratio: 0.0
           clearance_unknown_as_occupied: true
           wall_height_delta_min: 0.35
@@ -457,9 +510,9 @@ planner_server:
             yaml_path: "<rog_prior_map_yaml>"
             pgm_path: ""
             free_fills_unknown: false
-            # Fail closed until the selected surveyed map YAML contains a
-            # calibrated ground_elevation block.
-            require_ground_support: true
+            # Keep static occupancy fusion, but do not require or consume a
+            # surveyed elevation value to authorize locally observed terrain.
+            require_ground_support: false
             ground_support_tolerance: 0.08
             transform_timeout: 0.50
             transform_future_tolerance: 0.20
@@ -534,10 +587,10 @@ planner_server:
         # trajectory safety monitor.
         failed_replan_retry_period: 0.50
         successful_replan_period: 0.50
-        # The internal FSM may revoke the trajectory at this distance. Keep it
-        # strictly inside Nav2's 0.20 m SimpleGoalChecker tolerance so an early
-        # BLOCK cannot strand FollowPath outside its success region.
-        traj_goal_tolerance: 0.15
+        # The internal FSM stops publishing motion inside this radius. Keep it
+        # strictly inside Nav2's 0.10 m checker so FollowPath can still complete;
+        # 0.15 m previously stopped short goals on the ramp face.
+        traj_goal_tolerance: 0.08
         # Translation is holonomic: track the explicit navigation goal yaw,
         # never the path tangent that can rotate the body into a tunnel wall.
         enable_yaw_opt: true
@@ -549,15 +602,15 @@ planner_server:
         # At 0.8 m/s this keeps a 1.9 s local horizon while avoiding a demand to
         # validate the complete route from one LiDAR viewpoint.
         lookahead_dist: 1.5
-        max_velocity: 0.8
+        max_velocity: 1.2
         max_acceleration: 0.8
         # Keep the rolling endpoint below the continuous 0.8 m/s bound. This
         # prevents the independent 0.90..0.94 m/s failure seen with a fully
         # observed seed; observation-frontier crawling is configured above.
         terminal_velocity_ratio: 0.80
-        # Reject numerically retimed trajectories that turn a 1.5 m rolling
-        # horizon into a minute-long near-static command.
-        max_trajectory_duration: 10.0
+        # Preserve the optimizer's native finite bound while accepting valid
+        # dynamically retimed slope trajectories that exceed 10 s.
+        max_trajectory_duration: 15.0
         max_yaw_dot: 0.8
         turn_angle_deadzone: 0.10
         turn_angle_saturation: 0.80

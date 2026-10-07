@@ -138,6 +138,7 @@ protected:
   std::vector<uint8_t> fused_projection_values_;
   std::vector<uint8_t> dynamic_unknown_mask_;
   std::vector<uint8_t> dynamic_near_field_prior_fill_mask_;
+  std::vector<uint8_t> dynamic_prior_clearance_override_mask_;
   std::vector<uint8_t> prior_projection_mask_;
 
   void updateMapInternal(

@@ -70,12 +70,21 @@ controller_server:
       # Break cold-start zero velocity without allowing the time cursor to
       # outrun the physical robot on a short observed-safe stopping prefix.
       reference_progress_max_lead_time: 0.25
+      # A rest-to-rest frontier trajectory ramps up slowly. While odometry is
+      # inside the startup deadzone, search this bounded future interval for
+      # the first reference sample above the command deadzone; normal tracking keeps the
+      # tighter lead limit above as soon as the chassis moves.
+      # 1.50 s startup lead plus the 0.50 s MPC horizon remains inside the
+      # planner's 2.00 s freshly validated trajectory horizon.
+      reference_startup_max_lead_time: 1.50
+      reference_startup_target_speed: 0.08
+      reference_startup_min_command_speed: 0.08
       # Ramp transitions are abrupt in the collision STL. Blend down only
       # after measured roll/pitch shows that the chassis is entering a slope;
       # flat-ground travel retains the 1.0 m/s limit.
       slope_slowdown_start_angle: 0.06
       slope_full_slowdown_angle: 0.18
-      slope_speed_limit: 0.60
+      slope_speed_limit: 0.80
       Q: [3.0, 3.0, 2.0]
       q_along: 3.0
       q_cross: 12.0
@@ -138,6 +147,9 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
+      # ROG overlay is tri-state: measured obstacles mark lethal, measured
+      # overhead clearance may clear an ambiguous 2D projection, and empty or
+      # unverified cells leave the static layer untouched.
       plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
       rog_dynamic_obstacle_layer:
         plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
@@ -146,6 +158,8 @@ local_costmap:
         obstacle_threshold: 65
         stale_timeout: 2.75
         tf_timeout: 0.10
+        # Local control and RViz retain the complete measured ROG window.
+        obstacle_marking_max_range: 0.0
         footprint_clearing_enabled: true
 
       use_sim_time: true
@@ -170,6 +184,8 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
+      # Keep ROG between static and inflation so measured overhead clearance is
+      # applied before inflation is recomputed around remaining walls.
       plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
       rog_dynamic_obstacle_layer:
         plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
@@ -178,6 +194,10 @@ global_costmap:
         obstacle_threshold: 65
         stale_timeout: 2.75
         tf_timeout: 0.10
+        # Only a nearby measured obstacle requests a topological detour. MINCO
+        # still checks the complete ROG window and approaches a blocked prefix
+        # at observed_prefix_max_velocity, so this is not a collision bypass.
+        obstacle_marking_max_range: 0.60
         footprint_clearing_enabled: true
       # The outer inflation remains a soft SMAC preference (cost 253 retains
       # Nav2's normal non-traversable meaning). The planner separately builds a
@@ -224,11 +244,10 @@ planner_server:
         physical_base_frame: base_link
       priormap:
         use_nav2_global_search: true
-        # Measured ROG occupied cells are checked by the global search inside
-        # the rolling window. UNKNOWN/frontier cells are excluded by the
-        # evidence gate in Astar/SMAC.
+        # The range-bounded global costmap layer above is the single dynamic
+        # reroute trigger. The direct MINCO safety query remains full-range.
         dynamic_global_obstacle:
-          enable: true
+          enable: false
           collision_distance: 0.26
         clip_seed_by_rog_boundary: true
         rog_boundary_margin: 0.30
@@ -287,6 +306,9 @@ planner_server:
         # validated tail. Longer reuse can carry downhill tracking error into a
         # static-map boundary before the next safety callback brakes the robot.
         collision_cache_reuse_max_duration: 0.75
+        # Numerical failure may reuse only a freshly ROG-revalidated tail within
+        # the 2 s certified horizon. Collision-related reuse remains stricter.
+        optimizer_failure_cache_reuse_max_duration: 2.00
       performance:
         enable: true
         print_enable: true
@@ -399,14 +421,29 @@ planner_server:
           # Required support mode authorizes an EMPTY column only from the
           # mapped elevation plus observed body-volume clearance. This legacy
           # fallback remains disabled.
-          observed_empty_as_free: false
-          # The surveyed support replaces blind bridging. UNKNOWN/occupied
-          # columns never participate.
-          bridge_observed_empty_for_ground_connectivity: false
+          observed_empty_as_free: true
+          # Without surveyed ground support, bridge only clearance-verified
+          # EMPTY columns in the MID360 near-field blind band. The bridge is
+          # length/height bounded and needs a continuing measured ramp at its
+          # landing; UNKNOWN, occupied and floating-surface cells never join it.
+          bridge_observed_empty_for_ground_connectivity: true
           ground_connectivity_bridge_max_length: 0.45
+          # Also bounds the one-time voxelized ramp-foot transition. It is
+          # accepted only when a continuing measured slope confirms the landing.
           ground_connectivity_bridge_max_height_delta: 0.15
           ground_connectivity_bridge_landing_min_length: 0.25
           ground_connectivity_bridge_landing_min_height_delta: 0.04
+          # A failed one-cell connection samples a 30 cm-wide strip at each
+          # station, takes its lower 20% quantile, then fits a slope. This
+          # absorbs sparse-ray/voxel height jumps without flattening obstacles.
+          # The same connected-ground samples recheck a thick roof return that
+          # was initially measured from the higher robot contact plane. That
+          # recheck uses a 2*lateral_radius neighborhood, requires surrounding
+          # static-free support, and keeps low/one-sided returns occupied.
+          ground_connectivity_quantile: 0.20
+          ground_connectivity_quantile_lateral_radius: 0.15
+          ground_connectivity_quantile_min_samples: 3
+          ground_connectivity_fit_residual_tolerance: 0.05
           # A one-cell prior/no-data strip inside the measured footprint may
           # borrow support from two cardinal neighbors after two frames. Any
           # occupied voxel in the strip remains an immediate veto.
@@ -436,35 +473,44 @@ planner_server:
           # covers the 0.16 m hard-footprint
           # half-length plus the 0.50 m stop distance at 1 m/s; the narrower
           # lateral envelope limits the static-prior-only release area.
-          near_field_prior_fill_enable: true
+          near_field_prior_fill_enable: false
           near_field_prior_fill_length: 1.40
           near_field_prior_fill_width: 1.00
           # lidar origin is 0.14 m above base; spawned base starts 0.06 m above ground.
           robot_origin_to_ground: 0.20
-          # Gazebo collision geometry reaches 0.165 m above the contact plane.
-          # Keep 2 cm clearance and use occupied-voxel centers for the
-          # deterministic 5 cm simulated ray lattice. Hardware retains the
-          # conservative voxel-boundary model below.
+          # Gazebo collision geometry reaches 0.165 m above the contact plane;
+          # 0.17 m therefore already includes the physical height allowance.
+          # At the RMUC2026 gate the 5 cm voxel-center projection reports
+          # 0.178 m for a measured 0.208 m opening. Do not add another 2 cm
+          # here or that valid overhead run becomes GROUND_UNVERIFIED and
+          # traps the robot at the gate. Hardware keeps its independent,
+          # conservatively calibrated margin and voxel-boundary model.
           vehicle_height: 0.17
-          headroom_margin: 0.02
+          headroom_margin: 0.0
           headroom_voxel_inset_fraction: 0.0
           body_bottom_clearance: 0.03
-          ground_seed_tolerance: 0.08
+          # Fallback height gate when odometry roll/pitch cannot provide a
+          # valid terrain tangent plane. With a valid pose, the effective seed
+          # tolerance is min(this value, max_ground_step/map resolution), while
+          # neighbor propagation still enforces step and slope continuity.
+          ground_seed_tolerance: 0.18
           max_ground_height_delta: 0.35
           max_ground_step: 0.06
           max_ground_slope_deg: 28.0
           # MID360's -7.22 deg lower FOV first sees level ground near 1.55 m.
           ground_seed_radius: 1.80
-          # The 360x96 Gazebo ray lattice now reconstructs every vertical miss
-          # ray, so body-height knowledge is no longer intentionally sparse.
-          # Occupied returns still veto the column; keep the real profile at 0.80.
-          min_headroom_known_ratio: 0.25
+          # The 360x96 Gazebo ray lattice reconstructs every vertical miss ray.
+          # An observed empty column therefore does not need a second body-band
+          # coverage gate: there is no finite occupied height to turn into a
+          # downhill-hole obstacle. Unknown columns and every finite occupied
+          # return still remain fail-closed below.
+          min_headroom_known_ratio: 0.0
           # At the leading roof face, finite roof returns replace every
           # no-return ray in that XY voxel, so the body band can report 0% known
           # even though the measured lower roof boundary clears the vehicle.
           # This threshold applies only to a measured overhead run. Empty
-          # columns still require min_headroom_known_ratio above, and any return
-          # below vehicle_height + headroom_margin remains lethal.
+          # columns are released by the complete simulation miss-ray lattice;
+          # any finite return below vehicle_height + headroom_margin remains lethal.
           min_observed_overhead_headroom_known_ratio: 0.0
           clearance_unknown_as_occupied: true
           wall_height_delta_min: 0.35
@@ -594,10 +640,10 @@ planner_server:
         # Receding horizon: stay inside currently verifiable 3D coverage, then
         # extend the trajectory as the robot moves through the tunnel/ramp.
         lookahead_dist: 1.5
-        max_velocity: 1.0
+        max_velocity: 1.5
         max_acceleration: 1.0
         terminal_velocity_ratio: 0.85
-        max_trajectory_duration: 10.0
+        max_trajectory_duration: 20.0
         max_yaw_dot: 1.2
         turn_angle_deadzone: 0.10
         turn_angle_saturation: 0.80
@@ -1051,6 +1097,10 @@ velocity_smoother:
 minco_input_profiles:
   ros__parameters:
     point_lio:
+      # Point-LIO does not preserve the organized 360 x 96 no-return lattice;
+      # its empty columns therefore keep the conservative body-band gate.
+      projection:
+        min_headroom_known_ratio: 0.40
       frames:
         rog_frame: camera_init
       odom_topic: /aft_mapped_to_init
