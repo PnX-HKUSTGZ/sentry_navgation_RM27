@@ -90,6 +90,9 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "sim_world": world_name,
                 "worlds_config": worlds_config_path,
                 "gui": LaunchConfiguration("gui").perform(context),
+                "hardware_acceleration": LaunchConfiguration(
+                    "hardware_acceleration"
+                ).perform(context),
                 "verbose": LaunchConfiguration("verbose").perform(context),
                 "pause": LaunchConfiguration("pause").perform(context),
                 "physics_engine": LaunchConfiguration("physics_engine").perform(
@@ -129,6 +132,9 @@ def _launch_sim_stack(context, *args, **kwargs):
                         "use_composition": LaunchConfiguration("use_composition"),
                         "use_respawn": LaunchConfiguration("use_respawn"),
                         "use_rviz": LaunchConfiguration("use_rviz"),
+                        "rviz_hardware_acceleration": LaunchConfiguration(
+                            "rviz_hardware_acceleration"
+                        ),
                         "use_ground_truth_odom": LaunchConfiguration(
                             "use_ground_truth_odom"
                         ),
@@ -183,6 +189,11 @@ def generate_launch_description():
                 description="Start Gazebo GUI client when true",
             ),
             DeclareLaunchArgument(
+                "hardware_acceleration",
+                default_value="true",
+                description="Use EGL without GUI, or VirtualGL / EGL for the GUI when available",
+            ),
+            DeclareLaunchArgument(
                 "verbose",
                 default_value="false",
                 description="Run Gazebo Harmonic with verbose output",
@@ -194,10 +205,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "physics_engine",
-                default_value="gz-physics-dartsim-plugin",
+                default_value="gz-physics-bullet-featherstone-plugin",
                 description=(
-                    "Gazebo physics engine plugin. DART is required by the planar "
-                    "velocity controller to retain STL terrain contacts."
+                    "Gazebo physics engine plugin. Bullet Featherstone supports the "
+                    "RMUC2026 convex STL collision proxies and planar force controller."
                 ),
             ),
             DeclareLaunchArgument(
@@ -224,6 +235,11 @@ def generate_launch_description():
                 "use_rviz",
                 default_value="true",
                 description="Start RViz from pb2025_nav_bringup",
+            ),
+            DeclareLaunchArgument(
+                "rviz_hardware_acceleration",
+                default_value="true",
+                description="Use VirtualGL / EGL to accelerate RViz when available",
             ),
             DeclareLaunchArgument(
                 "use_ground_truth_odom",

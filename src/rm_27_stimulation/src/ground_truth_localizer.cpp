@@ -62,9 +62,9 @@ public:
       this->declare_parameter<std::string>("lidar_frame", "left_mid360");
 
     const auto lidar_xyz = this->declare_parameter<std::vector<double>>(
-        "base_to_lidar_xyz", {0.0, 0.18, 0.14});
+        "base_to_lidar_xyz", {0.0, 0.126, 0.130});
     const auto lidar_rpy = this->declare_parameter<std::vector<double>>(
-        "base_to_lidar_rpy", {0.0, 0.0, 0.0});
+        "base_to_lidar_rpy", {-kPi / 6.0, 0.0, 0.0});
     if (lidar_xyz.size() != 3 || lidar_rpy.size() != 3) {
       throw std::runtime_error(
           "base_to_lidar_xyz and base_to_lidar_rpy must contain 3 values");

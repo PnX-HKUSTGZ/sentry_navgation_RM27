@@ -2,12 +2,20 @@
 
 import os
 import shlex
+import shutil
 import xml.etree.ElementTree as ET
 
 import yaml
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    GroupAction,
+    IncludeLaunchDescription,
+    LogInfo,
+    OpaqueFunction,
+    SetLaunchConfiguration,
+)
 from launch.actions.append_environment_variable import AppendEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -58,6 +66,10 @@ def _launch_gz_sim(context, *args, **kwargs):
 
     world_path, _ = _world_file_and_name(context)
     gz_args = []
+    gui = _as_bool(LaunchConfiguration("gui").perform(context))
+    hardware_acceleration = _as_bool(
+        LaunchConfiguration("hardware_acceleration").perform(context)
+    )
 
     if _as_bool(LaunchConfiguration("verbose").perform(context)):
         gz_args.extend(["-v", "4"])
@@ -65,7 +77,7 @@ def _launch_gz_sim(context, *args, **kwargs):
     if not _as_bool(LaunchConfiguration("pause").perform(context)):
         gz_args.append("-r")
 
-    if not _as_bool(LaunchConfiguration("gui").perform(context)):
+    if not gui:
         gz_args.append("-s")
     else:
         gui_config = LaunchConfiguration("gui_config").perform(context).strip()
@@ -85,17 +97,65 @@ def _launch_gz_sim(context, *args, **kwargs):
     if extra_args:
         gz_args.extend(shlex.split(extra_args))
 
+    if hardware_acceleration and not gui and "--headless-rendering" not in gz_args:
+        gz_args.append("--headless-rendering")
+
     gz_args.append(world_path)
 
+    gazebo = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(gz_sim_launch),
+        launch_arguments={
+            "gz_args": shlex.join(gz_args),
+            "gz_version": "8",
+            "on_exit_shutdown": "true",
+        }.items(),
+    )
+
+    if hardware_acceleration and gui:
+        vglrun = shutil.which("vglrun")
+        if not vglrun:
+            for candidate in (
+                "/usr/NX/scripts/vgl/vglrun",
+                "/opt/VirtualGL/bin/vglrun",
+            ):
+                if os.access(candidate, os.X_OK):
+                    vglrun = candidate
+                    break
+        if vglrun:
+            egl_device = (
+                "egl" if os.path.realpath(vglrun).startswith("/usr/NX/") else "egl0"
+            )
+            # Scope the prefix to Gazebo so navigation processes do not inherit it.
+            return [
+                LogInfo(msg="[rm_27_stimulation] Gazebo rendering: VirtualGL / EGL"),
+                GroupAction(
+                    actions=[
+                        SetLaunchConfiguration(
+                            "launch-prefix", shlex.join(["exec", vglrun, "-d", egl_device])
+                        ),
+                        SetLaunchConfiguration("launch-prefix-filter", ""),
+                        gazebo,
+                    ]
+                ),
+            ]
+        return [
+            LogInfo(
+                msg=(
+                    "[rm_27_stimulation] VirtualGL not found; using desktop OpenGL. "
+                    "Use gui:=false for EGL sensor rendering."
+                )
+            ),
+            gazebo,
+        ]
+
     return [
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(gz_sim_launch),
-            launch_arguments={
-                "gz_args": shlex.join(gz_args),
-                "gz_version": "8",
-                "on_exit_shutdown": "true",
-            }.items(),
-        )
+        LogInfo(
+            msg=(
+                "[rm_27_stimulation] Gazebo rendering: "
+                + ("headless EGL" if hardware_acceleration else "desktop OpenGL")
+            )
+        ),
+        gazebo,
     ]
 
 
@@ -140,6 +200,11 @@ def generate_launch_description():
                 description="Start Gazebo GUI when true",
             ),
             DeclareLaunchArgument(
+                "hardware_acceleration",
+                default_value="true",
+                description="Use EGL without GUI, or VirtualGL / EGL for the GUI when available",
+            ),
+            DeclareLaunchArgument(
                 "gui_config",
                 default_value=os.path.join(package_share, "config", "gazebo_gui.config"),
                 description="Project-local Gazebo GUI configuration",
@@ -156,10 +221,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "physics_engine",
-                default_value="gz-physics-dartsim-plugin",
+                default_value="gz-physics-bullet-featherstone-plugin",
                 description=(
-                    "Gazebo physics engine plugin. DART is required by the planar "
-                    "velocity controller to retain STL terrain contacts."
+                    "Gazebo physics engine plugin. Bullet Featherstone supports the "
+                    "RMUC2026 convex STL collision proxies and planar force controller."
                 ),
             ),
             DeclareLaunchArgument(
@@ -176,6 +241,12 @@ def generate_launch_description():
                 "bridge_config",
                 default_value=os.path.join(package_share, "config", "ros_gz_bridge.yaml"),
                 description="ros_gz_bridge YAML configuration file",
+            ),
+            # URDF package:// mesh URIs are converted by sdformat to
+            # model://rm_27_stimulation/...; model:// resolution therefore
+            # needs the parent directory that contains the package folder.
+            AppendEnvironmentVariable(
+                "GZ_SIM_RESOURCE_PATH", os.path.dirname(package_share)
             ),
             AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", package_share),
             AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.path.join(package_share, "meshes")),

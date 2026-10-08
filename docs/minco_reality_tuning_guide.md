@@ -24,6 +24,12 @@ ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
   world:=highbay slam:=false navigation_mode:=minco use_rviz:=true
 ```
 
+实车和仿真启动 RViz 时默认启用 `rviz_hardware_acceleration:=true`。在当前
+NoMachine 远程桌面中，启动文件通过 VirtualGL / EGL 使用 Intel 核显，且只作用于
+RViz 进程；Point-LIO、ROG、MINCO 和 MPC 仍在 CPU 上计算。需要对比原渲染方式时
+加 `rviz_hardware_acceleration:=false`。没有 VirtualGL 的机器使用桌面 OpenGL，
+实际是否使用 GPU 仍取决于驱动和桌面环境。
+
 `world` 要换成现场**已有且与实际环境匹配**的地图；坡道须有正确的地面高程，不能沿用平地
 `z=0` 假设。首次/每次改动后先确认参数真的进入对应节点（以下均为读取，不是在线修改）：
 

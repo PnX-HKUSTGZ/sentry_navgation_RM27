@@ -60,6 +60,7 @@ public:
     double footprint_length{0.30};
     double footprint_width{0.30};
     double footprint_margin{0.05};
+    std::vector<Eigen::Vector2d> footprint_points;
     double sample_dt{0.05};
     double map_timeout{0.50};
     double future_tolerance{0.05};
@@ -135,6 +136,7 @@ private:
   double footprint_length_{0.30};
   double footprint_width_{0.30};
   double footprint_margin_{0.05};
+  std::vector<Eigen::Vector2d> footprint_points_;
   double sample_dt_{0.05};
   double map_timeout_{0.50};
   double future_tolerance_{0.05};

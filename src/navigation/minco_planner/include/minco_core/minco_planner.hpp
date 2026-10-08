@@ -248,6 +248,9 @@ private:
   double opt_freq_;
   double failed_replan_retry_period_{0.25};
   double successful_replan_period_{1.0};
+  double hot_start_tracking_error_base_{0.30};
+  double hot_start_velocity_error_threshold_{0.35};
+  double hot_start_direction_cosine_threshold_{0.50};
   double lookahead_dist_;
   double traj_goal_tolerance_{0.5};
   double observed_prefix_max_velocity_{0.25};

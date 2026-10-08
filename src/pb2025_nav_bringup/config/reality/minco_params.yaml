@@ -581,6 +581,11 @@ planner_server:
         # LiDAR volume, so the next rolling replan can extend the path without
         # waiting for a manual gimbal sweep.
         observed_prefix_max_velocity: 0.20
+      hot_start:
+        # Preserve the former hard-coded real-vehicle behavior by default.
+        tracking_error_base: 0.30
+        velocity_error_threshold: 0.35
+        direction_cosine_threshold: 0.50
       minco_optimizer:
         opt_freq: 20.0
         # Bound failure retries without reducing the independent 20 Hz

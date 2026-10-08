@@ -19,8 +19,8 @@ rm27_ground_truth_localizer:
     odom_frame: "odom"
     robot_base_frame: "base_footprint"
     lidar_frame: "left_mid360"
-    base_to_lidar_xyz: [0.0, 0.18, 0.14]
-    base_to_lidar_rpy: [0.0, 0.0, 0.0]
+    base_to_lidar_xyz: [0.0, 0.126, 0.130]
+    base_to_lidar_rpy: [-0.523598775598, 0.0, 0.0]
     # Gazebo preserves organized ray indices for no-return samples but encodes
     # their XYZ as inf/nan. Rebuild only those directional misses beyond the
     # ROG ray range; ROG clips them to free rays without inserting a hit.
@@ -460,7 +460,7 @@ local_costmap:
       width: 5
       height: 5
       resolution: 0.05
-      robot_radius: 0.2
+      footprint: "[[0.311, -0.221], [0.311, 0.220], [0.296, 0.257], [0.258, 0.296], [0.216, 0.313], [-0.216, 0.313], [-0.258, 0.296], [-0.296, 0.257], [-0.311, 0.220], [-0.311, -0.221], [-0.296, -0.258], [-0.258, -0.295], [-0.219, -0.311], [0.218, -0.311], [0.259, -0.294], [0.296, -0.258]]"
       plugins: ["static_layer", "intensity_voxel_layer", "denoise_layer", "inflation_layer"]
       intensity_voxel_layer:
         plugin: pb_nav2_costmap_2d::IntensityVoxelLayer
@@ -515,7 +515,7 @@ global_costmap:
       publish_frequency: 2.0
       global_frame: map
       robot_base_frame: gimbal_yaw_fake
-      robot_radius: 0.2
+      footprint: "[[0.311, -0.221], [0.311, 0.220], [0.296, 0.257], [0.258, 0.296], [0.216, 0.313], [-0.216, 0.313], [-0.258, 0.296], [-0.296, 0.257], [-0.311, 0.220], [-0.311, -0.221], [-0.296, -0.258], [-0.258, -0.295], [-0.219, -0.311], [0.218, -0.311], [0.259, -0.294], [0.296, -0.258]]"
       resolution: 0.05
       plugins: ["static_layer", "intensity_voxel_layer", "denoise_layer", "inflation_layer"]
       intensity_voxel_layer:

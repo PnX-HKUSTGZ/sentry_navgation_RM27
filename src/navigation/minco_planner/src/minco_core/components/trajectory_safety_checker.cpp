@@ -8,6 +8,29 @@
 
 namespace minco_planner {
 
+namespace {
+
+bool insideConvexFootprint(const Eigen::Vector2d &point,
+                           const std::vector<Eigen::Vector2d> &vertices) {
+  bool has_positive = false;
+  bool has_negative = false;
+  for (size_t index = 0; index < vertices.size(); ++index) {
+    const auto &a = vertices[index];
+    const auto &b = vertices[(index + 1U) % vertices.size()];
+    const Eigen::Vector2d edge = b - a;
+    const Eigen::Vector2d offset = point - a;
+    const double cross = edge.x() * offset.y() - edge.y() * offset.x();
+    has_positive = has_positive || cross > 1.0e-9;
+    has_negative = has_negative || cross < -1.0e-9;
+    if (has_positive && has_negative) {
+      return false;
+    }
+  }
+  return true;
+}
+
+} // namespace
+
 const char *TrajectorySafetyChecker::failureReasonName(FailureReason reason) {
   switch (reason) {
   case FailureReason::NONE:
@@ -71,11 +94,24 @@ void TrajectorySafetyChecker::configure(const Config &config,
     throw std::invalid_argument(
         "TrajectorySafetyChecker requires a valid ROS clock");
   }
+  if (!config.footprint_points.empty()) {
+    if (config.footprint_points.size() < 3U) {
+      throw std::invalid_argument(
+          "TrajectorySafetyChecker polygon needs at least three points");
+    }
+    for (const auto &point : config.footprint_points) {
+      if (!point.allFinite()) {
+        throw std::invalid_argument(
+            "TrajectorySafetyChecker polygon contains a nonfinite point");
+      }
+    }
+  }
 
   safe_dist_ = config.safe_dist;
   footprint_length_ = config.footprint_length;
   footprint_width_ = config.footprint_width;
   footprint_margin_ = config.footprint_margin;
+  footprint_points_ = config.footprint_points;
   sample_dt_ = config.sample_dt;
   map_timeout_ = config.map_timeout;
   future_tolerance_ = config.future_tolerance;
@@ -351,9 +387,16 @@ bool TrajectorySafetyChecker::checkSweptFootprint(
   const double yaw_delta =
       std::atan2(std::sin(to_yaw - from_yaw), std::cos(to_yaw - from_yaw));
   const double translation = (to_pos - from_pos).head<2>().norm();
-  const double corner_radius = std::hypot(
-      0.5 * footprint_length_ + footprint_margin_,
-      0.5 * footprint_width_ + footprint_margin_);
+  double corner_radius = 0.0;
+  if (footprint_points_.empty()) {
+    corner_radius = std::hypot(
+        0.5 * footprint_length_ + footprint_margin_,
+        0.5 * footprint_width_ + footprint_margin_);
+  } else {
+    for (const auto &point : footprint_points_) {
+      corner_radius = std::max(corner_radius, point.norm());
+    }
+  }
   const double maximum_corner_travel =
       translation + corner_radius * std::abs(yaw_delta);
   if (!std::isfinite(maximum_corner_travel)) {
@@ -430,37 +473,70 @@ bool TrajectorySafetyChecker::evaluateFootprint(
     return false;
   }
 
-  // footprint_length/width are full vehicle dimensions. Margin expands each
-  // side independently before the rectangle is rotated by the planned yaw.
-  const double half_length = 0.5 * footprint_length_ + footprint_margin_;
-  const double half_width = 0.5 * footprint_width_ + footprint_margin_;
+  // A configured polygon is already the complete safety outline. Otherwise,
+  // preserve the legacy rectangle and per-side margin behavior.
+  double min_x = -0.5 * footprint_length_ - footprint_margin_;
+  double max_x = -min_x;
+  double min_y = -0.5 * footprint_width_ - footprint_margin_;
+  double max_y = -min_y;
+  if (!footprint_points_.empty()) {
+    min_x = max_x = footprint_points_.front().x();
+    min_y = max_y = footprint_points_.front().y();
+    for (const auto &point : footprint_points_) {
+      min_x = std::min(min_x, point.x());
+      max_x = std::max(max_x, point.x());
+      min_y = std::min(min_y, point.y());
+      max_y = std::max(max_y, point.y());
+    }
+  }
   const double clearance_spacing =
       safe_dist_ > 1e-6 ? std::sqrt(2.0) * safe_dist_ : 0.5 * resolution;
   const double target_spacing = std::max(0.5 * resolution, clearance_spacing);
   const size_t x_segments = std::max<size_t>(
-      1U, static_cast<size_t>(std::ceil((2.0 * half_length) / target_spacing)));
+      1U, static_cast<size_t>(std::ceil((max_x - min_x) / target_spacing)));
   const size_t y_segments = std::max<size_t>(
-      1U, static_cast<size_t>(std::ceil((2.0 * half_width) / target_spacing)));
+      1U, static_cast<size_t>(std::ceil((max_y - min_y) / target_spacing)));
 
   const double cos_yaw = std::cos(yaw);
   const double sin_yaw = std::sin(yaw);
   std::vector<Eigen::Vector3d> samples;
   std::vector<Eigen::Vector2d> offsets;
-  samples.reserve((x_segments + 1U) * (y_segments + 1U) + 1U);
+  samples.reserve((x_segments + 1U) * (y_segments + 1U) +
+                  2U * footprint_points_.size() + 1U);
   offsets.reserve(samples.capacity());
+  auto append_offset = [&](const Eigen::Vector2d &offset) {
+    Eigen::Vector3d sample = pos;
+    sample.x() += cos_yaw * offset.x() - sin_yaw * offset.y();
+    sample.y() += sin_yaw * offset.x() + cos_yaw * offset.y();
+    samples.push_back(sample);
+    offsets.push_back(offset);
+  };
   for (size_t ix = 0; ix <= x_segments; ++ix) {
     const double local_x =
-        -half_length + (2.0 * half_length * static_cast<double>(ix)) /
-                           static_cast<double>(x_segments);
+        min_x + ((max_x - min_x) * static_cast<double>(ix)) /
+                    static_cast<double>(x_segments);
     for (size_t iy = 0; iy <= y_segments; ++iy) {
       const double local_y =
-          -half_width + (2.0 * half_width * static_cast<double>(iy)) /
-                            static_cast<double>(y_segments);
-      Eigen::Vector3d sample = pos;
-      sample.x() += cos_yaw * local_x - sin_yaw * local_y;
-      sample.y() += sin_yaw * local_x + cos_yaw * local_y;
-      samples.push_back(sample);
-      offsets.emplace_back(local_x, local_y);
+          min_y + ((max_y - min_y) * static_cast<double>(iy)) /
+                      static_cast<double>(y_segments);
+      const Eigen::Vector2d offset(local_x, local_y);
+      if (footprint_points_.empty() ||
+          insideConvexFootprint(offset, footprint_points_)) {
+        append_offset(offset);
+      }
+    }
+  }
+  // Grid points alone can miss a narrow cardinal tip. Sample every polygon
+  // edge at the same spacing so its complete swept boundary is fail-closed.
+  for (size_t index = 0; index < footprint_points_.size(); ++index) {
+    const auto &a = footprint_points_[index];
+    const auto &b = footprint_points_[(index + 1U) % footprint_points_.size()];
+    const size_t edge_segments = std::max<size_t>(
+        1U, static_cast<size_t>(std::ceil((b - a).norm() / target_spacing)));
+    for (size_t segment = 0; segment < edge_segments; ++segment) {
+      const double ratio =
+          static_cast<double>(segment) / static_cast<double>(edge_segments);
+      append_offset(a + ratio * (b - a));
     }
   }
 

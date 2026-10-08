@@ -178,6 +178,12 @@ def generate_launch_description():
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
 
+    declare_rviz_hardware_acceleration_cmd = DeclareLaunchArgument(
+        "rviz_hardware_acceleration",
+        default_value="true",
+        description="Use VirtualGL / EGL to accelerate RViz when available",
+    )
+
     declare_navigation_mode_cmd = DeclareLaunchArgument(
         "navigation_mode",
         default_value="legacy",
@@ -230,6 +236,9 @@ def generate_launch_description():
             "namespace": namespace,
             "use_sim_time": use_sim_time,
             "rviz_config": rviz_config_file,
+            "rviz_hardware_acceleration": LaunchConfiguration(
+                "rviz_hardware_acceleration"
+            ),
         }.items(),
     )
 
@@ -266,6 +275,7 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_robot_state_pub_cmd)
     ld.add_action(declare_use_rviz_cmd)
+    ld.add_action(declare_rviz_hardware_acceleration_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_navigation_mode_cmd)
     ld.add_action(declare_enable_legacy_terrain_cmd)

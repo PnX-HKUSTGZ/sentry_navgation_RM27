@@ -30,6 +30,7 @@
 #include <thread>
 
 #include <rog_map/map_registry.hpp>
+#include <rog_map/projection_ground_reference.hpp>
 
 using namespace rog_map;
 using namespace super_utils;
@@ -454,44 +455,11 @@ void ROGMap::refreshLayers() {
       cfg_.min_observed_overhead_headroom_known_ratio;
   layer_cfg.clearance_unknown_as_occupied = cfg_.clearance_unknown_as_occupied;
   const RobotState robot_state = getRobotState();
-  layer_cfg.robot_yaw = robot_state.yaw;
-  const double robot_cos_yaw = std::cos(robot_state.yaw);
-  const double robot_sin_yaw = std::sin(robot_state.yaw);
-  layer_cfg.robot_x = robot_state.p.x() +
-                      robot_cos_yaw * cfg_.robot_footprint_clear_offset_x -
-                      robot_sin_yaw * cfg_.robot_footprint_clear_offset_y;
-  layer_cfg.robot_y = robot_state.p.y() +
-                      robot_sin_yaw * cfg_.robot_footprint_clear_offset_x +
-                      robot_cos_yaw * cfg_.robot_footprint_clear_offset_y;
-  layer_cfg.reference_ground_z_abs =
-      robot_state.p.z() - cfg_.robot_origin_to_ground;
-  if (robot_state.rcv && std::isfinite(robot_state.q.norm()) &&
-      robot_state.q.norm() > 1.0e-6F) {
-    const Quatf orientation = robot_state.q.normalized();
-    const Vec3f ground_normal = orientation * Vec3f::UnitZ();
-    const double normal_z = static_cast<double>(ground_normal.z());
-    if (std::isfinite(ground_normal.x()) && std::isfinite(ground_normal.y()) &&
-        std::isfinite(normal_z) && normal_z > 1.0e-6) {
-      const double slope_x = -static_cast<double>(ground_normal.x()) / normal_z;
-      const double slope_y = -static_cast<double>(ground_normal.y()) / normal_z;
-      constexpr double kPi = 3.14159265358979323846;
-      const double max_slope =
-          std::tan(cfg_.max_ground_slope_deg * kPi / 180.0);
-      if (std::hypot(slope_x, slope_y) <= max_slope + 1.0e-6) {
-        const double plane_constant =
-            static_cast<double>(ground_normal.dot(robot_state.p)) -
-            cfg_.robot_origin_to_ground;
-        layer_cfg.reference_ground_z_abs =
-            (plane_constant -
-             static_cast<double>(ground_normal.x()) * layer_cfg.robot_x -
-             static_cast<double>(ground_normal.y()) * layer_cfg.robot_y) /
-            normal_z;
-        layer_cfg.reference_ground_plane_valid = true;
-        layer_cfg.reference_ground_slope_x = slope_x;
-        layer_cfg.reference_ground_slope_y = slope_y;
-      }
-    }
-  }
+  setProjectionRobotPose(
+      layer_cfg, robot_state.p, robot_state.q, cfg_.sensor_mount_rpy,
+      Eigen::Vector2d(cfg_.robot_footprint_clear_offset_x,
+                      cfg_.robot_footprint_clear_offset_y),
+      robot_state.rcv);
 
   const int width = mapWidth();
   const int height = mapHeight();

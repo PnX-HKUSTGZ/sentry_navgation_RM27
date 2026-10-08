@@ -487,6 +487,40 @@ TEST(TrajectorySafetyCheckerTest, AppliesYawToRectangularFootprint) {
   EXPECT_NEAR(diagnostic.footprint_offset.y(), 0.0, 0.005);
 }
 
+TEST(TrajectorySafetyCheckerTest, SamplesConfiguredPolygonBoundary) {
+  TrajectorySafetyChecker::Config config;
+  config.safe_dist = 0.01;
+  config.footprint_points = {
+      Eigen::Vector2d(0.40, 0.0), Eigen::Vector2d(0.0, 0.20),
+      Eigen::Vector2d(-0.40, 0.0), Eigen::Vector2d(0.0, -0.20)};
+  auto map = std::make_shared<FakeMapQuery>([](const Eigen::Vector3d &pos) {
+    return std::abs(pos.x() - 0.40) < 0.005 && std::abs(pos.y()) < 0.005;
+  });
+  auto checker = makeChecker(config, map);
+
+  ASSERT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  const auto diagnostic = checker->lastFailureDiagnostic();
+  EXPECT_TRUE(diagnostic.footprint_sample);
+  EXPECT_NEAR(diagnostic.footprint_offset.x(), 0.40, 0.005);
+  EXPECT_NEAR(diagnostic.footprint_offset.y(), 0.0, 0.005);
+}
+
+TEST(TrajectorySafetyCheckerTest, RotatesConfiguredPolygonWithVehicleYaw) {
+  TrajectorySafetyChecker::Config config;
+  config.safe_dist = 0.01;
+  config.footprint_points = {
+      Eigen::Vector2d(0.40, 0.0), Eigen::Vector2d(0.0, 0.20),
+      Eigen::Vector2d(-0.40, 0.0), Eigen::Vector2d(0.0, -0.20)};
+  auto map = std::make_shared<FakeMapQuery>([](const Eigen::Vector3d &pos) {
+    return std::abs(pos.x()) < 0.005 && std::abs(pos.y() - 0.40) < 0.005;
+  });
+  auto checker = makeChecker(config, map);
+
+  EXPECT_TRUE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  EXPECT_FALSE(checker->checkFootprint(
+      Eigen::Vector3d::Zero(), 1.5707963267948966));
+}
+
 TEST(TrajectorySafetyCheckerTest, ReportsRogQueryFailureStatus) {
   TrajectorySafetyChecker::Config config;
   config.safe_dist = 0.0;

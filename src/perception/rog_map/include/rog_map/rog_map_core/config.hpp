@@ -380,6 +380,7 @@ public:
     robot_footprint_clear_width = 0.20;
     robot_footprint_clear_offset_x = 0.0;
     robot_footprint_clear_offset_y = 0.0;
+    sensor_mount_rpy = Vec3f::Zero();
     near_field_prior_fill_en = false;
     near_field_prior_fill_length = 0.80;
     near_field_prior_fill_width = 0.50;
@@ -458,6 +459,7 @@ public:
          robot_footprint_clear_offset_x);
     load("projection.robot_footprint_clear_offset_y",
          robot_footprint_clear_offset_y);
+    sensor_mount_rpy = loadVec3("projection.sensor_mount_rpy", {0.0, 0.0, 0.0});
     load("projection.near_field_prior_fill_enable", near_field_prior_fill_en);
     load("projection.near_field_prior_fill_length",
          near_field_prior_fill_length);
@@ -608,6 +610,7 @@ public:
         robot_footprint_clear_width <= 0.0 ||
         !std::isfinite(robot_footprint_clear_offset_x) ||
         !std::isfinite(robot_footprint_clear_offset_y) ||
+        !sensor_mount_rpy.allFinite() ||
         !std::isfinite(near_field_prior_fill_length) ||
         near_field_prior_fill_length <= 0.0 ||
         !std::isfinite(near_field_prior_fill_width) ||
@@ -893,6 +896,7 @@ public:
   double robot_footprint_clear_width{0.20};
   double robot_footprint_clear_offset_x{0.0};
   double robot_footprint_clear_offset_y{0.0};
+  Vec3f sensor_mount_rpy{Vec3f::Zero()};
   bool near_field_prior_fill_en{false};
   double near_field_prior_fill_length{0.80};
   double near_field_prior_fill_width{0.50};

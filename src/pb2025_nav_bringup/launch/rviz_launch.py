@@ -14,25 +14,79 @@
 
 
 import os
+import shlex
+import shutil
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
+from launch.actions import (
+    DeclareLaunchArgument,
+    EmitEvent,
+    LogInfo,
+    OpaqueFunction,
+    RegisterEventHandler,
+)
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def _launch_rviz(context, *args, **kwargs):
+    del args, kwargs
+    prefix = None
+    rendering = "desktop OpenGL"
+    hardware_acceleration = LaunchConfiguration("rviz_hardware_acceleration").perform(
+        context
+    ).strip().lower() in {"true", "1", "yes", "on"}
+    if hardware_acceleration:
+        vglrun = shutil.which("vglrun")
+        if not vglrun:
+            for candidate in (
+                "/usr/NX/scripts/vgl/vglrun",
+                "/opt/VirtualGL/bin/vglrun",
+            ):
+                if os.access(candidate, os.X_OK):
+                    vglrun = candidate
+                    break
+        if vglrun:
+            egl_device = (
+                "egl" if os.path.realpath(vglrun).startswith("/usr/NX/") else "egl0"
+            )
+            prefix = shlex.join([vglrun, "-d", egl_device])
+            rendering = "VirtualGL / EGL"
+        else:
+            rendering = "desktop OpenGL (VirtualGL not found)"
+
+    start_rviz_cmd = Node(
+        package="rviz2",
+        executable="rviz2",
+        namespace=LaunchConfiguration("namespace"),
+        arguments=["-d", LaunchConfiguration("rviz_config")],
+        parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
+        output="screen",
+        prefix=prefix,
+        additional_env={"QT_QPA_PLATFORM": LaunchConfiguration("rviz_qt_platform")},
+        remappings=[
+            ("/tf", "tf"),
+            ("/tf_static", "tf_static"),
+        ],
+    )
+    return [
+        LogInfo(msg=f"[pb2025_nav_bringup] RViz rendering: {rendering}"),
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=start_rviz_cmd,
+                on_exit=EmitEvent(event=Shutdown(reason="rviz exited")),
+            ),
+        ),
+        start_rviz_cmd,
+    ]
+
+
 def generate_launch_description():
     # Get the launch directory
     bringup_dir = get_package_share_directory("pb2025_nav_bringup")
-
-    # Create the launch configuration variables
-    namespace = LaunchConfiguration("namespace")
-    use_sim_time = LaunchConfiguration("use_sim_time")
-    rviz_config_file = LaunchConfiguration("rviz_config")
-    rviz_qt_platform = LaunchConfiguration("rviz_qt_platform")
 
     # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -65,25 +119,11 @@ def generate_launch_description():
         ),
     )
 
-    # Launch rviz
-    start_rviz_cmd = Node(
-        package="rviz2",
-        executable="rviz2",
-        namespace=namespace,
-        arguments=["-d", rviz_config_file],
-        parameters=[{"use_sim_time": use_sim_time}],
-        output="screen",
-        additional_env={"QT_QPA_PLATFORM": rviz_qt_platform},
-        remappings=[
-            ("/tf", "tf"),
-            ("/tf_static", "tf_static"),
-        ],
-    )
-
-    exit_event_handler = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=start_rviz_cmd,
-            on_exit=EmitEvent(event=Shutdown(reason="rviz exited")),
+    declare_rviz_hardware_acceleration_cmd = DeclareLaunchArgument(
+        "rviz_hardware_acceleration",
+        default_value="true",
+        description=(
+            "Use VirtualGL / EGL for RViz when available; otherwise use desktop OpenGL"
         ),
     )
 
@@ -95,11 +135,8 @@ def generate_launch_description():
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_rviz_qt_platform_cmd)
+    ld.add_action(declare_rviz_hardware_acceleration_cmd)
 
-    # Add any conditioned actions
-    ld.add_action(start_rviz_cmd)
-
-    # Add other nodes and processes we need
-    ld.add_action(exit_event_handler)
+    ld.add_action(OpaqueFunction(function=_launch_rviz))
 
     return ld

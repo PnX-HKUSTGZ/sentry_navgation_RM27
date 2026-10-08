@@ -971,9 +971,15 @@ v_lidar = R_lidar_base * (v_base + omega_base x p_base_lidar)
 omega_lidar = R_lidar_base * omega_base
 ```
 
-当前传感器在 base `y=+0.18 m`；原地旋转时 `/lidar_odometry.twist.linear` 出现符合
+当前仿真传感器在 base `[0.0, 0.126, 0.130] m`，固定 roll 为 `-30 deg`；原地旋转时 `/lidar_odometry.twist.linear` 出现符合
 `omega x p` 的切向分量是正常现象。若两条 odom 的 twist 数值始终完全相同，或者杆臂项符号相反，
 停止规划并检查 `base_to_lidar` 方向。
+
+倾斜安装雷达时，ROG `projection.sensor_mount_rpy` 必须填写相对底盘的固定安装角（弧度）。
+当前仿真为 `[-0.523598775598, 0.0, 0.0]`；默认 `[0.0, 0.0, 0.0]` 保留原实车行为。
+ROG 使用 `q_body = q_odom * inverse(q_mount)` 恢复车身姿态，再推算地面切平面和 footprint 方向。
+若遗漏补偿，平地上的 30 度雷达倾角会超过 `max_ground_slope_deg: 28.0`，导致切平面失效；
+真实坡面还可能被推算成错误的侧坡。该补偿不改变点云变换、raycast 原点或雷达 odometry 的真实姿态。
 
 #### Gazebo organized LiDAR 的 no-return 重建
 
@@ -3243,6 +3249,12 @@ command_timeout               0.5 s
 停滞辅助不参与正常速度环。只有目标速度不小于 `0.08 m/s`，且沿目标方向速度持续低于
 `0.02 m/s` 超过 `0.20 s` 时才线性增加；恢复到 `0.10 m/s` 立即归零。它用于克服 Gazebo 网格接缝
 和坡面小凸起的静接触，不属于实车参数，也不能用来穿越 ROG 已判定的障碍。
+
+当前仿真默认使用 Bullet Featherstone。轮面摩擦必须在 xacro 中同时写入 ODE 的 `mu1/mu2`
+和 Bullet 的 `friction/friction2`，当前值均为 `0.05`；场地导入器则把源碰撞的 ODE `0.8`
+同步给 Bullet。只配置 `mu1/mu2` 时，展开后的 SDF 没有 Bullet 摩擦字段，Bullet 会采用默认值，
+典型表现是四级速度话题都有 `0.08~0.25 m/s` 的非零命令，但 Gazebo 真值位姿完全不动。
+遇到这种现象应先检查最终 SDF 的接触参数，不要直接抬高 MINCO 最小速度来掩盖物理配置错误。
 
 核对 xacro 展开值与单测：
 

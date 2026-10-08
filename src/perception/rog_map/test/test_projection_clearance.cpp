@@ -9,9 +9,61 @@
 
 #include <rog_map/prior_map.hpp>
 #include <rog_map/projection_layer.hpp>
+#include <rog_map/projection_ground_reference.hpp>
 #include <rog_map/query_adapter.hpp>
 
 namespace {
+
+TEST(ProjectionGroundReference, TiltedLidarOnLevelChassisRemainsLevel) {
+  auto config = rog_map::ProjectionLayerConfig{};
+  config.robot_origin_to_ground = 0.21;
+  config.max_ground_slope_deg = 28.0;
+  const Eigen::Vector3d mount(std::acos(-1.0) / 6.0, 0.0, 0.0);
+  const Eigen::Quaterniond sensor(
+      Eigen::AngleAxisd(mount.x(), Eigen::Vector3d::UnitX()));
+  rog_map::setProjectionRobotPose(config, {1.0, 2.126, 0.21}, sensor, mount,
+                                 {0.0, -0.126}, true);
+  ASSERT_TRUE(config.reference_ground_plane_valid);
+  EXPECT_NEAR(config.reference_ground_slope_x, 0.0, 1.0e-12);
+  EXPECT_NEAR(config.reference_ground_slope_y, 0.0, 1.0e-12);
+  EXPECT_NEAR(config.reference_ground_z_abs, 0.0, 1.0e-12);
+  EXPECT_NEAR(config.robot_x, 1.0, 1.0e-12);
+  EXPECT_NEAR(config.robot_y, 2.0, 1.0e-12);
+}
+
+TEST(ProjectionGroundReference, PreservesRealSlopeAndYawWithCompoundMount) {
+  auto config = rog_map::ProjectionLayerConfig{};
+  config.robot_origin_to_ground = 0.21;
+  config.max_ground_slope_deg = 28.0;
+  const double pi = std::acos(-1.0);
+  const Eigen::Vector3d mount(pi / 6.0, 0.05, -0.2);
+  const Eigen::Quaterniond body =
+      Eigen::AngleAxisd(pi / 2.0, Eigen::Vector3d::UnitZ()) *
+      Eigen::AngleAxisd(-0.15, Eigen::Vector3d::UnitY());
+  const Eigen::Quaterniond mounting =
+      Eigen::AngleAxisd(mount.z(), Eigen::Vector3d::UnitZ()) *
+      Eigen::AngleAxisd(mount.y(), Eigen::Vector3d::UnitY()) *
+      Eigen::AngleAxisd(mount.x(), Eigen::Vector3d::UnitX());
+  rog_map::setProjectionRobotPose(config, {1.126, 2.0, 0.21}, body * mounting,
+                                 mount, {0.0, -0.126}, true);
+  ASSERT_TRUE(config.reference_ground_plane_valid);
+  EXPECT_NEAR(config.robot_yaw, pi / 2.0, 1.0e-12);
+  EXPECT_NEAR(config.robot_x, 1.252, 1.0e-12);
+  EXPECT_NEAR(config.robot_y, 2.0, 1.0e-12);
+  EXPECT_NEAR(config.reference_ground_slope_x, 0.0, 1.0e-12);
+  EXPECT_NEAR(config.reference_ground_slope_y, std::tan(0.15), 1.0e-12);
+}
+
+TEST(ProjectionGroundReference, UncompensatedMountExceedsTerrainLimit) {
+  auto config = rog_map::ProjectionLayerConfig{};
+  config.robot_origin_to_ground = 0.21;
+  config.max_ground_slope_deg = 28.0;
+  const Eigen::Quaterniond sensor(Eigen::AngleAxisd(
+      std::acos(-1.0) / 6.0, Eigen::Vector3d::UnitX()));
+  rog_map::setProjectionRobotPose(config, {0.0, 0.126, 0.21}, sensor,
+                                 Eigen::Vector3d::Zero(), {0.0, -0.126}, true);
+  EXPECT_FALSE(config.reference_ground_plane_valid);
+}
 
 constexpr int kWidth = 5;
 constexpr int kHeight = 5;
@@ -1638,6 +1690,74 @@ TEST(ProjectionClearance, KeepsUnknownColumnClosed) {
             rog_map::ProjectionClassReason::INSUFFICIENT_OBSERVATION);
   EXPECT_EQ(center(layer).traversable, 0U);
   EXPECT_EQ(layer.mask().at(2U * kWidth + 2U), 0U);
+}
+
+TEST(ProjectionClearance, EmptyHeadroomGapRespectsUnknownPolicy) {
+  for (const bool unknown_as_occupied : {false, true}) {
+    SCOPED_TRACE(unknown_as_occupied);
+    rog_map::ProjectionLayer layer;
+    auto config = clearanceConfig();
+    config.observed_empty_as_free = true;
+    config.clearance_unknown_as_occupied = false;
+    config.unknown_as_occupied = unknown_as_occupied;
+    layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+                 [](int, int) { return emptyColumn(kResolution, false); });
+
+    EXPECT_EQ(center(layer).type, rog_map::CellType::UNKNOWN);
+    EXPECT_EQ(center(layer).raw_reason,
+              rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED);
+    EXPECT_FLOAT_EQ(center(layer).headroom_known_ratio, 0.0F);
+    EXPECT_EQ(center(layer).clearance_verified, 0U);
+    EXPECT_EQ(center(layer).value, unknown_as_occupied ? 254U : 255U);
+    EXPECT_EQ(center(layer).mask, unknown_as_occupied ? 0U : 1U);
+  }
+}
+
+TEST(PriorMapFusion, EmptyHeadroomGapFillPreservesMeasuredAndStaticObstacles) {
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.observed_empty_as_free = true;
+  config.clearance_unknown_as_occupied = false;
+  config.unknown_as_occupied = true;
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+               [](int x, int) {
+                 if (x == 1) {
+                   return column({1, 2, 3, 4, 5});
+                 }
+                 if (x == 2) {
+                   return column({1, 3});
+                 }
+                 return emptyColumn(kResolution, false);
+               });
+
+  rog_map::PriorMapData prior;
+  prior.loaded = true;
+  prior.transform_ready = true;
+  prior.projection_cache_ready = true;
+  prior.cached_mask.assign(layer.cells().size(), 1U);
+  prior.cached_free_mask.assign(layer.cells().size(), 1U);
+  const size_t row = 2U * kWidth;
+  prior.cached_mask[row + 3U] = 0U;
+  prior.cached_free_mask[row + 3U] = 0U;
+  prior.cached_free_mask[row + 4U] = 0U;
+  std::vector<uint8_t> unknown_mask;
+  for (const auto &cell : layer.cells()) {
+    unknown_mask.push_back(cell.type == rog_map::CellType::UNKNOWN ? 1U : 0U);
+  }
+  const std::vector<uint8_t> no_override(layer.cells().size(), 0U);
+  std::vector<uint8_t> fused_mask;
+  std::vector<uint8_t> fused_values;
+  rog_map::fusePriorMapProjection(
+      true, true, prior, layer.mask(), layer.values(), unknown_mask,
+      no_override, no_override, fused_mask, fused_values);
+
+  EXPECT_EQ(fused_mask[row], 1U);
+  EXPECT_EQ(fused_values[row], 0U);
+  for (size_t x = 1U; x < kWidth; ++x) {
+    SCOPED_TRACE(x);
+    EXPECT_EQ(fused_mask[row + x], 0U);
+    EXPECT_EQ(fused_values[row + x], 254U);
+  }
 }
 
 TEST(ProjectionClearance, RejectsEightCentimeterFloatingPlateInsideSeedRadius) {

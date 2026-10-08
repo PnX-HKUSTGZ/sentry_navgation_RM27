@@ -52,11 +52,11 @@ GroundTruthState makeState(
 TEST(GroundTruthTwistTransform, AppliesSideMountedLidarLeverArm)
 {
   const tf2::Transform base_from_lidar(
-    tf2::Quaternion::getIdentity(), tf2::Vector3(0.0, 0.18, 0.14));
+    tf2::Quaternion::getIdentity(), tf2::Vector3(0.0, 0.126, 0.130));
   const auto lidar_twist = transformTwistFromBaseToChild(
     makeTwist(1.0, -0.4, 0.2, 0.0, 0.0, 2.0), base_from_lidar);
 
-  EXPECT_NEAR(lidar_twist.linear.x, 0.64, kTolerance);
+  EXPECT_NEAR(lidar_twist.linear.x, 0.748, kTolerance);
   EXPECT_NEAR(lidar_twist.linear.y, -0.4, kTolerance);
   EXPECT_NEAR(lidar_twist.linear.z, 0.2, kTolerance);
   EXPECT_NEAR(lidar_twist.angular.x, 0.0, kTolerance);
@@ -81,6 +81,22 @@ TEST(GroundTruthTwistTransform, RotatesLinearAndAngularVelocityIntoChildFrame)
   EXPECT_NEAR(lidar_twist.angular.z, 6.0, kTolerance);
 }
 
+TEST(GroundTruthTwistTransform, AppliesThirtyDegreeRollMount)
+{
+  tf2::Quaternion base_from_lidar_rotation;
+  base_from_lidar_rotation.setRPY(M_PI / 6.0, 0.0, 0.0);
+  const tf2::Transform base_from_lidar(
+    base_from_lidar_rotation, tf2::Vector3(0.0, 0.0, 0.0));
+  const auto lidar_twist = transformTwistFromBaseToChild(
+    makeTwist(0.0, 1.0, 0.0, 0.0, 1.0, 0.0), base_from_lidar);
+
+  EXPECT_NEAR(lidar_twist.linear.x, 0.0, kTolerance);
+  EXPECT_NEAR(lidar_twist.linear.y, std::sqrt(3.0) / 2.0, kTolerance);
+  EXPECT_NEAR(lidar_twist.linear.z, -0.5, kTolerance);
+  EXPECT_NEAR(lidar_twist.angular.y, std::sqrt(3.0) / 2.0, kTolerance);
+  EXPECT_NEAR(lidar_twist.angular.z, -0.5, kTolerance);
+}
+
 TEST(GroundTruthTwistTransform, AppliesLeverArmBeforeRotatingIntoChildFrame)
 {
   tf2::Quaternion base_from_lidar_rotation;
@@ -101,13 +117,13 @@ TEST(GroundTruthTwistTransform, TransformsTwistCovarianceWithTheSameAdjoint)
   geometry_msgs::msg::TwistWithCovariance base_twist;
   base_twist.covariance[5 * 6 + 5] = 4.0;
   const tf2::Transform base_from_lidar(
-    tf2::Quaternion::getIdentity(), tf2::Vector3(0.0, 0.18, 0.0));
+    tf2::Quaternion::getIdentity(), tf2::Vector3(0.0, 0.126, 0.0));
 
   const auto lidar_twist = transformTwistFromBaseToChild(base_twist, base_from_lidar);
 
-  EXPECT_NEAR(lidar_twist.covariance[0 * 6 + 0], 0.1296, kTolerance);
-  EXPECT_NEAR(lidar_twist.covariance[0 * 6 + 5], -0.72, kTolerance);
-  EXPECT_NEAR(lidar_twist.covariance[5 * 6 + 0], -0.72, kTolerance);
+  EXPECT_NEAR(lidar_twist.covariance[0 * 6 + 0], 0.063504, kTolerance);
+  EXPECT_NEAR(lidar_twist.covariance[0 * 6 + 5], -0.504, kTolerance);
+  EXPECT_NEAR(lidar_twist.covariance[5 * 6 + 0], -0.504, kTolerance);
   EXPECT_NEAR(lidar_twist.covariance[5 * 6 + 5], 4.0, kTolerance);
   for (std::size_t row = 0; row < 6; ++row) {
     for (std::size_t column = 0; column < 6; ++column) {

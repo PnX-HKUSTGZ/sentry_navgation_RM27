@@ -198,8 +198,8 @@ CellType classifyClearanceCell(const ColumnStats &stats, CellData &cell,
     // A spinning LiDAR cannot observe support inside its downward blind ring.
     // PRIORMAP deployments may explicitly accept an empty column only when the
     // complete body-height interval above the reference ground is sufficiently
-    // observed. Unknown columns remain closed and occupied returns still
-    // require connected ground plus verified headroom.
+    // observed. Missing clearance follows the configured unknown policy;
+    // occupied returns still require connected ground plus verified headroom.
     const bool trusted_support = hasTrustedGroundSupport(stats);
     const bool empty_authorized = config.require_ground_support
                                       ? trusted_support
@@ -218,6 +218,8 @@ CellType classifyClearanceCell(const ColumnStats &stats, CellData &cell,
         return CellType::FREE;
       }
       cell.candidate_reason = ProjectionClassReason::HEADROOM_UNVERIFIED;
+      return config.clearance_unknown_as_occupied ? CellType::OCCUPIED
+                                                  : CellType::UNKNOWN;
     } else if (config.require_ground_support) {
       cell.candidate_reason = ProjectionClassReason::GROUND_UNVERIFIED;
     }

@@ -9,17 +9,11 @@
     </plugin>
     <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
 
-    <!-- 物理引擎 -->
-    <physics name='default_physics' default='1' type='dart'>
+    <!-- Bullet Featherstone supports the convex STL proxies used by this field. -->
+    <physics name='default_physics' default='1' type='bullet'>
       <max_step_size>0.001</max_step_size>
       <real_time_factor>1</real_time_factor>
       <real_time_update_rate>1000</real_time_update_rate>
-      <!-- DART's default mesh approximation can pin spherical omni contacts
-           on millimetre-scale STL seams. Bullet collision detection keeps the
-           DART force / joint dynamics while resolving analytic spheres. -->
-      <dart>
-        <collision_detector>bullet</collision_detector>
-      </dart>
     </physics>
     
     <!-- 场景 -->
@@ -127,58 +121,26 @@
       <cast_shadows>1</cast_shadows>
     </light>
 
-    <!-- 地面只提供碰撞；可见地面由 RM27_battlefield_visual 提供，避免重面闪烁。 -->
-    <model name='ground_plane'>
-      <static>1</static>
-      <pose>-0.025 1.640 0 0 0 0</pose>
-      <link name='link'>
-        <collision name='collision'>
-          <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>29.10 14.95</size>
-            </plane>
-          </geometry>
-        </collision>
-      </link>
-    </model>
-
-    <!-- 场地模型 -->
-    <model name='map'>
-      <static>1</static>
-      <link name='link'>
-        <collision name='collision'>
-          <geometry>
-            <mesh>
-              <uri>model://RMUC2026_world/meshes/RMUC2026.stl</uri>
-              <scale>1 1 1</scale>
-            </mesh>
-          </geometry>
-          <surface>
-            <friction>
-              <ode><mu>100</mu><mu2>50</mu2></ode>
-            </friction>
-          </surface>
-        </collision>
-      </link>
-      <!-- pose = x y z roll pitch yaw -->
-      <pose>0 0 1.65 0 0 0</pose>
-    </model>
+    <!-- Source collision proxies include the field ground, ramps and platforms. -->
+    <include>
+      <uri>model://RM27_battlefield_collision</uri>
+      <name>map_collision</name>
+      <pose>0 1.624344 0 0 0 0</pose>
+    </include>
 
     <!-- High-detail RM27 appearance from the split Gazebo Harmonic bundle.
          The source model is centered at y=0; this translation restores the
-         navigation map's original y coordinate. The imported model has no collisions. -->
+         navigation map's original y coordinate. -->
     <include>
       <uri>model://RM27_battlefield_visual</uri>
       <name>map_visual</name>
       <pose>0 1.624344 0 0 0 0</pose>
     </include>
 
-    <!-- 隐形边界墙 (Invisible Boundaries) -->
-    <model name='invisible_boundaries'>
+    <!-- Each boundary is its own static model for Bullet compatibility. -->
+    <model name='boundary_front'>
       <static>1</static>
-      <!-- 前边墙 (+X) -->
-      <link name='wall_front'>
+      <link name='link'>
         <pose>14.525 1.640 2.0 0 0 0</pose>
         <collision name='collision'>
           <geometry>
@@ -186,8 +148,10 @@
           </geometry>
         </collision>
       </link>
-      <!-- 后边墙 (-X) -->
-      <link name='wall_back'>
+    </model>
+    <model name='boundary_back'>
+      <static>1</static>
+      <link name='link'>
         <pose>-14.575 1.640 2.0 0 0 0</pose>
         <collision name='collision'>
           <geometry>
@@ -195,8 +159,10 @@
           </geometry>
         </collision>
       </link>
-      <!-- 左边墙 (+Y) -->
-      <link name='wall_left'>
+    </model>
+    <model name='boundary_left'>
+      <static>1</static>
+      <link name='link'>
         <pose>-0.025 9.115 2.0 0 0 0</pose>
         <collision name='collision'>
           <geometry>
@@ -204,8 +170,10 @@
           </geometry>
         </collision>
       </link>
-      <!-- 右边墙 (-Y) -->
-      <link name='wall_right'>
+    </model>
+    <model name='boundary_right'>
+      <static>1</static>
+      <link name='link'>
         <pose>-0.025 -5.835 2.0 0 0 0</pose>
         <collision name='collision'>
           <geometry>

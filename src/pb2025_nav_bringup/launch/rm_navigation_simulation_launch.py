@@ -217,6 +217,12 @@ def generate_launch_description():
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
 
+    declare_rviz_hardware_acceleration_cmd = DeclareLaunchArgument(
+        "rviz_hardware_acceleration",
+        default_value="true",
+        description="Use VirtualGL / EGL to accelerate RViz when available",
+    )
+
     declare_use_ground_truth_odom_cmd = DeclareLaunchArgument(
         "use_ground_truth_odom",
         default_value="True",
@@ -265,6 +271,9 @@ def generate_launch_description():
             "namespace": namespace,
             "use_sim_time": use_sim_time,
             "rviz_config": rviz_config_file,
+            "rviz_hardware_acceleration": LaunchConfiguration(
+                "rviz_hardware_acceleration"
+            ),
         }.items(),
     )
 
@@ -302,6 +311,7 @@ def generate_launch_description():
     ld.add_action(declare_use_composition_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_rviz_cmd)
+    ld.add_action(declare_rviz_hardware_acceleration_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)

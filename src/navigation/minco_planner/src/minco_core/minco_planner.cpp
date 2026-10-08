@@ -560,6 +560,38 @@ void MincoPlanner::configure(
   }
 
   nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "hot_start.tracking_error_base",
+      rclcpp::ParameterValue(0.30));
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "hot_start.velocity_error_threshold",
+      rclcpp::ParameterValue(0.35));
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "hot_start.direction_cosine_threshold",
+      rclcpp::ParameterValue(0.50));
+  node->get_parameter(prefix + "hot_start.tracking_error_base",
+                      hot_start_tracking_error_base_);
+  node->get_parameter(prefix + "hot_start.velocity_error_threshold",
+                      hot_start_velocity_error_threshold_);
+  node->get_parameter(prefix + "hot_start.direction_cosine_threshold",
+                      hot_start_direction_cosine_threshold_);
+  if (!std::isfinite(hot_start_tracking_error_base_) ||
+      hot_start_tracking_error_base_ < 0.0 ||
+      !std::isfinite(hot_start_velocity_error_threshold_) ||
+      hot_start_velocity_error_threshold_ < 0.0 ||
+      !std::isfinite(hot_start_direction_cosine_threshold_) ||
+      hot_start_direction_cosine_threshold_ < -1.0 ||
+      hot_start_direction_cosine_threshold_ > 1.0) {
+    throw std::invalid_argument(
+        prefix + "hot_start thresholds are invalid");
+  }
+  RCLCPP_INFO(
+      logger_,
+      "[MincoPlanner] hot_start thresholds: tracking_base=%.3f m "
+      "velocity=%.3f m/s direction_cosine=%.3f",
+      hot_start_tracking_error_base_, hot_start_velocity_error_threshold_,
+      hot_start_direction_cosine_threshold_);
+
+  nav2_util::declare_parameter_if_not_declared(
       node, prefix + "minco_optimizer.lookahead_dist",
       rclcpp::ParameterValue(5.0));
   node->get_parameter(prefix + "minco_optimizer.lookahead_dist",
@@ -628,6 +660,9 @@ void MincoPlanner::configure(
       node, prefix + "safety.footprint_margin",
       rclcpp::ParameterValue(safety_config.footprint_margin));
   nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "safety.footprint_points",
+      rclcpp::ParameterValue(std::vector<double>{}));
+  nav2_util::declare_parameter_if_not_declared(
       node, prefix + "safety.sample_dt",
       rclcpp::ParameterValue(safety_config.sample_dt));
   nav2_util::declare_parameter_if_not_declared(
@@ -650,6 +685,24 @@ void MincoPlanner::configure(
                       safety_config.footprint_width);
   node->get_parameter(prefix + "safety.footprint_margin",
                       safety_config.footprint_margin);
+  std::vector<double> footprint_points;
+  node->get_parameter(prefix + "safety.footprint_points", footprint_points);
+  if (!footprint_points.empty()) {
+    if (footprint_points.size() < 6U || footprint_points.size() % 2U != 0U) {
+      throw std::invalid_argument(
+          prefix + "safety.footprint_points must contain x/y pairs for at "
+                   "least three vertices");
+    }
+    for (size_t index = 0; index < footprint_points.size(); index += 2U) {
+      if (!std::isfinite(footprint_points[index]) ||
+          !std::isfinite(footprint_points[index + 1U])) {
+        throw std::invalid_argument(
+            prefix + "safety.footprint_points must be finite");
+      }
+      safety_config.footprint_points.emplace_back(
+          footprint_points[index], footprint_points[index + 1U]);
+    }
+  }
   node->get_parameter(prefix + "safety.sample_dt", safety_config.sample_dt);
   node->get_parameter(prefix + "safety.map_timeout", safety_config.map_timeout);
   node->get_parameter(prefix + "safety.future_tolerance",
@@ -717,8 +770,16 @@ void MincoPlanner::configure(
       0.5 * safety_config.footprint_length + safety_config.footprint_margin;
   const double footprint_half_width =
       0.5 * safety_config.footprint_width + safety_config.footprint_margin;
+  double footprint_radius =
+      std::hypot(footprint_half_length, footprint_half_width);
+  if (!safety_config.footprint_points.empty()) {
+    footprint_radius = 0.0;
+    for (const auto &point : safety_config.footprint_points) {
+      footprint_radius = std::max(footprint_radius, point.norm());
+    }
+  }
   const double static_obstacle_clearance_radius =
-      std::hypot(footprint_half_length, footprint_half_width) + grid_guard;
+      footprint_radius + grid_guard;
   initPlannerMode(planner_mode_param, configured_map_frame,
                   configured_rog_frame, static_obstacle_clearance_radius);
   safety_config.planning_frame = planning_frame_;
@@ -727,8 +788,7 @@ void MincoPlanner::configure(
               "[MincoPlanner] Global static hard-clearance radius %.3f m = "
               "footprint corner %.3f m + grid guard %.3f m.",
               static_obstacle_clearance_radius,
-              std::hypot(footprint_half_length, footprint_half_width),
-              grid_guard);
+              footprint_radius, grid_guard);
 
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "minco_optimizer.max_velocity",
@@ -990,12 +1050,13 @@ void MincoPlanner::configure(
   safety_checker_->setQuery(dynamic_query);
   RCLCPP_INFO(logger_,
               "[MincoPlanner] Safety footprint: length=%.3f width=%.3f "
-              "margin_per_side=%.3f "
+              "margin_per_side=%.3f polygon_vertices=%zu "
               "sample_dt=%.3f map_timeout=%.3f future_tolerance=%.3f "
               "check_horizon=%.3f "
               "planning_frame=%s rog_frame=%s",
               safety_config.footprint_length, safety_config.footprint_width,
-              safety_config.footprint_margin, safety_config.sample_dt,
+              safety_config.footprint_margin,
+              safety_config.footprint_points.size(), safety_config.sample_dt,
               safety_config.map_timeout, safety_config.future_tolerance,
               safety_check_horizon_, safety_config.planning_frame.c_str(),
               safety_config.rog_frame.c_str());
@@ -1449,6 +1510,7 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".safety.footprint_length" ||
            param_name == name_ + ".safety.footprint_width" ||
            param_name == name_ + ".safety.footprint_margin" ||
+           param_name == name_ + ".safety.footprint_points" ||
            param_name == name_ + ".safety.sample_dt" ||
            param_name == name_ + ".safety.map_timeout" ||
            param_name == name_ + ".safety.future_tolerance" ||
@@ -1460,6 +1522,9 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name ==
                name_ + ".minco_optimizer.failed_replan_retry_period" ||
            param_name == name_ + ".minco_optimizer.successful_replan_period" ||
+           param_name == name_ + ".hot_start.tracking_error_base" ||
+           param_name == name_ + ".hot_start.velocity_error_threshold" ||
+           param_name == name_ + ".hot_start.direction_cosine_threshold" ||
            param_name == name_ + ".minco_optimizer.time_allocation_iters";
   };
   const std::string max_vel_param = name_ + ".minco_optimizer.max_velocity";
@@ -2439,7 +2504,8 @@ MincoPlanner::PlanningState MincoPlanner::determinePlanningState(
   // metre per second of velocity error feeds stale momentum into every rolling
   // replan and can keep the reference pointed away from the new local seed.
   const double dynamic_error_threshold =
-      0.30 + 0.20 * current_speed.head<2>().norm();
+      hot_start_tracking_error_base_ +
+      0.20 * current_speed.head<2>().norm();
   double vel_error = (current_speed - pred_vel).norm();
   if (tracking_error > dynamic_error_threshold) {
     std::cout << YELLOW << "[MincoPlanner] Large tracking error ("
@@ -2448,7 +2514,7 @@ MincoPlanner::PlanningState MincoPlanner::determinePlanningState(
     return PlanningState::COLD_START;
   }
 
-  if (vel_error > 0.35) {
+  if (vel_error > hot_start_velocity_error_threshold_) {
     std::cout << YELLOW << "[MincoPlanner] Large velocity error (" << vel_error
               << "m/s). Downgrading to COLD_START." << RESET << std::endl;
     return PlanningState::COLD_START;
@@ -2461,7 +2527,7 @@ MincoPlanner::PlanningState MincoPlanner::determinePlanningState(
       Eigen::Vector3d vel_dir = pred_vel.normalized();
       double dot = vel_dir.dot(path_dir);
 
-      if (dot < 0.5) {
+      if (dot < hot_start_direction_cosine_threshold_) {
         std::cout
             << YELLOW
             << "[MincoPlanner] Hot Start Rejected: Direction mismatch (dot="
