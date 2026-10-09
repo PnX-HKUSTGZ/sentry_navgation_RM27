@@ -1,0 +1,89 @@
+# MID360 STARTING POINT ONLY: requires measurement and tuning for the robot/site.
+# sensor_height is measured from exported scan origin (body virtual or calibrated lidar).
+# Keep extrinsic rotation/translation identity: exporter already writes direct T_world_scan.
+# No navigation configuration or maps are read/written by these parameters.
+# input/output paths and safe end_frame are filled in an isolated run directory.
+start_frame: 0
+end_frame: -1
+viz_interval: 10
+is_large_scale: false
+dataloader:
+  run_traj_clustering: false
+  dataset_name: SemanticKITTI
+  abs_data_dir: ''
+  cloud_dir: ''
+  cloud_format: ''
+  pose_path: ''
+  sequence: ''
+  abs_save_dir: ''
+  instance_seg_method: hdbscan
+  accum_interval: 1
+  voxel_size: 0.1
+  map_voxel_size: 0.1
+  expansion_range: 0
+erasor2:
+  grid_resolution: 1.0
+  egocentric_grid_resolution: 0.4
+  range_of_interest: 30.0
+  min_z_voi: -1.5
+  max_z_voi: 2.0
+  min_z_diff_thr: 0.4
+  scan_ratio_threshold: 0.2
+  log_odds:
+    increment_gain: 2.0
+    increment: 0.15
+  region_proposal_thr: 0.8
+  kernel_size: 1
+  ratio_num_pts: 0.95
+  minimum_num_pts: 5
+  moving_object_detection:
+    negative_log_odds: -2.0
+    obj_score_soft_thr: 0.8
+    obj_score_hard_thr: 14.0
+    hard_thr_radius: 10.0
+  over_segmentation:
+    minimum_area_thr: 56
+    ratio_of_unknown_prior: 0.25
+  volumetric_outlier_removal:
+    window_size: 1
+    use_adaptive_voxel_size: true
+    vor_cand_score_thr: 3.0
+    dist_thr_gain: 1.732
+  viz_flag:
+    set_scan_and_pose: false
+    set_submap: false
+    update: false
+    detect: false
+    over_seg: false
+  save_map: true
+stop_for_each_frame: false
+extrinsic:
+  robot_body_size: 0.25
+  sensor_height: 0.45
+  rotation:
+  - 1
+  - 0
+  - 0
+  - 0
+  - 1
+  - 0
+  - 0
+  - 0
+  - 1
+  translation:
+  - 0.0
+  - 0.0
+  - 0.0
+rerun:
+  enabled: false
+  spawn: false
+preprocessing:
+  sensor_height: 0.45
+  min_cluster_size: 15
+  min_samples: 5
+
+# Three-pass external-memory ERASOR2; mapgen still builds the original accumulated PCD.
+streaming:
+  enabled: true
+  compact_threshold_points: 5000000
+  use_gt_labels: false
