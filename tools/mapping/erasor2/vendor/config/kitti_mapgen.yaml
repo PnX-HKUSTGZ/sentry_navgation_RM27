@@ -1,0 +1,47 @@
+start_frame: 130
+end_frame: 270
+viz_interval: 10
+is_large_scale: true
+
+dataloader:
+    run_traj_clustering: false
+    dataset_name: "SemanticKITTI"
+    abs_data_dir: "/opt/datasets/sequences"
+    cloud_dir: ""
+    cloud_format: ""
+    pose_path: ""
+    sequence: ""
+    abs_save_dir: "/opt/datasets/outputs"
+
+    accum_interval: 2
+    voxel_size: 0.2
+    map_voxel_size: 0.2
+
+    expansion_range: 0 # It is only needed for HeLiPR
+
+erasor2:
+    min_z_voi: -4.0
+    max_z_voi: 1.3
+    scan_ratio_threshold: 0.1 # The Larger, the more aggressive!!
+    min_z_diff_thr: -1.0 # [m]
+    ground_likelihood:
+        increment: 0.3
+        decrement: 0.1
+    region_proposal_thr: 0.5
+
+    minimum_num_pts: 5
+    rejection_ratio: 0
+
+    grid_resolution: 1.0
+    egocentric_grid_resolution: 0.2
+    range_of_interest: 12.0
+
+stop_for_each_frame: false
+
+extrinsic:
+    robot_body_size: 2.7
+    sensor_height: 1.73
+    rotation: [ 1, 0, 0,
+                0, 1, 0,
+                0, 0, 1 ]
+    translation: [ 0.0, 0.0, 0.0 ]
