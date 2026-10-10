@@ -42,6 +42,14 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
     last_failure_reason_ = FailureReason::INVALID_INPUT;
     return INFINITY;
   }
+  if (std::max(start_state.col(1).norm(), end_state.col(1).norm()) >
+          hard_velocity_limit * 1.001 ||
+      std::max(start_state.col(2).norm(), end_state.col(2).norm()) > cfg_.max_acc * 1.001) {
+    last_peak_velocity_ = std::max(start_state.col(1).norm(), end_state.col(1).norm());
+    last_peak_acceleration_ = std::max(start_state.col(2).norm(), end_state.col(2).norm());
+    last_failure_reason_ = FailureReason::DYNAMIC_FEASIBILITY;
+    return INFINITY;
+  }
 
   // 2. Pack variables x = [tau, xi]
   // tau: unconstrained time variables
@@ -81,77 +89,132 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
   lbfgs_params.delta = cfg_.opt_accuracy;  // Gradient tolerance
   lbfgs_params.max_iterations = 256;
 
-  // 4. Run the optimizer
-  // [Theory] L-BFGS is a limited-memory quasi-Newton method.
-  int ret = lbfgs::lbfgs_optimize(x,
-    minCostFunctional,
-    &MincoOptimizer::costFunctional,
-    nullptr,
-    nullptr,
-    &this->opt_vars_,
-    lbfgs_params);
-  last_iteration_count_ = opt_vars_.iter_num;
-  last_return_code_ = ret;
-  last_objective_total_ = minCostFunctional;
-  last_query_failure_count_ = opt_vars_.query_failure_count;
+  // Restore per-solve weights after any previous penalty continuation.
+  opt_vars_.penaltyWeights = cfg_.penaltyWeights;
+  opt_vars_.magnitudeBounds = cfg_.magnitudeBounds;
+  // A time stretch with fixed nonzero boundary derivatives is not a pure
+  // rescaling: it can increase overshoot and produce a very long crawl.
+  // Re-solve the original optimized variables with stronger dynamic penalties
+  // before accepting such a result or asking the planner for a stop endpoint.
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    // 4. Run the optimizer
+    // [Theory] L-BFGS is a limited-memory quasi-Newton method.
+    int ret = lbfgs::lbfgs_optimize(x, minCostFunctional, &MincoOptimizer::costFunctional, nullptr,
+                                    nullptr, &this->opt_vars_, lbfgs_params);
+    last_iteration_count_ = opt_vars_.iter_num;
+    last_return_code_ = ret;
+    last_objective_total_ = minCostFunctional;
+    last_query_failure_count_ = opt_vars_.query_failure_count;
 
-  if (cfg_.print_optimizer_log) {
-    cout << " -- [MincoOpt] Opt finish, with iter num: " << opt_vars_.iter_num << "\n";
-    cout << "\tEnergy: " << opt_vars_.penalty_log(0) << endl;
-    cout << "\tPos: " << opt_vars_.penalty_log(1) << endl;
-    cout << "\tVel: " << opt_vars_.penalty_log(2) << endl;
-    cout << "\tAcc: " << opt_vars_.penalty_log(3) << endl;
-    cout << "\tAttract: " << opt_vars_.penalty_log(4) << endl;
-    cout << "\tTime Barrier: " << opt_vars_.penalty_log(5) << endl;
-    cout << "\tOptimized Time: " << opt_vars_.times.norm() << endl;
-  }
+    if (cfg_.print_optimizer_log) {
+      cout << " -- [MincoOpt] Opt finish, with iter num: " << opt_vars_.iter_num << "\n";
+      cout << "\tEnergy: " << opt_vars_.penalty_log(0) << endl;
+      cout << "\tPos: " << opt_vars_.penalty_log(1) << endl;
+      cout << "\tVel: " << opt_vars_.penalty_log(2) << endl;
+      cout << "\tAcc: " << opt_vars_.penalty_log(3) << endl;
+      cout << "\tAttract: " << opt_vars_.penalty_log(4) << endl;
+      cout << "\tTime Barrier: " << opt_vars_.penalty_log(5) << endl;
+      cout << "\tOptimized Time: " << opt_vars_.times.norm() << endl;
+    }
 
-  if (ret >= 0 || ret == lbfgs::LBFGSERR_MAXIMUMITERATION) {
-    // 5. Decode the solution and build the output trajectory
-    gcopter::forwardMapTauToT(tau, opt_vars_.times);
-    opt_vars_.points = Eigen::Map<const Mat3Df>(xi.data(), 3, opt_vars_.piece_num - 1);
+    const bool line_search_stalled = ret == lbfgs::LBFGSERR_MINIMUMSTEP ||
+      ret == lbfgs::LBFGSERR_MAXIMUMLINESEARCH;
+    if (line_search_stalled && x.allFinite()) {
+      // L-BFGS restores x to its last accepted iterate on line-search failure.
+      // Recompute that iterate's objective before the independent hard checks.
+      VecDf gradient(x.size());
+      minCostFunctional = costFunctional(&opt_vars_, x, gradient);
+      last_objective_total_ = minCostFunctional;
+    }
+    if (std::isfinite(minCostFunctional) &&
+        (ret >= 0 || ret == lbfgs::LBFGSERR_MAXIMUMITERATION || line_search_stalled)) {
+      // 5. Decode the solution and build the output trajectory
+      gcopter::forwardMapTauToT(tau, opt_vars_.times);
+      opt_vars_.points = Eigen::Map<const Mat3Df>(xi.data(), 3, opt_vars_.piece_num - 1);
 
-    // opt_vars_.minco_solver_->setConditions(opt_vars_.headPVA, opt_vars_.tailPVA, opt_vars_.piece_num);
-    opt_vars_.minco_solver_->setParameters(opt_vars_.points, opt_vars_.times);
-    opt_vars_.minco_solver_->getTrajectory(out_traj);
+      // opt_vars_.minco_solver_->setConditions(opt_vars_.headPVA, opt_vars_.tailPVA,
+      // opt_vars_.piece_num);
+      opt_vars_.minco_solver_->setParameters(opt_vars_.points, opt_vars_.times);
+      opt_vars_.minco_solver_->getTrajectory(out_traj);
 
-    // Velocity and acceleration are soft integral penalties in the L-BFGS
-    // objective. Enforce the configured limits on the continuous polynomial by
-    // stretching all piece times uniformly and rebuilding MINCO with the same
-    // points and boundary PVA. This keeps the geometric seed and boundary
-    // conditions while removing narrow peaks that quadrature can miss.
-    if (!enforceDynamicFeasibility(out_traj, hard_velocity_limit)) {
+      // Velocity and acceleration are soft integral penalties in the L-BFGS
+      // objective. Enforce the configured limits on the continuous polynomial by
+      // stretching all piece times uniformly and rebuilding MINCO with the same
+      // points and boundary PVA. This keeps the geometric seed and boundary
+      // conditions while removing narrow peaks that quadrature can miss.
+      const double optimized_duration = out_traj.getTotalDuration();
+      if (cfg_.print_optimizer_log) {
+        std::cout << " -- [MincoOpt] Dynamic input attempt=" << attempt
+                  << " duration=" << optimized_duration
+                  << " peak_v=" << out_traj.getMaxVelRate()
+                  << " peak_a=" << out_traj.getMaxAccRate() << std::endl;
+      }
+      const bool feasible = enforceDynamicFeasibility(out_traj, hard_velocity_limit);
+      const bool moving_boundary =
+          start_state.col(1).norm() > 1.0e-3 || end_state.col(1).norm() > 1.0e-3 ||
+          start_state.col(2).norm() > 1.0e-3 || end_state.col(2).norm() > 1.0e-3;
+      const bool excessive_stretch =
+          moving_boundary && out_traj.getTotalDuration() > 1.15 * optimized_duration;
+      if (attempt < 2 && moving_boundary &&
+          (!feasible || excessive_stretch ||
+           out_traj.getTotalDuration() > cfg_.max_trajectory_duration)) {
+        opt_vars_.penaltyWeights(VEL_IDX) *= 10.0;
+        opt_vars_.penaltyWeights(ACC_IDX) *= 10.0;
+        opt_vars_.local_magnitudes = local_magnitudes.cwiseMin(0.95 * hard_velocity_limit);
+        opt_vars_.magnitudeBounds(2) = 0.95 * cfg_.max_acc;
+        // A short relative-objective plateau is not convergence after changing
+        // penalty scales, especially with many tightly guided pieces.
+        lbfgs_params.delta = std::min(cfg_.opt_accuracy, 1.0e-6);
+        lbfgs_params.past = 10;
+        continue;
+      }
+      if (!feasible) {
+        out_traj.clear();
+        last_objective_total_ = std::numeric_limits<double>::infinity();
+        last_failure_reason_ = FailureReason::DYNAMIC_FEASIBILITY;
+        return std::numeric_limits<double>::infinity();
+      }
+      last_total_duration_ = out_traj.getTotalDuration();
+      if (!std::isfinite(last_total_duration_) ||
+          last_total_duration_ > cfg_.max_trajectory_duration) {
+        out_traj.clear();
+        last_objective_total_ = std::numeric_limits<double>::infinity();
+        last_failure_reason_ = FailureReason::DURATION_LIMIT;
+        return std::numeric_limits<double>::infinity();
+      }
+
+      opt_vars_.init_ts = opt_vars_.times;
+      opt_vars_.init_ps.clear();
+      opt_vars_.init_ps.reserve(static_cast<size_t>(opt_vars_.points.cols()));
+      for (int i = 0; i < opt_vars_.points.cols(); ++i) {
+        opt_vars_.init_ps.emplace_back(opt_vars_.points.col(i));
+      }
+      opt_vars_.default_init = false;
+    } else {
+      // 5'. Optimization failed
       out_traj.clear();
-      last_objective_total_ = std::numeric_limits<double>::infinity();
-      last_failure_reason_ = FailureReason::DYNAMIC_FEASIBILITY;
-      return std::numeric_limits<double>::infinity();
+      minCostFunctional = INFINITY;
+      last_objective_total_ = INFINITY;
+      last_failure_reason_ = FailureReason::OPTIMIZATION;
     }
-    last_total_duration_ = out_traj.getTotalDuration();
-    if (!std::isfinite(last_total_duration_) ||
-        last_total_duration_ > cfg_.max_trajectory_duration) {
-      out_traj.clear();
-      last_objective_total_ = std::numeric_limits<double>::infinity();
-      last_failure_reason_ = FailureReason::DURATION_LIMIT;
-      return std::numeric_limits<double>::infinity();
-    }
-
-    opt_vars_.init_ts = opt_vars_.times;
-    opt_vars_.init_ps.clear();
-    opt_vars_.init_ps.reserve(static_cast<size_t>(opt_vars_.points.cols()));
-    for (int i = 0; i < opt_vars_.points.cols(); ++i) {
-      opt_vars_.init_ps.emplace_back(opt_vars_.points.col(i));
-    }
-    opt_vars_.default_init = false;
-  } else {
-    // 5'. Optimization failed
-    minCostFunctional = INFINITY;
-    last_failure_reason_ = FailureReason::OPTIMIZATION;
+    break;
   }
   return minCostFunctional;
 }
 
 void MincoOptimizer::validateConfig(const Config & cfg)
 {
+  if (!std::isfinite(cfg.obstacle_slowdown_distance) || cfg.obstacle_slowdown_distance < 0.0 ||
+    !std::isfinite(cfg.obstacle_max_velocity) || cfg.obstacle_max_velocity <= 0.0) {
+    throw std::invalid_argument("Obstacle approach speed configuration is invalid");
+  }
+  if (!std::isfinite(cfg.terminal_tangent_lookahead) || cfg.terminal_tangent_lookahead <= 0.0) {
+    throw std::invalid_argument("Terminal tangent lookahead must be finite and positive");
+  }
+  if (!std::isfinite(cfg.guide_lateral_weight) || cfg.guide_lateral_weight < 0.0 ||
+    !std::isfinite(cfg.guide_lateral_tolerance) || cfg.guide_lateral_tolerance < 0.0) {
+    throw std::invalid_argument("MincoOptimizer guide penalty must be finite and nonnegative");
+  }
   if (cfg.time_allocation_iters <= 0) {
     throw std::invalid_argument("MincoOptimizer time_allocation_iters must be greater than zero");
   }
@@ -210,6 +273,14 @@ bool MincoOptimizer::enforceDynamicFeasibility(
     const double acceleration_ratio = last_peak_acceleration_ / acceleration_limit;
     if (velocity_ratio <= 1.0 + kRelativeTolerance &&
         acceleration_ratio <= 1.0 + kRelativeTolerance) {
+      return true;
+    }
+    const bool boundary_at_limit = boundary_velocity >= 0.95 * velocity_limit ||
+      boundary_acceleration >= 0.95 * acceleration_limit;
+    if (boundary_at_limit && velocity_ratio <= 1.0 + kFinalNumericalTolerance &&
+        acceleration_ratio <= 1.0 + kFinalNumericalTolerance) {
+      // The fixed boundary cannot be slowed by stretching. Use the same final
+      // numerical tolerance here before repeated rebuilding distorts the path.
       return true;
     }
     if (iteration == cfg_.time_allocation_iters) {
@@ -299,6 +370,7 @@ double MincoOptimizer::costFunctional(void * ptr, const VecDf & x, VecDf & g)
     magnitudeBounds,
     local_magnitudes,
     penaltyWeights,
+    opt_vars_.guide_lateral_weight, opt_vars_.guide_lateral_tolerance,
     cost,
     partialGradByTimes,
     partialGradByCoeffs,
@@ -384,6 +456,7 @@ void MincoOptimizer::constraintsFunctional(const VecDf & T,
   const VecDf & magnitudeBounds,
   const VecDf & local_magnitudes,
   const VecDf & penaltyWeights,
+  double guide_lateral_weight, double guide_lateral_tolerance,
   // outputs
   double & cost,
   VecDf & partialGradByTimes,
@@ -482,6 +555,22 @@ void MincoOptimizer::constraintsFunctional(const VecDf & T,
       }
 
       // For attract point cost
+      // Penalize lateral bowing along the whole guide segment. Knot-only
+      // attraction leaves the middle of a polynomial free to cut a narrow gate.
+      if (guide_lateral_weight > 0.0) {
+        const Vec3f a = waypoint_attractor.col(i);
+        const Vec3f edge = waypoint_attractor.col(i + 1) - a;
+        const double fraction = edge.squaredNorm() > 1.0e-12 ?
+          std::clamp((pos - a).dot(edge) / edge.squaredNorm(), 0.0, 1.0) : 0.0;
+        const Vec3f lateral = pos - (a + fraction * edge);
+        const double deviation = lateral.norm();
+        if (deviation > guide_lateral_tolerance && deviation > 1.0e-9) {
+          const double excess = deviation - guide_lateral_tolerance;
+          gradPos += (2.0 * guide_lateral_weight * excess / deviation) * lateral;
+          tmp_cost += guide_lateral_weight * excess * excess;
+        }
+      }
+
       if (weightAtt > 0.0) {
         const auto is_end = ((j == integral_res) && (i != piece_num - 1));
         const auto idx = is_end ? i + 1 : i;

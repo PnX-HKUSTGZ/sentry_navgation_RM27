@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 #include <vector>
+#include <Eigen/Geometry>
 
 #include "minco_controller/mpc_solver.hpp"
 
@@ -46,6 +47,40 @@ TEST(MpcSolver, ValidProblemProducesFiniteBoundedControl) {
   EXPECT_LE(control.vx, 1.0);
   EXPECT_LE(std::hypot(control.vx, control.vy), 1.0 + 1.0e-9);
   EXPECT_EQ(prediction.size(), 4U);
+}
+
+TEST(MpcSolver, CrossTrackCorrectionFollowsHolonomicMotionAndRotatesWithPath) {
+  auto config = testConfig();
+  config.q_along = 3.0;
+  config.q_cross = 60.0;
+  config.R = Eigen::Vector3d(1.5, 1.5, 1.0);
+  config.use_acc_constraints = false;
+  for (const bool stopped_reference : {false, true}) {
+    Eigen::Vector2d baseline;
+    for (const double angle : {0.0, 0.785398163397, 1.570796326795, -0.7}) {
+      const Eigen::Rotation2Dd rotation(angle);
+      minco_controller::State state;
+      const Eigen::Vector2d position = rotation * Eigen::Vector2d(0.0, 0.04);
+      state.x = position.x();
+      state.y = position.y();
+      std::vector<minco_controller::ReferencePoint> reference(3);
+      for (size_t i = 0; i < reference.size(); ++i) {
+        reference[i].pos = rotation * Eigen::Vector2d(0.05 * (i + 1), 0.0);
+        reference[i].vel = rotation * Eigen::Vector2d(stopped_reference ? 0.0 : 0.5, 0.0);
+        reference[i].yaw = 0.0;  // The chassis does not turn with its path.
+      }
+      minco_controller::MpcSolver solver(config);
+      minco_controller::Control control;
+      ASSERT_TRUE(solver.solve(state, reference, control));
+      const Eigen::Vector2d command(control.vx, control.vy);
+      if (angle == 0.0) {
+        baseline = command;
+        EXPECT_LT(baseline.y(), -0.05);
+      } else {
+        EXPECT_TRUE(command.isApprox(rotation * baseline, 1.0e-5)) << "angle=" << angle;
+      }
+    }
+  }
 }
 
 TEST(MpcSolver, StationaryFrontierBootstrapReachesCommandDeadzone) {

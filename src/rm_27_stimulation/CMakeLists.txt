@@ -26,6 +26,15 @@ target_link_libraries(rm27_cmd_vel_pose_control_system
   gz-transport13::gz-transport13
 )
 
+add_library(rm27_ground_truth_odometry_system SHARED
+  src/ground_truth_odometry_system.cpp
+)
+target_include_directories(rm27_ground_truth_odometry_system PRIVATE include)
+target_link_libraries(rm27_ground_truth_odometry_system
+  gz-msgs10::gz-msgs10 gz-plugin2::gz-plugin2
+  gz-sim8::gz-sim8 gz-transport13::gz-transport13
+)
+
 add_executable(rm27_ground_truth_localizer
   src/ground_truth_localizer.cpp
 )
@@ -43,6 +52,13 @@ ament_target_dependencies(rm27_ground_truth_localizer
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_ground_truth_odometry test/test_ground_truth_odometry.cpp)
+  if(TARGET test_ground_truth_odometry)
+    target_include_directories(test_ground_truth_odometry PRIVATE include)
+    target_link_libraries(test_ground_truth_odometry
+      gz-msgs10::gz-msgs10 gz-sim8::gz-sim8)
+  endif()
 
   ament_add_gtest(test_ground_truth_twist_transform
     test/test_ground_truth_twist_transform.cpp
@@ -80,6 +96,7 @@ endif()
 
 install(TARGETS
   rm27_cmd_vel_pose_control_system
+  rm27_ground_truth_odometry_system
   rm27_ground_truth_localizer
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}

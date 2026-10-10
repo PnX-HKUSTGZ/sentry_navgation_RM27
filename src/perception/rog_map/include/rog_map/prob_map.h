@@ -125,6 +125,9 @@ namespace rog_map {
         std::vector<float> occupancy_buffer_;
         std::vector<double> last_hit_time_;
         std::vector<double> last_update_time_;
+        std::vector<float> hit_z_min_;
+        std::vector<float> hit_z_max_;
+        std::vector<double> hit_height_stamp_;
         std::vector<int> active_ids_;
         std::vector<uint8_t> active_flags_;
         std::vector<int> dirty_column_ids_;
@@ -192,6 +195,7 @@ namespace rog_map {
         void raycastProcessParallel(const PointCloud &input_cloud, const Vec3f &cur_odom);
 
         void insertUpdateCandidate(const Vec3i &id_g, bool is_hit);
+        void recordHitHeight(const Vec3i &id_g, double z);
         void markDirtyColumn(const Vec3i &id_g);
         void clearDirtyColumns();
         void markAllDirtyColumns();

@@ -25,6 +25,11 @@ double calCurvatureDecay(
   double angle, double global_vmax, double deadzone, double saturation, double min_vel, double decay_power);
 
 // === Path Geometry Utilities ===
+bool initialPathTangent(const std::vector<Eigen::Vector3d> & path,
+  double lookahead, Eigen::Vector3d & tangent);
+bool forwardPathTangent(const std::vector<geometry_msgs::msg::PoseStamped> & path,
+  const Eigen::Vector3d & position, double lookahead, Eigen::Vector3d & tangent);
+
 // --- Velocity Profile Mapping ---
 double getDistFromTrapezoid(
   double t, double total_length, double a_ref, double v_peak, double t_acc, double t_flat, double t_dec);
@@ -64,7 +69,8 @@ void publishOptimizedTrajectory(const traj_opt::Trajectory & opt_traj,
   const std_msgs::msg::Header & header,
   const builtin_interfaces::msg::Time & planning_stamp,
   int steps,
-  double t_step);
+  double t_step,
+  uint8_t command_flag = ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND);
 
 // --- Backup Trajectory Publishing ---
 ros_interfaces::msg::MpcPositionCommand makeBackupTrajectoryCommand(
@@ -86,7 +92,17 @@ void publishBackupTrajectory(const traj_opt::Trajectory & backup_traj,
   double t_step,
   double fallback_yaw);
 
+// --- Validated Heading Selection ---
+bool selectSafeYawTrajectory(const traj_opt::Trajectory & position,
+  double measured_yaw, traj_opt::Trajectory & yaw,
+  const std::function<bool(const traj_opt::Trajectory &)> & is_safe,
+  bool & held_yaw);
+
 // --- Escape Trajectory Construction ---
+bool makeBrakingTrajectories(const Eigen::Vector3d & position,
+  const Eigen::Vector3d & velocity, double yaw, double max_acceleration,
+  traj_opt::Trajectory & position_traj, traj_opt::Trajectory & yaw_traj);
+
 bool makeEscapeTrajectories(const geometry_msgs::msg::PoseStamped & current_pose,
   const Eigen::Vector2d & escape_vel,
   double current_yaw,

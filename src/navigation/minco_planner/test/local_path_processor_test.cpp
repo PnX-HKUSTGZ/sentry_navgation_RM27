@@ -185,9 +185,38 @@ TEST(LocalPathProcessorTest, FullFootprintClipsBeforeUnknownObservedBoundary)
   EXPECT_GT(seed.dense_path.back().x(), 0.50);
 }
 
+TEST(LocalPathProcessorTest, SafeSubcellPoseCanConnectToSnappedGlobalStart)
+{
+  auto query = std::make_shared<TestGridQuery>([](double x, double) {
+    return x < 0.05 ? nav2_costmap_2d::LETHAL_OBSTACLE : nav2_costmap_2d::FREE_SPACE;
+  });
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  const std::vector<geometry_msgs::msg::PoseStamped> path{
+    pose(0.075, 0.025), pose(0.125, 0.025), pose(0.175, 0.025), pose(0.80, 0.025)};
+  const auto start = pose(0.049, 0.025);
+  const auto exact_body_is_safe = [](const Eigen::Vector3d & p, double) {return p.x() >= 0.045;};
+  const auto seed = processor.buildSeed(path, start, context, exact_body_is_safe);
+  ASSERT_TRUE(seed.valid);
+  ASSERT_GE(seed.sparse_waypoints.size(), 3U);
+  EXPECT_NEAR(seed.sparse_waypoints.front().x(), 0.049, 1.0e-9);
+  EXPECT_NEAR(seed.sparse_waypoints[1].x(), 0.075, 1.0e-9);
+  // The exception covers no unsafe footprint or swept obstacle.
+  EXPECT_FALSE(processor.buildSeed(path, start, context,
+    [](const Eigen::Vector3d &, double) {return false;}).valid);
+  EXPECT_FALSE(processor.buildSeed(path, start, context,
+    [](const Eigen::Vector3d & p, double) {return p.x() < 0.055;}).valid);
+  auto long_mask = std::make_shared<TestGridQuery>([](double x, double) {
+    return x < 0.30 ? nav2_costmap_2d::LETHAL_OBSTACLE : nav2_costmap_2d::FREE_SPACE;
+  });
+  EXPECT_FALSE(processor.buildSeed(path, start, makeContext(long_mask), exact_body_is_safe).valid);
+}
+
 TEST(LocalPathProcessorTest, ObservedPrefixStopKeepsMeasuredOmniYaw)
 {
   LocalPathSeed rolling_seed;
+  EXPECT_FALSE(shouldOptimizeYawForSeed(true, rolling_seed));
+  rolling_seed.local_end_is_goal = true;
   EXPECT_TRUE(shouldOptimizeYawForSeed(true, rolling_seed));
 
   rolling_seed.observed_prefix_clipped = true;

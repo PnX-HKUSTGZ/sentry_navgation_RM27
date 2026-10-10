@@ -390,6 +390,9 @@ public:
     headroom_voxel_inset_fraction = 0.5;
     body_bottom_clearance = 0.04;
     ground_seed_tolerance = 0.05;
+    ground_connectivity_hold_time = 0.0;
+    overhead_ground_search_radius = 0.60;
+    overhead_ground_history_time = 1.0;
     max_ground_height_delta = 0.35;
     max_ground_step = 0.05;
     max_ground_slope_deg = 28.0;
@@ -471,6 +474,9 @@ public:
          headroom_voxel_inset_fraction);
     load("projection.body_bottom_clearance", body_bottom_clearance);
     load("projection.ground_seed_tolerance", ground_seed_tolerance);
+    load("projection.ground_connectivity_hold_time", ground_connectivity_hold_time);
+    load("projection.overhead_ground_search_radius", overhead_ground_search_radius);
+    load("projection.overhead_ground_history_time", overhead_ground_history_time);
     load("projection.max_ground_height_delta", max_ground_height_delta);
     load("projection.max_ground_step", max_ground_step);
     load("projection.max_ground_slope_deg", max_ground_slope_deg);
@@ -628,6 +634,9 @@ public:
         !std::isfinite(body_bottom_clearance) || body_bottom_clearance < 0.0 ||
         body_bottom_clearance >= vehicle_height ||
         !std::isfinite(ground_seed_tolerance) || ground_seed_tolerance < 0.0 ||
+        !std::isfinite(ground_connectivity_hold_time) || ground_connectivity_hold_time < 0.0 ||
+        !std::isfinite(overhead_ground_search_radius) || overhead_ground_search_radius <= 0.0 ||
+        !std::isfinite(overhead_ground_history_time) || overhead_ground_history_time < 0.0 ||
         !std::isfinite(max_ground_height_delta) ||
         max_ground_height_delta < ground_seed_tolerance ||
         !std::isfinite(max_ground_step) || max_ground_step < 0.0 ||
@@ -906,6 +915,9 @@ public:
   double headroom_voxel_inset_fraction{0.5};
   double body_bottom_clearance{0.04};
   double ground_seed_tolerance{0.05};
+  double ground_connectivity_hold_time{0.0};
+  double overhead_ground_search_radius{0.60};
+  double overhead_ground_history_time{1.0};
   double max_ground_height_delta{0.35};
   double max_ground_step{0.05};
   double max_ground_slope_deg{28.0};

@@ -95,7 +95,8 @@ void transformPriorMapPoint(const PriorMapTransform2D &transform, double rog_x,
                             double rog_y, double &map_x, double &map_y);
 
 bool updatePriorMapTransform(PriorMapData &prior_map,
-                             const PriorMapTransform2D &transform);
+                             const PriorMapTransform2D &transform,
+                             double horizontal_tolerance = 1.0e-5);
 
 bool invalidatePriorMapTransform(PriorMapData &prior_map);
 

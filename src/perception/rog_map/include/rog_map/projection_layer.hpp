@@ -36,7 +36,9 @@ enum class ProjectionClassReason : uint8_t {
   GROUND_BRIDGE_CLEARANCE_OK,
   CLEARANCE_DROPOUT_HOLD,
   CLEARANCE_BOUNDED_HOLE_FILL,
-  SURVEYED_NEAR_FIELD_CLEAR
+  SURVEYED_NEAR_FIELD_CLEAR,
+  GROUND_CONNECTIVITY_HOLD,
+  OVERHEAD_GROUND_UNVERIFIED
 };
 
 inline bool isMeasuredObstacleReason(ProjectionClassReason reason) {
@@ -85,6 +87,8 @@ struct CellData {
   uint8_t empty_support_verified{0};
   float ground_support_z_abs{std::numeric_limits<float>::quiet_NaN()};
   uint8_t clearance_verified{0};
+  uint8_t candidate_clearance_verified{0};
+  uint8_t candidate_traversable{0};
   uint8_t footprint_clear_eligible{0};
   uint8_t clearance_dropout_eligible{0};
   uint8_t near_field_prior_fill_eligible{0};
@@ -101,6 +105,12 @@ struct CellData {
   float last_update_time{0.0f};
   double occupied_clear_deadline{0.0};
   double clearance_dropout_deadline{0.0};
+  double ground_connectivity_deadline{0.0};
+  float connected_ground_z_abs{std::numeric_limits<float>::quiet_NaN()};
+  uint8_t local_overhead_candidate{0};
+  double ground_hit_stamp{0.0};
+  double observed_ground_stamp{0.0};
+  float observed_ground_z_abs{std::numeric_limits<float>::quiet_NaN()};
 };
 
 inline bool hasVerifiedOverheadClearance(const CellData &cell) {
@@ -177,6 +187,9 @@ struct ProjectionLayerConfig {
   double headroom_voxel_inset_fraction{0.5};
   double body_bottom_clearance{0.04};
   double ground_seed_tolerance{0.05};
+  double ground_connectivity_hold_time{0.0};
+  double overhead_ground_search_radius{0.60};
+  double overhead_ground_history_time{1.0};
   double max_ground_height_delta{0.35};
   double max_ground_step{0.05};
   double max_ground_slope_deg{28.0};
@@ -208,6 +221,9 @@ struct ColumnStats {
   uint8_t ground_support_known{0};
   double ground_support_z_abs{std::numeric_limits<double>::quiet_NaN()};
   std::vector<VerticalVoxelState> vertical_states;
+  std::vector<float> hit_z_min;
+  std::vector<float> hit_z_max;
+  std::vector<double> hit_stamps;
 };
 
 struct ProjectionUpdateStats {
@@ -287,7 +303,7 @@ private:
   void stageOneCell(int x, int y, double now,
                     const ProjectionLayerConfig &config,
                     const ColumnScanner &scanner);
-  void resolveGroundConnectivityAndCommit(double now,
+  void resolveGroundConnectivityAndCommit(double now, const ColumnScanner &scanner,
                                           const ProjectionLayerConfig &config);
   void commitCell(CellData &cell, CellType raw_type,
                   ProjectionClassReason raw_reason, double now,

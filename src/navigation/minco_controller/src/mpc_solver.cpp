@@ -112,18 +112,28 @@ bool MpcSolver::buildCondensedQP(const State &curr,
   Eigen::MatrixXd Q_bar = Eigen::MatrixXd::Zero(nX, nX);
   Eigen::MatrixXd R_bar = Eigen::MatrixXd::Zero(nU, nU);
   for (int i = 0; i < N; ++i) {
-    const double yaw_ref = ref_traj[i].yaw;
-    const double c = std::cos(yaw_ref);
-    const double s = std::sin(yaw_ref);
-    // Q_xy = R^T * diag(q_along, q_cross) * R  (R is 2D rotation by yaw_ref)
-    // R = [c, -s; s, c], so:
-    // Q_xy = [c*q_along*c + s*q_cross*s,   c*q_along*(-s) + s*q_cross*c;
-    //         (-s)*q_along*c + c*q_cross*s, (-s)*q_along*(-s) + c*q_cross*c]
+    // A holonomic chassis may translate sideways while keeping its yaw.
+    // Resolve tracking errors along the path tangent, not the chassis heading.
+    Eigen::Vector2d tangent = ref_traj[i].vel;
+    if (tangent.squaredNorm() < 1.0e-8 && i + 1 < N) {
+      tangent = ref_traj[i + 1].pos - ref_traj[i].pos;
+    }
+    if (tangent.squaredNorm() < 1.0e-8 && i > 0) {
+      tangent = ref_traj[i].pos - ref_traj[i - 1].pos;
+    }
+    if (tangent.squaredNorm() < 1.0e-8) {
+      tangent = {std::cos(ref_traj[i].yaw), std::sin(ref_traj[i].yaw)};
+    } else {
+      tangent.normalize();
+    }
+    const double c = tangent.x();
+    const double s = tangent.y();
+    // Q_xy = q_cross * I + (q_along - q_cross) * tangent * tangent^T.
     const double qa = config_.q_along;
     const double qc = config_.q_cross;
     Q_bar(i * nx + 0, i * nx + 0) = qa * c * c + qc * s * s;
-    Q_bar(i * nx + 0, i * nx + 1) = (qc - qa) * c * s;
-    Q_bar(i * nx + 1, i * nx + 0) = (qc - qa) * c * s;
+    Q_bar(i * nx + 0, i * nx + 1) = (qa - qc) * c * s;
+    Q_bar(i * nx + 1, i * nx + 0) = (qa - qc) * c * s;
     Q_bar(i * nx + 1, i * nx + 1) = qa * s * s + qc * c * c;
     Q_bar(i * nx + 2, i * nx + 2) = config_.Q.z(); // yaw weight unchanged
 

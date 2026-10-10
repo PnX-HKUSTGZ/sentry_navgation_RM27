@@ -64,16 +64,24 @@ python3 src/rm_27_stimulation/tools/import_rm27_robot_cad.py --force
 Xacro 默认 `use_cad_visual:=true`、
 `cad_visual_scale:=1.0`，不再显示旧方盒/圆柱占位外观。
 
-物理和导航模型同步使用 CAD 提取值：
+当前仿真使用 240 mm 车高版本；轮子和水平尺寸保留 CAD 提取值，上部视觉网格在 Xacro 中压低：
 
 - 四个轮心位于 `(+/-0.218, +/-0.218) m`，含滚子的等效接触半径为 `0.080 m`。
 - 车体用缩小后的中心圆柱和上层方盒近似碰撞，轮地接触用四个球体；
   高面数视觉 STL 不参与 Bullet 碰撞。
+  上层方盒覆盖轮轴上方 `0.12..0.16 m`，最高碰撞点离地 `0.240 m`。
+  倾斜的传感器碰撞盒缩为 `0.076 x 0.048 x 0.040 m`，避免它超过车身顶部；不能用整车宽度
+  外加更高的方盒代替，否则车体倾斜时会挂住南侧坡口横梁。
 - Nav2 与 MINCO 使用同一个 CAD 凸包外扩 15 mm 的 16 点安全轮廓，最大半径为
   `0.392 m`。
 - Mid360 相对 `base_link` 恢复为 `[0.0, 0.126, 0.130] m`，roll 为 `-30 deg`，
   雷达原点离地高度约 `0.210 m`；
-  ROG 折叠车高为 `0.25 m`。
+  ROG 折叠车高为 `0.24 m`，自身点云过滤顶面加余量低于 `0.25 m`，保留低洞顶回波。
+- 仿真 `MincoPlanner.priormap.static_clearance_mode: polygon` 根据当前物理车身 yaw
+  旋转同一套安全多边形，再检查完整障碍栅格和 5 cm 栅格余量。
+  全局不再把 0.443 m 外接圆作为所有朝向的通行边界；局部仍检查实际轨迹的车身和 yaw。
+  当前车身对齐 0.8 m 通道可搜索通过；转角和坡口姿态仍需实际碰撞验证。
+  默认 `circle` 保留未切换配置的既有行为；实车尺寸不随仿真车高修改。
 - ROG 的 `projection.sensor_mount_rpy: [-0.523598775598, 0.0, 0.0]` 从雷达里程计
   扣除固定安装角，再计算地面切平面和车体方向；点云变换和射线起点仍使用真实雷达姿态。
   不能把该参数当作地面坡度或直接从点云坐标里去掉 roll。
@@ -107,6 +115,12 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False gui:=false use_rviz:=true
 ```
+
+MINCO 仿真速度集中在 `pb2025_nav_bringup/config/simulation/minco_params.yaml`：
+`controller_server.MincoMpc.max_planar_speed` 和优化器 `max_velocity` 均为 `1.5 m/s`，
+坡面 `slope_speed_limit` 为 `1.0 m/s`，规划与 MPC 加速度上限均为 `1.5 m/s^2`。
+`uphill_startup_min_command_speed: 1.0` 是有安全运动方向时的上坡助力指令，
+不是实际车速保证，也不绕过碰撞或停车检查。
 
 ### 核显加速
 
@@ -163,10 +177,12 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False
   `ros_gz_bridge` 会把点云桥接回 ROS 侧的 `livox/lidar`。
 - 旧的 Classic `ros2_livox` 自定义扫描插件不再编译。当前 Mid360 使用 Harmonic
   原生 `gpu_lidar` 近似 3D 点云，不再发布 `livox_ros_driver2/msg/CustomMsg`。
-- 默认真值链路是 `Gazebo OdometryPublisher -> ros_gz_bridge ->
+- 默认真值链路是 `GroundTruthOdometrySystem -> ros_gz_bridge ->
   rm27_ground_truth_localizer`。该节点统一发布 `/odometry`、`map -> odom ->
   base_footprint`，并把 `/livox/lidar` 转换为真值坐标下的 `/registered_scan`；
   `terrain_analysis` 和 `terrain_analysis_ext` 仍正常处理地形点云。
+  真值插件以 50 Hz 发布物理引擎的位姿和速度，速度转到 `base_footprint` 后再发布，
+  避免坡面静止时对四元数差分产生无效角速度；无效物理状态仍会被拒绝。
 - `use_ground_truth_odom:=false` 才会恢复原有 `/livox/lidar ->
   ign_sim_pointcloud_tool -> Point-LIO -> loam_interface -> sensor_scan_generation`
   和 small_gicp 重定位链路。

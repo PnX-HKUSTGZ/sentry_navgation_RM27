@@ -47,7 +47,9 @@ bool finiteOdometry(const nav_msgs::msg::Odometry & odom)
 
 bool validNormalCommand(const ros_interfaces::msg::MpcPositionCommand & command, std::string * reason)
 {
-  if (command.command_flag != ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND) {
+  if (command.command_flag != ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND &&
+      command.command_flag != ros_interfaces::msg::MpcPositionCommand::BRAKING_COMMAND &&
+      command.command_flag != ros_interfaces::msg::MpcPositionCommand::RECOVERY_COMMAND) {
     setReason(reason, "NOT_NORMAL");
     return false;
   }
@@ -87,6 +89,51 @@ bool validNormalCommand(const ros_interfaces::msg::MpcPositionCommand & command,
     }
   }
 
+  setReason(reason, "NONE");
+  return true;
+}
+
+bool validRecoveryCommand(const ros_interfaces::msg::MpcPositionCommand & command,
+  double max_speed, double max_distance, double max_duration, std::string * reason)
+{
+  if (command.command_flag != ros_interfaces::msg::MpcPositionCommand::RECOVERY_COMMAND ||
+      !validNormalCommand(command, reason) || command.cmds.size() < 2U ||
+      !std::isfinite(max_speed) || max_speed <= 0.0 ||
+      !std::isfinite(max_distance) || max_distance <= 0.0 ||
+      !std::isfinite(max_duration) || max_duration <= 0.0) {
+    setReason(reason, "INVALID_RECOVERY");
+    return false;
+  }
+  const auto & first = command.cmds.front();
+  const double speed = std::hypot(first.velocity.x, first.velocity.y);
+  if (speed <= 1.0e-6 || speed > max_speed + 1.0e-6) {
+    setReason(reason, "RECOVERY_SPEED");
+    return false;
+  }
+  const double dx = first.velocity.x / speed, dy = first.velocity.y / speed;
+  double previous_progress = 0.0;
+  for (const auto & point : command.cmds) {
+    const double x = point.position.x - first.position.x;
+    const double y = point.position.y - first.position.y;
+    const double progress = x * dx + y * dy;
+    if (progress < previous_progress - 1.0e-6 ||
+        progress > max_distance + 1.0e-6 || progress / speed > max_duration + 1.0e-6 ||
+        std::abs(x * dy - y * dx) > 1.0e-6 ||
+        std::hypot(point.velocity.x - first.velocity.x, point.velocity.y - first.velocity.y) > 1.0e-6 ||
+        std::abs(point.velocity.z) > 1.0e-6 ||
+        std::abs(point.position.z - first.position.z) > 1.0e-6 ||
+        std::abs(std::remainder(point.yaw - first.yaw, 2.0 * std::acos(-1.0))) > 1.0e-6 ||
+        std::abs(point.yaw_dot) > 1.0e-6 ||
+        std::hypot(point.acceleration.x, point.acceleration.y) > 1.0e-6) {
+      setReason(reason, "RECOVERY_NOT_BOUNDED_STRAIGHT");
+      return false;
+    }
+    previous_progress = progress;
+  }
+  if (previous_progress <= 1.0e-6) {
+    setReason(reason, "RECOVERY_ZERO_LENGTH");
+    return false;
+  }
   setReason(reason, "NONE");
   return true;
 }

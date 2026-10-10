@@ -1496,7 +1496,7 @@ TEST(ProjectionClearance,
       layer.cells().at(4U * width + 4U);
   EXPECT_EQ(roof_without_surrounding_ground.type, rog_map::CellType::OCCUPIED);
   EXPECT_EQ(roof_without_surrounding_ground.raw_reason,
-            rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+            rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
   EXPECT_EQ(roof_without_surrounding_ground.clearance_verified, 0U);
 
   rog_map::ProjectionLayer static_free_layer;
@@ -1844,6 +1844,71 @@ TEST(ProjectionClearance, RobotTangentPlaneSeedsObservedDownhillTerrain) {
   EXPECT_NEAR(verified_downhill.reference_ground_z_abs, 0.04F, 1.0e-5F);
   EXPECT_LE(verified_downhill.support_match_error,
             verified_downhill.support_match_tolerance + 1.0e-6F);
+}
+
+TEST(ProjectionClearance, GroundConnectivityHoldExpiresWithoutRenewingItself) {
+  auto config = clearanceConfig();
+  config.reference_ground_z_abs = 0.0;
+  config.ground_connectivity_hold_time = 0.8;
+  rog_map::ProjectionLayer layer;
+  const auto scan = [](int, int) { return groundColumn(0.0, kResolution); };
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config, scan);
+  ASSERT_EQ(center(layer).type, rog_map::CellType::PASSABLE);
+
+  config.reference_ground_z_abs = 0.20;
+  for (double time : {1.1, 1.4, 1.7}) {
+    layer.updateDirty(kWidth, kHeight, kResolution, kOrigin, time, config,
+                      scan, {}, false);
+    EXPECT_EQ(center(layer).type, rog_map::CellType::PASSABLE);
+    EXPECT_EQ(center(layer).raw_reason,
+              rog_map::ProjectionClassReason::GROUND_CONNECTIVITY_HOLD);
+  }
+  layer.updateDirty(kWidth, kHeight, kResolution, kOrigin, 1.81, config,
+                    scan, {}, false);
+  EXPECT_EQ(center(layer).raw_reason, rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+}
+
+TEST(ProjectionClearance, GroundConnectivityHoldDoesNotHideChangedSurfaceOrObstacle) {
+  for (bool low_ceiling : {false, true}) {
+    auto config = clearanceConfig();
+    config.reference_ground_z_abs = 0.0;
+    config.ground_connectivity_hold_time = 0.8;
+    rog_map::ProjectionLayer layer;
+    layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+                 [](int, int) { return groundColumn(0.0, kResolution); });
+    ASSERT_EQ(center(layer).type, rog_map::CellType::PASSABLE);
+    config.reference_ground_z_abs = 0.30;
+    layer.update(kWidth, kHeight, kResolution, kOrigin, 1.1, config,
+                 [low_ceiling](int, int) {
+                   return low_ceiling ? column({0, 2}) : groundColumn(0.10, kResolution);
+                 });
+    EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+    EXPECT_NE(center(layer).raw_reason, rog_map::ProjectionClassReason::GROUND_CONNECTIVITY_HOLD);
+  }
+}
+
+TEST(ProjectionClearance, IncrementalConnectivityRetainsIndependentClearanceEvidence) {
+  auto config = clearanceConfig();
+  config.reference_ground_z_abs = 0.0;
+  config.ground_seed_tolerance = 0.18;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = 0.20;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.30;
+  config.robot_footprint_clear_width = 0.30;
+  config.robot_x = -1.0;
+  config.ground_seed_radius = 0.5;
+  rog_map::ProjectionLayer incremental, full;
+  const auto scan = [](int, int) { return groundColumn(0.10, kResolution); };
+  incremental.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config, scan);
+  ASSERT_EQ(center(incremental).type, rog_map::CellType::OCCUPIED);
+  config.robot_x = 0.25;
+  incremental.updateDirty(kWidth, kHeight, kResolution, kOrigin, 1.1, config, scan, {}, false);
+  full.update(kWidth, kHeight, kResolution, kOrigin, 1.1, config, scan);
+  ASSERT_EQ(center(full).type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(center(incremental).type, center(full).type);
+  EXPECT_EQ(center(incremental).ground_verified, 1U);
 }
 
 TEST(ProjectionClearance,
@@ -3183,6 +3248,28 @@ TEST(PriorMapFusion, TransformChangeInvalidatesProjectionCache) {
   EXPECT_FALSE(rog_map::invalidatePriorMapTransform(prior));
 }
 
+TEST(PriorMapFusion, TransformUsesConfiguredHorizontalTolerance) {
+  rog_map::PriorMapData prior;
+  prior.loaded = true;
+  rog_map::PriorMapTransform2D transform;
+  transform.roll = 2.0e-5;
+  transform.pitch = -2.0e-5;
+
+  EXPECT_FALSE(rog_map::updatePriorMapTransform(prior, transform));
+  EXPECT_FALSE(prior.transform_ready);
+  EXPECT_TRUE(rog_map::updatePriorMapTransform(prior, transform, 0.01));
+  EXPECT_TRUE(prior.transform_ready);
+
+  prior.projection_cache_ready = true;
+  transform.pitch = 0.02;
+  EXPECT_TRUE(rog_map::updatePriorMapTransform(prior, transform, 0.01));
+  EXPECT_FALSE(prior.transform_ready);
+  EXPECT_FALSE(prior.projection_cache_ready);
+
+  EXPECT_FALSE(rog_map::updatePriorMapTransform(prior, transform, -1.0));
+  EXPECT_FALSE(prior.transform_ready);
+}
+
 TEST(PriorMapLoader, PreservesMapSaverGrayAsUnknownWithStandardThreshold) {
   const auto test_dir = std::filesystem::temp_directory_path() /
                         "rog_map_prior_loader_threshold_test";
@@ -3429,6 +3516,214 @@ TEST(PriorMapLoader, SlidingProjectionKeepsGroundSupportAligned) {
   EXPECT_NEAR(prior.cached_ground_support_z.at(5U), 0.25, 1.0e-6);
 
   std::filesystem::remove_all(test_dir);
+}
+
+rog_map::ColumnStats preciseTunnelColumn(bool ground, bool roof, double ceiling = 0.2499) {
+  rog_map::ColumnStats stats;
+  stats.scan_z_min_abs = 0.025;
+  stats.vertical_states.assign(16, rog_map::VerticalVoxelState::KNOWN_FREE);
+  stats.hit_z_min.assign(16, NAN);
+  stats.hit_z_max.assign(16, NAN);
+  stats.hit_stamps.assign(16, 0.0);
+  stats.observed_count = 16;
+  stats.prior_known_free = 1U;
+  stats.last_hit_time = 1.0;
+  const auto hit = [&](int index, float low, float high) {
+    stats.vertical_states[index] = rog_map::VerticalVoxelState::OCCUPIED;
+    stats.hit_z_min[index] = low;
+    stats.hit_z_max[index] = high;
+    stats.hit_stamps[index] = 1.0;
+    ++stats.occupied_count;
+  };
+  if (ground) { hit(0, 0.0F, 0.0F); }
+  if (roof) {
+    const int first = static_cast<int>(std::floor(ceiling / 0.05));
+    for (int index = first; index <= first + 3; ++index) {
+      hit(index, static_cast<float>(ceiling + (index - first) * 0.05),
+          static_cast<float>(ceiling + (index - first) * 0.05));
+    }
+  }
+  return stats;
+}
+
+rog_map::ProjectionLayerConfig downhillTunnelConfig() {
+  auto config = clearanceConfig();
+  config.robot_x = 0.325;
+  config.robot_y = 0.325;
+  config.reference_ground_z_abs = 0.15;
+  config.vehicle_height = 0.24;
+  config.headroom_margin = 0.0;
+  config.headroom_voxel_inset_fraction = 0.0;
+  config.surface_height_delta_max = 0.12;
+  config.ground_seed_tolerance = 0.18;
+  config.ground_seed_radius = 2.0;
+  config.observed_empty_as_free = true;
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+  config.unknown_as_occupied = false;
+  config.clearance_unknown_as_occupied = false;
+  return config;
+}
+
+TEST(ProjectionClearance, RawHeightsPreserve249mmTunnelFor240mmBody) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int, int) {
+    return preciseTunnelColumn(true, true);
+  });
+  const auto &cell = layer.cells().at(84);
+  EXPECT_EQ(cell.type, rog_map::CellType::PASSABLE);
+  EXPECT_NEAR(cell.headroom, 0.2499, 1e-6);
+  EXPECT_NEAR(cell.ground_z_abs, 0.0, 1e-6);
+}
+
+TEST(ProjectionClearance, DownhillRoofFindsSparseLowerLandingOutsideOldRadius) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  layer.update(25, 25, 0.05, kOrigin, 1.0, config, [](int x, int y) {
+    const double distance = std::hypot(x - 12, y - 12) * 0.05;
+    return preciseTunnelColumn(distance >= 0.35 && distance <= 0.45,
+                               x == 12 && y == 12);
+  });
+  const auto &roof = layer.cells().at(312);
+  EXPECT_EQ(roof.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(roof.raw_reason, rog_map::ProjectionClassReason::OVERHEAD_CLEARANCE_OK);
+  EXPECT_NEAR(roof.headroom, 0.2499, 1e-6);
+  EXPECT_EQ(rog_map::navigationOverlayValue(roof), 0);
+}
+
+TEST(ProjectionClearance, PendingRoofIsLocallyBlockedButNotGlobalObstacle) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int x, int y) {
+    return preciseTunnelColumn(false, x == 6 && y == 6);
+  });
+  const auto &roof = layer.cells().at(84);
+  EXPECT_EQ(roof.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(roof.value, 254U);
+  EXPECT_EQ(roof.raw_reason, rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+  EXPECT_EQ(rog_map::navigationOverlayValue(roof), -1);
+}
+
+TEST(ProjectionClearance, MeasuredLowBeamStillBlocksAndMarksGlobalObstacle) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int x, int y) {
+    const bool roof = x == 6 && y == 6;
+    return preciseTunnelColumn(!roof, roof, 0.21);
+  });
+  const auto &roof = layer.cells().at(84);
+  EXPECT_EQ(roof.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(roof.raw_reason, rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+  EXPECT_EQ(rog_map::navigationOverlayValue(roof), 100);
+}
+
+TEST(ProjectionClearance, RoofFloorHistoryExpiresWithoutRenewingOnDirtyUpdate) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int, int) {
+    return preciseTunnelColumn(true, false);
+  });
+  const auto scan = [](int x, int y) {
+    return preciseTunnelColumn(false, x == 6 && y == 6);
+  };
+  layer.update(13, 13, 0.05, kOrigin, 1.1, config, scan);
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::PASSABLE);
+  layer.updateDirty(13, 13, 0.05, kOrigin, 1.9, config, scan, {}, false);
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::PASSABLE);
+  layer.updateDirty(13, 13, 0.05, kOrigin, 2.1, config, scan, {}, false);
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(layer.cells().at(84).raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+}
+
+TEST(ProjectionClearance, LocalGroundRecheckRetainsNonzeroBodyObservationGate) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  config.min_observed_overhead_headroom_known_ratio = 0.8;
+  const auto scan = [](bool known, int x, int y) {
+    const bool roof = x == 6 && y == 6;
+    auto stats = preciseTunnelColumn(!roof, roof);
+    if (roof && !known) {
+      for (auto &state : stats.vertical_states) {
+        if (state == rog_map::VerticalVoxelState::KNOWN_FREE) {
+          state = rog_map::VerticalVoxelState::UNKNOWN;
+        }
+      }
+      stats.observed_count = stats.occupied_count;
+    }
+    return stats;
+  };
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config,
+               [&](int x, int y) { return scan(false, x, y); });
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(layer.cells().at(84).raw_reason, rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED);
+  layer.update(13, 13, 0.05, kOrigin, 1.1, config,
+               [&](int x, int y) { return scan(true, x, y); });
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::PASSABLE);
+}
+
+TEST(ProjectionClearance, DownhillContactTangentOnlyResolvesCurrentGroundEnvelope) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  config.robot_x = 0.225;
+  config.reference_ground_z_abs = 0.03;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = -0.12;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.82;
+  config.robot_footprint_clear_width = 0.82;
+  const auto scan = [](int x, int y) {
+    return preciseTunnelColumn(false, (x == 10 || x == 20) && y == 6);
+  };
+  layer.update(25, 13, 0.05, kOrigin, 1.0, config, scan);
+  const auto &near = layer.cells().at(6 * 25 + 10);
+  EXPECT_EQ(near.type, rog_map::CellType::PASSABLE);
+  EXPECT_NEAR(near.reference_ground_z_abs, -0.006, 1e-6);
+  EXPECT_EQ(layer.cells().at(6 * 25 + 20).raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+
+  config.reference_ground_plane_valid = false;
+  layer.updateDirty(25, 13, 0.05, kOrigin, 1.1, config, scan, {}, false);
+  EXPECT_EQ(layer.cells().at(6 * 25 + 10).raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+}
+
+TEST(ProjectionClearance, ThinRoofUsesSameDownhillContactTangentAsThickLeadingFace) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  config.robot_x = 0.225;
+  config.reference_ground_z_abs = 0.03;
+  config.reference_ground_plane_valid = true;
+  config.reference_ground_slope_x = -0.12;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = 0.82;
+  config.robot_footprint_clear_width = 0.82;
+  const auto scan = [](int x, int y) {
+    auto stats = preciseTunnelColumn(false, x == 10 && y == 6);
+    if (x == 10 && y == 6) {
+      for (int index = 5; index <= 7; ++index) {
+        stats.vertical_states[index] = rog_map::VerticalVoxelState::KNOWN_FREE;
+      }
+      stats.occupied_count = 1;
+    }
+    return stats;
+  };
+  layer.update(25, 13, 0.05, kOrigin, 1.0, config, scan);
+  const auto &roof = layer.cells().at(6 * 25 + 10);
+  EXPECT_EQ(roof.type, rog_map::CellType::PASSABLE);
+  EXPECT_EQ(roof.raw_reason, rog_map::ProjectionClassReason::OVERHEAD_CLEARANCE_OK);
+  EXPECT_NEAR(roof.headroom, 0.2559, 1e-6);
+
+  config.min_observed_overhead_headroom_known_ratio = 0.8;
+  layer.update(25, 13, 0.05, kOrigin, 1.1, config, [&](int x, int y) {
+    auto stats = scan(x, y);
+    for (int index = 0; index < 4; ++index) {
+      stats.vertical_states[index] = rog_map::VerticalVoxelState::UNKNOWN;
+    }
+    return stats;
+  });
+  EXPECT_EQ(layer.cells().at(6 * 25 + 10).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(layer.cells().at(6 * 25 + 10).clearance_verified, 0U);
 }
 
 } // namespace

@@ -9,7 +9,8 @@ namespace minco_planner {
 namespace {
 
 std::shared_ptr<rog_map::MapQueryInterface> staticLayerQuery(
-  nav2_costmap_2d::Costmap2DROS * costmap_ros)
+  nav2_costmap_2d::Costmap2DROS * costmap_ros,
+  const std::string & static_layer_suffix = "static_layer")
 {
   if (!costmap_ros || !costmap_ros->getLayeredCostmap() ||
     !costmap_ros->getLayeredCostmap()->getPlugins())
@@ -21,7 +22,6 @@ std::shared_ptr<rog_map::MapQueryInterface> staticLayerQuery(
       continue;
     }
     const std::string & name = plugin->getName();
-    const std::string static_layer_suffix = "static_layer";
     const bool exact_name = name == static_layer_suffix;
     const bool qualified_name =
       name.size() > static_layer_suffix.size() &&
@@ -53,6 +53,11 @@ void PlannerModeContext::configure(const PlannerModeParams & params,
   const rclcpp::Clock::SharedPtr & clock)
 {
   params_ = params;
+  if (params_.priormap_static_clearance_mode != "circle" &&
+    params_.priormap_static_clearance_mode != "polygon")
+  {
+    throw std::invalid_argument("priormap.static_clearance_mode must be circle or polygon");
+  }
   ground_edge_prior_ready_ = false;
   ground_edge_prior_ = rog_map::PriorMapData{};
   map_frame_ = params_.map_frame.empty() ? "map" : params_.map_frame;
@@ -111,24 +116,61 @@ void PlannerModeContext::rebuildQueries(const std::shared_ptr<rog_map::MapQueryI
   const rclcpp::Logger & logger,
   const rclcpp::Clock::SharedPtr & clock)
 {
+  static_clearance_query_.reset();
+  static_query_.reset();
   if (mode_ == PlannerMode::PRIORMAP) {
+    dynamic_query_ = raw_rog_query ? std::make_shared<FrameAwareRogQuery>(
+      raw_rog_query, tf, map_frame_, rog_frame_, logger, clock) : nullptr;
     global_query_ = nullptr;
     if (costmap_ros && costmap_ros->getCostmap()) {
       global_query_ = std::make_shared<Nav2CostmapQuery>(costmap_ros->getCostmap());
+      static_query_ = staticLayerQuery(costmap_ros);
+      if (!static_query_) {
+        throw std::invalid_argument("PRIORMAP requires an original static_layer for footprint checks");
+      }
       if (params_.priormap_static_obstacle_clearance_radius > 0.0) {
-        const auto static_source = staticLayerQuery(costmap_ros);
+        const auto static_source = static_query_;
         if (static_source) {
-          auto static_clearance_query = std::make_shared<StaticObstacleClearanceQuery>(
-            global_query_, static_source, params_.priormap_static_obstacle_clearance_radius);
-          RCLCPP_INFO(
-            logger,
-            "[MincoPlanner] Static-layer global hard clearance: radius=%.3f m "
-            "newly_hardened_cells=%zu unknown_boundary_guard_cells=%zu",
-            static_clearance_query->clearanceRadius(),
-            static_clearance_query->hardenedCellCount(),
-            static_clearance_query->unknownBoundaryGuardCellCount());
-          global_query_ = std::move(static_clearance_query);
+          if (usesPolygonStaticClearance()) {
+            // Only attribute 253 to static inflation when all obstacle-producing
+            // layers are known. Custom layer stacks retain the original hard cost.
+            const auto & layers = *costmap_ros->getLayeredCostmap()->getPlugins();
+            const bool known_layers = layers.size() == 3U &&
+              std::all_of(layers.begin(), layers.end(), [](const auto & layer) {
+                if (!layer) {return false;}
+                const auto & name = layer->getName();
+                const auto last_dot = name.find_last_of('.');
+                const auto local_name = name.substr(last_dot == std::string::npos ? 0U : last_dot + 1U);
+                return local_name == "static_layer" || local_name == "rog_dynamic_obstacle_layer" ||
+                  local_name == "inflation_layer";
+              });
+            auto measured = known_layers ?
+              staticLayerQuery(costmap_ros, "rog_dynamic_obstacle_layer") : nullptr;
+            static_clearance_query_ = std::make_shared<StaticObstacleClearanceQuery>(
+              global_query_, static_source, params_.priormap_static_footprint,
+              0.0, measured, costmap_ros->getLayeredCostmap()->getInscribedRadius(),
+              params_.static_overlap);
+            RCLCPP_INFO(logger,
+              "[MincoPlanner] Original-PGM global polygon clearance: vertices=%zu "
+              "grid_guard=%.3f m overlap_ratio=%.3f overlap_depth=%.3f m; "
+              "static safety and recovery use the same source and tolerance.",
+              params_.priormap_static_footprint.size(), 0.0,
+              params_.static_overlap.max_ratio, params_.static_overlap.max_depth);
+          } else {
+            static_clearance_query_ = std::make_shared<StaticObstacleClearanceQuery>(
+              global_query_, static_source, params_.priormap_static_obstacle_clearance_radius);
+            RCLCPP_INFO(logger,
+              "[MincoPlanner] Static-layer global hard clearance: radius=%.3f m "
+              "newly_hardened_cells=%zu unknown_boundary_guard_cells=%zu",
+              static_clearance_query_->clearanceRadius(),
+              static_clearance_query_->hardenedCellCount(),
+              static_clearance_query_->unknownBoundaryGuardCellCount());
+          }
+          global_query_ = static_clearance_query_;
         } else {
+          if (usesPolygonStaticClearance()) {
+            throw std::invalid_argument("Polygon static clearance requires a Nav2 static_layer");
+          }
           RCLCPP_WARN(
             logger,
             "[MincoPlanner] static_layer is unavailable; skipping the static hard-clearance "
@@ -153,14 +195,18 @@ void PlannerModeContext::rebuildQueries(const std::shared_ptr<rog_map::MapQueryI
         global_query_ = std::move(ground_edge_query);
       }
     }
-    dynamic_query_ = raw_rog_query ? std::make_shared<FrameAwareRogQuery>(
-                                       raw_rog_query, tf, map_frame_, rog_frame_, logger, clock)
-                                   : nullptr;
     sparsify_query_ = global_query_;
   } else {
     global_query_ = raw_rog_query;
     dynamic_query_ = raw_rog_query;
     sparsify_query_ = raw_rog_query;
+  }
+}
+
+void PlannerModeContext::updateGlobalFootprintYaw(double yaw) const
+{
+  if (static_clearance_query_) {
+    static_clearance_query_->setFootprintYaw(yaw);
   }
 }
 

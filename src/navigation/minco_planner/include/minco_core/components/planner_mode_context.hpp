@@ -2,10 +2,13 @@
 #define MINCO_PLANNER__PLANNER_MODE_CONTEXT_HPP_
 
 #include "minco_core/components/surveyed_ground_edge_config.hpp"
+#include "minco_core/components/footprint_geometry.hpp"
 #include "rog_map/prior_map.hpp"
 #include "minco_core/header.hpp"
 
 namespace minco_planner {
+
+class StaticObstacleClearanceQuery;
 
 enum class PlannerMode
 {
@@ -29,6 +32,10 @@ struct PlannerModeParams
   double priormap_rog_boundary_margin{0.8};
   double priormap_rog_boundary_sample_step{0.1};
   double priormap_static_obstacle_clearance_radius{0.0};
+  std::string priormap_static_clearance_mode{"circle"};
+  std::vector<Eigen::Vector2d> priormap_static_footprint{};
+  StaticOverlapPolicy static_overlap;
+  double priormap_static_grid_guard{0.0};
   bool priormap_ground_edge_avoidance_enable{false};
   std::string priormap_ground_edge_yaml_path{};
   std::string priormap_ground_edge_pgm_path{};
@@ -84,7 +91,13 @@ public:
 
   std::shared_ptr<rog_map::MapQueryInterface> globalQuery() const { return global_query_; }
   std::shared_ptr<rog_map::MapQueryInterface> dynamicQuery() const { return dynamic_query_; }
+  std::shared_ptr<rog_map::MapQueryInterface> staticQuery() const { return static_query_; }
   std::shared_ptr<rog_map::MapQueryInterface> sparsifyQuery() const { return sparsify_query_; }
+  bool usesPolygonStaticClearance() const
+  {
+    return mode_ == PlannerMode::PRIORMAP && params_.priormap_static_clearance_mode == "polygon";
+  }
+  void updateGlobalFootprintYaw(double yaw) const;
 
 private:
   PlannerModeParams params_{};
@@ -99,7 +112,9 @@ private:
 
   std::shared_ptr<rog_map::MapQueryInterface> global_query_;
   std::shared_ptr<rog_map::MapQueryInterface> dynamic_query_;
+  std::shared_ptr<rog_map::MapQueryInterface> static_query_;
   std::shared_ptr<rog_map::MapQueryInterface> sparsify_query_;
+  std::shared_ptr<StaticObstacleClearanceQuery> static_clearance_query_;
 };
 
 }  // namespace minco_planner

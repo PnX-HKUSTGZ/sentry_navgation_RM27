@@ -47,11 +47,16 @@ public:
     double max_vel{5.0};
     double max_acc{5.0};
     double terminal_velocity_ratio{0.8};
+    double terminal_tangent_lookahead{0.30};
     double max_trajectory_duration{20.0};
     double turn_angle_deadzone{0.174};
     double turn_angle_saturation{1.57};
     double min_turn_vel{1.0};
     double decay_power{2.0};
+    double guide_lateral_weight{0.0};
+    double guide_lateral_tolerance{0.01};
+    double obstacle_slowdown_distance{0.0};
+    double obstacle_max_velocity{1.0};
 
     double rho{0.01};
     double smooth_eps{0.01};
@@ -76,6 +81,8 @@ public:
     opt_vars_.rho = cfg_.rho;
     opt_vars_.smooth_eps = cfg_.smooth_eps;
     opt_vars_.integral_res = cfg_.integral_res;
+    opt_vars_.guide_lateral_weight = cfg_.guide_lateral_weight;
+    opt_vars_.guide_lateral_tolerance = cfg_.guide_lateral_tolerance;
   }
 
   // === Core Planning Interfaces ===
@@ -91,6 +98,8 @@ public:
     opt_vars_.rho = cfg_.rho;
     opt_vars_.smooth_eps = cfg_.smooth_eps;
     opt_vars_.integral_res = cfg_.integral_res;
+    opt_vars_.guide_lateral_weight = cfg_.guide_lateral_weight;
+    opt_vars_.guide_lateral_tolerance = cfg_.guide_lateral_tolerance;
   }
 
   void setInitPsAndTs(const vec_Vec3f & init_ps, const VecDf & init_ts);
@@ -128,6 +137,8 @@ private:
     double rho;
     double smooth_eps;
     double integral_res;
+    double guide_lateral_weight{0.0};
+    double guide_lateral_tolerance{0.01};
     bool default_init{true};
 
     // Environment map pointer.
@@ -190,6 +201,7 @@ private:
     const VecDf & magnitudeBounds,
     const VecDf & local_magnitudes,
     const VecDf & penaltyWeights,
+    double guide_lateral_weight, double guide_lateral_tolerance,
     double & cost,
     VecDf & partialGradByTimes,
     MatD3f & partialGradByCoeffs,

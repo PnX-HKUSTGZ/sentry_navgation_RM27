@@ -1,6 +1,8 @@
 #include "minco_core/components/trajectory_safety_checker.hpp"
+#include "minco_core/components/footprint_geometry.hpp"
 
 #include "data_structure/base/trajectory.h"
+#include <rog_map/projection_layer.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -27,6 +29,53 @@ bool insideConvexFootprint(const Eigen::Vector2d &point,
     }
   }
   return true;
+}
+
+double distanceToFootprintBoundary(
+    const Eigen::Vector2d &point,
+    const std::vector<Eigen::Vector2d> &vertices) {
+  if (vertices.size() < 2U) {
+    return std::numeric_limits<double>::infinity();
+  }
+  double distance = std::numeric_limits<double>::infinity();
+  for (size_t index = 0; index < vertices.size(); ++index) {
+    const Eigen::Vector2d &a = vertices[index];
+    const Eigen::Vector2d &b = vertices[(index + 1U) % vertices.size()];
+    const Eigen::Vector2d edge = b - a;
+    const double length_squared = edge.squaredNorm();
+    if (length_squared <= 1.0e-12) {
+      distance = std::min(distance, (point - a).norm());
+      continue;
+    }
+    const double ratio = std::clamp((point - a).dot(edge) / length_squared,
+                                    0.0, 1.0);
+    distance = std::min(distance, (point - (a + ratio * edge)).norm());
+  }
+  return distance;
+}
+
+bool isLowClearanceProjection(
+    const rog_map::ProjectionDiagnostic &projection) {
+  const auto matches = [](uint8_t reason) {
+    return reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::GROUND_UNVERIFIED) ||
+           reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED) ||
+           reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::HEADROOM_BLOCKED);
+  };
+  const auto blocks = [](uint8_t reason) {
+    return reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::SOLID_VERTICAL_WALL) ||
+           reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::AMBIGUOUS_OCCUPIED) ||
+           reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+  };
+  return projection.valid &&
+         projection.cost_source == rog_map::ProjectedCostSource::DYNAMIC_PROJECTION &&
+         projection.dynamic_cost == nav2_costmap_2d::LETHAL_OBSTACLE &&
+         matches(projection.raw_reason) && !blocks(projection.candidate_reason);
 }
 
 } // namespace
@@ -78,7 +127,9 @@ const char *TrajectorySafetyChecker::failureReasonName(FailureReason reason) {
 void TrajectorySafetyChecker::configure(const Config &config,
                                         rclcpp::Logger logger,
                                         rclcpp::Clock::SharedPtr clock) {
-  if (!std::isfinite(config.safe_dist) || config.safe_dist < 0.0 ||
+  if (!config.static_overlap.valid() || !std::isfinite(config.safe_dist) || config.safe_dist < 0.0 ||
+      !std::isfinite(config.dynamic_edge_overlap_tolerance) ||
+      config.dynamic_edge_overlap_tolerance < 0.0 ||
       !std::isfinite(config.footprint_length) ||
       config.footprint_length <= 0.0 ||
       !std::isfinite(config.footprint_width) || config.footprint_width <= 0.0 ||
@@ -108,13 +159,16 @@ void TrajectorySafetyChecker::configure(const Config &config,
   }
 
   safe_dist_ = config.safe_dist;
+  dynamic_edge_overlap_tolerance_ = config.dynamic_edge_overlap_tolerance;
   footprint_length_ = config.footprint_length;
   footprint_width_ = config.footprint_width;
   footprint_margin_ = config.footprint_margin;
   footprint_points_ = config.footprint_points;
+  static_overlap_ = config.static_overlap;
   sample_dt_ = config.sample_dt;
   map_timeout_ = config.map_timeout;
   future_tolerance_ = config.future_tolerance;
+  allow_unknown_motion_ = config.allow_unknown_motion;
   planning_frame_ = config.planning_frame.empty() ? "unknown" : config.planning_frame;
   rog_frame_ = config.rog_frame.empty() ? "unknown" : config.rog_frame;
   logger_ = logger;
@@ -123,9 +177,17 @@ void TrajectorySafetyChecker::configure(const Config &config,
 }
 
 void TrajectorySafetyChecker::setQuery(
-    std::shared_ptr<rog_map::MapQueryInterface> dynamic_query) {
+    std::shared_ptr<rog_map::MapQueryInterface> dynamic_query,
+    std::shared_ptr<rog_map::MapQueryInterface> static_query) {
   std::lock_guard<std::mutex> lock(query_mutex_);
   dynamic_query_ = std::move(dynamic_query);
+  static_query_ = std::move(static_query);
+}
+
+std::shared_ptr<rog_map::MapQueryInterface>
+TrajectorySafetyChecker::staticQuerySnapshot() const {
+  std::lock_guard<std::mutex> lock(query_mutex_);
+  return static_query_;
 }
 
 std::shared_ptr<rog_map::MapQueryInterface>
@@ -170,8 +232,10 @@ TrajectorySafetyChecker::evaluatePoint(
 TrajectorySafetyChecker::PointCheckResult
 TrajectorySafetyChecker::evaluateQueryResult(
     const std::shared_ptr<rog_map::MapQueryInterface> &query,
-    const Eigen::Vector3d &pos, const rog_map::QueryResult &result,
-    double query_time) const {
+    const Eigen::Vector3d &pos, const rog_map::QueryResult &fused_result,
+    double query_time, bool static_footprint_checked) const {
+  const auto static_query = staticQuerySnapshot();
+  const auto result = static_query ? dynamicEvidenceOnly(fused_result) : fused_result;
   PointCheckResult check;
   check.diagnostic.query_point = pos;
   check.diagnostic.safe_distance = safe_dist_;
@@ -229,9 +293,30 @@ TrajectorySafetyChecker::evaluateQueryResult(
 
   check.diagnostic.cost = cost;
   check.diagnostic.cost_checked = true;
-  if (cost == nav2_costmap_2d::NO_INFORMATION) {
-    check.diagnostic.reason = FailureReason::COSTMAP_UNKNOWN;
+  if (result.projection.valid &&
+      (result.projection.raw_reason == static_cast<uint8_t>(
+           rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED) ||
+       result.projection.candidate_reason == static_cast<uint8_t>(
+           rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED))) {
+    check.diagnostic.reason = FailureReason::COSTMAP_LETHAL;
     return check;
+  }
+  if (static_query && !static_footprint_checked) {
+    const auto prior = static_query->query(pos);
+    if (!prior.ok || !prior.projected_cost_valid || prior.projected_cost >= 253U) {
+      check.diagnostic.cost = prior.projected_cost;
+      check.diagnostic.projection.cost_source = rog_map::ProjectedCostSource::PRIOR_MAP;
+      check.diagnostic.projection.cost_cause = rog_map::ProjectedCostCause::PRIOR_MAP;
+      check.diagnostic.reason = !prior.ok ? FailureReason::QUERY_FAILED :
+        (prior.projected_cost == 255U ? FailureReason::COSTMAP_UNKNOWN : FailureReason::COSTMAP_LETHAL);
+      return check;
+    }
+  }
+  if (cost == nav2_costmap_2d::NO_INFORMATION) {
+    if (!allow_unknown_motion_) {
+      check.diagnostic.reason = FailureReason::COSTMAP_UNKNOWN;
+      return check;
+    }
   }
   if (cost == nav2_costmap_2d::LETHAL_OBSTACLE) {
     check.diagnostic.reason = FailureReason::COSTMAP_LETHAL;
@@ -489,6 +574,30 @@ bool TrajectorySafetyChecker::evaluateFootprint(
       max_y = std::max(max_y, point.y());
     }
   }
+  const auto static_query = staticQuerySnapshot();
+  if (static_query) {
+    auto body = footprint_points_;
+    if (body.empty()) {
+      body = {{min_x, min_y}, {max_x, min_y}, {max_x, max_y}, {min_x, max_y}};
+    }
+    const auto prior = checkStaticFootprint(static_query, body, pos, yaw, static_overlap_);
+    if (!prior.valid || prior.cost >= 253U) {
+      initial.reason = !prior.valid ? FailureReason::QUERY_FAILED :
+        (prior.cost == 255U ? FailureReason::COSTMAP_UNKNOWN : FailureReason::COSTMAP_LETHAL);
+      initial.cost = prior.cost;
+      initial.static_overlap_ratio = prior.overlap_ratio;
+      initial.static_depth_exceeded = prior.depth_exceeded;
+      initial.cost_checked = true;
+      initial.query_point = prior.point;
+      initial.footprint_sample = true;
+      initial.projection.valid = true;
+      initial.projection.prior_occupied = prior.cost == 254U;
+      initial.projection.cost_source = rog_map::ProjectedCostSource::PRIOR_MAP;
+      initial.projection.cost_cause = rog_map::ProjectedCostCause::PRIOR_MAP;
+      if (failure) {*failure = initial;}
+      return false;
+    }
+  }
   const double clearance_spacing =
       safe_dist_ > 1e-6 ? std::sqrt(2.0) * safe_dist_ : 0.5 * resolution;
   const double target_spacing = std::max(0.5 * resolution, clearance_spacing);
@@ -562,8 +671,43 @@ bool TrajectorySafetyChecker::evaluateFootprint(
              : std::numeric_limits<double>::quiet_NaN();
   for (size_t index = 0; index < samples.size(); ++index) {
     auto point_check =
-        evaluateQueryResult(query, samples[index], results[index], query_time);
+        evaluateQueryResult(query, samples[index], results[index], query_time,
+          static_cast<bool>(static_query));
     if (point_check.safe) {
+      continue;
+    }
+    // Projected cost labels an entire cell, while ESDF is interpolated at
+    // continuous footprint samples. A narrow ramp or tunnel boundary can
+    // therefore reject an outline that passed the original static polygon
+    // check. Accept only this explicitly configured case:
+    // a polygon-boundary sample, low-clearance/ground ambiguity, and shallow
+    // ESDF distance close to zero (interpolation can have either sign).
+    // This is a configured discretization allowance,
+    // not a proof of physical clearance. Unknown cells and wall evidence
+    // remain fail-closed.
+    if (dynamic_edge_overlap_tolerance_ > 0.0 && safe_dist_ == 0.0 &&
+        results[index].ok && results[index].status == rog_map::QueryStatus::OK &&
+        index < footprint_sample_count && !footprint_points_.empty() &&
+        point_check.diagnostic.reason == FailureReason::COSTMAP_LETHAL &&
+        point_check.diagnostic.cost == nav2_costmap_2d::LETHAL_OBSTACLE &&
+        isLowClearanceProjection(point_check.diagnostic.projection) &&
+        std::isfinite(point_check.diagnostic.distance) &&
+        std::abs(point_check.diagnostic.distance) <=
+            dynamic_edge_overlap_tolerance_ + 1.0e-9 &&
+        distanceToFootprintBoundary(offsets[index], footprint_points_) <=
+            std::max(0.5 * resolution, dynamic_edge_overlap_tolerance_) +
+                1.0e-9) {
+      if (clock_) {
+        RCLCPP_INFO_THROTTLE(
+            logger_, *clock_, 2000,
+            "[MincoPlanner] Accepted shallow dynamic boundary cell: "
+            "center=(%.3f,%.3f) offset=(%.3f,%.3f) signed_distance=%.3f "
+            "tolerance=%.3f raw_reason=%s",
+            pos.x(), pos.y(), offsets[index].x(), offsets[index].y(),
+            point_check.diagnostic.distance, dynamic_edge_overlap_tolerance_,
+            rog_map::projectionClassReasonName(
+                point_check.diagnostic.projection.raw_reason));
+      }
       continue;
     }
     point_check.diagnostic.center = pos;
@@ -935,6 +1079,7 @@ void TrajectorySafetyChecker::recordTrajectoryFailure(
       "sample=%s center=(%.3f,%.3f,%.3f) query_point=(%.3f,%.3f,%.3f) "
       "footprint_offset=(%.3f,%.3f) yaw=%.3f esdf_distance=%.3f "
       "safe_distance=%.3f cost=%d query_status=%s snapshot_age=%.3f "
+      "static_overlap_ratio=%.4f/%.4f static_depth_exceeded=%d max_depth=%.3f "
       "snapshot_commit_age=%.3f pipeline_age_ms=%.1f "
       "cost_source=%s cost_cause=%s dynamic_cost=%d cell_type=%s raw_type=%s "
       "candidate_type=%s base_type=%s pending_type=%s pending_count=%u "
@@ -958,6 +1103,8 @@ void TrajectorySafetyChecker::recordTrajectoryFailure(
       diagnostic.query_point.z(), diagnostic.footprint_offset.x(),
       diagnostic.footprint_offset.y(), diagnostic.yaw, diagnostic.distance,
       diagnostic.safe_distance, cost, query_status, diagnostic.snapshot_age,
+      diagnostic.static_overlap_ratio, static_overlap_.max_ratio,
+      diagnostic.static_depth_exceeded ? 1 : 0, static_overlap_.max_depth,
       diagnostic.snapshot_commit_age, diagnostic.snapshot_processing_age_ms,
       cost_source, cost_cause, dynamic_cost, cell_type, raw_type, candidate_type,
       base_type, pending_type, static_cast<unsigned>(projection.pending_count),

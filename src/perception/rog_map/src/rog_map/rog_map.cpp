@@ -446,6 +446,9 @@ void ROGMap::refreshLayers() {
   layer_cfg.headroom_voxel_inset_fraction = cfg_.headroom_voxel_inset_fraction;
   layer_cfg.body_bottom_clearance = cfg_.body_bottom_clearance;
   layer_cfg.ground_seed_tolerance = cfg_.ground_seed_tolerance;
+  layer_cfg.ground_connectivity_hold_time = cfg_.ground_connectivity_hold_time;
+  layer_cfg.overhead_ground_search_radius = cfg_.overhead_ground_search_radius;
+  layer_cfg.overhead_ground_history_time = cfg_.overhead_ground_history_time;
   layer_cfg.max_ground_height_delta = cfg_.max_ground_height_delta;
   layer_cfg.max_ground_step = cfg_.max_ground_step;
   layer_cfg.max_ground_slope_deg = cfg_.max_ground_slope_deg;
@@ -474,7 +477,8 @@ void ROGMap::refreshLayers() {
   if (prior_enabled) {
     PriorMapTransform2D prior_transform;
     if (getPriorMapTransform(prior_transform)) {
-      transform_changed = updatePriorMapTransform(prior_map_, prior_transform);
+      transform_changed = updatePriorMapTransform(
+          prior_map_, prior_transform, cfg_.prior_map_horizontal_tolerance);
     } else {
       transform_changed = invalidatePriorMapTransform(prior_map_);
     }
@@ -587,6 +591,9 @@ void ROGMap::refreshLayers() {
     stats.scan_z_min_abs = scan_min_position.z();
     stats.vertical_states.reserve(
         static_cast<size_t>(std::max(0, z_max - z_min + 1)));
+    stats.hit_z_min.reserve(stats.vertical_states.capacity());
+    stats.hit_z_max.reserve(stats.vertical_states.capacity());
+    stats.hit_stamps.reserve(stats.vertical_states.capacity());
     const int gx = min_id.x() + mx;
     const int gy = min_id.y() + my;
     if (support_cache_ready && mx >= 0 && mx < width && my >= 0) {
@@ -604,6 +611,11 @@ void ROGMap::refreshLayers() {
     for (int gz = z_min; gz <= z_max; ++gz) {
       Vec3i id_g(gx, gy, gz);
       GridType gt = rawGridType(id_g);
+      const int hash_id = getHashIndexFromGlobalIndex(id_g);
+      const bool occupied = gt == GridType::OCCUPIED;
+      stats.hit_z_min.push_back(occupied ? hit_z_min_[hash_id] : NAN);
+      stats.hit_z_max.push_back(occupied ? hit_z_max_[hash_id] : NAN);
+      stats.hit_stamps.push_back(occupied ? cellLastHitTime(id_g) : 0.0);
       if (gt == GridType::OCCUPIED) {
         stats.vertical_states.push_back(VerticalVoxelState::OCCUPIED);
       } else if (gt == GridType::KNOWN_FREE) {
@@ -841,6 +853,7 @@ void ROGMap::refreshLayers() {
     case ProjectionClassReason::OVERHEAD_CLEARANCE_OK:
     case ProjectionClassReason::CLEARANCE_OK:
     case ProjectionClassReason::GROUND_BRIDGE_CLEARANCE_OK:
+    case ProjectionClassReason::GROUND_CONNECTIVITY_HOLD:
       runtime_stats_.projection_thin_surface_count += 1.0;
       break;
     case ProjectionClassReason::SOLID_VERTICAL_WALL:
@@ -853,6 +866,7 @@ void ROGMap::refreshLayers() {
     case ProjectionClassReason::GROUND_UNVERIFIED:
     case ProjectionClassReason::HEADROOM_UNVERIFIED:
     case ProjectionClassReason::HEADROOM_BLOCKED:
+    case ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED:
       runtime_stats_.projection_ambiguous_occupied_count += 1.0;
       break;
     }

@@ -15,6 +15,9 @@ bool finiteOdometry(const nav_msgs::msg::Odometry & odom);
 bool validNormalCommand(
   const ros_interfaces::msg::MpcPositionCommand & command, std::string * reason = nullptr);
 
+bool validRecoveryCommand(const ros_interfaces::msg::MpcPositionCommand & command,
+  double max_speed, double max_distance, double max_duration, std::string * reason = nullptr);
+
 bool freshStamp(
   double stamp_seconds, double now_seconds, double timeout_seconds, double future_tolerance_seconds);
 

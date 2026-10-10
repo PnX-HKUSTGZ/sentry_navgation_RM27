@@ -234,7 +234,7 @@ void MincoPlanner::rebuildModeDependentQueries() {
     corridor_gen_->setMap(mode_context_->dynamicQuery());
   }
   if (safety_checker_) {
-    safety_checker_->setQuery(mode_context_->dynamicQuery());
+    safety_checker_->setQuery(mode_context_->dynamicQuery(), mode_context_->staticQuery());
   }
 
   RCLCPP_INFO(logger_, "[MincoPlanner] Rebuilt mode-dependent map queries.");
@@ -365,6 +365,10 @@ void MincoPlanner::configure(
       rclcpp::ParameterValue(true));
   node->get_parameter(prefix + "priormap.use_nav2_global_search",
                       priormap_use_nav2_global_search_);
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "priormap.static_clearance_mode", rclcpp::ParameterValue("circle"));
+  node->get_parameter(prefix + "priormap.static_clearance_mode",
+                      mode_params_.priormap_static_clearance_mode);
 
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "priormap.dynamic_global_obstacle.enable",
@@ -498,6 +502,17 @@ void MincoPlanner::configure(
   nav2_util::declare_parameter_if_not_declared(node, prefix + "allow_unknown",
                                                rclcpp::ParameterValue(true));
   node->get_parameter(prefix + "allow_unknown", allow_unknown_);
+
+  // One explicit switch controls both global traversal and the final MINCO
+  // safety gate. Static prior-map collisions and measured occupied cells are
+  // still rejected; only unobserved ROG cells become traversable.
+  bool allow_unknown_motion = false;
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "allow_unknown_motion", rclcpp::ParameterValue(false));
+  node->get_parameter(prefix + "allow_unknown_motion", allow_unknown_motion);
+  if (allow_unknown_motion) {
+    allow_unknown_ = true;
+  }
 
   nav2_util::declare_parameter_if_not_declared(node, prefix + "lidar_offset_x",
                                                rclcpp::ParameterValue(0.0));
@@ -648,8 +663,23 @@ void MincoPlanner::configure(
 
   TrajectorySafetyChecker::Config safety_config;
   safety_config.safe_dist = collision_dist;
+  safety_config.allow_unknown_motion = allow_unknown_motion;
   safety_config.planning_frame = planning_frame_;
   safety_config.rog_frame = rog_frame_;
+  for (const auto & entry : std::vector<std::pair<std::string, double *>>{
+    {"static_overlap_max_ratio", &safety_config.static_overlap.max_ratio},
+    {"static_overlap_max_depth", &safety_config.static_overlap.max_depth}})
+  {
+    nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "safety." + entry.first, rclcpp::ParameterValue(*entry.second));
+    node->get_parameter(prefix + "safety." + entry.first, *entry.second);
+  }
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "safety.dynamic_edge_overlap_tolerance",
+      rclcpp::ParameterValue(safety_config.dynamic_edge_overlap_tolerance));
+  if (!safety_config.static_overlap.valid()) {
+    throw std::invalid_argument(prefix + "safety static overlap tolerance is invalid");
+  }
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "safety.footprint_length",
       rclcpp::ParameterValue(safety_config.footprint_length));
@@ -707,6 +737,8 @@ void MincoPlanner::configure(
   node->get_parameter(prefix + "safety.map_timeout", safety_config.map_timeout);
   node->get_parameter(prefix + "safety.future_tolerance",
                       safety_config.future_tolerance);
+  node->get_parameter(prefix + "safety.dynamic_edge_overlap_tolerance",
+                      safety_config.dynamic_edge_overlap_tolerance);
   node->get_parameter(prefix + "safety.check_horizon", safety_check_horizon_);
   node->get_parameter(prefix + "safety.collision_cache_reuse_max_duration",
                       collision_cache_reuse_max_duration_);
@@ -780,15 +812,27 @@ void MincoPlanner::configure(
   }
   const double static_obstacle_clearance_radius =
       footprint_radius + grid_guard;
+  mode_params_.priormap_static_grid_guard = grid_guard;
+  mode_params_.priormap_static_footprint = safety_config.footprint_points;
+  mode_params_.static_overlap = safety_config.static_overlap;
+  if (mode_params_.priormap_static_footprint.empty()) {
+    mode_params_.priormap_static_footprint = {
+      {-footprint_half_length, -footprint_half_width},
+      {footprint_half_length, -footprint_half_width},
+      {footprint_half_length, footprint_half_width},
+      {-footprint_half_length, footprint_half_width}};
+  }
   initPlannerMode(planner_mode_param, configured_map_frame,
                   configured_rog_frame, static_obstacle_clearance_radius);
   safety_config.planning_frame = planning_frame_;
   safety_config.rog_frame = rog_frame_;
-  RCLCPP_INFO(logger_,
+  if (!mode_context_->usesPolygonStaticClearance()) {
+    RCLCPP_INFO(logger_,
               "[MincoPlanner] Global static hard-clearance radius %.3f m = "
               "footprint corner %.3f m + grid guard %.3f m.",
               static_obstacle_clearance_radius,
               footprint_radius, grid_guard);
+  }
 
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "minco_optimizer.max_velocity",
@@ -925,6 +969,17 @@ void MincoPlanner::configure(
                       penalty_weight_acc);
 
   double penalty_weight_att = 0.0;
+  for (const auto & entry : std::vector<std::pair<std::string, double *>>{
+    {"guide_lateral_weight", &minco_config.guide_lateral_weight},
+    {"terminal_tangent_lookahead", &minco_config.terminal_tangent_lookahead},
+    {"obstacle_slowdown_distance", &minco_config.obstacle_slowdown_distance},
+    {"obstacle_max_velocity", &minco_config.obstacle_max_velocity},
+    {"guide_lateral_tolerance", &minco_config.guide_lateral_tolerance}})
+  {
+    nav2_util::declare_parameter_if_not_declared(node,
+      prefix + "minco_optimizer." + entry.first, rclcpp::ParameterValue(*entry.second));
+    node->get_parameter(prefix + "minco_optimizer." + entry.first, *entry.second);
+  }
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "minco_optimizer.penalty_weight_att",
       rclcpp::ParameterValue(1000.0));
@@ -990,6 +1045,29 @@ void MincoPlanner::configure(
   node->get_parameter(prefix + "recovery_server.escape_speed",
                       recovery_server_config_.escape_speed);
 
+  nav2_util::declare_parameter_if_not_declared(node,
+    prefix + "recovery_server.allow_start_overlap", rclcpp::ParameterValue(true));
+  node->get_parameter(prefix + "recovery_server.allow_start_overlap", overlap_recovery_enabled_);
+  for (const auto & parameter : std::vector<std::pair<std::string, double *>>{
+    {"overlap_max_speed", &overlap_recovery_config_.max_speed},
+    {"overlap_max_duration", &overlap_recovery_config_.max_duration},
+    {"overlap_max_distance", &overlap_recovery_config_.max_distance},
+    {"overlap_max_penetration", &overlap_recovery_config_.max_penetration},
+    {"overlap_max_ratio", &overlap_recovery_config_.max_overlap_ratio},
+    {"overlap_min_ratio", &overlap_recovery_config_.min_overlap_ratio}})
+  {
+    nav2_util::declare_parameter_if_not_declared(node,
+      prefix + "recovery_server." + parameter.first, rclcpp::ParameterValue(*parameter.second));
+    node->get_parameter(prefix + "recovery_server." + parameter.first, *parameter.second);
+  }
+  overlap_recovery_config_.footprint = mode_params_.priormap_static_footprint;
+  overlap_recovery_config_.static_overlap = safety_config.static_overlap;
+  overlap_recovery_config_.map_timeout = safety_config.map_timeout;
+  overlap_recovery_config_.future_tolerance = safety_config.future_tolerance;
+  overlap_recovery_config_.allow_unknown_motion =
+      safety_config.allow_unknown_motion;
+  overlap_escape_guard_ = std::make_unique<OverlapEscapeGuard>(overlap_recovery_config_);
+
   // --- Components / publishers / timers -------------------------------------
 
   const auto global_query =
@@ -1047,17 +1125,20 @@ void MincoPlanner::configure(
 
   safety_checker_ = std::make_unique<TrajectorySafetyChecker>();
   safety_checker_->configure(safety_config, logger_, clock_);
-  safety_checker_->setQuery(dynamic_query);
+  safety_checker_->setQuery(dynamic_query, mode_context_ ? mode_context_->staticQuery() : nullptr);
   RCLCPP_INFO(logger_,
               "[MincoPlanner] Safety footprint: length=%.3f width=%.3f "
               "margin_per_side=%.3f polygon_vertices=%zu "
               "sample_dt=%.3f map_timeout=%.3f future_tolerance=%.3f "
+              "allow_unknown_motion=%s dynamic_edge_overlap_tolerance=%.3f "
               "check_horizon=%.3f "
               "planning_frame=%s rog_frame=%s",
               safety_config.footprint_length, safety_config.footprint_width,
               safety_config.footprint_margin,
               safety_config.footprint_points.size(), safety_config.sample_dt,
               safety_config.map_timeout, safety_config.future_tolerance,
+              safety_config.allow_unknown_motion ? "true" : "false",
+              safety_config.dynamic_edge_overlap_tolerance,
               safety_check_horizon_, safety_config.planning_frame.c_str(),
               safety_config.rog_frame.c_str());
 
@@ -1322,6 +1403,8 @@ void MincoPlanner::cleanup() {
 }
 
 void MincoPlanner::invalidateTrajectoryLocked() {
+  last_recovery_context_.reset();
+  last_traj_is_braking_ = false;
   last_traj_.clear();
   last_yaw_traj_.clear();
   has_last_traj_ = false;
@@ -1474,10 +1557,12 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
   const auto is_configure_time_param = [this, &planner_mode_param](
                                            const std::string &param_name) {
     return param_name == planner_mode_param ||
+           param_name.rfind(name_ + ".recovery_server.", 0) == 0 ||
            param_name == name_ + ".frames.map_frame" ||
            param_name == name_ + ".frames.rog_frame" ||
            param_name == name_ + ".frames.physical_base_frame" ||
            param_name == name_ + ".priormap.use_nav2_global_search" ||
+           param_name == name_ + ".priormap.static_clearance_mode" ||
            param_name == name_ + ".priormap.dynamic_global_obstacle.enable" ||
            param_name ==
                name_ + ".priormap.dynamic_global_obstacle.collision_distance" ||
@@ -1498,11 +1583,17 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".exploration.boundary_sample_step" ||
            param_name == name_ + ".exploration.unknown_as_occupied" ||
            param_name == name_ + ".exploration.prefer_goal_direction" ||
+           param_name == name_ + ".allow_unknown_motion" ||
            param_name == name_ + ".local_path.shortcut_peak_cost_slack" ||
            param_name == name_ + ".local_path.shortcut_mean_cost_slack" ||
            param_name == name_ + ".local_path.observed_prefix_max_velocity" ||
            param_name == name_ + ".minco_optimizer.safe_dist" ||
            param_name == name_ + ".minco_optimizer.collision_dist" ||
+           param_name == name_ + ".minco_optimizer.guide_lateral_weight" ||
+           param_name == name_ + ".minco_optimizer.terminal_tangent_lookahead" ||
+           param_name == name_ + ".minco_optimizer.obstacle_slowdown_distance" ||
+           param_name == name_ + ".minco_optimizer.obstacle_max_velocity" ||
+           param_name == name_ + ".minco_optimizer.guide_lateral_tolerance" ||
            param_name ==
                name_ + ".minco_optimizer.terminal_velocity_ratio" ||
            param_name ==
@@ -1511,6 +1602,9 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".safety.footprint_width" ||
            param_name == name_ + ".safety.footprint_margin" ||
            param_name == name_ + ".safety.footprint_points" ||
+           param_name == name_ + ".safety.static_overlap_max_ratio" ||
+           param_name == name_ + ".safety.static_overlap_max_depth" ||
+           param_name == name_ + ".safety.dynamic_edge_overlap_tolerance" ||
            param_name == name_ + ".safety.sample_dt" ||
            param_name == name_ + ".safety.map_timeout" ||
            param_name == name_ + ".safety.future_tolerance" ||
@@ -1940,12 +2034,43 @@ bool MincoPlanner::ReplanLocal(
     return finish(false, "OPTIMIZER_FAILED");
   }
 
-  const LocalPathSeed seed = local_path_processor_->buildSeed(
-      global_path_snapshot, current_pose, *mode_context_,
-      [this](const Eigen::Vector3d &position, double yaw) {
-        return safety_checker_ &&
-               safety_checker_->checkFootprint(position, yaw);
-      });
+  const auto build_seed = [&]() {
+    return local_path_processor_->buildSeed(
+        global_path_snapshot, current_pose, *mode_context_,
+        [this](const Eigen::Vector3d &position, double yaw) {
+          return safety_checker_ && safety_checker_->checkFootprint(position, yaw);
+        });
+  };
+  LocalPathSeed seed = build_seed();
+  if (seed.observed_prefix_clipped && seed.dense_path.size() >= 2U) {
+    double available_progress = 0.0;
+    for (size_t i = 1U; i < seed.dense_path.size(); ++i) {
+      available_progress += (seed.dense_path[i] - seed.dense_path[i - 1U]).head<2>().norm();
+    }
+    const double speed = std::min(minco_config.max_vel, getCurrentSpeed().head<2>().norm());
+    const double refresh_distance = std::max(0.60,
+        speed * speed / (2.0 * minco_config.max_acc) +
+        speed * (successful_replan_period_ + 0.20) + 0.30);
+    if (available_progress < refresh_distance) {
+      // A repeatedly successful centimetre-long stopping prefix otherwise
+      // prevents the FSM from ever refreshing the obstructed global route.
+      // Refresh before consuming the braking distance; retain the checked
+      // stopping prefix if there is no better route yet.
+      RCLCPP_INFO_THROTTLE(logger_, *clock_, 1000,
+          "[MincoPlanner] Short observed prefix (%.3f m < %.3f m); refreshing global route.",
+          available_progress, refresh_distance);
+      if (PlanGlobalPath(current_pose, global_path_snapshot.back(), expected_session)) {
+        {
+          std::lock_guard<std::mutex> lock(path_mutex_);
+          if (latest_global_path_session_ != expected_session) {
+            return finish(false, "STALE_SESSION");
+          }
+          global_path_snapshot = latest_global_path_;
+        }
+        seed = build_seed();
+      }
+    }
+  }
   if (visualizer_) {
     if (!seed.dense_path.empty()) {
       visualizer_->updateLocalEndPoint(seed.dense_path.back(),
@@ -2002,9 +2127,23 @@ bool MincoPlanner::ReplanLocal(
   // start position to the nearest free space along the ESDF gradient.
   if (safety_checker_) {
     constexpr double kMargin = 0.05;
-    Eigen::Vector3d start_pos = start_state.col(0);
-    if (safety_checker_->projectOutOfObstacle(start_pos, kMargin)) {
-      start_state.col(0) = start_pos;
+    Eigen::Vector3d projected_start = start_state.col(0);
+    if (safety_checker_->projectOutOfObstacle(projected_start, kMargin)) {
+      double start_yaw = 0.0;
+      const bool valid_yaw = utils::quaternionToYawChecked(
+        current_pose.pose.orientation, start_yaw);
+      // The ROG ESDF gradient can point through a narrow PGM opening toward
+      // its opposite wall. Keep the projection only when the complete
+      // projected footprint remains valid in both dynamic and static maps.
+      if (valid_yaw && safety_checker_->checkFootprint(projected_start, start_yaw)) {
+        start_state.col(0) = projected_start;
+      } else {
+        RCLCPP_WARN_THROTTLE(
+          logger_, *clock_, 1000,
+          "[MincoPlanner] Rejecting ESDF start projection (%.3f, %.3f); "
+          "it is outside the static footprint corridor.",
+          projected_start.x(), projected_start.y());
+      }
     }
   }
 
@@ -2025,13 +2164,18 @@ bool MincoPlanner::ReplanLocal(
       tangent = sparse_path.back() - sparse_path[sparse_path.size() - 2];
       tangent.z() = 0.0;
       const double n = tangent.head<2>().norm();
-      if (n > 0.1) {
+      if (n > 1.0e-6) {
         tangent /= n;
       } else {
         tangent = Eigen::Vector3d(1.0, 0.0, 0.0);
       }
     }
     const double v_curr = std::max(0.0, start_state.col(1).head<2>().norm());
+    // A rolling endpoint can land on the diagonal approach to a gate. Its
+    // incoming last segment must not prescribe a sideways exit into the wall.
+    // Use the route beyond the endpoint to anticipate the next turn.
+    utils::forwardPathTangent(global_path_snapshot, end_state.col(0),
+      minco_config.terminal_tangent_lookahead, tangent);
     const double amax = std::max(0.0, minco_config.max_acc);
     const double v_max_kinematic =
         std::sqrt(std::max(0.0, v_curr * v_curr + 2.0 * amax * dist_to_goal));
@@ -2060,7 +2204,22 @@ bool MincoPlanner::ReplanLocal(
 
   // Remove near-start redundant points from sparse_path.
   while (sparse_path.size() > 2) {
-    if ((sparse_path[1] - start_state.col(0)).norm() < 0.2) {
+    const Eigen::Vector2d first_step =
+        (sparse_path[1] - start_state.col(0)).head<2>();
+    const Eigen::Vector2d next_step =
+        (sparse_path[2] - sparse_path[1]).head<2>();
+    const double first_length = first_step.norm();
+    const double next_length = next_step.norm();
+    // Keep a short lateral correction in the guide. In a narrow tunnel the
+    // first global cell can move the centre by only a few centimetres while
+    // the next segment runs along the tunnel. Removing that point makes
+    // MINCO smooth directly into the far segment and bow into a wall.
+    const bool nearly_collinear = first_length <= 1.0e-6 ||
+        next_length <= 1.0e-6 ||
+        std::abs(first_step.x() * next_step.y() -
+          first_step.y() * next_step.x()) <=
+        0.10 * std::max(1.0e-6, first_length * next_length);
+    if (first_length < 0.2 && nearly_collinear) {
       sparse_path.erase(sparse_path.begin() + 1);
     } else {
       break;
@@ -2070,13 +2229,27 @@ bool MincoPlanner::ReplanLocal(
   // 7.5 Initial guess Ps/Ts for optimizer (all cases).
   const int N = static_cast<int>(sparse_path.size()) - 1;
   VecDf local_vmaxs(N);
-  const double trajectory_max_velocity =
+  double trajectory_max_velocity =
       seed.observed_prefix_clipped
           ? std::min(minco_config.max_vel, observed_prefix_max_velocity_)
           : minco_config.max_vel;
+  if (minco_config.obstacle_slowdown_distance > 0.0 && safety_checker_) {
+    for (const auto & point : seed.dense_path) {
+      const double clearance = safety_checker_->getDistance(point);
+      if (std::isfinite(clearance) && clearance < minco_config.obstacle_slowdown_distance) {
+        trajectory_max_velocity = std::min(trajectory_max_velocity, minco_config.obstacle_max_velocity);
+        break;
+      }
+    }
+  }
+  const double terminal_speed = end_state.col(1).head<2>().norm();
+  const double terminal_speed_limit = trajectory_max_velocity * minco_config.terminal_velocity_ratio;
+  if (terminal_speed > terminal_speed_limit) {
+    end_state.col(1) *= terminal_speed_limit / terminal_speed;
+  }
   const double boundary_start_speed = start_state.col(1).head<2>().norm();
   const double hard_velocity_limit =
-      seed.observed_prefix_clipped
+      trajectory_max_velocity < minco_config.max_vel
           ? std::min(minco_config.max_vel,
                      std::max(trajectory_max_velocity,
                               std::isfinite(boundary_start_speed)
@@ -2235,12 +2408,9 @@ bool MincoPlanner::ReplanLocal(
   }
 
   traj_opt::Trajectory yaw_traj;
-  // The observed-prefix gate above validates a clipped seed with the measured
-  // chassis yaw.  Rotating toward the path tangent afterward can sweep a
-  // rectangular footprint back into the UNKNOWN cells that caused the clip,
-  // even though an omnidirectional translation is executable.  Keep yaw fixed
-  // for this short stop trajectory; the next rolling replan may resume normal
-  // yaw optimization once the newly exposed volume is observed.
+  // Seed and global footprint checks use measured chassis yaw. Keep that yaw
+  // on rolling or observation-clipped segments; approach the explicit goal
+  // heading only when this segment actually reaches the navigation goal.
   if (shouldOptimizeYawForSeed(use_yaw_opt_, seed)) {
     const bool yaw_success = optimizeYaw(start_state, opt_traj, yaw_traj, state,
                                          current_pose.pose, goal_yaw);
@@ -2270,7 +2440,11 @@ bool MincoPlanner::ReplanLocal(
 
   // The rectangular body can collide after yaw rotates even when the position
   // trajectory's centerline is clear. This is the final gate before publish.
-  if (!checkExecutableTrajectory(opt_traj, yaw_traj)) {
+  bool held_yaw = false;
+  if (!utils::selectSafeYawTrajectory(opt_traj, fallback_yaw, yaw_traj,
+      [this, &opt_traj](const traj_opt::Trajectory & candidate_yaw) {
+        return checkExecutableTrajectory(opt_traj, candidate_yaw);
+      }, held_yaw)) {
     last_validation_failure_reason_ = "FOOTPRINT_COLLISION";
     if (visualizer_) {
       visualizer_->updateCandidateTrajectory(opt_traj, opt_duration, false,
@@ -2284,6 +2458,12 @@ bool MincoPlanner::ReplanLocal(
       return finish(true, "CACHED_TRAJECTORY_REPUBLISHED");
     }
     return finish(false, last_validation_failure_reason_);
+  }
+
+  if (held_yaw) {
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 1000,
+      "[MincoPlanner] Goal-heading rotation is blocked; validated translation at "
+      "measured yaw %.3f rad. Deferring goal-heading rotation.", fallback_yaw);
   }
 
   // 9. Publish and cache. Cache position/yaw and publish under the same lock so
@@ -2303,6 +2483,8 @@ bool MincoPlanner::ReplanLocal(
       opt_traj.start_WT = trajectory_start;
       yaw_traj.start_WT = trajectory_start;
       last_traj_ = opt_traj;
+      last_traj_is_braking_ = false;
+      last_recovery_context_.reset();
       last_yaw_traj_ = yaw_traj;
       has_last_traj_ = true;
       has_last_yaw_traj_ = true;
@@ -2522,8 +2704,9 @@ MincoPlanner::PlanningState MincoPlanner::determinePlanningState(
 
   if (new_path.size() >= 2) {
     Eigen::Vector3d pred_vel = last_traj_.getVel(t_dur);
-    if (pred_vel.norm() > 0.1) {
-      Eigen::Vector3d path_dir = (new_path[1] - new_path[0]).normalized();
+    Eigen::Vector3d path_dir;
+    if (pred_vel.norm() > 0.1 && utils::initialPathTangent(
+          new_path, minco_config.terminal_tangent_lookahead, path_dir)) {
       Eigen::Vector3d vel_dir = pred_vel.normalized();
       double dot = vel_dir.dot(path_dir);
 
@@ -2566,12 +2749,12 @@ void MincoPlanner::prepareColdStart(
   // path, producing the large path deviation seen in simulation.  Keep a
   // trustworthy forward component, but discard a clearly opposing one.
   if (sparse_path.size() >= 2U && planar_speed > 0.05) {
-    const Eigen::Vector2d first_segment =
-        (sparse_path[1] - sparse_path[0]).head<2>();
-    const double segment_length = first_segment.norm();
-    if (std::isfinite(segment_length) && segment_length > 1.0e-3) {
-      const Eigen::Vector2d path_direction = first_segment / segment_length;
-      const double longitudinal_speed = speed_xy.dot(path_direction);
+    // A centimetre-long lateral pickup is not the route's travel direction.
+    // Use a bounded forward chord for the momentum compatibility check.
+    Eigen::Vector3d path_direction;
+    if (utils::initialPathTangent(
+          sparse_path, minco_config.terminal_tangent_lookahead, path_direction)) {
+      const double longitudinal_speed = speed_xy.dot(path_direction.head<2>());
       const double direction_cos = longitudinal_speed / planar_speed;
       if (!std::isfinite(direction_cos) || direction_cos < 0.25) {
         RCLCPP_WARN_THROTTLE(
@@ -2886,6 +3069,8 @@ bool MincoPlanner::evaluateCachedTrajectorySafety(
   traj_opt::Trajectory position_snapshot;
   traj_opt::Trajectory yaw_snapshot;
   uint64_t generation = 0;
+  bool braking = false;
+  std::shared_ptr<OverlapEscapeGuard::Context> recovery_context;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!has_last_traj_ ||
@@ -2901,6 +3086,8 @@ bool MincoPlanner::evaluateCachedTrajectorySafety(
       yaw_snapshot = last_yaw_traj_;
     }
     generation = trajectory_generation_;
+    braking = last_traj_is_braking_;
+    recovery_context = last_recovery_context_;
   }
 
   geometry_msgs::msg::PoseStamped actual_pose;
@@ -2910,18 +3097,27 @@ bool MincoPlanner::evaluateCachedTrajectorySafety(
   const bool has_actual_pose = getRobotPose(actual_pose);
 
   const double elapsed = nowSeconds() - position_snapshot.start_WT;
-  const bool safe =
-      has_actual_pose &&
-      checkExecutableTrajectory(position_snapshot, yaw_snapshot, actual_pose);
+  double actual_yaw = 0.0;
+  const bool safe = has_actual_pose && (recovery_context ?
+    (utils::quaternionToYawChecked(actual_pose.pose.orientation, actual_yaw) &&
+    overlap_escape_guard_->check(*recovery_context,
+      Eigen::Vector3d(actual_pose.pose.position.x, actual_pose.pose.position.y, actual_pose.pose.position.z),
+      actual_yaw, mode_context_->dynamicQuery(), nowSeconds())) :
+    checkExecutableTrajectory(position_snapshot, yaw_snapshot, actual_pose));
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (generation != trajectory_generation_ ||
         !planning_session_.accepts(last_trajectory_session_)) {
       return true;
     }
-    is_traj_safe_.store(safe);
+    is_traj_safe_.store(safe && !braking);
   }
   if (safe) {
+    return true;
+  }
+
+  if (!braking && !recovery_context && has_actual_pose &&
+      publishValidatedBrakingTrajectory(actual_pose, generation)) {
     return true;
   }
 
@@ -2958,6 +3154,47 @@ bool MincoPlanner::evaluateCachedTrajectorySafety(
 
   publishEmergencyStopImpl(stop_pose, generation, true);
   return false;
+}
+
+bool MincoPlanner::publishValidatedBrakingTrajectory(
+    const geometry_msgs::msg::PoseStamped & pose, uint64_t expected_generation) {
+  if (!safety_checker_) {return false;}
+  double yaw = 0.0;
+  if (!utils::quaternionToYawChecked(pose.pose.orientation, yaw)) {return false;}
+  Eigen::Vector3d velocity = getCurrentSpeed();
+  velocity.z() = 0.0;
+  if (!velocity.allFinite() || velocity.norm() > minco_config.max_vel + 1.0e-3) {return false;}
+  const Eigen::Vector3d position(pose.pose.position.x, pose.pose.position.y, 0.0);
+  traj_opt::Trajectory braking, heading;
+  if (!utils::makeBrakingTrajectories(position, velocity, yaw,
+        minco_config.max_acc, braking, heading) ||
+      braking.getTotalDuration() > safety_check_horizon_ ||
+      !safety_checker_->checkTrajectory(braking, heading) ||
+      !checkExecutableTrajectory(braking, heading)) {return false;}
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (trajectory_generation_ != expected_generation || emergency_stop_latched_ || last_traj_is_braking_ ||
+      !planning_session_.accepts(last_trajectory_session_)) {return false;}
+  std_msgs::msg::Header header;
+  header.frame_id = output_frame_;
+  const auto stamp = rosNow();
+  header.stamp = stamp;
+  braking.start_WT = heading.start_WT = stamp.seconds();
+  last_traj_ = braking;
+  last_yaw_traj_ = heading;
+  last_recovery_context_.reset();
+  last_traj_is_braking_ = true;
+  has_last_yaw_traj_ = true;
+  ++trajectory_generation_;
+  // Keep the FSM's urgent replan active while the safe stop is being tracked.
+  is_traj_safe_.store(false);
+  utils::publishOptimizedTrajectory(braking, heading, opt_path_pub_, opt_trajectory_id_,
+    header, planning_stamp_, static_cast<int>(std::ceil(braking.getTotalDuration() / 0.05)) + 1,
+    0.05, ros_interfaces::msg::MpcPositionCommand::BRAKING_COMMAND);
+  RCLCPP_INFO(logger_, "[MincoPlanner] Future path blocked; published a fully checked "
+    "%.2f s braking trajectory at %.2f m/s while replanning.",
+    braking.getTotalDuration(), velocity.norm());
+  return true;
 }
 
 bool MincoPlanner::republishSafeCachedTrajectory(
@@ -3009,6 +3246,9 @@ bool MincoPlanner::republishSafeCachedTrajectory(
                                    : collision_cache_reuse_max_duration_;
     geometry_msgs::msg::PoseStamped stop_pose = fallback_stop_pose;
     (void)getRobotPose(stop_pose);
+    if (publishValidatedBrakingTrajectory(stop_pose, generation)) {
+      return true;
+    }
     publishEmergencyStopImpl(stop_pose, generation, true);
     RCLCPP_WARN_THROTTLE(
         logger_, *clock_, 1000,
@@ -3054,16 +3294,19 @@ bool MincoPlanner::republishSafeCachedTrajectory(
     remaining_position.start_WT = trajectory_stamp.seconds();
     remaining_yaw.start_WT = trajectory_stamp.seconds();
     last_traj_ = remaining_position;
+    last_recovery_context_.reset();
     last_yaw_traj_ = remaining_yaw;
     ++trajectory_generation_;
-    is_traj_safe_.store(true);
+    is_traj_safe_.store(!last_traj_is_braking_);
     const int steps =
         std::max(2, static_cast<int>(std::ceil(
                         remaining_position.getTotalDuration() / command_step)) +
                         1);
     utils::publishOptimizedTrajectory(
         remaining_position, remaining_yaw, opt_path_pub_, opt_trajectory_id_,
-        header_msg, planning_stamp_, steps, command_step);
+        header_msg, planning_stamp_, steps, command_step,
+        last_traj_is_braking_ ? ros_interfaces::msg::MpcPositionCommand::BRAKING_COMMAND :
+          ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND);
     published = true;
   }
 
@@ -3385,12 +3628,18 @@ bool MincoPlanner::publishEscapeCommand(
     const geometry_msgs::msg::PoseStamped &current_pose,
     const Eigen::Vector2d &escape_vel, uint64_t expected_session) {
   uint64_t expected_generation = 0U;
+  bool recovery_running = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!planning_session_.accepts(expected_session)) {
       return false;
     }
     expected_generation = trajectory_generation_;
+    recovery_running = has_last_traj_ && last_recovery_context_ &&
+      last_trajectory_session_ == expected_session && !emergency_stop_latched_;
+  }
+  if (recovery_running) {
+    return evaluateCachedTrajectorySafety(&current_pose);
   }
 
   auto reject_escape = [this, expected_session,
@@ -3401,6 +3650,7 @@ bool MincoPlanner::publishEscapeCommand(
       return false;
     }
     last_traj_.clear();
+    last_recovery_context_.reset();
     last_yaw_traj_.clear();
     has_last_traj_ = false;
     has_last_yaw_traj_ = false;
@@ -3426,41 +3676,105 @@ bool MincoPlanner::publishEscapeCommand(
     return reject_escape("INVALID_CURRENT_YAW");
   }
 
-  constexpr double escape_duration = 0.5;
+  const double escape_speed = std::min(escape_vel.norm(), overlap_recovery_config_.max_speed);
+  if (!escape_vel.allFinite() || escape_speed <= 1.0e-6) {
+    return reject_escape("INVALID_ESCAPE_SPEED");
+  }
+  const Eigen::Vector2d bounded_escape_vel = escape_vel.normalized() * escape_speed;
+  if (mode_params_.static_overlap.enabled() && safety_checker_ &&
+      safety_checker_->checkFootprint({current_pose.pose.position.x,
+        current_pose.pose.position.y, current_pose.pose.position.z}, current_yaw)) {
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 1000,
+      "[MincoPlanner] Current footprint is within the driving tolerance; "
+      "retrying the guide without an overlap escape.");
+    return false;
+  }
   constexpr double command_step = 0.05;
   traj_opt::Trajectory escape_traj;
   traj_opt::Trajectory yaw_traj;
   Eigen::Vector2d selected_escape_vel = Eigen::Vector2d::Zero();
+  std::shared_ptr<OverlapEscapeGuard::Context> selected_recovery_context;
+  std::map<std::string, size_t> escape_rejections;
   const bool found_safe_escape = utils::selectSafeEscapeVelocity(
-      escape_vel,
-      [this, &current_pose, current_yaw, escape_duration, &escape_traj,
-       &yaw_traj](const Eigen::Vector2d &candidate_velocity) {
+      bounded_escape_vel,
+      [this, &current_pose, current_yaw, &escape_traj,
+       &yaw_traj, &selected_recovery_context, &escape_rejections](const Eigen::Vector2d &candidate_velocity) {
+        std::string rejection_reason;
+        auto context = overlap_escape_guard_->begin(
+          Eigen::Vector3d(current_pose.pose.position.x, current_pose.pose.position.y, current_pose.pose.position.z),
+          current_yaw, candidate_velocity, mode_context_->dynamicQuery(), nowSeconds(),
+          &rejection_reason, mode_context_->staticQuery());
+        if (!context) {
+          ++escape_rejections[rejection_reason];
+          return false;
+        }
         traj_opt::Trajectory candidate_traj;
         traj_opt::Trajectory candidate_yaw_traj;
         if (!utils::makeEscapeTrajectories(
-                current_pose, candidate_velocity, current_yaw, escape_duration,
+                current_pose, candidate_velocity, current_yaw, context->duration,
                 candidate_traj, candidate_yaw_traj)) {
+          ++escape_rejections["INVALID_ESCAPE_TRAJECTORY"];
           return false;
         }
-        // Every candidate uses the same full body + yaw + fused prior/ROG
-        // freshness gate as an optimized trajectory.
-        if (!checkCollision(candidate_traj, candidate_yaw_traj)) {
+        if (!overlap_recovery_enabled_ && !checkCollision(candidate_traj, candidate_yaw_traj)) {
+          ++escape_rejections["START_OVERLAP_DISABLED"];
           return false;
         }
+        selected_recovery_context = std::move(context);
         escape_traj = std::move(candidate_traj);
         yaw_traj = std::move(candidate_yaw_traj);
         return true;
       },
       selected_escape_vel);
   if (!found_safe_escape) {
+    std::string detail;
+    for (const auto & entry : escape_rejections) {
+      detail += entry.first + "=" + std::to_string(entry.second) + " ";
+    }
+    RCLCPP_WARN_THROTTLE(logger_, *clock_, 1000,
+      "[MincoPlanner] Escape candidate rejection counts: %s", detail.c_str());
     return reject_escape("TRAJECTORY_SAFETY_CHECK_FAILED");
+  }
+  const auto & static_context = selected_recovery_context->static_context;
+  const double escape_duration = selected_recovery_context->duration;
+  const double initial_overlap_area = selected_recovery_context->last_overlap_area +
+    (static_context ? static_context->last_overlap_area : 0.0);
+  const size_t initial_overlap_cells = selected_recovery_context->allowed_cells.size() +
+    (static_context ? static_context->allowed_cells.size() : 0U);
+
+  double footprint_area = 0.0;
+  const auto & recovery_footprint = mode_params_.priormap_static_footprint;
+  if (recovery_footprint.size() >= 3U) {
+    for (size_t index = 0U; index < recovery_footprint.size(); ++index) {
+      const auto & a = recovery_footprint[index];
+      const auto & b = recovery_footprint[(index + 1U) % recovery_footprint.size()];
+      footprint_area += a.x() * b.y() - a.y() * b.x();
+    }
+  }
+  footprint_area = 0.5 * std::abs(footprint_area);
+  const double overlap_ratio = footprint_area > 1.0e-9
+    ? initial_overlap_area / footprint_area : 0.0;
+  const Eigen::Vector3d actual_position(current_pose.pose.position.x,
+    current_pose.pose.position.y, current_pose.pose.position.z);
+  // Never suppress recovery for a currently unsafe body solely because its
+  // overlap is small. Normal safety and recovery must share one tolerance.
+  if (!std::isfinite(overlap_ratio) ||
+      (overlap_ratio < overlap_recovery_config_.min_overlap_ratio && safety_checker_ &&
+       safety_checker_->checkFootprint(actual_position, current_yaw))) {
+    RCLCPP_INFO_THROTTLE(
+      logger_, *clock_, 1000,
+      "[MincoPlanner] Skip overlap escape: current overlap=%.6f m2 "
+      "(ratio=%.3f, trigger=%.3f); retrying the local/global guide.",
+      initial_overlap_area, overlap_ratio,
+      overlap_recovery_config_.min_overlap_ratio);
+    return false;
   }
 
   if ((selected_escape_vel - escape_vel).norm() > 1.0e-6) {
     RCLCPP_WARN_THROTTLE(
         logger_, *clock_, 1000,
         "[MincoPlanner] Requested escape direction was blocked; selected a "
-        "fused-map-safe alternative velocity (%.3f, %.3f).",
+        "static-and-dynamic-safe alternative velocity (%.3f, %.3f).",
         selected_escape_vel.x(), selected_escape_vel.y());
   }
 
@@ -3481,6 +3795,8 @@ bool MincoPlanner::publishEscapeCommand(
     yaw_traj.start_WT = escape_traj.start_WT;
     last_traj_ = escape_traj;
     last_yaw_traj_ = yaw_traj;
+    last_recovery_context_ = selected_recovery_context;
+    last_traj_is_braking_ = false;
     has_last_traj_ = true;
     has_last_yaw_traj_ = true;
     last_trajectory_session_ = expected_session;
@@ -3491,15 +3807,61 @@ bool MincoPlanner::publishEscapeCommand(
         static_cast<int>(std::ceil(escape_duration / command_step)) + 1;
     utils::publishOptimizedTrajectory(escape_traj, yaw_traj, opt_path_pub_,
                                       opt_trajectory_id_, header_msg,
-                                      planning_stamp_, steps, command_step);
+                                      planning_stamp_, steps, command_step,
+                                      ros_interfaces::msg::MpcPositionCommand::RECOVERY_COMMAND);
     published = true;
   }
 
+  if (published) {
+    RCLCPP_INFO(logger_, "[MincoPlanner] Bounded escape: speed=%.3f m/s duration=%.3f s "
+      "initial_overlap=%.6f m2 cells=%zu (startup/uphill assistance disabled)",
+      selected_escape_vel.norm(), escape_duration,
+      initial_overlap_area, initial_overlap_cells);
+  }
   if (published && visualizer_) {
     visualizer_->publishRecoveryDebug(current_pose, selected_escape_vel,
                                       escape_duration);
   }
   return published;
+}
+
+bool MincoPlanner::isRecoveryComplete(
+  const geometry_msgs::msg::PoseStamped & current_pose) const {
+  std::shared_ptr<OverlapEscapeGuard::Context> context;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (emergency_stop_latched_ || !planning_session_.accepts(last_trajectory_session_)) {
+      return false;
+    }
+    context = last_recovery_context_;
+  }
+  if (!context || !mode_context_) {
+    return false;
+  }
+  const Eigen::Vector3d position(current_pose.pose.position.x,
+    current_pose.pose.position.y, current_pose.pose.position.z);
+  const double progress = (position - context->start).head<2>().dot(context->velocity.normalized());
+  const double length = context->distance > 0.0 ? context->distance :
+    std::min(overlap_recovery_config_.max_distance,
+    context->velocity.norm() * overlap_recovery_config_.max_duration);
+  // The controller treats the end of the published escape as a stop. Mark
+  // recovery complete only after almost the whole validated correction has
+  // been executed; the old fixed 5 cm threshold ended a 20 cm escape early,
+  // so the FSM immediately replanned from the same unsafe edge.
+  const double completion_progress = std::max(
+    0.9 * length, length - 0.5 * overlap_recovery_config_.tracking_tolerance);
+  if (!std::isfinite(progress) || progress < completion_progress) {
+    return false;
+  }
+  const auto global = mode_context_->globalQuery();
+  const auto result = global ? global->query(position) : rog_map::QueryResult{};
+  if (!result.projected_cost_valid || result.projected_cost >= 253U) {
+    return false;
+  }
+  double yaw = 0.0;
+  return safety_checker_ && current_pose.header.frame_id == planning_frame_ &&
+    utils::quaternionToYawChecked(current_pose.pose.orientation, yaw) &&
+    safety_checker_->checkFootprint(position, yaw);
 }
 
 void MincoPlanner::clearRecoveryDebugVisualization() {

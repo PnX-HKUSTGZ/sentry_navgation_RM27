@@ -339,15 +339,6 @@ float SmacPlanner2DSimple::evaluateInflationCost(unsigned char cell_cost)
     normalized_cost * normalized_cost : normalized_cost;
   const float configured_cost = 1.0f + search_info_.cost_penalty * shaped_cost;
 
-  // Preserve the existing steep inner-inflation barrier while allowing the
-  // lower-cost outer band to influence route selection. The former hard-coded
-  // quadratic shaping reduced a cost-45 cell to only a 6% travel penalty.
-  if (cell_cost > 128u) {
-    const float inner_barrier =
-      1.0f + 20.0f * (normalized_cost * normalized_cost * normalized_cost);
-    return std::max(configured_cost, inner_barrier);
-  }
-
   return configured_cost;
 }
 

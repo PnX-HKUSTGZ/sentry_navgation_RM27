@@ -137,7 +137,18 @@ bool YawTrajOpt::optimize(const Eigen::Vector4d & istate_in,
   Eigen::VectorXd times;
   getYawTimeAllocation(pos_traj_dur, times);
   Eigen::VectorXd way_pts;
-  getYawWaypointAllocation(init_state, goal_state, way_pts, times, pos_traj);
+  if (!free_start && !free_goal) {
+    // Explicit chassis headings also constrain intermediate yaw on long paths.
+    geometry_utils::normalizeNextYaw(init_state(0), goal_state(0));
+    way_pts.resize(times.size() - 1);
+    double elapsed = 0.0;
+    for (int i = 0; i < way_pts.size(); ++i) {
+      elapsed += times(i);
+      way_pts(i) = init_state(0) + (goal_state(0) - init_state(0)) * elapsed / pos_traj_dur;
+    }
+  } else {
+    getYawWaypointAllocation(init_state, goal_state, way_pts, times, pos_traj);
+  }
   Trajectory yaw_traj;
   switch (order) {
   case 3: {

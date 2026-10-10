@@ -6,6 +6,103 @@
 
 namespace minco_planner::utils {
 
+bool makeBrakingTrajectories(const Eigen::Vector3d & position,
+  const Eigen::Vector3d & velocity, double yaw, double max_acceleration,
+  traj_opt::Trajectory & position_traj, traj_opt::Trajectory & yaw_traj)
+{
+  position_traj.clear();
+  yaw_traj.clear();
+  if (!position.allFinite() || !velocity.allFinite() || !std::isfinite(yaw) ||
+      !std::isfinite(max_acceleration) || max_acceleration <= 0.0 ||
+      std::abs(velocity.z()) > 1.0e-6 || velocity.norm() <= 0.1) {return false;}
+  const double duration = std::max(0.2, 2.0 * velocity.norm() / max_acceleration);
+  // v(t) = v(0) * (1 - t/T)^2: forward motion only, bounded acceleration,
+  // and zero terminal velocity/acceleration, followed by a stationary tail.
+  Eigen::Matrix<double, 3, 6> coefficients = Eigen::Matrix<double, 3, 6>::Zero();
+  coefficients.col(5) = position;
+  coefficients.col(4) = velocity;
+  coefficients.col(3) = -velocity / duration;
+  coefficients.col(2) = velocity / (3.0 * duration * duration);
+  position_traj.emplace_back(duration, coefficients);
+  coefficients.setZero();
+  coefficients.col(5) = position + velocity * duration / 3.0;
+  position_traj.emplace_back(0.1, coefficients);
+  coefficients.setZero();
+  coefficients(0, 5) = yaw;
+  yaw_traj.emplace_back(duration + 0.1, coefficients);
+  return true;
+}
+
+bool initialPathTangent(const std::vector<Eigen::Vector3d> & path,
+  double lookahead, Eigen::Vector3d & tangent)
+{
+  if (path.size() < 2U || !path.front().allFinite() ||
+      !std::isfinite(lookahead) || lookahead <= 0.0) {return false;}
+  Eigen::Vector2d target = path.front().head<2>();
+  double remaining = lookahead;
+  for (size_t i = 1U; i < path.size(); ++i) {
+    if (!path[i].allFinite()) {return false;}
+    const Eigen::Vector2d step = path[i].head<2>() - target;
+    const double length = step.norm();
+    if (length > remaining) {
+      target += step * (remaining / length);
+      break;
+    }
+    target = path[i].head<2>();
+    remaining -= length;
+    if (remaining <= 1.0e-9) {break;}
+  }
+  const Eigen::Vector2d direction = target - path.front().head<2>();
+  if (direction.norm() <= 1.0e-6) {return false;}
+  tangent = Eigen::Vector3d(direction.x(), direction.y(), 0.0).normalized();
+  return true;
+}
+
+bool forwardPathTangent(const std::vector<geometry_msgs::msg::PoseStamped> & path,
+  const Eigen::Vector3d & position, double lookahead, Eigen::Vector3d & tangent)
+{
+  if (path.size() < 2U || !position.allFinite() || !std::isfinite(lookahead) || lookahead <= 0.0) {
+    return false;
+  }
+  const auto xy = [](const auto & pose) {
+    return Eigen::Vector2d(pose.pose.position.x, pose.pose.position.y);
+  };
+  double best_distance = std::numeric_limits<double>::infinity();
+  size_t best_segment = 0U;
+  Eigen::Vector2d anchor = Eigen::Vector2d::Zero();
+  for (size_t i = 0; i + 1U < path.size(); ++i) {
+    const Eigen::Vector2d a = xy(path[i]), edge = xy(path[i + 1U]) - a;
+    if (!a.allFinite() || !edge.allFinite()) {return false;}
+    if (edge.squaredNorm() < 1.0e-12) {continue;}
+    const double u = std::clamp((position.head<2>() - a).dot(edge) / edge.squaredNorm(), 0.0, 1.0);
+    const Eigen::Vector2d projected = a + u * edge;
+    const double distance = (position.head<2>() - projected).squaredNorm();
+    if (distance < best_distance) {
+      best_distance = distance;
+      best_segment = i;
+      anchor = projected;
+    }
+  }
+  if (!std::isfinite(best_distance)) {return false;}
+  Eigen::Vector2d target = anchor;
+  double remaining = lookahead;
+  for (size_t i = best_segment + 1U; i < path.size(); ++i) {
+    const Eigen::Vector2d step = xy(path[i]) - target;
+    const double length = step.norm();
+    if (length > remaining && length > 1.0e-9) {
+      target += step * (remaining / length);
+      break;
+    }
+    target = xy(path[i]);
+    remaining -= length;
+    if (remaining <= 1.0e-9) {break;}
+  }
+  const Eigen::Vector2d direction = target - anchor;
+  if (direction.norm() <= 1.0e-6) {return false;}
+  tangent = Eigen::Vector3d(direction.x(), direction.y(), 0.0).normalized();
+  return true;
+}
+
 bool quaternionToYawChecked(const geometry_msgs::msg::Quaternion & q, double & yaw)
 {
   const double norm_sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
@@ -106,7 +203,8 @@ void publishOptimizedTrajectory(const traj_opt::Trajectory & opt_traj,
   const std_msgs::msg::Header & header,
   const builtin_interfaces::msg::Time & planning_stamp,
   int steps,
-  double t_step)
+  double t_step,
+  uint8_t command_flag)
 {
   if (!pub || steps <= 0) {
     return;
@@ -115,7 +213,7 @@ void publishOptimizedTrajectory(const traj_opt::Trajectory & opt_traj,
   ros_interfaces::msg::MpcPositionCommand traj_msg;
   traj_msg.header = header;
   traj_msg.planning_stamp = planning_stamp;
-  traj_msg.command_flag = ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND;
+  traj_msg.command_flag = command_flag;
   traj_msg.cmds.resize(steps);
   const uint32_t traj_id = ++trajectory_id_counter;
   const double yaw_total_duration = yaw_traj.getTotalDuration();
@@ -258,6 +356,32 @@ void publishBackupTrajectory(const traj_opt::Trajectory & backup_traj,
   }
 }
 
+bool selectSafeYawTrajectory(const traj_opt::Trajectory & position,
+  double measured_yaw, traj_opt::Trajectory & yaw,
+  const std::function<bool(const traj_opt::Trajectory &)> & is_safe,
+  bool & held_yaw)
+{
+  held_yaw = false;
+  const double duration = position.getTotalDuration();
+  if (!std::isfinite(measured_yaw) || !std::isfinite(duration) || duration <= 0.0 || !is_safe) {
+    return false;
+  }
+  if (is_safe(yaw)) {
+    return true;
+  }
+  Eigen::MatrixXd coefficients = Eigen::MatrixXd::Zero(3, 6);
+  coefficients(0, 5) = measured_yaw;
+  traj_opt::Trajectory held;
+  held.emplace_back(duration, coefficients);
+  held.start_WT = position.start_WT;
+  if (!is_safe(held)) {
+    return false;
+  }
+  yaw = std::move(held);
+  held_yaw = true;
+  return true;
+}
+
 bool makeEscapeTrajectories(const geometry_msgs::msg::PoseStamped & current_pose,
   const Eigen::Vector2d & escape_vel,
   double current_yaw,
@@ -323,6 +447,17 @@ bool selectSafeEscapeVelocity(
         selected_velocity = candidate;
         return true;
       }
+    }
+  }
+  // A retreat normal to a grid-aligned wall can be the only direction that
+  // reduces existing overlap without sweeping into another occupied cell.
+  for (const Eigen::Vector2d & direction : std::array<Eigen::Vector2d, 4>{
+    Eigen::Vector2d::UnitX(), -Eigen::Vector2d::UnitX(),
+    Eigen::Vector2d::UnitY(), -Eigen::Vector2d::UnitY()}) {
+    const Eigen::Vector2d candidate = speed * direction;
+    if (is_safe(candidate)) {
+      selected_velocity = candidate;
+      return true;
     }
   }
   return false;

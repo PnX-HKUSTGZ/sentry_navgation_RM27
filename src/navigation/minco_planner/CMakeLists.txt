@@ -16,6 +16,7 @@ find_package(ament_cmake REQUIRED)
 find_package(backward_ros REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(Boost REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav2_common REQUIRED)
 find_package(nav2_core REQUIRED)
@@ -48,11 +49,13 @@ set(MINCO_CORE_SOURCES
   src/minco_core/astar.cpp
   src/minco_core/corridor_generator.cpp
   src/minco_core/components/global_path_searcher.cpp
+  src/minco_core/components/footprint_geometry.cpp
   src/minco_core/components/local_path_processor.cpp
   src/minco_core/components/map_query_adapters.cpp
   src/minco_core/components/planner_mode_context.cpp
   src/minco_core/components/recovery_behaivor.cpp
   src/minco_core/components/trajectory_safety_checker.cpp
+  src/minco_core/components/overlap_escape_guard.cpp
   src/minco_core/minco_fsm.cpp
   src/minco_core/minco_planner.cpp
   src/minco_core/minco_utils.cpp
@@ -91,6 +94,7 @@ PUBLIC
   $<INSTALL_INTERFACE:include>
 PRIVATE
   ${EIGEN3_INCLUDE_DIR}
+  ${Boost_INCLUDE_DIRS}
 )
 
 ament_target_dependencies(${library_name}
@@ -132,6 +136,10 @@ ament_target_dependencies(planner_server_mt
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_overlap_escape_guard test/overlap_escape_guard_test.cpp)
+  target_compile_options(test_overlap_escape_guard PRIVATE -Wno-error)
+  target_link_libraries(test_overlap_escape_guard ${library_name})
+  ament_target_dependencies(test_overlap_escape_guard nav2_costmap_2d rclcpp rog_map)
   ament_add_gtest(test_trajectory_safety_checker
     test/trajectory_safety_checker_test.cpp
   )

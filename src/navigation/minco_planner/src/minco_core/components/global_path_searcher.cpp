@@ -1,4 +1,5 @@
 #include "minco_core/components/global_path_searcher.hpp"
+#include "minco_core/minco_utils.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -264,6 +265,19 @@ bool GlobalPathSearcher::planPriorMap(const geometry_msgs::msg::PoseStamped & st
     return false;
   }
 
+  if (mode_context.usesPolygonStaticClearance()) {
+    double yaw = 0.0;
+    if (!utils::quaternionToYawChecked(start_map.pose.orientation, yaw)) {
+      RCLCPP_ERROR(logger_, "[MincoPlanner] Polygon global search requires a valid chassis yaw.");
+      return false;
+    }
+    mode_context.updateGlobalFootprintYaw(yaw);
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 2000,
+      "[MincoPlanner] Global static footprint yaw=%.3f rad (polygon clearance).", yaw);
+  } else {
+    mode_context.updateGlobalFootprintYaw(0.0);
+  }
+
   nav_msgs::msg::Path dummy;
   dummy.header.stamp = clock_->now();
   dummy.header.frame_id = mode_context.outputFrame();
@@ -519,6 +533,15 @@ bool GlobalPathSearcher::makePlan(const geometry_msgs::msg::Pose & start,
   std::function<bool()> cancel_checker,
   nav_msgs::msg::Path & plan)
 {
+  if (mode_context.usesPolygonStaticClearance()) {
+    double yaw = 0.0;
+    if (!utils::quaternionToYawChecked(start.orientation, yaw)) {
+      return false;
+    }
+    mode_context.updateGlobalFootprintYaw(yaw);
+  } else {
+    mode_context.updateGlobalFootprintYaw(0.0);
+  }
   std::vector<geometry_msgs::msg::PoseStamped> ignored_path;
   return makePlanOnQuery(start,
     goal,

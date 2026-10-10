@@ -5,6 +5,7 @@
 #include "minco_core/components/planning_request_contract.hpp"
 #include "minco_core/components/planning_request_lease.hpp"
 #include "minco_core/components/planning_session_state.hpp"
+#include "minco_core/components/overlap_escape_guard.hpp"
 #include "minco_core/performance/planner_performance_monitor.hpp"
 
 #include <limits>
@@ -72,6 +73,7 @@ public:
   // Accessors for FSM
   bool isTrajSafe() const { return is_traj_safe_.load(); }
   bool ensureTrajectorySafe(const geometry_msgs::msg::PoseStamped & current_pose);
+  bool isRecoveryComplete(const geometry_msgs::msg::PoseStamped & current_pose) const;
   double nowSeconds() const;
   double getTrajectoryRemainTime() const;
   bool isTrajectoryTimeExpired(double now_s) const;
@@ -167,6 +169,8 @@ private:
   rclcpp::Time rosNow() const;
   bool evaluateCachedTrajectorySafety(
     const geometry_msgs::msg::PoseStamped * fallback_stop_pose);
+  bool publishValidatedBrakingTrajectory(
+    const geometry_msgs::msg::PoseStamped & pose, uint64_t expected_generation);
   bool republishSafeCachedTrajectory(
     const geometry_msgs::msg::PoseStamped & fallback_stop_pose,
     uint64_t expected_session,
@@ -288,6 +292,7 @@ private:
   geometry_msgs::msg::PoseStamped active_goal_;
 
   bool has_last_traj_ = false;
+  bool last_traj_is_braking_ = false;
   bool has_last_yaw_traj_ = false;
   bool has_pending_goal_{false};
   bool has_active_goal_{false};
@@ -303,6 +308,10 @@ private:
   PlanningSessionState planning_session_;
   PlanningRequestLease request_lease_;
   bool emergency_stop_latched_{false};
+  bool overlap_recovery_enabled_{true};
+  OverlapEscapeGuard::Config overlap_recovery_config_;
+  std::unique_ptr<OverlapEscapeGuard> overlap_escape_guard_;
+  std::shared_ptr<OverlapEscapeGuard::Context> last_recovery_context_;
 
   std::mutex path_mutex_;
   std::mutex goal_mutex_;

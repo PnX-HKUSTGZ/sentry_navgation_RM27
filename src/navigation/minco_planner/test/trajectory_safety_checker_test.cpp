@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "minco_core/components/trajectory_safety_checker.hpp"
+#include "minco_core/components/map_query_adapters.hpp"
 #include "minco_core/minco_utils.hpp"
 #include "rog_map/projection_layer.hpp"
 
@@ -103,6 +104,25 @@ private:
   rog_map::QueryStatus status_;
 };
 
+class UnknownProjectionQuery : public FakeMapQuery {
+public:
+  UnknownProjectionQuery()
+      : FakeMapQuery([](const Eigen::Vector3d &) { return false; }) {}
+
+  rog_map::QueryResult query(const Eigen::Vector3d &pos) const override {
+    auto result = FakeMapQuery::query(pos);
+    result.projected_cost_valid = true;
+    result.projected_cost = nav2_costmap_2d::NO_INFORMATION;
+    result.snapshot_commit_stamp = result.snapshot_stamp;
+    result.projection.valid = true;
+    result.projection.cost_source = rog_map::ProjectedCostSource::UNKNOWN;
+    result.projection.dynamic_cost = nav2_costmap_2d::NO_INFORMATION;
+    result.projection.cell_type =
+        static_cast<uint8_t>(rog_map::CellType::UNKNOWN);
+    return result;
+  }
+};
+
 class NegativeInterpolatedDistanceQuery : public FakeMapQuery {
 public:
   NegativeInterpolatedDistanceQuery()
@@ -142,6 +162,49 @@ public:
   }
 };
 
+class ShallowBoundaryLethalQuery : public FakeMapQuery {
+public:
+  double boundary_y{-0.28};
+  double signed_distance{-0.02};
+  uint8_t cost{nav2_costmap_2d::LETHAL_OBSTACLE};
+  rog_map::ProjectedCostSource source{rog_map::ProjectedCostSource::DYNAMIC_PROJECTION};
+  rog_map::ProjectionClassReason raw_reason{rog_map::ProjectionClassReason::HEADROOM_BLOCKED};
+  rog_map::ProjectionClassReason candidate_reason{rog_map::ProjectionClassReason::HEADROOM_BLOCKED};
+  rog_map::QueryStatus status{rog_map::QueryStatus::OK};
+  double snapshot_age{0.0};
+
+  ShallowBoundaryLethalQuery()
+      : FakeMapQuery([](const Eigen::Vector3d &pos) {
+          return pos.y() < -0.28;
+        }) {}
+
+  rog_map::QueryResult query(const Eigen::Vector3d &pos) const override {
+    auto result = FakeMapQuery::query(pos);
+    if (pos.y() >= boundary_y) {
+      result.distance = 1.0;
+      result.projected_cost_valid = true;
+      result.projected_cost = nav2_costmap_2d::FREE_SPACE;
+      result.snapshot_commit_stamp = result.snapshot_stamp;
+      return result;
+    }
+    result.distance = signed_distance;
+    result.ok = status == rog_map::QueryStatus::OK;
+    result.status = status;
+    result.snapshot_stamp -= snapshot_age;
+    result.projected_cost_valid = true;
+    result.projected_cost = cost;
+    result.snapshot_commit_stamp = result.snapshot_stamp;
+    result.projection.valid = true;
+    result.projection.cost_source = source;
+    result.projection.dynamic_cost = cost;
+    result.projection.cell_type =
+        static_cast<uint8_t>(rog_map::CellType::OCCUPIED);
+    result.projection.raw_reason = static_cast<uint8_t>(raw_reason);
+    result.projection.candidate_reason = static_cast<uint8_t>(candidate_reason);
+    return result;
+  }
+};
+
 traj_opt::Trajectory makeLinearTrajectory(double duration,
                                           const Eigen::Vector3d &start,
                                           const Eigen::Vector3d &velocity) {
@@ -174,6 +237,93 @@ makeChecker(const TrajectorySafetyChecker::Config &config,
   return checker;
 }
 
+class SeparatedEvidenceQuery : public LethalMetadataQuery {
+public:
+  rog_map::QueryResult query(const Eigen::Vector3d & pos) const override {
+    auto result = LethalMetadataQuery::query(pos);
+    result.projection.prior_occupied = true;
+    result.projection.dynamic_cost = dynamic_cost;
+    result.projection.valid = provenance_valid;
+    result.snapshot_stamp -= age;
+    return result;
+  }
+  uint8_t dynamic_cost{0U};
+  bool provenance_valid{true};
+  double age{0.0};
+};
+
+TEST(TrajectorySafetyCheckerTest, RollingEndpointAnticipatesGateInsteadOfContinuingDiagonalApproach) {
+  std::vector<geometry_msgs::msg::PoseStamped> path;
+  for (const Eigen::Vector2d & point : std::vector<Eigen::Vector2d>{
+    {1.025,7.415},{.975,7.465},{.925,7.465},{.875,7.515},
+    {.825,7.565},{.775,7.565},{.675,7.565},{.325,7.565}}) {
+    geometry_msgs::msg::PoseStamped pose;
+    pose.pose.position.x = point.x();
+    pose.pose.position.y = point.y();
+    path.push_back(pose);
+  }
+  Eigen::Vector3d tangent(1,0,0);
+  ASSERT_TRUE(utils::forwardPathTangent(path, {.825,7.565,0}, .30, tangent));
+  EXPECT_TRUE(tangent.isApprox(Eigen::Vector3d(-1,0,0), 1.0e-9));
+  ASSERT_TRUE(utils::forwardPathTangent(path, {.825,7.570,0}, .30, tangent));
+  EXPECT_NEAR(tangent.y(), 0.0, 1.0e-9);
+  EXPECT_FALSE(utils::forwardPathTangent(path, {.325,7.565,0}, .30, tangent));
+  EXPECT_FALSE(utils::forwardPathTangent(path, {.825,7.565,0}, 0.0, tangent));
+}
+
+TEST(PathTangentTest, ShortLateralPickupDoesNotDiscardForwardMomentum)
+{
+  Eigen::Vector3d tangent;
+  ASSERT_TRUE(utils::initialPathTangent(
+    {{0,0,0}, {0,.04,0}, {.50,.04,0}}, .30, tangent));
+  EXPECT_GT(tangent.x(), .98);
+  EXPECT_LT(tangent.y(), .16);
+  ASSERT_TRUE(utils::initialPathTangent(
+    {{0,0,0}, {0,.04,0}, {-.50,.04,0}}, .30, tangent));
+  EXPECT_LT(tangent.x(), -.98);
+  ASSERT_TRUE(utils::initialPathTangent(
+    {{0,0,0}, {0,0,0}, {.50,0,0}}, .30, tangent));
+  EXPECT_TRUE(tangent.isApprox(Eigen::Vector3d::UnitX()));
+  EXPECT_FALSE(utils::initialPathTangent({{0,0,0}, {0,0,0}}, .30, tangent));
+}
+
+TEST(TrajectorySafetyCheckerTest, OriginalPgmCorridorAgreesWithGlobalFootprintAndKeepsDynamicGates) {
+  nav2_costmap_2d::Costmap2D original(40U, 40U, 0.05, -1.0, -1.0, 0U);
+  for (unsigned int y = 0; y < 40U; ++y) {
+    for (unsigned int x = 0; x < 40U; ++x) {
+      if (y < 14U || y >= 27U) {original.setCost(x, y, 254U);}
+    }
+  }
+  auto prior = std::make_shared<Nav2CostmapQuery>(&original);
+  auto dynamic = std::make_shared<SeparatedEvidenceQuery>();
+  TrajectorySafetyChecker::Config config;
+  config.footprint_points = {{-.311,-.312},{.311,-.312},{.311,.312},{-.311,.312}};
+  auto checker = makeChecker(config, dynamic);
+  checker->setQuery(dynamic, prior);
+  StaticObstacleClearanceQuery global(prior, prior, config.footprint_points, 0.0);
+  const Eigen::Vector3d position(.025, .025, 0.0);
+  EXPECT_LT(global.value(20U,20U), 253U);
+  EXPECT_TRUE(checker->checkFootprint(position, 0.0));
+  EXPECT_FALSE(checker->checkFootprint(position, 0.6));
+  global.setFootprintYaw(0.6);
+  EXPECT_GE(global.value(20U,20U), 253U);
+  dynamic->dynamic_cost = 254U;  // The same cell has prior AND measured headroom blockage.
+  EXPECT_FALSE(checker->checkFootprint(position, 0.0));
+  dynamic->dynamic_cost = 255U;
+  EXPECT_FALSE(checker->checkFootprint(position, 0.0));
+  dynamic->dynamic_cost = 0U;
+  dynamic->age = 2.0;
+  EXPECT_FALSE(checker->checkFootprint(position, 0.0));
+  dynamic->age = 0.0;
+  dynamic->provenance_valid = false;
+  EXPECT_FALSE(checker->checkFootprint(position, 0.0));
+  dynamic->provenance_valid = true;
+  original.setCost(21U, 21U, 254U);
+  EXPECT_FALSE(checker->checkFootprint(position, 0.0));
+  original.setCost(21U, 21U, 255U);
+  EXPECT_FALSE(checker->checkFootprint(position, 0.0));
+}
+
 TEST(TrajectorySafetyCheckerTest, RejectsObstacleAtMandatoryEndpoint) {
   TrajectorySafetyChecker::Config config;
   config.safe_dist = 0.01;
@@ -201,6 +351,69 @@ TEST(TrajectorySafetyCheckerTest, RejectsObstacleAtMandatoryEndpoint) {
   EXPECT_NEAR(diagnostic.footprint_offset.norm(), 0.0, 1e-12);
 }
 
+TEST(TrajectorySafetyCheckerTest, StaticAreaAndDepthToleranceMatchesGlobalAndKeepsMeasuredObstacles) {
+  nav2_costmap_2d::Costmap2D original(40U, 40U, 0.05, -1.0, -1.0, 0U);
+  for (unsigned int y = 0; y < 40U; ++y) {
+    for (unsigned int x = 0; x < 40U; ++x) {
+      if (y < 14U || y >= 27U) {original.setCost(x, y, 254U);}
+    }
+  }
+  auto prior = std::make_shared<Nav2CostmapQuery>(&original);
+  auto dynamic = std::make_shared<SeparatedEvidenceQuery>();
+  TrajectorySafetyChecker::Config config;
+  config.footprint_points = {{-.296,-.297},{.296,-.297},{.296,.297},{-.296,.297}};
+  const Eigen::Vector3d shallow(.025, -.025, 0.0);
+  auto strict = makeChecker(config, dynamic);
+  strict->setQuery(dynamic, prior);
+  EXPECT_FALSE(strict->checkFootprint(shallow, 0.0));
+
+  config.static_overlap = {0.04, 0.03};
+  auto checker = makeChecker(config, dynamic);
+  checker->setQuery(dynamic, prior);
+  StaticObstacleClearanceQuery global(prior, prior, config.footprint_points,
+    0.0, nullptr, 0.0, config.static_overlap);
+  EXPECT_TRUE(checker->checkFootprint(shallow, 0.0));
+  EXPECT_EQ(global.value(20U, 19U), 252U);
+  for (const double yaw : {0.0, 0.08, 0.20, 1.57}) {
+    global.setFootprintYaw(yaw);
+    for (unsigned int y = 17U; y <= 23U; ++y) {
+      double xw, yw;
+      prior->mapToWorld(20U, y, xw, yw);
+      EXPECT_EQ(global.value(20U, y) < 253U,
+        checker->checkFootprint({xw, yw, 0.0}, yaw)) << "y=" << yw << " yaw=" << yaw;
+    }
+  }
+  EXPECT_FALSE(checker->checkFootprint({.025, -.055, 0.0}, 0.0));
+  const auto overlap = checkStaticFootprint(prior, config.footprint_points,
+    shallow, 0.0, config.static_overlap);
+  EXPECT_NEAR(overlap.overlap_ratio, .022 / .594, 1.0e-6);
+  EXPECT_FALSE(overlap.depth_exceeded);
+  EXPECT_GE(checkStaticFootprint(prior, config.footprint_points,
+    shallow, 0.0, {0.02, 0.03}).cost, 253U);
+  EXPECT_GE(checkStaticFootprint(prior, config.footprint_points,
+    shallow, 0.0, {0.04, 0.01}).cost, 253U);
+
+  dynamic->dynamic_cost = 254U;
+  EXPECT_FALSE(checker->checkFootprint(shallow, 0.0));
+  dynamic->dynamic_cost = 255U;
+  EXPECT_FALSE(checker->checkFootprint(shallow, 0.0));
+  dynamic->dynamic_cost = 0U;
+  original.setCost(20U, 13U, 255U);
+  EXPECT_FALSE(checker->checkFootprint(shallow, 0.0));
+}
+
+TEST(TrajectorySafetyCheckerTest, TinyObstacleInsideBodyIsNotAnAllowedBoundaryOverlap) {
+  nav2_costmap_2d::Costmap2D original(100U, 100U, 0.01, -.5, -.5, 0U);
+  original.setCost(50U, 50U, 254U);
+  auto prior = std::make_shared<Nav2CostmapQuery>(&original);
+  const std::vector<Eigen::Vector2d> body{{-.3,-.3},{.3,-.3},{.3,.3},{-.3,.3}};
+  const auto result = checkStaticFootprint(prior, body, {0,0,0}, 0.0, {0.04, 0.03});
+  EXPECT_TRUE(result.valid);
+  EXPECT_LT(result.overlap_ratio, 0.001);
+  EXPECT_TRUE(result.depth_exceeded);
+  EXPECT_EQ(result.cost, 254U);
+}
+
 TEST(TrajectorySafetyCheckerTest, PreservesLethalProjectionEvidence) {
   TrajectorySafetyChecker::Config config;
   config.safe_dist = 0.0;
@@ -222,6 +435,65 @@ TEST(TrajectorySafetyCheckerTest, PreservesLethalProjectionEvidence) {
               rog_map::ProjectionClassReason::HEADROOM_BLOCKED));
   EXPECT_FLOAT_EQ(diagnostic.projection.headroom, 0.18F);
   EXPECT_DOUBLE_EQ(diagnostic.snapshot_processing_age_ms, 12.0);
+}
+
+TEST(TrajectorySafetyCheckerTest, AllowsOnlyConfiguredShallowBoundaryCellOverlap) {
+  TrajectorySafetyChecker::Config config;
+  config.safe_dist = 0.0;
+  config.footprint_points = {{-.30, -.30}, {.30, -.30},
+                             {.30, .30}, {-.30, .30}};
+  auto query = std::make_shared<ShallowBoundaryLethalQuery>();
+
+  auto strict = makeChecker(config, query);
+  EXPECT_FALSE(strict->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+
+  config.dynamic_edge_overlap_tolerance = 0.03;
+  auto tolerant = makeChecker(config, query);
+  EXPECT_TRUE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+
+  for (const double distance : {0.0, 0.009, 0.027}) {
+    query->signed_distance = distance;
+    EXPECT_TRUE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+  }
+  query->signed_distance = 0.04;
+  EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+
+  query->signed_distance = -0.04;
+  EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+  query->signed_distance = -0.02;
+  query->boundary_y = 0.01;
+  EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+  query->boundary_y = -0.28;
+
+  for (const auto reason : {rog_map::ProjectionClassReason::SOLID_VERTICAL_WALL,
+                           rog_map::ProjectionClassReason::AMBIGUOUS_OCCUPIED,
+                           rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED}) {
+    query->candidate_reason = reason;
+    EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+    query->candidate_reason = rog_map::ProjectionClassReason::HEADROOM_BLOCKED;
+    query->raw_reason = reason;
+    EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+    query->raw_reason = rog_map::ProjectionClassReason::HEADROOM_BLOCKED;
+  }
+  query->cost = nav2_costmap_2d::NO_INFORMATION;
+  EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+  query->cost = nav2_costmap_2d::LETHAL_OBSTACLE;
+  query->source = rog_map::ProjectedCostSource::PRIOR_MAP;
+  EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+  query->source = rog_map::ProjectedCostSource::DYNAMIC_PROJECTION;
+  query->status = rog_map::QueryStatus::INTERPOLATION_FAILED;
+  EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+  query->status = rog_map::QueryStatus::OK;
+  query->snapshot_age = 10.0;
+  EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+  query->snapshot_age = 0.0;
+  config.safe_dist = 0.01;
+  EXPECT_FALSE(makeChecker(config, query)->checkFootprint({0.0, 0.0, 0.0}, 0.0));
+
+  nav2_costmap_2d::Costmap2D original(100U, 100U, 0.01, -.5, -.5, 0U);
+  original.setCost(50U, 20U, nav2_costmap_2d::LETHAL_OBSTACLE);
+  tolerant->setQuery(query, std::make_shared<Nav2CostmapQuery>(&original));
+  EXPECT_FALSE(tolerant->checkFootprint({0.0, 0.0, 0.0}, 0.0));
 }
 
 TEST(TrajectorySafetyCheckerTest, ReportsFirstCenterlineCollisionSample) {
@@ -259,6 +531,38 @@ TEST(TrajectorySafetyCheckerTest, ReportsFirstCenterlineCollisionSample) {
   ASSERT_TRUE(checker->checkTrajectory(safe_trajectory));
   EXPECT_EQ(checker->lastFailureDiagnostic().reason,
             TrajectorySafetyChecker::FailureReason::NONE);
+}
+
+TEST(TrajectorySafetyCheckerTest, BrakingStopsBeforeFutureObstacleButRejectsBlockedBody) {
+  TrajectorySafetyChecker::Config config;
+  config.safe_dist = 0.01;
+  config.footprint_length = 0.4;
+  config.footprint_width = 0.4;
+  config.footprint_margin = 0.001;
+  config.sample_dt = 0.05;
+  const Eigen::Vector3d velocity(0.8, 0.0, 0.0);
+  traj_opt::Trajectory braking, yaw;
+  ASSERT_TRUE(utils::makeBrakingTrajectories(Eigen::Vector3d::Zero(), velocity,
+    0.0, 1.8, braking, yaw));
+  EXPECT_LT((braking.getVel(0.0) - velocity).norm(), 1.0e-9);
+  EXPECT_LT(braking.getVel(braking.getTotalDuration()).norm(), 1.0e-9);
+  EXPECT_LT(braking.getAcc(braking.getTotalDuration()).norm(), 1.0e-9);
+  EXPECT_LE(braking.getMaxVelRate(), 0.8 + 1.0e-6);
+  EXPECT_LE(braking.getMaxAccRate(), 1.8 + 1.0e-6);
+  for (double t = 0.0; t < braking.getTotalDuration(); t += 0.01) {
+    EXPECT_GE(braking.getVel(t).x(), -1.0e-9);
+  }
+  auto map = std::make_shared<FakeMapQuery>([](const Eigen::Vector3d & p) {return p.x() >= 0.65;});
+  auto checker = makeChecker(config, map);
+  EXPECT_FALSE(checker->checkTrajectory(makeLinearTrajectory(1.0,
+    Eigen::Vector3d::Zero(), velocity)));
+  EXPECT_TRUE(checker->checkTrajectory(braking, yaw));
+  map = std::make_shared<FakeMapQuery>([](const Eigen::Vector3d & p) {return p.x() >= 0.30;});
+  EXPECT_FALSE(makeChecker(config, map)->checkTrajectory(braking, yaw));
+  map = std::make_shared<FakeMapQuery>([](const Eigen::Vector3d & p) {return p.x() >= 0.15;});
+  EXPECT_FALSE(makeChecker(config, map)->checkTrajectory(braking, yaw));
+  EXPECT_FALSE(utils::makeBrakingTrajectories(Eigen::Vector3d::Zero(), velocity,
+    0.0, 0.0, braking, yaw));
 }
 
 TEST(TrajectorySafetyCheckerTest,
@@ -545,6 +849,19 @@ TEST(TrajectorySafetyCheckerTest, ReportsRogQueryFailureStatus) {
   EXPECT_EQ(diagnostic.rog_frame, "camera_init");
 }
 
+TEST(TrajectorySafetyCheckerTest, UnknownMotionIsExplicitlyConfigurable) {
+  auto unknown = std::make_shared<UnknownProjectionQuery>();
+  TrajectorySafetyChecker::Config config;
+  auto checker = makeChecker(config, unknown);
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  EXPECT_EQ(checker->lastFailureDiagnostic().reason,
+            TrajectorySafetyChecker::FailureReason::COSTMAP_UNKNOWN);
+
+  config.allow_unknown_motion = true;
+  checker = makeChecker(config, unknown);
+  EXPECT_TRUE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+}
+
 TEST(TrajectorySafetyCheckerTest,
      ZeroClearanceUsesExactFreeCellAfterValidFreshQuery) {
   TrajectorySafetyChecker::Config config;
@@ -557,6 +874,23 @@ TEST(TrajectorySafetyCheckerTest,
   config.safe_dist = 0.001;
   checker = makeChecker(config, map);
   EXPECT_FALSE(checker->checkPoint(Eigen::Vector3d::Zero()));
+}
+
+TEST(TrajectorySafetyCheckerTest, UnknownMotionNeverBypassesPendingRoof) {
+  class PendingRoofQuery : public UnknownProjectionQuery {
+    rog_map::QueryResult query(const Eigen::Vector3d &pos) const override {
+      auto result = UnknownProjectionQuery::query(pos);
+      result.projection.raw_reason = static_cast<uint8_t>(
+          rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+      return result;
+    }
+  };
+  TrajectorySafetyChecker::Config config;
+  config.allow_unknown_motion = true;
+  auto checker = makeChecker(config, std::make_shared<PendingRoofQuery>());
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  EXPECT_EQ(checker->lastFailureDiagnostic().reason,
+            TrajectorySafetyChecker::FailureReason::COSTMAP_LETHAL);
 }
 
 TEST(TrajectorySafetyCheckerTest, ExpandsMarginOnEachSide) {
@@ -695,6 +1029,29 @@ TEST(TrajectorySafetyCheckerTest, EscapeVelocityKeepsRequestedDirectionWhenSafe)
   ASSERT_TRUE(utils::selectSafeEscapeVelocity(
       requested, [](const Eigen::Vector2d &) { return true; }, selected));
   EXPECT_TRUE(selected.isApprox(requested, 1.0e-12));
+}
+
+TEST(TrajectorySafetyCheckerTest, BlockedGoalRotationFallsBackOnlyToValidatedHeading) {
+  TrajectorySafetyChecker::Config config;
+  config.safe_dist = 0.01;
+  config.footprint_length = 1.0;
+  config.footprint_width = 0.10;
+  config.footprint_margin = 0.001;
+  auto map = std::make_shared<FakeMapQuery>([](const Eigen::Vector3d & pos) {
+    return std::abs(pos.y()) > 0.20;
+  });
+  auto checker = makeChecker(config, map);
+  const auto position = makeLinearTrajectory(1.0, Eigen::Vector3d::Zero(), Eigen::Vector3d(0.2, 0.0, 0.0));
+  auto yaw = makeYawTrajectory(1.0, 0.8);
+  bool held = false;
+  ASSERT_TRUE(utils::selectSafeYawTrajectory(position, 0.0, yaw,
+    [&](const traj_opt::Trajectory & candidate) { return checker->checkTrajectory(position, candidate); }, held));
+  EXPECT_TRUE(held);
+  EXPECT_NEAR(yaw.getPos(0.5).x(), 0.0, 1.0e-9);
+  yaw = makeYawTrajectory(1.0, 0.8);
+  EXPECT_FALSE(utils::selectSafeYawTrajectory(position, 0.7, yaw,
+    [&](const traj_opt::Trajectory & candidate) { return checker->checkTrajectory(position, candidate); }, held));
+  EXPECT_FALSE(held);
 }
 
 TEST(TrajectorySafetyCheckerTest, EscapeVelocityFindsAlternativeDirection) {

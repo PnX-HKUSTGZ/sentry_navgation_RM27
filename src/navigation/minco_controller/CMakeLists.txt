@@ -60,6 +60,11 @@ pluginlib_export_plugin_description_file(nav2_core minco_controller.xml)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_recovery_control test/test_recovery_control.cpp)
+  if(TARGET test_recovery_control)
+    target_link_libraries(test_recovery_control ${PROJECT_NAME})
+    set_tests_properties(test_recovery_control PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=69")
+  endif()
 
   ament_add_gtest(test_input_validation test/test_input_validation.cpp)
   if(TARGET test_input_validation)

@@ -23,6 +23,15 @@ public:
     cfg_.loadFromRosNode(node, "prob_map_test");
     initProbMap();
   }
+
+  std::pair<float, float> hitHeights(const rog_map::Vec3f &pos) const {
+    const int index = getHashIndexFromPos(pos);
+    return {hit_z_min_.at(index), hit_z_max_.at(index)};
+  }
+
+  void clearVoxel(const rog_map::Vec3f &pos) {
+    resetCell(getHashIndexFromPos(pos));
+  }
 };
 
 class RclcppContextGuard
@@ -210,6 +219,38 @@ TEST(ProbMapRaycast,
   EXPECT_NE(
     map.getGridType(horizontalPoint(sensor, kRaycastMaxRange, 180.0)),
     super_utils::OCCUPIED);
+  // The map has a process-wide initialization guard; reuse this instance to
+  // check raw height retention through both endpoint-processing paths.
+  const rog_map::Vec3f low(1.1, 0.1, 0.111);
+  const rog_map::Vec3f high(1.1, 0.1, 0.179);
+  for (int count : {1, 40}) {
+    map.setUpdateTime(count);
+    map.clearVoxel(low);
+    rog_map::PointCloud cloud;
+    for (int i = 0; i < count; ++i) {
+      cloud.push_back(pointAt(low));
+      cloud.push_back(pointAt(high));
+    }
+    map.updateProbMap(cloud, sensor_pose, sensor);
+    EXPECT_NEAR(map.hitHeights(low).first, 0.111, 1e-6);
+    EXPECT_NEAR(map.hitHeights(low).second, 0.179, 1e-6);
+  }
+  map.setUpdateTime(41.0);
+  rog_map::PointCloud fresh;
+  fresh.push_back(pointAt(high));
+  map.updateProbMap(fresh, sensor_pose, sensor);
+  EXPECT_NEAR(map.hitHeights(low).first, 0.179, 1e-6);
+  map.clearVoxel(low);
+  EXPECT_FALSE(std::isfinite(map.hitHeights(low).first));
+  rog_map::PointCloud replacement;
+  replacement.push_back(pointAt(high));
+  map.updateProbMap(replacement, sensor_pose, sensor);
+  EXPECT_NEAR(map.hitHeights(low).first, 0.179, 1e-6);
+
+  rog_map::PointCloud clearing;
+  clearing.push_back(pointAt({3.1, 0.1, 0.1}));
+  for (int i = 0; i < 40; ++i) { map.updateProbMap(clearing, sensor_pose, sensor); }
+  EXPECT_FALSE(std::isfinite(map.hitHeights(low).first));
 }
 
 }  // namespace

@@ -8,6 +8,10 @@
   <xacro:property name="radius_wheel" value="0.080" />
   <xacro:property name="omni_contact_radius" value="${radius_wheel}" />
   <xacro:property name="wheel_center_offset" value="0.218" />
+  <xacro:property name="folded_vehicle_height" value="0.240" />
+  <xacro:property name="folded_top_z" value="${folded_vehicle_height - radius_wheel}" />
+  <xacro:property name="cad_body_z_scale" value="${folded_top_z / 0.16638150811195374}" />
+  <xacro:property name="cad_sensor_z_scale" value="${(folded_top_z - 0.130) / (0.168313 - 0.130)}" />
   <xacro:property name="omni_friction" value="0.05" />
   <xacro:property name="body_mass" value="8.2" />
   <xacro:property name="wheel_mass" value="0.5" />
@@ -33,12 +37,13 @@
                izz="${0.4 * mass * radius * radius}" />
     </inertial>
   </xacro:macro>
-  <xacro:macro name="cad_visual" params="mesh material">
+  <xacro:macro name="cad_visual" params="mesh material z_scale:=1.0 z_origin:=0.0">
     <visual>
       <geometry>
         <mesh filename="package://rm_27_stimulation/meshes/rm27_sentry_visual/${mesh}.stl"
-              scale="$(arg cad_visual_scale) $(arg cad_visual_scale) $(arg cad_visual_scale)" />
+              scale="$(arg cad_visual_scale) $(arg cad_visual_scale) ${float('$(arg cad_visual_scale)') * z_scale}" />
       </geometry>
+      <origin xyz="0 0 ${float('$(arg cad_visual_scale)') * z_origin}" />
       <material name="${material}" />
     </visual>
   </xacro:macro>
@@ -64,10 +69,11 @@
 
   <link name="base_link">
     <xacro:if value="$(arg use_cad_visual)">
-      <xacro:cad_visual mesh="body" material="cad_body" />
+      <xacro:cad_visual mesh="body" material="cad_body" z_scale="${cad_body_z_scale}" />
       <xacro:cad_visual mesh="wheels" material="cad_wheels" />
-      <xacro:cad_visual mesh="armor" material="cad_armor" />
-      <xacro:cad_visual mesh="sensors" material="cad_sensors" />
+      <xacro:cad_visual mesh="armor" material="cad_armor" z_scale="${cad_body_z_scale}" />
+      <xacro:cad_visual mesh="sensors" material="cad_sensors" z_scale="${cad_sensor_z_scale}"
+                        z_origin="${0.130 * (1.0 - cad_sensor_z_scale)}" />
     </xacro:if>
     <xacro:unless value="$(arg use_cad_visual)">
       <visual>
@@ -90,13 +96,14 @@
     </collision>
     <collision>
       <geometry>
-        <box size="0.48 0.48 0.08" />
+        <!-- Keep the folded collision top 240 mm above the wheel contact plane. -->
+        <box size="0.362 0.354 0.040" />
       </geometry>
-      <origin rpy="0 0 0" xyz="0 0 0.14" />
+      <origin rpy="0 0 0" xyz="-0.043 -0.016 ${folded_top_z - 0.020}" />
     </collision>
     <!-- STL has no material density. Preserve the validated 10.2 kg total
          mass, but derive the inertia from the CAD body envelope. -->
-    <xacro:box_inertial mass="${body_mass}" x="0.54" y="0.54" z="0.20"
+    <xacro:box_inertial mass="${body_mass}" x="0.54" y="0.54" z="${0.20 * cad_body_z_scale}"
                          ox="0.0" oy="0.0" oz="0.066" />
   </link>
 
@@ -204,12 +211,12 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.076 0.072 0.066"/>
+        <box size="0.076 0.048 0.040"/>
       </geometry>
     </collision>
     <xacro:unless value="$(arg use_cad_visual)">
       <visual>
-        <geometry><box size="0.076 0.072 0.066"/></geometry>
+        <geometry><box size="0.076 0.048 0.040"/></geometry>
         <material name="green"><color rgba="0 1 0 1"/></material>
       </visual>
     </xacro:unless>
@@ -286,8 +293,7 @@
       <max_stall_assist_force>45.0</max_stall_assist_force>
       <max_yaw_torque>8.0</max_yaw_torque>
     </plugin>
-    <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
-      <dimensions>3</dimensions>
+    <plugin filename="librm27_ground_truth_odometry_system.so" name="rm_27_stimulation::GroundTruthOdometrySystem">
       <odom_publish_frequency>50</odom_publish_frequency>
       <odom_topic>/ground_truth/odometry</odom_topic>
       <odom_frame>world</odom_frame>

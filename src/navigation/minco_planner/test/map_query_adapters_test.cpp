@@ -3,6 +3,7 @@
 #include "minco_core/components/map_query_adapters.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <limits>
 #include <mutex>
@@ -77,6 +78,7 @@ public:
 private:
   std::vector<unsigned char> values_{0U};
 };
+
 
 TEST(Nav2CostmapQueryTest, CopyValuesUsesCostmapMutexAndCopiesCompleteMap)
 {
@@ -238,6 +240,125 @@ TEST(StaticObstacleClearanceQueryTest, RejectsInvalidRadius)
   EXPECT_THROW(
     StaticObstacleClearanceQuery(
       base, std::numeric_limits<double>::quiet_NaN()),
+    std::invalid_argument);
+}
+
+TEST(StaticObstacleClearanceQueryTest, OrientedPolygonOpens800mmCorridor)
+{
+  nav2_costmap_2d::Costmap2D costmap(80U, 80U, 0.05, -2.0, -2.0,
+    nav2_costmap_2d::LETHAL_OBSTACLE);
+  for (unsigned int y = 32U; y < 48U; ++y) {
+    for (unsigned int x = 0U; x < 80U; ++x) {
+      costmap.setCost(x, y, nav2_costmap_2d::FREE_SPACE);
+    }
+  }
+  auto base = std::make_shared<Nav2CostmapQuery>(&costmap);
+  const std::vector<Eigen::Vector2d> footprint{
+    {0.311, -0.221}, {0.311, 0.220}, {0.296, 0.257}, {0.258, 0.296},
+    {0.216, 0.313}, {-0.216, 0.313}, {-0.258, 0.296}, {-0.296, 0.257},
+    {-0.311, 0.220}, {-0.311, -0.221}, {-0.296, -0.258}, {-0.258, -0.295},
+    {-0.219, -0.311}, {0.218, -0.311}, {0.259, -0.294}, {0.296, -0.258}};
+  StaticObstacleClearanceQuery circular(base, 0.443);
+  EXPECT_FALSE(circular.isFree(40U, 40U));
+
+  StaticObstacleClearanceQuery polygon(base, base, footprint, 0.05);
+  EXPECT_TRUE(polygon.isFree(40U, 40U));
+  EXPECT_FALSE(polygon.isFree(40U, 43U));
+  polygon.setFootprintYaw(std::acos(-1.0) / 4.0);
+  EXPECT_FALSE(polygon.isFree(40U, 40U));
+  polygon.setFootprintYaw(std::acos(-1.0) / 2.0);
+  EXPECT_TRUE(polygon.isFree(40U, 40U));
+  polygon.setFootprintYaw(0.0);
+  EXPECT_TRUE(polygon.isFree(40U, 40U));
+
+  costmap.setCost(40U, 40U, nav2_costmap_2d::LETHAL_OBSTACLE);
+  polygon.setFootprintYaw(0.0);
+  EXPECT_FALSE(polygon.isFree(40U, 40U));
+}
+
+TEST(StaticObstacleClearanceQueryTest, Static253IsSoftOnlyWithIndependentDynamicLayerEvidence)
+{
+  nav2_costmap_2d::Costmap2D master(40U,40U,0.05,-1,-1,0U);
+  nav2_costmap_2d::Costmap2D raw(40U,40U,0.05,-1,-1,0U);
+  nav2_costmap_2d::Costmap2D measured(40U,40U,0.05,-1,-1,255U);
+  for (unsigned int x=0; x<40; ++x) {
+    for (unsigned int y=0; y<40; ++y) {
+      if (y<14 || y>=27) {raw.setCost(x,y,254U);}
+    }
+  }
+  master.setCost(20,20,253U);
+  auto base=std::make_shared<Nav2CostmapQuery>(&master);
+  auto prior=std::make_shared<Nav2CostmapQuery>(&raw);
+  auto dynamic=std::make_shared<Nav2CostmapQuery>(&measured);
+  const std::vector<Eigen::Vector2d> body={{-.311,-.312},{.311,-.312},{.311,.312},{-.311,.312}};
+  StaticObstacleClearanceQuery query(base,prior,body,0.0,dynamic,0.312);
+  EXPECT_EQ(query.value(20,20),252U);
+  EXPECT_GT(query.query({.025,.025,0}).distance, 0.0);
+  std::vector<uint8_t> values;
+  ASSERT_TRUE(query.copyValues(values));
+  EXPECT_EQ(values[20*40+20],252U);
+  measured.setCost(20,26,254U);
+  query.setFootprintYaw(0);
+  EXPECT_EQ(query.value(20,20),254U);
+  measured.setCost(20,26,255U);
+  raw.setCost(20,20,254U);
+  query.setFootprintYaw(0);
+  EXPECT_EQ(query.value(20,20),254U);
+  raw.setCost(20,20,0U);
+  StaticObstacleClearanceQuery unseparated(base,prior,body,0.0);
+  EXPECT_EQ(unseparated.value(20,20),253U);
+}
+
+TEST(StaticObstacleClearanceQueryTest, MeasuredPillarBlocksBodyCornerAndRotatesWithChassis)
+{
+  nav2_costmap_2d::Costmap2D master(40U,40U,0.05,-1,-1,0U);
+  nav2_costmap_2d::Costmap2D raw(40U,40U,0.05,-1,-1,0U);
+  nav2_costmap_2d::Costmap2D measured(40U,40U,0.05,-1,-1,255U);
+  measured.setCost(20,20,254U);
+  auto base = std::make_shared<Nav2CostmapQuery>(&master);
+  auto prior = std::make_shared<Nav2CostmapQuery>(&raw);
+  auto dynamic = std::make_shared<Nav2CostmapQuery>(&measured);
+  const std::vector<Eigen::Vector2d> body = {
+    {-.31,-.12},{.31,-.12},{.31,.12},{-.31,.12}};
+  StaticObstacleClearanceQuery query(base, prior, body, 0.0, dynamic, .12, {.04,.03});
+  EXPECT_EQ(query.value(14,18),254U);
+  EXPECT_LT(query.value(18,14),253U);
+  EXPECT_LT(query.value(13,20),253U);
+  query.setFootprintYaw(std::acos(-1.0) / 2.0);
+  EXPECT_LT(query.value(14,18),253U);
+  EXPECT_EQ(query.value(18,14),254U);
+  measured.setCost(20,20,255U);
+  query.setFootprintYaw(0.0);
+  EXPECT_LT(query.value(14,18),253U);
+}
+
+TEST(StaticObstacleClearanceQueryTest, PolygonPreservesUnknownAndSoftInflation)
+{
+  nav2_costmap_2d::Costmap2D master(60U, 60U, 0.05, 0.0, 0.0,
+    nav2_costmap_2d::FREE_SPACE);
+  nav2_costmap_2d::Costmap2D source(master);
+  source.setCost(35U, 30U, nav2_costmap_2d::NO_INFORMATION);
+  master.setCost(35U, 30U, nav2_costmap_2d::NO_INFORMATION);
+  master.setCost(20U, 20U, 100U);
+  master.setCost(20U, 22U, nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
+  master.setCost(50U, 50U, nav2_costmap_2d::LETHAL_OBSTACLE);
+  auto base = std::make_shared<Nav2CostmapQuery>(&master);
+  auto static_source = std::make_shared<Nav2CostmapQuery>(&source);
+  const std::vector<Eigen::Vector2d> footprint{
+    {-0.30, -0.30}, {0.30, -0.30}, {0.30, 0.30}, {-0.30, 0.30}};
+  StaticObstacleClearanceQuery polygon(base, static_source, footprint, 0.05);
+  EXPECT_EQ(polygon.value(35U, 30U), nav2_costmap_2d::NO_INFORMATION);
+  EXPECT_FALSE(polygon.isFree(30U, 30U));
+  EXPECT_EQ(polygon.value(20U, 20U), 100U);
+  EXPECT_EQ(polygon.value(20U, 22U), nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
+  EXPECT_EQ(polygon.value(50U, 50U), nav2_costmap_2d::LETHAL_OBSTACLE);
+  EXPECT_TRUE(polygon.isFree(45U, 50U));
+  EXPECT_FALSE(polygon.isFree(1U, 20U));
+  EXPECT_THROW(polygon.setFootprintYaw(std::numeric_limits<double>::quiet_NaN()),
+    std::invalid_argument);
+  const std::vector<Eigen::Vector2d> concave{
+    {-0.3, -0.3}, {0.3, -0.3}, {0.0, 0.0}, {0.3, 0.3}, {-0.3, 0.3}};
+  EXPECT_THROW(StaticObstacleClearanceQuery(base, static_source, concave, 0.05),
     std::invalid_argument);
 }
 

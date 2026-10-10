@@ -101,6 +101,8 @@ const char *projectionClassReasonName(uint8_t reason) {
     return "HEADROOM_UNVERIFIED";
   case ProjectionClassReason::HEADROOM_BLOCKED:
     return "HEADROOM_BLOCKED";
+  case ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED:
+    return "OVERHEAD_GROUND_UNVERIFIED";
   case ProjectionClassReason::OVERHEAD_CLEARANCE_OK:
     return "OVERHEAD_CLEARANCE_OK";
   case ProjectionClassReason::CLEARANCE_OK:
@@ -109,6 +111,8 @@ const char *projectionClassReasonName(uint8_t reason) {
     return "GROUND_BRIDGE_CLEARANCE_OK";
   case ProjectionClassReason::CLEARANCE_DROPOUT_HOLD:
     return "CLEARANCE_DROPOUT_HOLD";
+  case ProjectionClassReason::GROUND_CONNECTIVITY_HOLD:
+    return "GROUND_CONNECTIVITY_HOLD";
   case ProjectionClassReason::CLEARANCE_BOUNDED_HOLE_FILL:
     return "CLEARANCE_BOUNDED_HOLE_FILL";
   case ProjectionClassReason::SURVEYED_NEAR_FIELD_CLEAR:

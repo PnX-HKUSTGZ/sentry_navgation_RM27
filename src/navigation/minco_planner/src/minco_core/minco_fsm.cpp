@@ -126,8 +126,6 @@ void MincoFsm::callMainFsmOnce()
                                             const char * escape_reason, const char * emer_reason) {
       if (!planner_->ensureTrajectorySafe(current_pose)) {
         force_global_search_ = true;
-        changeState("UNSAFE_OLD_TRAJECTORY_STOP", State::GENERATE_TRAJ);
-        return;
       }
 
       Eigen::Vector2d escape_vel;
@@ -338,11 +336,8 @@ void MincoFsm::callMainFsmOnce()
     }
 
     const double now_s = planner_->nowSeconds();
-    Eigen::Vector3d cur_p(current_pose.pose.position.x, current_pose.pose.position.y, 0.0);
-    double dist = planner_->getEsdfDistance(cur_p);
-
-    // 条件1: 成功挤出泥坑 (ESDF 距离恢复安全)
-    if (dist > 0.40) {
+    // Resume planning only after the entire body has cleared the overlap.
+    if (planner_->isRecoveryComplete(current_pose)) {
       recovery_server_->finishRecovery(true, now_s);
       force_global_search_ = true;
       changeState("ESCAPE_SUCCESS", State::GENERATE_TRAJ);

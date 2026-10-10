@@ -21,6 +21,11 @@ SOURCE_VISUAL_URI = "model://rm27_battlefield/meshes/visual/"
 SOURCE_COLLISION_URI = "model://rm27_battlefield/meshes/collision/"
 TARGET_VISUAL_URI = "model://RM27_battlefield_visual/meshes/visual/"
 TARGET_COLLISION_URI = "model://RM27_battlefield_collision/meshes/collision/"
+# Separate convex lintels at the two 250 mm tunnel openings. Bullet's default
+# triangle-mesh margin is 10 mm; convex hulls use 1 mm without lowering the car.
+TUNNEL_LINTEL_MESHES = frozenset(
+    f"collision_{index:03}.stl" for index in (169, 171, 174, 176)
+)
 
 
 def read_member(archive, member_name):
@@ -133,6 +138,17 @@ def add_bullet_friction(model):
     return updated
 
 
+def configure_tunnel_lintel_collisions(model):
+    updated = set()
+    for mesh in model.findall("./link/collision/geometry/mesh"):
+        filename = Path((mesh.findtext("uri") or "").strip()).name
+        if filename in TUNNEL_LINTEL_MESHES:
+            mesh.set("optimization", "convex_hull")
+            updated.add(filename)
+    if updated != TUNNEL_LINTEL_MESHES:
+        raise ValueError(f"Missing tunnel lintels: {sorted(TUNNEL_LINTEL_MESHES - updated)}")
+
+
 def build_visual_model(source_xml, destination, meshes):
     root = ET.fromstring(source_xml)
     model = root.find("model")
@@ -180,6 +196,7 @@ def build_collision_model(source_xml, destination, meshes):
         )
 
     rewrite_mesh_uris(model, SOURCE_COLLISION_URI, TARGET_COLLISION_URI, meshes)
+    configure_tunnel_lintel_collisions(model)
     write_model(root, destination)
     write_model_config(
         destination,

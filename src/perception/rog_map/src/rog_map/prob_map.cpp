@@ -116,6 +116,9 @@ void ProbMap::initProbMap()
   int map_size = sc_.map_size_i.prod();
 
   occupancy_buffer_.resize(map_size, 0);
+  hit_z_min_.assign(map_size, std::numeric_limits<float>::infinity());
+  hit_z_max_.assign(map_size, -std::numeric_limits<float>::infinity());
+  hit_height_stamp_.assign(map_size, -1.0);
   last_hit_time_.resize(map_size, 0.0);
   last_update_time_.resize(map_size, 0.0);
   active_flags_.resize(map_size, 0U);
@@ -642,6 +645,9 @@ void ProbMap::resetCell(const int & hash_id)
     // nothing need to do
   }
   ret = 0;
+  hit_z_min_[hash_id] = std::numeric_limits<float>::infinity();
+  hit_z_max_[hash_id] = -std::numeric_limits<float>::infinity();
+  hit_height_stamp_[hash_id] = -1.0;
   if (hash_id >= 0 && hash_id < static_cast<int>(last_hit_time_.size())) {
     Vec3f pos;
     hashIdToPos(hash_id, pos);
@@ -667,6 +673,12 @@ GridType ProbMap::classifyProb(const float & prob) const
 
 void ProbMap::updateCellState(const Vec3f & pos, const GridType & from_type, const GridType & to_type)
 {
+  if (from_type == GridType::OCCUPIED && to_type != GridType::OCCUPIED) {
+    const int hash_id = getHashIndexFromPos(pos);
+    hit_z_min_[hash_id] = std::numeric_limits<float>::infinity();
+    hit_z_max_[hash_id] = -std::numeric_limits<float>::infinity();
+    hit_height_stamp_[hash_id] = -1.0;
+  }
   if (from_type == to_type) {
     return;
   }
@@ -937,6 +949,7 @@ void ProbMap::raycastProcessSerial(const PointCloud & input_cloud, const Vec3f &
         }
         posToGlobalIndex(p, pt_id_g);
         insertUpdateCandidate(pt_id_g, true);
+        recordHitHeight(pt_id_g, p.z());
         runtime_stats_.raycast_used_point_count += 1.0;
         // record cache box size;
         raycast_data_.cache_box_min = raycast_data_.cache_box_min.cwiseMin(p);
@@ -994,6 +1007,7 @@ void ProbMap::raycastProcessSerial(const PointCloud & input_cloud, const Vec3f &
     if (update_hit) {
       posToGlobalIndex(p, pt_id_g);
       insertUpdateCandidate(pt_id_g, true);
+      recordHitHeight(pt_id_g, p.z());
     }
   }
 
@@ -1056,6 +1070,7 @@ void ProbMap::raycastProcessParallel(const PointCloud & input_cloud, const Vec3f
         }
         posToGlobalIndex(p, pt_id_g);
         hit_ids.push_back(pt_id_g);
+        recordHitHeight(pt_id_g, p.z());
         runtime_stats_.raycast_used_point_count += 1.0;
         raycast_data_.cache_box_min = raycast_data_.cache_box_min.cwiseMin(p);
         raycast_data_.cache_box_max = raycast_data_.cache_box_max.cwiseMax(p);
@@ -1103,6 +1118,7 @@ void ProbMap::raycastProcessParallel(const PointCloud & input_cloud, const Vec3f
 
     if (update_hit) {
       hit_ids.push_back(pt_id_g);
+      recordHitHeight(pt_id_g, p.z());
     }
   }
 
@@ -1223,6 +1239,22 @@ void ProbMap::raycastProcessParallel(const PointCloud & input_cloud, const Vec3f
   runtime_stats_.raycast_merge_time = elapsedMs(merge_start);
 }
 
+void ProbMap::recordHitHeight(const Vec3i &id_g, double z)
+{
+  // Called before the parallel miss walks, only for unclipped real returns.
+  const int hash_id = getHashIndexFromGlobalIndex(id_g);
+  if (hit_height_stamp_[hash_id] != current_update_time_) {
+    // A voxel can stay occupied for seconds. Retain the latest observation's
+    // height envelope rather than accumulating old motion/noise extrema while
+    // fresh hits keep its occupancy alive. Missing voxels still follow decay.
+    hit_z_min_[hash_id] = std::numeric_limits<float>::infinity();
+    hit_z_max_[hash_id] = -std::numeric_limits<float>::infinity();
+    hit_height_stamp_[hash_id] = current_update_time_;
+  }
+  hit_z_min_[hash_id] = std::min(hit_z_min_[hash_id], static_cast<float>(z));
+  hit_z_max_[hash_id] = std::max(hit_z_max_[hash_id], static_cast<float>(z));
+}
+
 void ProbMap::insertUpdateCandidate(const Vec3i & id_g, bool is_hit)
 {
   const auto & hash_id = getHashIndexFromGlobalIndex(id_g);
@@ -1320,6 +1352,9 @@ void ProbMap::resetLocalMap()
   double unk_value = (cfg_.l_free + cfg_.l_occ) / 2.0;
   // Clear local map
   std::fill(occupancy_buffer_.begin(), occupancy_buffer_.end(), unk_value);
+  std::fill(hit_z_min_.begin(), hit_z_min_.end(), std::numeric_limits<float>::infinity());
+  std::fill(hit_z_max_.begin(), hit_z_max_.end(), -std::numeric_limits<float>::infinity());
+  std::fill(hit_height_stamp_.begin(), hit_height_stamp_.end(), -1.0);
   std::fill(last_hit_time_.begin(), last_hit_time_.end(), 0.0f);
   std::fill(last_update_time_.begin(), last_update_time_.end(), 0.0f);
   std::fill(active_flags_.begin(), active_flags_.end(), 0U);

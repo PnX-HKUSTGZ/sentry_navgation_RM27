@@ -2,6 +2,7 @@
 #define MINCO_PLANNER__MAP_QUERY_ADAPTERS_HPP_
 
 #include "minco_core/components/surveyed_ground_edge_config.hpp"
+#include "minco_core/components/footprint_geometry.hpp"
 #include "rog_map/prior_map.hpp"
 #include "minco_core/header.hpp"
 
@@ -35,9 +36,11 @@ private:
   nav2_costmap_2d::Costmap2D * costmap_{nullptr};
 };
 
-// Expands only true static lethal cells into a hard centerline-clearance mask.
-// Existing inflation costs retain their source semantics (including 253 being
-// non-traversable), and unknown cells remain unknown. A known-free cell next
+
+// Builds a hard centerline mask from a circle or an oriented convex footprint.
+// Measured obstacles get a hard oriented-footprint mask. With a separate measured layer,
+// static 253 is soft only where the exact polygon fits. Unknown stays unknown.
+// A known-free cell next
 // to an unknown island which touches a true lethal source receives a high
 // non-lethal guard cost. This keeps SMAC from selecting the anti-aliased map
 // boundary as a centerline while preserving fail-closed unknown semantics.
@@ -51,6 +54,16 @@ public:
     std::shared_ptr<rog_map::MapQueryInterface> base,
     std::shared_ptr<rog_map::MapQueryInterface> static_source,
     double clearance_radius);
+  StaticObstacleClearanceQuery(
+    std::shared_ptr<rog_map::MapQueryInterface> base,
+    std::shared_ptr<rog_map::MapQueryInterface> static_source,
+    const std::vector<Eigen::Vector2d> & footprint,
+    double grid_guard,
+    std::shared_ptr<rog_map::MapQueryInterface> dynamic_source = nullptr,
+    double dynamic_inscribed_radius = 0.0,
+    StaticOverlapPolicy static_overlap = {});
+
+  void setFootprintYaw(double yaw);
 
   bool worldToMap(double wx, double wy, unsigned int & mx, unsigned int & my) const override;
   void mapToWorld(unsigned int mx, unsigned int my, double & wx, double & wy) const override;
@@ -78,12 +91,23 @@ public:
 
 private:
   uint8_t combinedValue(unsigned int mx, unsigned int my, uint8_t base_cost) const;
+  uint8_t combineCost(size_t index, uint8_t base_cost) const;
   void buildOverlay();
+  void buildFootprintOverlay(const std::vector<unsigned char> & static_values,
+    const std::vector<unsigned char> & dynamic_values);
 
   std::shared_ptr<rog_map::MapQueryInterface> base_;
   std::shared_ptr<rog_map::MapQueryInterface> static_source_;
+  std::shared_ptr<rog_map::MapQueryInterface> dynamic_source_;
+  double dynamic_inscribed_radius_{0.0};
+  std::vector<uint8_t> dynamic_inscribed_mask_;
   double clearance_radius_{0.0};
+  std::vector<Eigen::Vector2d> footprint_;
+  double footprint_yaw_{0.0};
+  double grid_guard_{0.0};
+  StaticOverlapPolicy static_overlap_;
   std::vector<uint8_t> overlay_costs_;
+  mutable std::mutex overlay_mutex_;
   mutable std::vector<unsigned char> merged_values_;
   mutable std::mutex merged_values_mutex_;
   size_t hardened_cell_count_{0U};

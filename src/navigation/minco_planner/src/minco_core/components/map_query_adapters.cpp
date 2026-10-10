@@ -1,4 +1,5 @@
 #include "minco_core/components/map_query_adapters.hpp"
+#include "minco_core/components/footprint_geometry.hpp"
 
 #include "tf2/time.h"
 
@@ -231,6 +232,7 @@ StaticObstacleClearanceQuery::StaticObstacleClearanceQuery(
 {
 }
 
+
 StaticObstacleClearanceQuery::StaticObstacleClearanceQuery(
   std::shared_ptr<rog_map::MapQueryInterface> base,
   std::shared_ptr<rog_map::MapQueryInterface> static_source,
@@ -243,6 +245,63 @@ StaticObstacleClearanceQuery::StaticObstacleClearanceQuery(
     throw std::invalid_argument(
             "StaticObstacleClearanceQuery requires base and static-source queries");
   }
+  buildOverlay();
+}
+
+StaticObstacleClearanceQuery::StaticObstacleClearanceQuery(
+  std::shared_ptr<rog_map::MapQueryInterface> base,
+  std::shared_ptr<rog_map::MapQueryInterface> static_source,
+  const std::vector<Eigen::Vector2d> & footprint,
+  double grid_guard,
+  std::shared_ptr<rog_map::MapQueryInterface> dynamic_source,
+  double dynamic_inscribed_radius,
+  StaticOverlapPolicy static_overlap)
+: base_(std::move(base)), static_source_(std::move(static_source)),
+  dynamic_source_(std::move(dynamic_source)), dynamic_inscribed_radius_(dynamic_inscribed_radius),
+  footprint_(footprint), grid_guard_(grid_guard), static_overlap_(static_overlap)
+{
+  if (!static_overlap_.valid() || !base_ || !static_source_ || footprint_.size() < 3U ||
+    !std::isfinite(grid_guard_) || grid_guard_ < 0.0 ||
+    !std::isfinite(dynamic_inscribed_radius_) || dynamic_inscribed_radius_ < 0.0)
+  {
+    throw std::invalid_argument("Static clearance requires a convex footprint and valid grid guard");
+  }
+  double signed_area = 0.0;
+  for (size_t index = 0U; index < footprint_.size(); ++index) {
+    const auto & a = footprint_[index];
+    const auto & b = footprint_[(index + 1U) % footprint_.size()];
+    if (!a.allFinite()) {
+      throw std::invalid_argument("Static clearance footprint contains a nonfinite vertex");
+    }
+    signed_area += a.x() * b.y() - a.y() * b.x();
+    clearance_radius_ = std::max(clearance_radius_, a.norm());
+  }
+  if (std::abs(signed_area) < 1.0e-12) {
+    throw std::invalid_argument("Static clearance footprint has zero area");
+  }
+  for (size_t index = 0U; index < footprint_.size(); ++index) {
+    const auto & a = footprint_[index];
+    const Eigen::Vector2d edge = footprint_[(index + 1U) % footprint_.size()] - a;
+    for (const auto & point : footprint_) {
+      const Eigen::Vector2d offset = point - a;
+      if ((edge.x() * offset.y() - edge.y() * offset.x()) * signed_area < -1.0e-12) {
+        throw std::invalid_argument("Static clearance footprint must be convex and ordered");
+      }
+    }
+  }
+  clearance_radius_ += grid_guard_;
+  buildOverlay();
+}
+
+void StaticObstacleClearanceQuery::setFootprintYaw(double yaw)
+{
+  if (!std::isfinite(yaw)) {
+    throw std::invalid_argument("Static clearance footprint yaw must be finite");
+  }
+  std::lock_guard<std::mutex> lock(overlay_mutex_);
+  footprint_yaw_ = std::remainder(yaw, 2.0 * std::acos(-1.0));
+  // Refresh the source as well: a new static-map snapshot must not retain an
+  // old clearance mask merely because the chassis has not rotated.
   buildOverlay();
 }
 
@@ -299,13 +358,29 @@ uint8_t StaticObstacleClearanceQuery::combinedValue(
   if (index >= overlay_costs_.size()) {
     return nav2_costmap_2d::LETHAL_OBSTACLE;
   }
+  return combineCost(index, base_cost);
+}
+
+uint8_t StaticObstacleClearanceQuery::combineCost(size_t index, uint8_t base_cost) const
+{
+  if (dynamic_inscribed_mask_.size() == overlay_costs_.size() &&
+      dynamic_inscribed_mask_[index] != 0U) {
+    return nav2_costmap_2d::LETHAL_OBSTACLE;
+  }
   // NO_INFORMATION (255) must stay unknown instead of being silently turned
   // into known occupied space by the static clearance overlay.
+  if (base_cost == nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE &&
+    !footprint_.empty() && dynamic_inscribed_mask_.size() == overlay_costs_.size() &&
+    dynamic_inscribed_mask_[index] == 0U && overlay_costs_[index] < 253U)
+  {
+    base_cost = 252U;
+  }
   return std::max(base_cost, overlay_costs_[index]);
 }
 
 uint8_t StaticObstacleClearanceQuery::value(unsigned int mx, unsigned int my) const
 {
+  std::lock_guard<std::mutex> lock(overlay_mutex_);
   if (!base_ || !base_->isValid(mx, my)) {
     return nav2_costmap_2d::LETHAL_OBSTACLE;
   }
@@ -323,18 +398,20 @@ const unsigned char * StaticObstacleClearanceQuery::values() const
 
 bool StaticObstacleClearanceQuery::copyValues(std::vector<unsigned char> & out) const
 {
+  std::lock_guard<std::mutex> lock(overlay_mutex_);
   if (!base_ || !base_->copyValues(out) || out.size() != overlay_costs_.size()) {
     out.clear();
     return false;
   }
   for (size_t index = 0; index < out.size(); ++index) {
-    out[index] = std::max(out[index], overlay_costs_[index]);
+    out[index] = combineCost(index, out[index]);
   }
   return true;
 }
 
 bool StaticObstacleClearanceQuery::isValid(unsigned int mx, unsigned int my) const
 {
+  std::lock_guard<std::mutex> lock(overlay_mutex_);
   return base_ && base_->isValid(mx, my) &&
          static_cast<size_t>(my) * static_cast<size_t>(sizeX()) + mx < overlay_costs_.size();
 }
@@ -376,6 +453,7 @@ std::vector<rog_map::QueryResult> StaticObstacleClearanceQuery::queryBatch(
     return std::vector<rog_map::QueryResult>(positions.size());
   }
 
+  std::lock_guard<std::mutex> lock(overlay_mutex_);
   for (size_t index = 0; index < positions.size(); ++index) {
     auto & result = results[index];
     if (!result.ok) {
@@ -395,6 +473,9 @@ std::vector<rog_map::QueryResult> StaticObstacleClearanceQuery::queryBatch(
     result.projected_cost = cost;
     if (isLethalCost(cost)) {
       result.distance = -1.0;
+      result.gradient = Eigen::Vector3d::Zero();
+    } else if (isLethalCost(base_cost)) {
+      result.distance = resolution();
       result.gradient = Eigen::Vector3d::Zero();
     }
   }
@@ -428,6 +509,26 @@ void StaticObstacleClearanceQuery::buildOverlay()
   if (!static_source_->copyValues(static_values) || static_values.size() != cell_count) {
     throw std::invalid_argument(
             "StaticObstacleClearanceQuery could not snapshot the static source map");
+  }
+
+  dynamic_inscribed_mask_.clear();
+  std::vector<unsigned char> dynamic_values;
+  if (dynamic_source_ && !footprint_.empty()) {
+    const bool geometry_matches = dynamic_source_->sizeX() == nx && dynamic_source_->sizeY() == ny &&
+      std::abs(dynamic_source_->resolution() - map_resolution) < 1.0e-9 &&
+      std::abs(dynamic_source_->originX() - originX()) < 1.0e-9 &&
+      std::abs(dynamic_source_->originY() - originY()) < 1.0e-9;
+    if (geometry_matches && dynamic_source_->copyValues(dynamic_values) &&
+      dynamic_values.size() == cell_count) {
+      dynamic_inscribed_mask_.assign(cell_count, 0U);
+    } else {
+      dynamic_values.clear();
+    }
+  }
+
+  if (!footprint_.empty()) {
+    buildFootprintOverlay(static_values, dynamic_values);
+    return;
   }
 
   overlay_costs_.assign(cell_count, nav2_costmap_2d::FREE_SPACE);
@@ -525,6 +626,121 @@ void StaticObstacleClearanceQuery::buildOverlay()
       overlay_costs_[index] < nav2_costmap_2d::LETHAL_OBSTACLE)
     {
       ++unknown_boundary_guard_cell_count_;
+    }
+  }
+}
+
+void StaticObstacleClearanceQuery::buildFootprintOverlay(
+  const std::vector<unsigned char> & static_values,
+  const std::vector<unsigned char> & dynamic_values)
+{
+  const unsigned int nx = sizeX();
+  const unsigned int ny = sizeY();
+  const double map_resolution = resolution();
+  const Eigen::Rotation2Dd rotation(footprint_yaw_);
+  std::vector<Eigen::Vector2d> polygon;
+  Eigen::Vector2d lower = Eigen::Vector2d::Constant(std::numeric_limits<double>::infinity());
+  Eigen::Vector2d upper = -lower;
+  for (const auto & vertex : footprint_) {
+    polygon.push_back(rotation * vertex);
+    lower = lower.cwiseMin(polygon.back());
+    upper = upper.cwiseMax(polygon.back());
+  }
+
+  // Convolve the original grid squares with the same polygon/area/depth rule
+  // used by continuous local safety. Keep unknown and measured sources hard.
+  const double half_cell = 0.5 * map_resolution + grid_guard_;
+  const auto overlaps_footprint = [&](const Eigen::Vector2d & obstacle_center) {
+    return footprintIntersectsCell(polygon, obstacle_center,
+      {2.0 * half_cell, 0.0}, {0.0, 2.0 * half_cell});
+  };
+  struct KernelCell {
+    Eigen::Vector2i offset;
+    double area;
+    bool core_overlap;
+  };
+  const auto core = static_overlap_.enabled() ?
+    insetFootprint(polygon, static_overlap_.max_depth) : polygon;
+  if (core.size() < 3U) {
+    throw std::invalid_argument("Static overlap depth removes the whole footprint");
+  }
+  std::vector<KernelCell> kernel;
+  const int kernel_radius = static_cast<int>(
+    std::ceil((clearance_radius_ + map_resolution) / map_resolution));
+  for (int dy = -kernel_radius; dy <= kernel_radius; ++dy) {
+    for (int dx = -kernel_radius; dx <= kernel_radius; ++dx) {
+      const Eigen::Vector2d center(-dx * map_resolution, -dy * map_resolution);
+      if (overlaps_footprint(center)) {
+        kernel.push_back({{dx, dy}, static_overlap_.enabled() ?
+          footprintCellOverlapArea(polygon, center, {2.0 * half_cell, 0.0},
+            {0.0, 2.0 * half_cell}) : 0.0,
+          footprintIntersectsCell(core, center, {2.0 * half_cell, 0.0},
+            {0.0, 2.0 * half_cell})});
+      }
+    }
+  }
+
+  overlay_costs_.assign(static_values.size(), nav2_costmap_2d::FREE_SPACE);
+  std::vector<double> overlap_areas(static_values.size(), 0.0);
+  const double allowed_area = static_overlap_.max_ratio * polygonArea(polygon);
+  hardened_cell_count_ = 0U;
+  unknown_boundary_guard_cell_count_ = 0U;
+  for (unsigned int my = 0U; my < ny; ++my) {
+    for (unsigned int mx = 0U; mx < nx; ++mx) {
+      const uint8_t source = static_values[static_cast<size_t>(my) * nx + mx];
+      if (dynamic_values.size() == static_values.size() &&
+          dynamic_values[static_cast<size_t>(my) * nx + mx] ==
+              nav2_costmap_2d::LETHAL_OBSTACLE) {
+        // Measured pillars must cover the body's corners as well as its
+        // inscribed circle. Never apply static-map overlap tolerance here.
+        for (const auto & cell : kernel) {
+          const int x = static_cast<int>(mx) + cell.offset.x();
+          const int y = static_cast<int>(my) + cell.offset.y();
+          if (x >= 0 && y >= 0 && x < static_cast<int>(nx) && y < static_cast<int>(ny)) {
+            dynamic_inscribed_mask_[static_cast<size_t>(y) * nx + static_cast<size_t>(x)] = 1U;
+          }
+        }
+      }
+      if (source != nav2_costmap_2d::LETHAL_OBSTACLE && source != nav2_costmap_2d::NO_INFORMATION) {
+        continue;
+      }
+      const uint8_t blocked = source == nav2_costmap_2d::LETHAL_OBSTACLE ?
+        nav2_costmap_2d::LETHAL_OBSTACLE : nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE;
+      for (const auto & cell : kernel) {
+        const int x = static_cast<int>(mx) + cell.offset.x();
+        const int y = static_cast<int>(my) + cell.offset.y();
+        if (x >= 0 && y >= 0 && x < static_cast<int>(nx) && y < static_cast<int>(ny)) {
+          const size_t index = static_cast<size_t>(y) * nx + static_cast<size_t>(x);
+          auto & cost = overlay_costs_[index];
+          if (static_overlap_.enabled() && source == nav2_costmap_2d::LETHAL_OBSTACLE) {
+            overlap_areas[index] += cell.area;
+            const uint8_t overlap_cost = cell.core_overlap ||
+              overlap_areas[index] > allowed_area + 1.0e-9 ?
+              nav2_costmap_2d::LETHAL_OBSTACLE : 252U;
+            cost = std::max(cost, overlap_cost);
+          } else {
+            cost = std::max(cost, blocked);
+          }
+        }
+      }
+    }
+  }
+  for (unsigned int my = 0U; my < ny; ++my) {
+    for (unsigned int mx = 0U; mx < nx; ++mx) {
+      const size_t index = static_cast<size_t>(my) * nx + mx;
+      const double x = (static_cast<double>(mx) + 0.5) * map_resolution;
+      const double y = (static_cast<double>(my) + 0.5) * map_resolution;
+      if (x + lower.x() - grid_guard_ < 0.0 || y + lower.y() - grid_guard_ < 0.0 ||
+        x + upper.x() + grid_guard_ > nx * map_resolution ||
+        y + upper.y() + grid_guard_ > ny * map_resolution)
+      {
+        overlay_costs_[index] = nav2_costmap_2d::LETHAL_OBSTACLE;
+      }
+      if (static_values[index] < nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
+        hardened_cell_count_ += overlay_costs_[index] == nav2_costmap_2d::LETHAL_OBSTACLE;
+        unknown_boundary_guard_cell_count_ +=
+          overlay_costs_[index] == nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE;
+      }
     }
   }
 }

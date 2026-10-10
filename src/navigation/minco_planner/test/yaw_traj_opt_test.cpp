@@ -38,5 +38,19 @@ TEST(YawTrajOptTest, ExplicitOmniGoalIsNotReplacedByPathTangent)
   EXPECT_LE(yaw.getMaxVelRate(), 1.2 + 2.0);
 }
 
+TEST(YawTrajOptTest, LongLateralTrajectoryPreservesExplicitHeadingThroughout)
+{
+  const auto position = makeVerticalPositionTrajectory(8.0);
+  Eigen::Vector4d initial = Eigen::Vector4d::Zero();
+  initial(0) = 0.2;
+  YawTrajOpt optimizer(1.2);
+  geometry_utils::Trajectory yaw;
+  ASSERT_TRUE(optimizer.optimize(initial, initial, position, yaw, 5, false, false));
+  for (double t = 0.0; t <= 8.0; t += 0.05) {
+    EXPECT_NEAR(yaw.getPos(t).x(), 0.2, 1.0e-8);
+    EXPECT_NEAR(yaw.getVel(t).x(), 0.0, 1.0e-8);
+  }
+}
+
 }  // namespace
 }  // namespace traj_opt

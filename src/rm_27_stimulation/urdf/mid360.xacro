@@ -59,11 +59,10 @@
               <max_angle>${2*M_PI}</max_angle>
             </horizontal>
             <vertical>
-              <!-- 96 elevation rings keep the nearest ground-return spacing
-                   below one 5 cm ROG cell while avoiding a 115200-ray Gazebo
-                   bottleneck. Horizontal samples remain 360 for doorway
-                   width resolution; total rays are 34560. -->
-              <samples>96</samples>
+              <!-- More than 128 rings selects a 256 px Ogre2 depth cubemap.
+                   The 128 px cubemap biases a 250 mm opening below the
+                   240 mm chassis height. Keep the localizer layout in sync. -->
+              <samples>192</samples>
               <resolution>1</resolution>
               <min_angle>${-7.22/180*M_PI}</min_angle>
               <max_angle>${55.22/180*M_PI}</max_angle>

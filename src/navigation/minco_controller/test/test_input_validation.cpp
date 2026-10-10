@@ -31,6 +31,42 @@ TEST(InputValidation, AcceptsCompleteFiniteNormalCommand)
   EXPECT_EQ(reason, "NONE");
 }
 
+TEST(InputValidation, BrakingRetainsFiniteTrajectoryValidation)
+{
+  auto command = validCommand();
+  command.command_flag = ros_interfaces::msg::MpcPositionCommand::BRAKING_COMMAND;
+  command.cmds.back().velocity.x = 0.0;
+  EXPECT_TRUE(minco_controller::input_validation::validNormalCommand(command));
+  command.cmds.back().acceleration.x = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_FALSE(minco_controller::input_validation::validNormalCommand(command));
+}
+
+TEST(InputValidation, AcceptsBoundedRecoveryAndRejectsSpeedRotationAndDirectionChanges)
+{
+  using minco_controller::input_validation::validRecoveryCommand;
+  auto valid = validCommand();
+  valid.command_flag = ros_interfaces::msg::MpcPositionCommand::RECOVERY_COMMAND;
+  valid.cmds.back().position.x += 0.2;
+  EXPECT_TRUE(validRecoveryCommand(valid, 0.2, 0.2, 1.0));
+  auto command = valid;
+  for (auto & point : command.cmds) { point.velocity.x = 0.6; }
+  EXPECT_FALSE(validRecoveryCommand(command, 0.2, 0.2, 1.0));
+  command = valid;
+  command.cmds.back().yaw += 0.01;
+  EXPECT_FALSE(validRecoveryCommand(command, 0.2, 0.2, 1.0));
+  command = valid;
+  command.cmds.back().position.y += 0.01;
+  EXPECT_FALSE(validRecoveryCommand(command, 0.2, 0.2, 1.0));
+  command = valid;
+  command.cmds.back().velocity.y = 0.01;
+  EXPECT_FALSE(validRecoveryCommand(command, 0.2, 0.2, 1.0));
+  command = valid;
+  command.cmds.back().position.x += 0.01;
+  EXPECT_FALSE(validRecoveryCommand(command, 0.2, 0.2, 1.0));
+  EXPECT_FALSE(validRecoveryCommand(valid, 0.2, 0.2, 0.5));
+  EXPECT_FALSE(validRecoveryCommand(validCommand(), 0.2, 0.2, 1.0));
+}
+
 TEST(InputValidation, RejectsBlockUnknownEmptyAndHorizonMismatch)
 {
   std::string reason;

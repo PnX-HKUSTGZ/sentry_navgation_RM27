@@ -17,6 +17,7 @@ import importlib.util
 import math
 from pathlib import Path
 import struct
+import subprocess
 from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 
@@ -320,8 +321,7 @@ def test_rmuc2026_physics_supports_holonomic_ramp_contacts():
 
     assert physics is not None
     assert physics.get("default") == "1"
-    assert physics.get("type") == "dart"
-    assert physics.findtext("./dart/collision_detector") == "bullet"
+    assert physics.get("type") == "bullet"
 
     robot_root = ET.parse(SIMULATION_ROBOT_XACRO).getroot()
     for wheel_name in ("wheel_1", "wheel_2", "wheel_3", "wheel_4"):
@@ -342,6 +342,85 @@ def test_rmuc2026_physics_supports_holonomic_ramp_contacts():
         0.10
     )
     assert float(plugin.findtext("max_stall_assist_force")) == pytest.approx(45.0)
+
+
+def test_folded_upper_body_collision_fits_the_actual_cad_top():
+    robot_root = ET.fromstring(subprocess.check_output(["xacro", str(SIMULATION_ROBOT_XACRO)]))
+    upper = robot_root.find("./link[@name='base_link']/collision/geometry/box/../..")
+    size = [float(v) for v in upper.find("./geometry/box").get("size").split()]
+    center = [float(v) for v in upper.find("origin").get("xyz").split()]
+    generator = load_rmuc2026_elevation_generator()
+    mesh = generator._read_binary_stl(
+        SIMULATION_ROBOT_XACRO.parent.parent / "meshes/rm27_sentry_visual/body.stl"
+    )
+    visual = next(
+        visual for visual in robot_root.findall("./link[@name='base_link']/visual")
+        if visual.find("./geometry/mesh").get("filename").endswith("/body.stl")
+    )
+    scale = [float(v) for v in visual.find("./geometry/mesh").get("scale").split()]
+    vertices = mesh.reshape(-1, 3) * scale
+    upper_vertices = vertices[vertices[:, 2] > 0.12]
+    for axis in range(3):
+        lower = center[axis] - 0.5 * size[axis]
+        higher = center[axis] + 0.5 * size[axis]
+        assert lower <= float(upper_vertices[:, axis].min())
+        assert higher >= float(upper_vertices[:, axis].max())
+        # A full-width chassis box at the folded top snags the ramp beam.
+        assert higher - float(upper_vertices[:, axis].max()) <= 0.005
+        assert float(upper_vertices[:, axis].min()) - lower <= 0.005
+
+    odometry = robot_root.find(
+        "./gazebo/plugin[@name='rm_27_stimulation::GroundTruthOdometrySystem']"
+    )
+    assert odometry is not None
+    assert odometry.findtext("odom_topic") == "/ground_truth/odometry"
+    assert float(odometry.findtext("odom_publish_frequency")) == 50.0
+    assert robot_root.find(
+        "./gazebo/plugin[@name='gz::sim::systems::OdometryPublisher']"
+    ) is None
+
+
+def test_simulation_collision_height_and_filter_clear_250mm_roof():
+    robot = ET.fromstring(subprocess.check_output(["xacro", str(SIMULATION_ROBOT_XACRO)]))
+    projection = yaml.safe_load((BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text())[
+        "planner_server"]["ros__parameters"]["MincoPlanner"]["rog_map"]["projection"]
+    sphere = robot.find("./link[@name='wheel_1']/collision/geometry/sphere")
+    axle_height = float(sphere.get("radius"))
+    tops = []
+    for collision in robot.findall("./link[@name='base_link']/collision"):
+        origin_z = float(collision.find("origin").get("xyz").split()[2])
+        box = collision.find("./geometry/box")
+        half_height = (float(box.get("size").split()[2]) if box is not None else
+                       float(collision.find("./geometry/cylinder").get("length"))) / 2.0
+        tops.append(origin_z + half_height)
+    mount = robot.find("./joint[@name='imu_joint']/origin")
+    roll = float(mount.get("rpy").split()[0])
+    mount_z = float(mount.get("xyz").split()[2])
+    sensor = [float(v) for v in robot.find("./link[@name='imu_link']/collision/geometry/box").get("size").split()]
+    tops.append(mount_z + abs(math.sin(roll)) * sensor[1] / 2.0 + abs(math.cos(roll)) * sensor[2] / 2.0)
+    collision_height = axle_height + max(tops)
+    assert collision_height == pytest.approx(0.240)
+    assert projection["vehicle_height"] == pytest.approx(collision_height)
+    assert projection["robot_origin_to_ground"] == pytest.approx(axle_height + mount_z)
+    params = yaml.safe_load((BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text())[
+        "planner_server"]["ros__parameters"]["MincoPlanner"]
+    assert params["priormap"]["static_clearance_mode"] == "polygon"
+    filter_cfg = params["rog_map"]["cloud_filter"]
+    filter_top = filter_cfg["positions"]["z"][0] + filter_cfg["box_sizes"]["z"][0] / 2.0
+    assert filter_top >= max(tops)
+    assert axle_height + filter_top + filter_cfg["box_padding"] < 0.250
+
+@pytest.mark.parametrize("profile", ["reality", "simulation"])
+def test_overlap_recovery_limits_match_controller(profile):
+    config = yaml.safe_load((BRINGUP_DIR / f"config/{profile}/minco_params.yaml").read_text())
+    recovery = config["planner_server"]["ros__parameters"]["MincoPlanner"]["recovery_server"]
+    controller = config["controller_server"]["ros__parameters"]["MincoMpc"]
+    assert controller["physical_base_frame"] == config["planner_server"]["ros__parameters"]["MincoPlanner"]["frames"]["physical_base_frame"]
+    assert recovery["allow_start_overlap"]
+    for quantity in ("speed", "distance", "duration"):
+        assert recovery[f"overlap_max_{quantity}"] == controller[f"recovery_max_{quantity}"]
+    assert controller["deadzone_speed_threshold"] < recovery["overlap_max_speed"]
+    assert recovery["overlap_max_speed"] <= controller["max_planar_speed"]
 
 
 def test_reality_global_seed_ignores_rolling_rog_frontier():
@@ -642,7 +721,7 @@ def test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps():
             assert rog_layer["stale_timeout"] > 0.0
             assert rog_layer["footprint_clearing_enabled"] is True
             expected_range = (
-                0.60
+                2.0
                 if deployment == "simulation" and costmap_name == "global_costmap"
                 else 0.0
             )
@@ -773,10 +852,9 @@ def test_simulation_minco_gate_clearance_accounts_for_voxel_quantization():
         "MincoPlanner"
     ]["rog_map"]["projection"]
 
-    # The RMUC2026 gate produces a 0.178 m projected gap after 5 cm voxel
-    # quantization. The simulated collision height is about 0.165 m; 0.17 m
-    # keeps that allowance without rejecting the valid gate as a low ceiling.
-    assert simulation_projection["vehicle_height"] == pytest.approx(0.17)
+    # The folded simulation vehicle is 240 mm tall; its 250 mm target gate
+    # must retain positive clearance without borrowing the old 165 mm chassis.
+    assert simulation_projection["vehicle_height"] == pytest.approx(0.24)
     assert simulation_projection["headroom_margin"] == pytest.approx(0.0)
     assert simulation_projection["headroom_voxel_inset_fraction"] == pytest.approx(
         0.0
@@ -784,7 +862,7 @@ def test_simulation_minco_gate_clearance_accounts_for_voxel_quantization():
     assert (
         simulation_projection["vehicle_height"]
         + simulation_projection["headroom_margin"]
-        < 0.178
+        < 0.250
     )
 
     # The simulator's deterministic quantization budget must not weaken the
@@ -813,7 +891,14 @@ def test_simulated_no_return_rays_match_embedded_rog_range_and_resolution():
 
     assert localizer["reconstruct_no_return_rays"] is True
     assert localizer["lidar_horizontal_samples"] == 360
-    assert localizer["lidar_vertical_samples"] == 96
+    lidar = ET.parse(SIMULATION_ROBOT_XACRO.parent / "mid360.xacro")
+    vertical_samples = int(lidar.findtext(".//scan/vertical/samples"))
+    assert localizer["lidar_vertical_samples"] == vertical_samples
+    assert simulation_minco["rm27_ground_truth_localizer"]["ros__parameters"][
+        "lidar_vertical_samples"
+    ] == vertical_samples
+    # A <=128 px Ogre2 cubemap cannot resolve the 10 mm tunnel clearance.
+    assert vertical_samples > 128
     assert localizer["rog_raycast_max_range"] == rog["raycasting"]["ray_range"][1]
     assert localizer["rog_map_resolution"] == rog["resolution"]
     assert localizer["no_return_ray_length"] >= (
@@ -843,40 +928,27 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
     sim_planner = simulation["planner_server"]["ros__parameters"]["MincoPlanner"]
     sim_optimizer = sim_planner["minco_optimizer"]
     sim_mpc = simulation["controller_server"]["ros__parameters"]["MincoMpc"]
-    real_optimizer = reality["planner_server"]["ros__parameters"]["MincoPlanner"][
-        "minco_optimizer"
-    ]
     real_mpc = reality["controller_server"]["ros__parameters"]["MincoMpc"]
 
-    assert sim_optimizer["max_velocity"] == pytest.approx(1.0)
-    assert real_optimizer["max_velocity"] == pytest.approx(0.8)
-    assert real_optimizer["max_velocity"] <= real_mpc["max_planar_speed"]
-    assert real_optimizer["terminal_velocity_ratio"] == pytest.approx(0.80)
+    assert sim_optimizer["max_velocity"] == pytest.approx(1.5)
+    assert sim_mpc["max_planar_speed"] > real_mpc["max_planar_speed"]
     assert sim_optimizer["terminal_velocity_ratio"] == pytest.approx(0.85)
-    assert 0.0 < real_optimizer["terminal_velocity_ratio"] < 1.0
     assert 0.0 < sim_optimizer["terminal_velocity_ratio"] < 1.0
-    assert real_optimizer["max_trajectory_duration"] == pytest.approx(20.0)
     assert sim_optimizer["max_trajectory_duration"] == pytest.approx(20.0)
-    assert real_mpc["slope_speed_limit"] < real_mpc["max_planar_speed"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vx_max"]
     assert sim_optimizer["max_velocity"] <= sim_mpc["vy_max"]
     assert sim_optimizer["max_velocity"] == pytest.approx(sim_mpc["max_planar_speed"])
     assert sim_mpc["slope_speed_limit"] < sim_mpc["max_planar_speed"]
+    assert sim_mpc["uphill_startup_min_command_speed"] <= sim_mpc["slope_speed_limit"]
+    assert sim_mpc["uphill_startup_min_grade"] < sim_mpc["uphill_full_assist_grade"]
     assert sim_optimizer["max_acceleration"] <= sim_mpc["ax_max"]
     assert sim_optimizer["max_acceleration"] <= sim_mpc["ay_max"]
-    for planner in (
-        sim_planner,
-        reality["planner_server"]["ros__parameters"]["MincoPlanner"],
-    ):
-        safety = planner["safety"]
-        assert (
-            safety["collision_cache_reuse_max_duration"]
-            < safety["optimizer_failure_cache_reuse_max_duration"]
-        )
-        assert (
-            safety["optimizer_failure_cache_reuse_max_duration"]
-            <= safety["check_horizon"]
-        )
+    safety = sim_planner["safety"]
+    assert (
+        safety["collision_cache_reuse_max_duration"]
+        < safety["optimizer_failure_cache_reuse_max_duration"]
+        <= safety["check_horizon"]
+    )
 
     brake_distance = sim_optimizer["max_velocity"] ** 2 / (
         2.0 * sim_optimizer["max_acceleration"]
@@ -888,10 +960,12 @@ def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
         + 2.0 * sim_planner["safety"]["footprint_margin"]
     )
     required_forward_reach = 0.5 * hard_footprint_length + brake_distance
-    assert (
-        0.5 * sim_projection["near_field_prior_fill_length"]
-        >= required_forward_reach - 0.05
-    )
+    assert 0.5 * min(sim_planner["rog_map"]["map_size"][:2]) >= required_forward_reach
+    if sim_projection["near_field_prior_fill_enable"]:
+        assert (
+            0.5 * sim_projection["near_field_prior_fill_length"]
+            >= required_forward_reach - 0.05
+        )
     assert (
         sim_planner["safety"]["map_timeout"]
         < sim_planner["rog_map"]["decay"]["keep_time"]

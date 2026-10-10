@@ -197,7 +197,7 @@ TEST(MincoOptimizerDynamicsTest, FailsClosedWhenBoundaryStateExceedsLimit)
             MincoOptimizer::FailureReason::DYNAMIC_FEASIBILITY);
 }
 
-TEST(MincoOptimizerDynamicsTest, StationaryLocalEndpointRecoversRollingBoundaryFailure)
+TEST(MincoOptimizerDynamicsTest, RollingEndpointDoesNotRetimeIntoCrawlOrRequireStop)
 {
   auto config = makeConfig();
   config.max_vel = 1.5;
@@ -224,9 +224,13 @@ TEST(MincoOptimizerDynamicsTest, StationaryLocalEndpointRecoversRollingBoundaryF
   const double rolling_result = optimizer.optimize(
     waypoints, start_state, end_state, local_velocity_limits, trajectory,
     config.max_vel);
-  ASSERT_FALSE(std::isfinite(rolling_result));
-  EXPECT_EQ(optimizer.lastFailureReason(),
-            MincoOptimizer::FailureReason::DURATION_LIMIT);
+  ASSERT_TRUE(std::isfinite(rolling_result)) << "duration=" << optimizer.lastTotalDuration();
+  ASSERT_FALSE(trajectory.empty());
+  EXPECT_LT(trajectory.getTotalDuration(), 4.0);
+  EXPECT_TRUE(trajectory.getVel(0.0).isApprox(start_state.col(1), 1.0e-6));
+  EXPECT_TRUE(trajectory.getVel(trajectory.getTotalDuration()).isApprox(end_state.col(1), 1.0e-6));
+  EXPECT_LE(trajectory.getMaxVelRate(), config.max_vel * 1.02);
+  EXPECT_LE(trajectory.getMaxAccRate(), config.max_acc * 1.02);
 
   end_state.col(1).setZero();
   const double stopped_result = optimizer.optimize(
@@ -235,6 +239,80 @@ TEST(MincoOptimizerDynamicsTest, StationaryLocalEndpointRecoversRollingBoundaryF
   EXPECT_TRUE(std::isfinite(stopped_result));
   EXPECT_FALSE(trajectory.empty());
   EXPECT_LE(trajectory.getMaxVelRate(), config.max_vel * 1.001);
+}
+
+TEST(MincoOptimizerDynamicsTest, GuidePenaltyControlsBowingBetweenKnots)
+{
+  auto config = makeConfig();
+  config.max_vel = 1.5;
+  config.max_acc = 1.8;
+  config.magnitudeBounds << 0.31, config.max_vel, config.max_acc;
+  config.penaltyWeights(3) = 800.0;
+  config.guide_lateral_weight = 1000000.0;
+  config.guide_lateral_tolerance = 0.003;
+  MincoOptimizer optimizer(config);
+  const std::vector<Eigen::Vector3d> waypoints{
+    {0.0, -0.10, 0.0}, {0.35, 0.0, 0.0}, {0.70, 0.0, 0.0}, {1.10, 0.0, 0.0}};
+  Eigen::Matrix3d start = Eigen::Matrix3d::Zero(), end = Eigen::Matrix3d::Zero();
+  start.col(0) = waypoints.front();
+  start.col(1) = Eigen::Vector3d(0.8, 0.0, 0.0);
+  end.col(0) = waypoints.back();
+  end.col(1) = Eigen::Vector3d(1.0, 0.0, 0.0);
+  VecDf limits = VecDf::Constant(3, config.max_vel);
+  geometry_utils::Trajectory trajectory;
+  ASSERT_TRUE(std::isfinite(optimizer.optimize(
+    waypoints, start, end, limits, trajectory, config.max_vel)));
+  ASSERT_EQ(trajectory.getPieceNum(), 3);
+  double lateral_peak = 0.0;
+  for (int i = 1; i < trajectory.getPieceNum(); ++i) {
+    for (int j = 0; j <= 100; ++j) {
+      const auto point = trajectory[i].getPos(trajectory[i].getDuration() * j / 100.0);
+      lateral_peak = std::max(lateral_peak, std::abs(point.y()));
+    }
+  }
+  EXPECT_LT(lateral_peak, 0.025);
+  EXPECT_LT(trajectory.getTotalDuration(), 4.0);
+  EXPECT_LE(trajectory.getMaxVelRate(), config.max_vel * 1.02);
+  EXPECT_LE(trajectory.getMaxAccRate(), config.max_acc * 1.02);
+  EXPECT_TRUE(trajectory.getVel(0.0).isApprox(start.col(1), 1.0e-6));
+  EXPECT_TRUE(trajectory.getVel(trajectory.getTotalDuration()).isApprox(end.col(1), 1.0e-6));
+}
+
+TEST(MincoOptimizerDynamicsTest, DenseRollingGuideKeepsShortDurationWithBoundaryAcceleration)
+{
+  for (const Eigen::Vector2d & boundary : std::vector<Eigen::Vector2d>{
+      {0.9, -1.7}, {0.9, 0.0}, {0.9, 1.7}, {1.0, 0.0}}) {
+    const double acceleration = boundary.y();
+    SCOPED_TRACE(acceleration);
+    SCOPED_TRACE(boundary.x());
+    auto config = makeConfig();
+    config.max_vel = 1.5;
+    config.max_acc = 1.8;
+    config.magnitudeBounds << 0.31, config.max_vel, config.max_acc;
+    config.penaltyWeights(3) = 800.0;
+    config.guide_lateral_weight = 1000000.0;
+    config.guide_lateral_tolerance = 0.003;
+    config.opt_accuracy = 0.00001;
+    MincoOptimizer optimizer(config);
+    std::vector<Eigen::Vector3d> waypoints;
+    for (int i = 0; i <= 10; ++i) {
+      waypoints.emplace_back(0.15 * i, 0.0, 0.0);
+    }
+    Eigen::Matrix3d start = Eigen::Matrix3d::Zero(), end = Eigen::Matrix3d::Zero();
+    start.col(1) = Eigen::Vector3d(boundary.x(), 0.0, 0.0);
+    start.col(2) = Eigen::Vector3d(acceleration, 0.0, 0.0);
+    end.col(0) = waypoints.back();
+    end.col(1) = Eigen::Vector3d(0.85, 0.0, 0.0);
+    VecDf limits = VecDf::Constant(10, 1.0);
+    geometry_utils::Trajectory trajectory;
+    ASSERT_TRUE(std::isfinite(optimizer.optimize(waypoints, start, end, limits, trajectory, 1.0)))
+      << optimizer.lastTotalDuration();
+    EXPECT_LT(trajectory.getTotalDuration(), 4.0);
+    EXPECT_LE(trajectory.getMaxVelRate(), 1.02);
+    EXPECT_LE(trajectory.getMaxAccRate(), config.max_acc * 1.02);
+    EXPECT_TRUE(trajectory.getAcc(0.0).isApprox(start.col(2), 1.0e-6));
+    EXPECT_TRUE(trajectory.getVel(trajectory.getTotalDuration()).isApprox(end.col(1), 1.0e-6));
+  }
 }
 
 }  // namespace

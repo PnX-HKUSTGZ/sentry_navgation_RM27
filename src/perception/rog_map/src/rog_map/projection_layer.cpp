@@ -51,6 +51,16 @@ double centerZ(const ColumnStats &stats, int local_z, double resolution) {
   return stats.scan_z_min_abs + static_cast<double>(local_z) * resolution;
 }
 
+double surfaceZ(const ColumnStats &stats, int local_z, double resolution,
+                bool upper) {
+  const auto &heights = upper ? stats.hit_z_max : stats.hit_z_min;
+  if (local_z >= 0 && static_cast<size_t>(local_z) < heights.size() &&
+      std::isfinite(heights[static_cast<size_t>(local_z)])) {
+    return heights[static_cast<size_t>(local_z)];
+  }
+  return centerZ(stats, local_z, resolution);
+}
+
 double knownRatioInBodyVolume(const ColumnStats &stats, double ground_z,
                               const ProjectionLayerConfig &config,
                               double resolution) {
@@ -240,9 +250,9 @@ CellType classifyClearanceCell(const ColumnStats &stats, CellData &cell,
   const double lowest_span =
       static_cast<double>(lowest.end - lowest.begin) * resolution;
   cell.occupied_z_min_abs =
-      static_cast<float>(centerZ(stats, lowest.begin, resolution));
+      static_cast<float>(surfaceZ(stats, lowest.begin, resolution, false));
   cell.occupied_z_max_abs =
-      static_cast<float>(centerZ(stats, runs.back().end, resolution));
+      static_cast<float>(surfaceZ(stats, runs.back().end, resolution, true));
   cell.height_delta =
       static_cast<float>(centerZ(stats, runs.back().end, resolution) -
                          centerZ(stats, lowest.begin, resolution));
@@ -260,7 +270,7 @@ CellType classifyClearanceCell(const ColumnStats &stats, CellData &cell,
   const double occupied_surface_inset =
       config.headroom_voxel_inset_fraction * resolution;
   const double lowest_bottom =
-      centerZ(stats, lowest.begin, resolution) - occupied_surface_inset;
+      surfaceZ(stats, lowest.begin, resolution, false) - occupied_surface_inset;
   const bool trusted_support = hasTrustedGroundSupport(stats);
   const double reference_ground_z =
       config.require_ground_support && trusted_support
@@ -299,37 +309,46 @@ CellType classifyClearanceCell(const ColumnStats &stats, CellData &cell,
   // A driveable surface must start as the lowest thin occupied run. It is only
   // accepted later when it is connected to a seed underneath the robot.
   if (lowest_span > config.surface_height_delta_max) {
-    // A thick run whose lower edge lies inside the required body band is a
-    // wall or low beam. It must never fall through to ground connectivity.
+    // A thick run cannot become traversable ground. Without surveyed support,
+    // its wall/roof distinction needs a separate local floor estimate.
     const double headroom = reference_headroom;
     cell.ceiling_z_abs = static_cast<float>(lowest_bottom);
     cell.headroom = static_cast<float>(headroom);
     cell.candidate_reason = ProjectionClassReason::HEADROOM_BLOCKED;
+    if (!config.require_ground_support && config.observed_empty_as_free) {
+      // Robot contact height is not the floor underneath a remote return.
+      // Keep the local veto while waiting for a bounded local terrain proof.
+      cell.local_overhead_candidate = 1U;
+      cell.candidate_reason = ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED;
+    }
     return CellType::OCCUPIED;
   }
 
   cell.ground_candidate = 1U;
   double ground_z =
-      centerZ(stats, lowest.end, resolution) + occupied_surface_inset;
+      surfaceZ(stats, lowest.end, resolution, true) + occupied_surface_inset;
   size_t ceiling_run = 1U;
   while (ceiling_run < runs.size()) {
     const double next_bottom =
-        centerZ(stats, runs[ceiling_run].begin, resolution) -
+        surfaceZ(stats, runs[ceiling_run].begin, resolution, false) -
         occupied_surface_inset;
     if (next_bottom - ground_z > config.body_bottom_clearance) {
       break;
     }
-    ground_z = centerZ(stats, runs[ceiling_run].end, resolution) +
+    ground_z = surfaceZ(stats, runs[ceiling_run].end, resolution, true) +
                occupied_surface_inset;
     ++ceiling_run;
   }
   cell.ground_z_abs = static_cast<float>(ground_z);
+  const size_t ground_index = static_cast<size_t>(runs[ceiling_run - 1U].end);
+  cell.ground_hit_stamp = ground_index < stats.hit_stamps.size()
+                              ? stats.hit_stamps[ground_index] : stats.last_hit_time;
   cell.headroom_known_ratio = static_cast<float>(
       knownRatioInBodyVolume(stats, ground_z, config, resolution));
 
   if (ceiling_run < runs.size()) {
     const double ceiling_z =
-        centerZ(stats, runs[ceiling_run].begin, resolution) -
+        surfaceZ(stats, runs[ceiling_run].begin, resolution, false) -
         occupied_surface_inset;
     const double headroom = ceiling_z - ground_z;
     cell.ceiling_z_abs = static_cast<float>(ceiling_z);
@@ -517,7 +536,7 @@ void ProjectionLayer::updateFull(int width, int height, double resolution,
       stageOneCell(x, y, now, config, scanner);
     }
   }
-  resolveGroundConnectivityAndCommit(now, config);
+  resolveGroundConnectivityAndCommit(now, scanner, config);
 
   const auto filter_start = std::chrono::steady_clock::now();
   double view_time_ms = 0.0;
@@ -550,7 +569,7 @@ void ProjectionLayer::updateDirty(int width, int height, double resolution,
   current_config_ = config;
   if (dirty_columns.empty()) {
     if (config.clearance_check_en || config.require_ground_support) {
-      resolveGroundConnectivityAndCommit(now, config);
+      resolveGroundConnectivityAndCommit(now, scanner, config);
       const auto filter_start = std::chrono::steady_clock::now();
       double view_time_ms = 0.0;
       filterMask(config, nullptr, &view_time_ms);
@@ -586,7 +605,7 @@ void ProjectionLayer::updateDirty(int width, int height, double resolution,
   for (const int idx_int : base_dirty_indices) {
     stageOneCell(idx_int % width_, idx_int / width_, now, config, scanner);
   }
-  resolveGroundConnectivityAndCommit(now, config);
+  resolveGroundConnectivityAndCommit(now, scanner, config);
 
   const auto filter_start = std::chrono::steady_clock::now();
   double view_time_ms = 0.0;
@@ -686,6 +705,7 @@ void ProjectionLayer::collectClassificationStats(
     case ProjectionClassReason::OVERHEAD_CLEARANCE_OK:
     case ProjectionClassReason::CLEARANCE_OK:
     case ProjectionClassReason::GROUND_BRIDGE_CLEARANCE_OK:
+    case ProjectionClassReason::GROUND_CONNECTIVITY_HOLD:
       stats->thin_surface_count += 1.0;
       break;
     case ProjectionClassReason::SOLID_VERTICAL_WALL:
@@ -698,6 +718,7 @@ void ProjectionLayer::collectClassificationStats(
     case ProjectionClassReason::GROUND_UNVERIFIED:
     case ProjectionClassReason::HEADROOM_UNVERIFIED:
     case ProjectionClassReason::HEADROOM_BLOCKED:
+    case ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED:
       stats->ambiguous_occupied_count += 1.0;
       break;
     }
@@ -721,6 +742,8 @@ void ProjectionLayer::stageOneCell(int x, int y, double now,
   cell.height_delta = 0.0F;
   cell.vertical_occupancy_ratio = 0.0F;
   cell.ground_z_abs = std::numeric_limits<float>::quiet_NaN();
+  cell.ground_hit_stamp = 0.0;
+  cell.local_overhead_candidate = 0U;
   cell.ceiling_z_abs = std::numeric_limits<float>::quiet_NaN();
   cell.headroom = std::numeric_limits<float>::infinity();
   cell.headroom_known_ratio = 0.0F;
@@ -748,6 +771,8 @@ void ProjectionLayer::stageOneCell(int x, int y, double now,
   cell.traversable = 0U;
   cell.candidate_reason = ProjectionClassReason::INSUFFICIENT_OBSERVATION;
   cell.candidate_type = classifyCell(stats, cell, config, resolution_);
+  cell.candidate_clearance_verified = cell.clearance_verified;
+  cell.candidate_traversable = cell.traversable;
   const bool contains_occupied_voxel =
       std::any_of(stats.vertical_states.begin(), stats.vertical_states.end(),
                   [](VerticalVoxelState state) {
@@ -870,7 +895,19 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
 }
 
 void ProjectionLayer::resolveGroundConnectivityAndCommit(
-    double now, const ProjectionLayerConfig &config) {
+    double now, const ColumnScanner &scanner, const ProjectionLayerConfig &config) {
+  // Connectivity failure must not erase the column's independent clearance
+  // evidence. Dirty updates may change the robot pose without rescanning it.
+  for (auto &cell : cell_buffer_) {
+    cell.clearance_verified = cell.candidate_clearance_verified;
+    cell.traversable = cell.candidate_traversable;
+    if (cell.local_overhead_candidate != 0U) {
+      cell.candidate_type = CellType::OCCUPIED;
+      cell.candidate_reason = ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED;
+      cell.clearance_verified = 0U;
+      cell.traversable = 0U;
+    }
+  }
   if (!config.clearance_check_en && !config.require_ground_support) {
     for (auto &cell : cell_buffer_) {
       cell.near_field_prior_fill_eligible = 0U;
@@ -1575,27 +1612,28 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
     }
   }
 
-  // The first-pass overhead test uses the robot contact height because ground
-  // connectivity is not available yet. On a descent that reference can be
-  // substantially above the ground under a forward roof return, causing the
-  // roof face to be reported as a low obstacle for one frame. Re-evaluate only
-  // those blocked returns for which the current scan has established a
-  // locally two-sided terrain surface. The samples need not be connected to
-  // the robot yet and the 2D prior may mark the target or samples occupied:
-  // this pass uses live 3D geometry only to decide whether the occupied run is
-  // a roof. The sampled ground cells retain their independent connectivity
-  // gate. This remains fail-closed for low walls, ledges and one-sided
-  // extrapolation, and never consumes surveyed elevation in no-prior mode.
-  if (!config.require_ground_support && config.observed_empty_as_free &&
-      config.min_observed_overhead_headroom_known_ratio <= 1.0e-6) {
+  // Cache measured, independently connected floors, using the actual floor
+  // return timestamp. Rechecking an unchanged scan cannot renew this evidence.
+  for (auto &cell : cell_buffer_) {
+    if (cell.ground_candidate != 0U && cell.ground_verified != 0U &&
+        cell.candidate_clearance_verified != 0U &&
+        std::isfinite(cell.ground_z_abs) && cell.ground_hit_stamp > 0.0 &&
+        cell.ground_hit_stamp <= now) {
+      cell.observed_ground_z_abs = cell.ground_z_abs;
+      cell.observed_ground_stamp = cell.ground_hit_stamp;
+    }
+  }
+
+  // A remote roof needs its own floor reference. Prefer recent measured floor
+  // in the same column, then fit nearby terrain with bounded extrapolation.
+  // Unresolved columns stay lethal locally but are not global obstacle proof.
+  if (!config.require_ground_support && config.observed_empty_as_free) {
     struct GroundSample {
       double dx;
       double dy;
       double z;
     };
-    const double search_radius =
-        std::max(2.0 * resolution_,
-                 2.0 * config.ground_connectivity_quantile_lateral_radius);
+    const double search_radius = config.overhead_ground_search_radius;
     const int search_cells =
         std::max(1, static_cast<int>(std::ceil(search_radius / resolution_)));
     const int min_samples =
@@ -1606,146 +1644,243 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       for (int x = 0; x < width_; ++x) {
         CellData &cell =
             cell_buffer_[static_cast<size_t>(hashIndexFromLocal(x, y))];
-        if (cell.candidate_type != CellType::OCCUPIED ||
-            cell.candidate_reason != ProjectionClassReason::HEADROOM_BLOCKED ||
+        const double wx =
+            origin_.x() + (static_cast<double>(x) + 0.5) * resolution_;
+        const double wy =
+            origin_.y() + (static_cast<double>(y) + 0.5) * resolution_;
+        const bool has_contact_ground =
+            use_reference_ground_plane &&
+            config.clear_robot_footprint_unknown &&
+            insideRobotEnvelope(
+                wx, wy, config, config.robot_footprint_clear_length,
+                config.robot_footprint_clear_width, resolution_);
+        const double occupied_bottom =
+            static_cast<double>(cell.occupied_z_min_abs) -
+            config.headroom_voxel_inset_fraction * resolution_;
+        if (cell.ground_candidate != 0U && cell.ground_verified == 0U &&
+            has_contact_ground && std::isfinite(occupied_bottom) &&
+            occupied_bottom - reference_ground_at(wx, wy) + 1.0e-6 >=
+                required_headroom) {
+          // A thin underside can be mislabelled as disconnected ground by the
+          // first pass too. Apply the same local floor test to that geometry.
+          cell.ground_candidate = 0U;
+          cell.ground_z_abs = std::numeric_limits<float>::quiet_NaN();
+          cell.local_overhead_candidate = 1U;
+          cell.ceiling_z_abs = static_cast<float>(occupied_bottom);
+        }
+        if (cell.local_overhead_candidate == 0U ||
             cell.ground_candidate != 0U || !std::isfinite(cell.ceiling_z_abs)) {
           continue;
         }
 
-        std::vector<GroundSample> samples;
-        size_t connected_sample_count = 0U;
-        samples.reserve(static_cast<size_t>((2 * search_cells + 1) *
-                                            (2 * search_cells + 1)));
-        for (int dy = -search_cells; dy <= search_cells; ++dy) {
-          for (int dx = -search_cells; dx <= search_cells; ++dx) {
-            if ((dx == 0 && dy == 0) || x + dx < 0 || x + dx >= width_ ||
-                y + dy < 0 || y + dy >= height_) {
-              continue;
-            }
-            const double sample_dx = static_cast<double>(dx) * resolution_;
-            const double sample_dy = static_cast<double>(dy) * resolution_;
-            if (std::hypot(sample_dx, sample_dy) > search_radius + 1.0e-6) {
-              continue;
-            }
-            const CellData &sample = cell_buffer_[static_cast<size_t>(
-                hashIndexFromLocal(x + dx, y + dy))];
-            if (sample.ground_candidate == 0U ||
-                sample.candidate_type != CellType::PASSABLE ||
-                sample.clearance_verified == 0U ||
-                !std::isfinite(sample.ground_z_abs)) {
-              continue;
-            }
-            samples.push_back({sample_dx, sample_dy,
-                               static_cast<double>(sample.ground_z_abs)});
-            if (sample.ground_verified != 0U) {
-              ++connected_sample_count;
+        const auto apply_ground = [&](double ground_z) {
+          cell.candidate_type = CellType::OCCUPIED;
+          cell.clearance_verified = 0U;
+          cell.traversable = 0U;
+          cell.reference_ground_z_abs = static_cast<float>(ground_z);
+          cell.headroom = cell.ceiling_z_abs - static_cast<float>(ground_z);
+          if (cell.headroom + 1.0e-6 < required_headroom) {
+            cell.candidate_reason = ProjectionClassReason::HEADROOM_BLOCKED;
+            return;
+          }
+          const auto column = scanner(x, y);
+          cell.headroom_known_ratio = static_cast<float>(
+              knownRatioInBodyVolume(column, ground_z, config, resolution_));
+          if (cell.headroom_known_ratio + 1.0e-6 <
+              config.min_observed_overhead_headroom_known_ratio) {
+            cell.candidate_reason = ProjectionClassReason::HEADROOM_UNVERIFIED;
+            return;
+          }
+          cell.candidate_type = CellType::PASSABLE;
+          cell.candidate_reason = ProjectionClassReason::OVERHEAD_CLEARANCE_OK;
+          cell.clearance_verified = 1U;
+          cell.traversable = 1U;
+        };
+        const auto recent_ground = [&](const CellData &sample) {
+          return config.overhead_ground_history_time > 0.0 &&
+                 sample.observed_ground_stamp > 0.0 &&
+                 now >= sample.observed_ground_stamp &&
+                 now - sample.observed_ground_stamp <=
+                     config.overhead_ground_history_time &&
+                 std::isfinite(sample.observed_ground_z_abs);
+        };
+        if (recent_ground(cell) &&
+            cell.observed_ground_z_abs + config.body_bottom_clearance <
+                cell.ceiling_z_abs) {
+          apply_ground(cell.observed_ground_z_abs);
+          continue;
+        }
+
+        if (has_contact_ground) {
+          // Inside the current ground envelope, use the contact tangent at the
+          // query position. On the last part of a descent the sensor cannot see
+          // the floor at its own front wheels. A remote roof must never use
+          // this bounded extrapolation while the robot is still on a platform.
+          apply_ground(reference_ground_at(wx, wy));
+          continue;
+        }
+
+        // Start nearby so a ramp and the lower landing do not unnecessarily
+        // share one plane; widen only if the smaller neighborhood has no fit.
+        for (double radius = std::min(search_radius, 0.20);;
+             radius = std::min(search_radius, radius + 0.20)) {
+          std::vector<GroundSample> samples;
+          size_t connected_sample_count = 0U;
+          samples.reserve(static_cast<size_t>((2 * search_cells + 1) *
+                                              (2 * search_cells + 1)));
+          for (int dy = -search_cells; dy <= search_cells; ++dy) {
+            for (int dx = -search_cells; dx <= search_cells; ++dx) {
+              if ((dx == 0 && dy == 0) || x + dx < 0 || x + dx >= width_ ||
+                  y + dy < 0 || y + dy >= height_) {
+                continue;
+              }
+              const double sample_dx = static_cast<double>(dx) * resolution_;
+              const double sample_dy = static_cast<double>(dy) * resolution_;
+              if (std::hypot(sample_dx, sample_dy) > radius + 1.0e-6) {
+                continue;
+              }
+              const CellData &sample = cell_buffer_[static_cast<size_t>(
+                  hashIndexFromLocal(x + dx, y + dy))];
+              const bool measured_ground =
+                  sample.ground_candidate != 0U &&
+                  std::isfinite(sample.ground_z_abs) &&
+                  (sample.candidate_reason ==
+                       ProjectionClassReason::CLEARANCE_OK ||
+                   sample.candidate_reason ==
+                       ProjectionClassReason::HEADROOM_UNVERIFIED) &&
+                  sample.headroom + 1.0e-6 >= required_headroom;
+              const bool cached_ground =
+                  !measured_ground && recent_ground(sample);
+              if (!measured_ground && !cached_ground) {
+                continue;
+              }
+              samples.push_back(
+                  {sample_dx, sample_dy,
+                   static_cast<double>(measured_ground
+                                           ? sample.ground_z_abs
+                                           : sample.observed_ground_z_abs)});
+              if (sample.ground_verified != 0U || cached_ground) {
+                ++connected_sample_count;
+              }
             }
           }
-        }
-        if (samples.size() < static_cast<size_t>(min_samples)) {
-          continue;
-        }
+          if (samples.size() < static_cast<size_t>(min_samples)) {
+            if (radius >= search_radius) {
+              break;
+            }
+            continue;
+          }
 
-        // Require the queried column to lie inside the angular hull of the
-        // measured samples. A single visible bank beside a wall or cliff is
-        // not enough evidence to extrapolate support under an occupied return.
-        std::vector<double> sample_angles;
-        sample_angles.reserve(samples.size());
-        for (const auto &sample : samples) {
-          sample_angles.push_back(std::atan2(sample.dy, sample.dx));
-        }
-        std::sort(sample_angles.begin(), sample_angles.end());
-        double max_angular_gap = 0.0;
-        for (size_t i = 1; i < sample_angles.size(); ++i) {
-          max_angular_gap = std::max(max_angular_gap,
-                                     sample_angles[i] - sample_angles[i - 1U]);
-        }
-        max_angular_gap =
-            std::max(max_angular_gap,
-                     sample_angles.front() + 2.0 * kPi - sample_angles.back());
-        const bool surrounded_by_observed_ground =
-            max_angular_gap <= kPi + 1.0e-6;
-        const bool one_sided_static_free_support =
-            cell.prior_known_free != 0U &&
-            connected_sample_count >= static_cast<size_t>(min_samples);
-        if (!surrounded_by_observed_ground && !one_sided_static_free_support) {
-          continue;
-        }
+          // Require the queried column to lie inside the angular hull of the
+          // measured samples. A single visible bank beside a wall or cliff is
+          // not enough evidence to extrapolate support under an occupied
+          // return.
+          std::vector<double> sample_angles;
+          sample_angles.reserve(samples.size());
+          for (const auto &sample : samples) {
+            sample_angles.push_back(std::atan2(sample.dy, sample.dx));
+          }
+          std::sort(sample_angles.begin(), sample_angles.end());
+          double max_angular_gap = 0.0;
+          for (size_t i = 1; i < sample_angles.size(); ++i) {
+            max_angular_gap = std::max(
+                max_angular_gap, sample_angles[i] - sample_angles[i - 1U]);
+          }
+          max_angular_gap =
+              std::max(max_angular_gap, sample_angles.front() + 2.0 * kPi -
+                                            sample_angles.back());
+          const bool surrounded_by_observed_ground =
+              max_angular_gap <= kPi + 1.0e-6;
+          const bool one_sided_static_free_support =
+              cell.prior_known_free != 0U &&
+              connected_sample_count >= static_cast<size_t>(min_samples);
+          if (!surrounded_by_observed_ground &&
+              !one_sided_static_free_support) {
+            if (radius >= search_radius) {
+              break;
+            }
+            continue;
+          }
 
-        double mean_x = 0.0;
-        double mean_y = 0.0;
-        double mean_z = 0.0;
-        for (const auto &sample : samples) {
-          mean_x += sample.dx;
-          mean_y += sample.dy;
-          mean_z += sample.z;
-        }
-        const double sample_count = static_cast<double>(samples.size());
-        mean_x /= sample_count;
-        mean_y /= sample_count;
-        mean_z /= sample_count;
+          double mean_x = 0.0;
+          double mean_y = 0.0;
+          double mean_z = 0.0;
+          for (const auto &sample : samples) {
+            mean_x += sample.dx;
+            mean_y += sample.dy;
+            mean_z += sample.z;
+          }
+          const double sample_count = static_cast<double>(samples.size());
+          mean_x /= sample_count;
+          mean_y /= sample_count;
+          mean_z /= sample_count;
 
-        double xx = 0.0;
-        double xy = 0.0;
-        double yy = 0.0;
-        double xz = 0.0;
-        double yz = 0.0;
-        for (const auto &sample : samples) {
-          const double centered_x = sample.dx - mean_x;
-          const double centered_y = sample.dy - mean_y;
-          const double centered_z = sample.z - mean_z;
-          xx += centered_x * centered_x;
-          xy += centered_x * centered_y;
-          yy += centered_y * centered_y;
-          xz += centered_x * centered_z;
-          yz += centered_y * centered_z;
-        }
-        const double determinant = xx * yy - xy * xy;
-        const double spread = xx + yy;
-        if (spread <= 1.0e-12 || determinant <= 1.0e-6 * spread * spread) {
-          continue;
-        }
-        const double plane_x = (xz * yy - yz * xy) / determinant;
-        const double plane_y = (yz * xx - xz * xy) / determinant;
-        if (std::hypot(plane_x, plane_y) > slope + 1.0e-6) {
-          continue;
-        }
-        const double fitted_ground =
-            mean_z - plane_x * mean_x - plane_y * mean_y;
-        double max_positive_residual = 0.0;
-        double max_abs_residual = 0.0;
-        for (const auto &sample : samples) {
-          const double fitted_z =
-              fitted_ground + plane_x * sample.dx + plane_y * sample.dy;
-          const double residual = sample.z - fitted_z;
-          max_positive_residual = std::max(max_positive_residual, residual);
-          max_abs_residual = std::max(max_abs_residual, std::abs(residual));
-        }
-        if (max_abs_residual >
-            config.ground_connectivity_fit_residual_tolerance + 1.0e-6) {
-          continue;
-        }
+          double xx = 0.0;
+          double xy = 0.0;
+          double yy = 0.0;
+          double xz = 0.0;
+          double yz = 0.0;
+          for (const auto &sample : samples) {
+            const double centered_x = sample.dx - mean_x;
+            const double centered_y = sample.dy - mean_y;
+            const double centered_z = sample.z - mean_z;
+            xx += centered_x * centered_x;
+            xy += centered_x * centered_y;
+            yy += centered_y * centered_y;
+            xz += centered_x * centered_z;
+            yz += centered_y * centered_z;
+          }
+          const double determinant = xx * yy - xy * xy;
+          const double spread = xx + yy;
+          if (spread <= 1.0e-12 || determinant <= 1.0e-6 * spread * spread) {
+            if (radius >= search_radius) {
+              break;
+            }
+            continue;
+          }
+          const double plane_x = (xz * yy - yz * xy) / determinant;
+          const double plane_y = (yz * xx - xz * xy) / determinant;
+          if (std::hypot(plane_x, plane_y) > slope + 1.0e-6) {
+            if (radius >= search_radius) {
+              break;
+            }
+            continue;
+          }
+          const double fitted_ground =
+              mean_z - plane_x * mean_x - plane_y * mean_y;
+          double max_positive_residual = 0.0;
+          double max_abs_residual = 0.0;
+          for (const auto &sample : samples) {
+            const double fitted_z =
+                fitted_ground + plane_x * sample.dx + plane_y * sample.dy;
+            const double residual = sample.z - fitted_z;
+            max_positive_residual = std::max(max_positive_residual, residual);
+            max_abs_residual = std::max(max_abs_residual, std::abs(residual));
+          }
+          if (max_abs_residual >
+              config.ground_connectivity_fit_residual_tolerance + 1.0e-6) {
+            if (radius >= search_radius) {
+              break;
+            }
+            continue;
+          }
 
-        // Bias support upward by the measured positive residual. The resulting
-        // clearance is the conservative side of the local plane fit.
-        const double inferred_ground = fitted_ground + max_positive_residual;
-        if (!std::isfinite(inferred_ground) ||
-            std::abs(inferred_ground - config.reference_ground_z_abs) >
-                config.max_ground_height_delta + 1.0e-6) {
-          continue;
+          // Bias support upward by the measured positive residual. The
+          // resulting clearance is the conservative side of the local plane
+          // fit.
+          const double inferred_ground = fitted_ground + max_positive_residual;
+          if (!std::isfinite(inferred_ground) ||
+              inferred_ground > static_cast<double>(cell.ceiling_z_abs) + 1.0e-6 ||
+              std::abs(inferred_ground - config.reference_ground_z_abs) >
+                  config.max_ground_height_delta + 1.0e-6) {
+            if (radius >= search_radius) {
+              break;
+            }
+            continue;
+          }
+          apply_ground(inferred_ground);
+          break;
         }
-        const double local_headroom =
-            static_cast<double>(cell.ceiling_z_abs) - inferred_ground;
-        if (local_headroom + 1.0e-6 < required_headroom) {
-          continue;
-        }
-
-        cell.candidate_type = CellType::PASSABLE;
-        cell.candidate_reason = ProjectionClassReason::OVERHEAD_CLEARANCE_OK;
-        cell.reference_ground_z_abs = static_cast<float>(inferred_ground);
-        cell.headroom = static_cast<float>(local_headroom);
-        cell.clearance_verified = 1U;
-        cell.traversable = 1U;
       }
     }
   }
@@ -1856,6 +1991,30 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       cell.near_field_prior_fill_eligible = 0U;
       CellType final_type = cell.candidate_type;
       ProjectionClassReason final_reason = cell.candidate_reason;
+      // Retain only an independently connected, still observed surface. This
+      // happens after the connectivity walk: held cells cannot seed new cells
+      // or renew their own deadline when the robot's tangent plane changes.
+      const bool observed_clear_ground =
+          !config.require_ground_support && cell.ground_candidate != 0U &&
+          cell.candidate_type == CellType::PASSABLE &&
+          cell.clearance_verified != 0U && std::isfinite(cell.ground_z_abs);
+      bool held_ground = false;
+      if (observed_clear_ground && cell.ground_verified != 0U) {
+        cell.connected_ground_z_abs = cell.ground_z_abs;
+        cell.ground_connectivity_deadline = now + config.ground_connectivity_hold_time;
+      } else if (observed_clear_ground && config.ground_connectivity_hold_time > 0.0 &&
+                 now < cell.ground_connectivity_deadline &&
+                 now >= cell.ground_connectivity_deadline - config.ground_connectivity_hold_time &&
+                 std::isfinite(cell.connected_ground_z_abs) &&
+                 std::abs(cell.ground_z_abs - cell.connected_ground_z_abs) <=
+                     0.5 * resolution_ + 1.0e-6 &&
+                 std::abs(cell.ground_z_abs - config.reference_ground_z_abs) <=
+                     config.max_ground_height_delta) {
+        cell.ground_verified = 1U;
+        held_ground = true;
+      } else {
+        cell.ground_connectivity_deadline = 0.0;
+      }
       const bool support_bridge_evidence =
           cell.footprint_clear_eligible != 0U && cell.ground_candidate == 0U &&
           has_observed_support_bridge(x, y);
@@ -1914,6 +2073,9 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
         if (cell.clearance_verified != 0U &&
             cell.ground_bridge_verified != 0U) {
           final_reason = ProjectionClassReason::GROUND_BRIDGE_CLEARANCE_OK;
+        }
+        if (held_ground) {
+          final_reason = ProjectionClassReason::GROUND_CONNECTIVITY_HOLD;
         }
       } else if (cell.footprint_clear_eligible != 0U) {
         const double wx =

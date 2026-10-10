@@ -87,6 +87,11 @@ controller_server:
       # Match the observation-frontier ceiling so the chassis can reach a
       # short ramp before attitude-based uphill assistance takes over.
       reference_startup_min_command_speed: 0.40
+      # Match planner recovery limits; speed assistance is disabled for escape.
+      recovery_max_speed: 0.15
+      recovery_max_distance: 0.15
+      recovery_max_duration: 1.0
+      physical_base_frame: base_link
       # Blend continuously from the MPC command at the ramp entry to full
       # assistance on the measured steep section. The independent reference
       # threshold keeps assistance active on a normal trajectory after the
@@ -259,6 +264,7 @@ planner_server:
         physical_base_frame: base_link
       priormap:
         use_nav2_global_search: true
+        static_clearance_mode: polygon
         # Feed measured ROG occupied cells into the global search as a local
         # dynamic hard mask. UNKNOWN/frontier cells are filtered in Astar/SMAC,
         # so this does not route around an unobserved ROG window.
@@ -272,9 +278,8 @@ planner_server:
         clip_seed_by_rog_boundary: true
         rog_boundary_margin: 0.30
         rog_boundary_sample_step: 0.10
-        # Static hard clearance is derived from this vehicle's 0.40 x 0.30 m
-        # safety envelope plus one 5 cm grid cell: 0.300 m. It is not a second
-        # manually tuned parameter that can drift away from collision checking.
+        # Global, local and recovery static checks use the original PGM cells
+        # and the same 0.40 x 0.30 m safety envelope, without ROG reprojection.
         # No-elevation mode keeps the 2D static map but does not derive global
         # ramp/drop edges from a surveyed height grid. Local ROG connectivity
         # remains the authoritative terrain gate.
@@ -298,12 +303,22 @@ planner_server:
       tolerance: 0.10
       use_smac: true
       allow_unknown: false
+      # ROG UNKNOWN cells may be traversed when this is enabled. Static PGM
+      # collisions, measured obstacles and insufficient tunnel headroom still
+      # block the trajectory.
+      allow_unknown_motion: true
       odom_topic: /aft_mapped_to_init
       # base_link -> MID360 lever arm; keep it identical to the controller and
       # the real robot description.
       lidar_offset_x: 0.0
       lidar_offset_y: -0.20
       safety:
+        # Original PGM only. Set ratio to zero to restore strict collision checks.
+        static_overlap_max_ratio: 0.04
+        static_overlap_max_depth: 0.03
+        # Keep real-vehicle dynamic obstacle validation strict until a measured
+        # sensor/footprint calibration justifies a boundary tolerance.
+        dynamic_edge_overlap_tolerance: 0.03
         footprint_length: 0.30
         footprint_width: 0.20
         footprint_margin: 0.05
@@ -401,7 +416,7 @@ planner_server:
           enable: true
           scan_z_min_abs: -0.45
           scan_z_max_abs: 1.40
-          unknown_as_occupied: true
+          unknown_as_occupied: false
           min_observed_voxels: 2
           surface_height_delta_max: 0.12
           clearance_check_enable: true
@@ -461,9 +476,8 @@ planner_server:
           near_field_prior_fill_width: 1.20
           robot_origin_to_ground: 0.28
           vehicle_height: 0.42
-          headroom_margin: 0.03
-          # Treat occupied voxels by their conservative upper/lower boundary
-          # until bag measurements justify a sensor-specific smaller inset.
+          headroom_margin: 0.00
+          # Keep a half-voxel safety inset above/below measured surface heights.
           headroom_voxel_inset_fraction: 0.5
           body_bottom_clearance: 0.04
           # Thin, clearance-verified ground under the current footprint first
@@ -473,6 +487,10 @@ planner_server:
           # remote thin plate cannot seed an unrelated surface. Connectivity
           # still enforces the 6 cm step and 28-degree slope.
           ground_seed_tolerance: 0.18
+          ground_connectivity_hold_time: 0.0
+          # Local floor evidence for roof returns; history uses hit timestamps.
+          overhead_ground_search_radius: 0.60
+          overhead_ground_history_time: 1.0
           max_ground_height_delta: 0.35
           max_ground_step: 0.08
           max_ground_slope_deg: 28.0
@@ -613,6 +631,7 @@ planner_server:
         # prevents the independent 0.90..0.94 m/s failure seen with a fully
         # observed seed; observation-frontier crawling is configured above.
         terminal_velocity_ratio: 0.80
+        terminal_tangent_lookahead: 0.30
         # Preserve the optimizer's native finite bound while accepting valid
         # dynamically retimed slope trajectories that exceed 10 s.
         max_trajectory_duration: 15.0
@@ -631,12 +650,23 @@ planner_server:
         penalty_weight_vel: 1500.0
         penalty_weight_acc: 1500.0
         penalty_weight_att: 100.0
+        guide_lateral_weight: 0.0
+        guide_lateral_tolerance: 0.01
+        obstacle_slowdown_distance: 0.0
+        obstacle_max_velocity: 1.0
         penalty_weight_time_barrier: 50.0
       recovery_server:
         fail_threshold: 3
         cooldown_sec: 1.0
         recovery_window_sec: 3.0
         escape_speed: 0.15
+        allow_start_overlap: true
+        overlap_max_speed: 0.15
+        overlap_max_duration: 1.0
+        overlap_max_distance: 0.15
+        overlap_max_penetration: 0.05
+        overlap_max_ratio: 0.10
+        overlap_min_ratio: 0.01
 
     use_sim_time: false
 fake_vel_transform:

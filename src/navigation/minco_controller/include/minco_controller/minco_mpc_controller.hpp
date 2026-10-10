@@ -58,6 +58,10 @@ public:
                      const bool &percentage) override;
 
 private:
+  geometry_msgs::msg::TwistStamped computeVelocityCommandsImpl(
+      const geometry_msgs::msg::PoseStamped &pose,
+      const geometry_msgs::msg::Twist &velocity,
+      nav2_core::GoalChecker *goal_checker, bool retry_normal_update);
   // === Callbacks ===
   void onOptPath(const ros_interfaces::msg::MpcPositionCommand::SharedPtr msg);
   void onOdom(const nav_msgs::msg::Odometry::SharedPtr msg);
@@ -132,6 +136,7 @@ private:
   std::string global_frame_;
   std::string base_frame_;
   std::string odom_frame_;
+  std::string physical_base_frame_{"base_link"};
   std::string map_frame_;
   std::string opt_path_topic_{"opt_path"};
   std::string odom_topic_{"odom"};
@@ -191,6 +196,9 @@ private:
   double reference_startup_max_lead_time_{1.50};
   double reference_startup_target_speed_{0.08};
   double reference_startup_min_command_speed_{0.08};
+  double recovery_max_speed_{0.20};
+  double recovery_max_distance_{0.20};
+  double recovery_max_duration_{1.0};
   double uphill_startup_min_grade_{0.08};
   double uphill_full_assist_grade_{0.18};
   double uphill_assist_min_reference_speed_{0.08};

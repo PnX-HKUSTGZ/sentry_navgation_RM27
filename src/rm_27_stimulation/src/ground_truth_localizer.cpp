@@ -95,7 +95,7 @@ public:
     const int horizontal_samples =
       this->declare_parameter<int>("lidar_horizontal_samples", 360);
     const int vertical_samples =
-      this->declare_parameter<int>("lidar_vertical_samples", 320);
+      this->declare_parameter<int>("lidar_vertical_samples", 192);
     const int horizontal_stride =
       this->declare_parameter<int>("no_return_horizontal_stride", 1);
     const int vertical_stride =

@@ -146,7 +146,7 @@ bool shortcutRespectsCostEnvelope(
 bool shouldOptimizeYawForSeed(
   bool yaw_optimization_enabled, const LocalPathSeed & seed) noexcept
 {
-  return yaw_optimization_enabled && !seed.observed_prefix_clipped;
+  return yaw_optimization_enabled && seed.local_end_is_goal && !seed.observed_prefix_clipped;
 }
 
 void LocalPathProcessor::configure(
@@ -236,7 +236,31 @@ LocalPathSeed LocalPathProcessor::buildSeed(
   seed.stop_at_local_end = seed.local_end_is_goal || seed.observed_prefix_clipped;
   const double shortcut_sample_step =
     std::max(1e-3, 0.5 * mode_context.dynamicQuery()->resolution());
-  seed.sparse_waypoints = utils::getSparseWaypoints(seed.dense_path,
+  std::vector<Eigen::Vector3d> sparse_input = seed.dense_path;
+  size_t connector_end = 0U;
+  const auto global_query = mode_context.sparsifyQuery();
+  unsigned int start_x = 0U, start_y = 0U;
+  if (global_query && global_query->worldToMap(cur_pos.x(), cur_pos.y(), start_x, start_y) &&
+      !global_query->isFree(start_x, start_y)) {
+    // A sub-cell body pose can be safe while the cell-centred footprint mask
+    // is lethal. Retain the already footprint-checked short connector to the
+    // snapped global start; do not ask that same centre mask to veto it again.
+    double connector_length = 0.0;
+    for (size_t i = 1U; i < sparse_input.size(); ++i) {
+      connector_length += (sparse_input[i] - sparse_input[i - 1U]).head<2>().norm();
+      if (connector_length > 2.0 * global_query->resolution() + 1.0e-9) {break;}
+      unsigned int x = 0U, y = 0U;
+      if (global_query->worldToMap(sparse_input[i].x(), sparse_input[i].y(), x, y) &&
+          global_query->isFree(x, y)) {
+        connector_end = i;
+        break;
+      }
+    }
+    if (connector_end > 0U) {
+      sparse_input.erase(sparse_input.begin(), sparse_input.begin() + connector_end);
+    }
+  }
+  seed.sparse_waypoints = utils::getSparseWaypoints(sparse_input,
     max_vel_,
     max_acc_,
     seed.stop_at_local_end,
@@ -266,6 +290,60 @@ LocalPathSeed LocalPathProcessor::buildSeed(
       }
       return true;
     });
+  if (connector_end > 0U && !seed.sparse_waypoints.empty()) {
+    seed.sparse_waypoints.insert(seed.sparse_waypoints.begin(),
+      seed.dense_path.begin(), seed.dense_path.begin() + connector_end);
+  }
+
+  // MINCO is allowed to move its intermediate control points.  A long sparse
+  // segment at a tunnel entrance can therefore bow toward a wall even though
+  // its polyline endpoints are safe.  Keep the same validated guide geometry
+  // at a bounded spacing; the polynomial remains smooth, while a narrow
+  // doorway or a ramp corner cannot be cut by one oversized piece.
+  constexpr double kMaxGuideSpacing = 0.25;
+  bool guide_has_turn = false;
+  for (size_t index = 1U; index + 1U < seed.sparse_waypoints.size(); ++index) {
+    const Eigen::Vector2d incoming =
+      (seed.sparse_waypoints[index] - seed.sparse_waypoints[index - 1U]).head<2>();
+    const Eigen::Vector2d outgoing =
+      (seed.sparse_waypoints[index + 1U] - seed.sparse_waypoints[index]).head<2>();
+    if (incoming.norm() > 1.0e-6 && outgoing.norm() > 1.0e-6 &&
+        std::abs(incoming.normalized().dot(outgoing.normalized())) < 0.995) {
+      guide_has_turn = true;
+      break;
+    }
+  }
+  if (guide_has_turn) {
+    std::vector<Eigen::Vector3d> densified;
+    densified.reserve(seed.sparse_waypoints.size() * 2U);
+    densified.push_back(seed.sparse_waypoints.front());
+    for (size_t index = 1U; index < seed.sparse_waypoints.size(); ++index) {
+      const Eigen::Vector3d delta =
+        seed.sparse_waypoints[index] - seed.sparse_waypoints[index - 1U];
+      const double length = delta.head<2>().norm();
+      const int pieces = std::max(1, static_cast<int>(
+        std::ceil(length / kMaxGuideSpacing)));
+      for (int piece = 1; piece <= pieces; ++piece) {
+        const double ratio = static_cast<double>(piece) /
+          static_cast<double>(pieces);
+        const Eigen::Vector3d point =
+          seed.sparse_waypoints[index - 1U] + ratio * delta;
+        if (!footprint_is_safe(point, initial_yaw)) {
+          densified.clear();
+          break;
+        }
+        densified.push_back(point);
+      }
+      if (densified.empty()) {
+        break;
+      }
+    }
+    if (densified.size() == seed.sparse_waypoints.size() ||
+        (!densified.empty() && densified.back().isApprox(
+          seed.sparse_waypoints.back(), 1.0e-9))) {
+      seed.sparse_waypoints = std::move(densified);
+    }
+  }
   seed.valid = seed.sparse_waypoints.size() >= 2U;
   return seed;
 }

@@ -2,6 +2,7 @@
 
 #include "smac_search/smac_planner_2d_simple.hpp"
 #include "minco_core/components/dynamic_obstacle_evidence.hpp"
+#include "minco_core/components/map_query_adapters.hpp"
 
 #include "nav2_costmap_2d/cost_values.hpp"
 #include "rog_map/projection_layer.hpp"
@@ -213,6 +214,34 @@ TEST(SmacGlobalSearchPolicyTest, FreeGlobalMapEscapesBlockedLocalEsdfStartRegion
   EXPECT_FLOAT_EQ(path.back().y, 35.0F);
 }
 
+TEST(SmacGlobalSearchPolicyTest, OrientedFootprintSearchCrosses800mmCorridor)
+{
+  auto source = std::make_shared<GridQuery>(80U, 80U, 0.05, 10.0);
+  for (unsigned int y = 0U; y < 80U; ++y) {
+    if (y >= 32U && y < 48U) {
+      continue;
+    }
+    for (unsigned int x = 0U; x < 80U; ++x) {
+      source->setValue(x, y, nav2_costmap_2d::LETHAL_OBSTACLE);
+    }
+  }
+  const std::vector<Eigen::Vector2d> footprint{
+    {-0.312, -0.312}, {0.312, -0.312}, {0.312, 0.312}, {-0.312, 0.312}};
+  auto polygon = std::make_shared<StaticObstacleClearanceQuery>(source, source, footprint, 0.05);
+  SmacPlanner2DSimple planner;
+  planner.setMap(polygon);
+  SmacPlanner2DSimple::CoordinateVector path;
+  EXPECT_TRUE(planner.createPath(12U, 40U, 68U, 40U, path, []() {return false;}));
+  ASSERT_GT(path.size(), 2U);
+  for (const auto & cell : path) {
+    EXPECT_TRUE(polygon->isFree(static_cast<unsigned int>(cell.x), static_cast<unsigned int>(cell.y)));
+  }
+  polygon->setFootprintYaw(std::acos(-1.0) / 4.0);
+  EXPECT_FALSE(planner.createPath(12U, 40U, 68U, 40U, path, []() {return false;}));
+  planner.setMap(std::make_shared<StaticObstacleClearanceQuery>(source, 0.443));
+  EXPECT_FALSE(planner.createPath(12U, 40U, 68U, 40U, path, []() {return false;}));
+}
+
 TEST(SmacGlobalSearchPolicyTest, ReproducesIterationOneTrapWhenLocalEsdfIsHard)
 {
   auto global_map = std::make_shared<GridQuery>(100U, 70U, 0.1, 10.0);
@@ -305,6 +334,29 @@ TEST(SmacGlobalSearchPolicyTest, LinearInflationPenaltyAvoidsSoftCostBand)
              point.y >= 7.0F && point.y <= 12.0F;
     });
   EXPECT_LE(weighted_soft_cells, 2);
+}
+
+TEST(SmacGlobalSearchPolicyTest, HighTraversableBandUsesConfiguredPenaltyWithoutHiddenBarrier)
+{
+  auto map = std::make_shared<GridQuery>(40U, 40U, 0.1, 10.0);
+  for (unsigned int y = 5U; y <= 34U; ++y) {
+    for (unsigned int x = 10U; x <= 20U; ++x) {map->setValue(x, y, 252U);}
+  }
+  SmacPlanner2DSimple planner;
+  planner.setMap(map);
+  planner.setCollisionDistance(0.0);
+  planner.setParameters(false, 1000000, 0.0F);
+  planner.setInflationCostParameters(2.0F, false);
+  SmacPlanner2DSimple::CoordinateVector path;
+  ASSERT_TRUE(planner.createPath(8U, 20U, 22U, 20U, path));
+  EXPECT_GE(std::count_if(path.begin(), path.end(), [](const auto & point) {
+    return point.x >= 10.0F && point.x <= 20.0F && point.y >= 5.0F && point.y <= 34.0F;
+  }), 10);
+  planner.setInflationCostParameters(20.0F, false);
+  ASSERT_TRUE(planner.createPath(8U, 20U, 22U, 20U, path));
+  EXPECT_EQ(std::count_if(path.begin(), path.end(), [](const auto & point) {
+    return point.x >= 10.0F && point.x <= 20.0F && point.y >= 5.0F && point.y <= 34.0F;
+  }), 0);
 }
 
 TEST(SmacGlobalSearchPolicyTest, EvidenceGateRequiresMeasuredSpanAndObstacleReason)

@@ -2,6 +2,7 @@
 #define MINCO_PLANNER__TRAJECTORY_SAFETY_CHECKER_HPP_
 
 #include "minco_core/header.hpp"
+#include "minco_core/components/footprint_geometry.hpp"
 
 namespace minco_planner {
 
@@ -42,6 +43,8 @@ public:
     double yaw{std::numeric_limits<double>::quiet_NaN()};
     double distance{std::numeric_limits<double>::quiet_NaN()};
     double safe_distance{std::numeric_limits<double>::quiet_NaN()};
+    double static_overlap_ratio{std::numeric_limits<double>::quiet_NaN()};
+    bool static_depth_exceeded{false};
     double snapshot_age{std::numeric_limits<double>::quiet_NaN()};
     double snapshot_commit_age{std::numeric_limits<double>::quiet_NaN()};
     double snapshot_processing_age_ms{std::numeric_limits<double>::quiet_NaN()};
@@ -57,20 +60,29 @@ public:
 
   struct Config {
     double safe_dist{0.0};
+    // Allow only a small boundary-cell penetration for rasterized ramp edges.
+    // Zero keeps dynamic obstacle validation strict.
+    double dynamic_edge_overlap_tolerance{0.0};
     double footprint_length{0.30};
     double footprint_width{0.30};
     double footprint_margin{0.05};
     std::vector<Eigen::Vector2d> footprint_points;
+    StaticOverlapPolicy static_overlap;
     double sample_dt{0.05};
     double map_timeout{0.50};
     double future_tolerance{0.05};
+    // Permit motion through cells that ROG has not observed yet. Static prior
+    // map collisions and measured occupied/low-clearance cells remain hard
+    // blockers; this only changes the dynamic UNKNOWN projection result.
+    bool allow_unknown_motion{false};
     std::string planning_frame{"unknown"};
     std::string rog_frame{"unknown"};
   };
 
   void configure(const Config &config, rclcpp::Logger logger,
                  rclcpp::Clock::SharedPtr clock);
-  void setQuery(std::shared_ptr<rog_map::MapQueryInterface> dynamic_query);
+  void setQuery(std::shared_ptr<rog_map::MapQueryInterface> dynamic_query,
+    std::shared_ptr<rog_map::MapQueryInterface> static_query = nullptr);
 
   bool checkPoint(const Eigen::Vector3d &pos) const;
   bool checkFootprint(const Eigen::Vector3d &pos, double yaw) const;
@@ -105,13 +117,14 @@ private:
   };
 
   std::shared_ptr<rog_map::MapQueryInterface> querySnapshot() const;
+  std::shared_ptr<rog_map::MapQueryInterface> staticQuerySnapshot() const;
   PointCheckResult evaluatePoint(
       const std::shared_ptr<rog_map::MapQueryInterface> &query,
       const Eigen::Vector3d &pos) const;
   PointCheckResult evaluateQueryResult(
       const std::shared_ptr<rog_map::MapQueryInterface> &query,
       const Eigen::Vector3d &pos, const rog_map::QueryResult &result,
-      double query_time) const;
+      double query_time, bool static_footprint_checked = false) const;
   bool checkPoint(const std::shared_ptr<rog_map::MapQueryInterface> &query,
                   const Eigen::Vector3d &pos) const;
   bool evaluateFootprint(
@@ -132,14 +145,18 @@ private:
 
   mutable std::mutex query_mutex_;
   std::shared_ptr<rog_map::MapQueryInterface> dynamic_query_;
+  std::shared_ptr<rog_map::MapQueryInterface> static_query_;
   double safe_dist_{0.0};
+  double dynamic_edge_overlap_tolerance_{0.0};
   double footprint_length_{0.30};
   double footprint_width_{0.30};
   double footprint_margin_{0.05};
   std::vector<Eigen::Vector2d> footprint_points_;
+  StaticOverlapPolicy static_overlap_;
   double sample_dt_{0.05};
   double map_timeout_{0.50};
   double future_tolerance_{0.05};
+  bool allow_unknown_motion_{false};
   std::string planning_frame_{"unknown"};
   std::string rog_frame_{"unknown"};
   rclcpp::Logger logger_{rclcpp::get_logger("TrajectorySafetyChecker")};

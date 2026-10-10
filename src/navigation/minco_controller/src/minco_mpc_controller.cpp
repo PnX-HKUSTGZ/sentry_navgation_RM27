@@ -303,6 +303,12 @@ void MincoMpcController::configure(
       node, name + ".reference_startup_min_command_speed",
       rclcpp::ParameterValue(0.08));
   nav2_util::declare_parameter_if_not_declared(
+      node, name + ".recovery_max_speed", rclcpp::ParameterValue(0.20));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".recovery_max_distance", rclcpp::ParameterValue(0.20));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".recovery_max_duration", rclcpp::ParameterValue(1.0));
+  nav2_util::declare_parameter_if_not_declared(
       node, name + ".uphill_startup_min_grade", rclcpp::ParameterValue(0.08));
   nav2_util::declare_parameter_if_not_declared(
       node, name + ".uphill_full_assist_grade", rclcpp::ParameterValue(0.18));
@@ -340,6 +346,8 @@ void MincoMpcController::configure(
       node, name + ".odom_frame", rclcpp::ParameterValue("camera_init"));
   nav2_util::declare_parameter_if_not_declared(node, name + ".map_frame",
                                                rclcpp::ParameterValue("map"));
+  nav2_util::declare_parameter_if_not_declared(node, name + ".physical_base_frame",
+                                               rclcpp::ParameterValue("base_link"));
   nav2_util::declare_parameter_if_not_declared(node, name + ".lidar_offset_x",
                                                rclcpp::ParameterValue(0.0));
   nav2_util::declare_parameter_if_not_declared(node, name + ".lidar_offset_y",
@@ -415,6 +423,9 @@ void MincoMpcController::configure(
                       reference_startup_target_speed_);
   node->get_parameter(name + ".reference_startup_min_command_speed",
                       reference_startup_min_command_speed_);
+  node->get_parameter(name + ".recovery_max_speed", recovery_max_speed_);
+  node->get_parameter(name + ".recovery_max_distance", recovery_max_distance_);
+  node->get_parameter(name + ".recovery_max_duration", recovery_max_duration_);
   node->get_parameter(name + ".uphill_startup_min_grade",
                       uphill_startup_min_grade_);
   node->get_parameter(name + ".uphill_full_assist_grade",
@@ -440,6 +451,7 @@ void MincoMpcController::configure(
   node->get_parameter(name + ".alpha_max", mpc_config_.alpha_max);
 
   node->get_parameter(name + ".odom_frame", odom_frame_);
+  node->get_parameter(name + ".physical_base_frame", physical_base_frame_);
   node->get_parameter(name + ".map_frame", map_frame_);
   node->get_parameter(name + ".lidar_offset_x", lidar_offset_x_);
   node->get_parameter(name + ".lidar_offset_y", lidar_offset_y_);
@@ -448,7 +460,11 @@ void MincoMpcController::configure(
   node->get_parameter(name + ".odom_topic", odom_topic_);
   node->get_parameter(name + ".cmd_vel_mpc_topic", cmd_vel_mpc_topic_);
 
-  if (!std::isfinite(odom_timeout_) || odom_timeout_ <= 0.0 ||
+  if (!std::isfinite(recovery_max_speed_) || recovery_max_speed_ <= deadzone_speed_threshold_ ||
+      recovery_max_speed_ > mpc_config_.max_planar_speed ||
+      !std::isfinite(recovery_max_distance_) || recovery_max_distance_ <= 0.0 ||
+      !std::isfinite(recovery_max_duration_) || recovery_max_duration_ <= 0.0 ||
+      !std::isfinite(odom_timeout_) || odom_timeout_ <= 0.0 ||
       !std::isfinite(trajectory_timeout_) || trajectory_timeout_ <= 0.0 ||
       !std::isfinite(future_stamp_tolerance_) ||
       future_stamp_tolerance_ < 0.0 ||
@@ -791,11 +807,17 @@ void MincoMpcController::onOptPath(
   if (!msg) {
     validation_reason = "NULL_TRAJECTORY";
   } else if (msg->command_flag !=
-             ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND) {
+             ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND &&
+             msg->command_flag != ros_interfaces::msg::MpcPositionCommand::BRAKING_COMMAND &&
+             msg->command_flag != ros_interfaces::msg::MpcPositionCommand::RECOVERY_COMMAND) {
     validation_reason =
         "UNKNOWN_COMMAND_FLAG_" + std::to_string(msg->command_flag);
   } else if (!input_validation::validNormalCommand(*msg, &validation_reason)) {
     validation_reason = "INVALID_NORMAL_" + validation_reason;
+  } else if (msg->command_flag == ros_interfaces::msg::MpcPositionCommand::RECOVERY_COMMAND &&
+             !input_validation::validRecoveryCommand(*msg, recovery_max_speed_,
+               recovery_max_distance_, recovery_max_duration_, &validation_reason)) {
+    validation_reason = "INVALID_RECOVERY_" + validation_reason;
   } else if (!node || !input_validation::freshStamp(
                           input_validation::stampSeconds(msg->header.stamp),
                           node->now().seconds(), trajectory_timeout_,
@@ -1232,6 +1254,13 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
     const geometry_msgs::msg::PoseStamped &pose,
     const geometry_msgs::msg::Twist &velocity,
     nav2_core::GoalChecker *goal_checker) {
+  return computeVelocityCommandsImpl(pose, velocity, goal_checker, true);
+}
+
+geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommandsImpl(
+    const geometry_msgs::msg::PoseStamped &pose,
+    const geometry_msgs::msg::Twist &velocity,
+    nav2_core::GoalChecker *goal_checker, bool retry_normal_update) {
   const bool record_perf = mpc_perf_monitor_.detailedCsvEnabled();
   const auto cycle_start = record_perf
                                ? std::chrono::steady_clock::now()
@@ -1287,6 +1316,20 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
                            trajectory_generation, input_reason)) {
     return stop(input_reason);
   }
+  ros_interfaces::msg::MpcPositionCommand::SharedPtr command_snapshot;
+  {
+    std::lock_guard<std::mutex> lock(data_mtx_);
+    if (trajectory_generation_ == trajectory_generation) {
+      command_snapshot = latest_opt_path_;
+    }
+  }
+  if (!command_snapshot) {
+    return stop("TRAJECTORY_CHANGED_BEFORE_SOLVE");
+  }
+  const bool recovery_active = command_snapshot->command_flag ==
+    ros_interfaces::msg::MpcPositionCommand::RECOVERY_COMMAND;
+  const bool braking_active = command_snapshot->command_flag ==
+    ros_interfaces::msg::MpcPositionCommand::BRAKING_COMMAND;
 
   // The Nav2 pose may use the yaw-cancelled gimbal_yaw_fake frame. Keep the
   // complete MPC state in the odometry/global frame instead of mixing that
@@ -1316,6 +1359,20 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
                                  std::cos(curr.yaw) * lidar_offset_y_;
   curr.x -= offset_global_x;
   curr.y -= offset_global_y;
+  if (recovery_active && latest_odom->child_frame_id != physical_base_frame_) {
+    try {
+      const auto physical = tf_->lookupTransform(global_frame_, physical_base_frame_, tf2::TimePointZero);
+      const double stamp = input_validation::stampSeconds(physical.header.stamp);
+      if (!input_validation::freshStamp(stamp, now.seconds(), odom_timeout_, future_stamp_tolerance_)) {
+        return stop("RECOVERY_PHYSICAL_POSE_STALE");
+      }
+      curr.x = physical.transform.translation.x;
+      curr.y = physical.transform.translation.y;
+      curr.yaw = tf2::getYaw(physical.transform.rotation);
+    } catch (const tf2::TransformException &) {
+      return stop("RECOVERY_PHYSICAL_POSE_UNAVAILABLE");
+    }
+  }
 
   const double noise_threshold = 0.03;
   if (std::abs(curr.vx) < noise_threshold) {
@@ -1388,7 +1445,7 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
     }
   }
 
-  if (control_delay_compensation_ > 1e-3) {
+  if (!recovery_active && control_delay_compensation_ > 1e-3) {
     curr.x += curr.vx * control_delay_compensation_;
     curr.y += curr.vy * control_delay_compensation_;
     curr.yaw += curr.omega * control_delay_compensation_;
@@ -1402,6 +1459,9 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
 
   if (!ok_ref) {
     return stop("NO_REFERENCE");
+  }
+  if (recovery_active || braking_active) {
+    stationary_startup_active = false;
   }
   if (perf && !ref.empty()) {
     perf->ref_vx = ref.front().vel.x();
@@ -1419,7 +1479,38 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
   auto t_start = std::chrono::high_resolution_clock::now();
 #endif
   bool success = false;
-  {
+  if (recovery_active) {
+    // Track exactly the straight escape checked by the planner. MPC feedback
+    // and speed assistance could change its direction or increase overlap.
+    std::vector<ros_interfaces::msg::PositionCommand> points;
+    if (!input_validation::validRecoveryCommand(*command_snapshot, recovery_max_speed_,
+          recovery_max_distance_, recovery_max_duration_) ||
+        !transformPathToOdom(command_snapshot, points) || points.size() < 2U) {
+      return stop("INVALID_RECOVERY_REFERENCE");
+    }
+    const auto & first = points.front();
+    const auto & last = points.back();
+    const double speed = std::hypot(first.velocity.x, first.velocity.y);
+    const double dx = first.velocity.x / speed, dy = first.velocity.y / speed;
+    const double length = std::hypot(last.position.x - first.position.x,
+                                     last.position.y - first.position.y);
+    const double x = curr.x - first.position.x, y = curr.y - first.position.y;
+    const double progress = x * dx + y * dy;
+    if (!std::isfinite(speed) || speed <= 1.0e-6 ||
+        speed > recovery_max_speed_ + 1.0e-6 ||
+        std::abs(x * dy - y * dx) > 0.03 || progress < -0.01 ||
+        std::abs(normalizeYaw(curr.yaw - first.yaw)) > 0.03) {
+      return stop("RECOVERY_TRACKING_ERROR");
+    }
+    if (progress >= length || now.seconds() -
+        input_validation::stampSeconds(command_snapshot->header.stamp) > length / speed + 0.50) {
+      return stop("RECOVERY_COMPLETED", true);
+    }
+    u_global.vx = first.velocity.x;
+    u_global.vy = first.velocity.y;
+    u_global.omega = 0.0;
+    success = true;
+  } else {
     std::lock_guard<std::mutex> lock(solver_mtx_);
     if (solver_) {
       success = solver_->solve(curr, ref, u_global, &pred_states);
@@ -1485,9 +1576,12 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
     wz = std::min(mpc_config_.omega_max,
                   std::max(mpc_config_.omega_min, u_global.omega));
   }
+  if (recovery_active || braking_active) {
+    wz = 0.0;
+  }
 
   double output_delay = 0.025;
-  double phase_delay = curr.omega * output_delay;
+  double phase_delay = recovery_active ? 0.0 : curr.omega * output_delay;
   double cos_phase = std::cos(phase_delay);
   double sin_phase = std::sin(phase_delay);
   double vx = cos_phase * vx_mpc + sin_phase * vy_mpc;
@@ -1522,7 +1616,7 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
   // independent of the full-assist command, otherwise raising the steep-ramp
   // target would make assistance drop out as soon as the chassis starts.
   const bool uphill_assist_active =
-      tilt_speed_limit::shouldApplyUphillCommandFloor(
+      !recovery_active && !braking_active && tilt_speed_limit::shouldApplyUphillCommandFloor(
           stationary_startup_active, peak_reference_speed,
           uphill_assist_min_reference_speed_);
   const double speed_before_uphill_floor = std::hypot(vx, vy);
@@ -1591,11 +1685,18 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
     return stop(input_reason);
   }
   bool generation_current = false;
+  bool normal_update = false;
   {
     std::lock_guard<std::mutex> lock(data_mtx_);
     generation_current = !blocked_ &&
                          current_generation == trajectory_generation &&
                          trajectory_generation_ == trajectory_generation;
+    normal_update = !blocked_ && latest_opt_path_ &&
+        (command_snapshot->command_flag == ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND ||
+         command_snapshot->command_flag == ros_interfaces::msg::MpcPositionCommand::BRAKING_COMMAND) &&
+        (latest_opt_path_->command_flag == ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND ||
+         latest_opt_path_->command_flag == ros_interfaces::msg::MpcPositionCommand::BRAKING_COMMAND) &&
+        sessionToken(latest_opt_path_->planning_stamp) == sessionToken(command_snapshot->planning_stamp);
     if (generation_current && cmd_vel_mpc_pub_) {
       geometry_msgs::msg::Twist raw_cmd;
       raw_cmd.linear.x = vx;
@@ -1605,6 +1706,12 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommands(
     }
   }
   if (!generation_current) {
+    // Recompute once against a normal replacement instead of inserting a zero
+    // command at every unlucky replan. BLOCK, recovery, session changes and a
+    // second concurrent replacement still stop; no stale solve is published.
+    if (retry_normal_update && normal_update) {
+      return computeVelocityCommandsImpl(pose, velocity, goal_checker, false);
+    }
     return stop("TRAJECTORY_CHANGED_DURING_SOLVE");
   }
   // applyGravityCompensation(latest_odom, vx, vy);

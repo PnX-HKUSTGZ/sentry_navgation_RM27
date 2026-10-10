@@ -692,7 +692,8 @@ void transformPriorMapPoint(const PriorMapTransform2D &transform, double rog_x,
 }
 
 bool updatePriorMapTransform(PriorMapData &prior_map,
-                             const PriorMapTransform2D &transform) {
+                             const PriorMapTransform2D &transform,
+                             double horizontal_tolerance) {
   if (!prior_map.loaded) {
     return false;
   }
@@ -700,7 +701,9 @@ bool updatePriorMapTransform(PriorMapData &prior_map,
       !std::isfinite(transform.yaw) || !std::isfinite(transform.tz) ||
       !std::isfinite(transform.roll) || !std::isfinite(transform.pitch) ||
       !std::isfinite(prior_map.origin_yaw) ||
-      std::abs(transform.roll) > 1.0e-5 || std::abs(transform.pitch) > 1.0e-5) {
+      !std::isfinite(horizontal_tolerance) || horizontal_tolerance < 0.0 ||
+      std::abs(transform.roll) > horizontal_tolerance ||
+      std::abs(transform.pitch) > horizontal_tolerance) {
     return invalidatePriorMapTransform(prior_map);
   }
 
