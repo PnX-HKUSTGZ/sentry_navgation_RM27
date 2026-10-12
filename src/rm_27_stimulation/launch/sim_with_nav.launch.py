@@ -90,6 +90,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "sim_world": world_name,
                 "worlds_config": worlds_config_path,
                 "gui": LaunchConfiguration("gui").perform(context),
+                "render_mode": LaunchConfiguration("render_mode").perform(context),
                 "hardware_acceleration": LaunchConfiguration(
                     "hardware_acceleration"
                 ).perform(context),
@@ -132,6 +133,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                         "use_composition": LaunchConfiguration("use_composition"),
                         "use_respawn": LaunchConfiguration("use_respawn"),
                         "use_rviz": LaunchConfiguration("use_rviz"),
+                        "render_mode": LaunchConfiguration("render_mode"),
                         "rviz_hardware_acceleration": LaunchConfiguration(
                             "rviz_hardware_acceleration"
                         ),
@@ -189,9 +191,14 @@ def generate_launch_description():
                 description="Start Gazebo GUI client when true",
             ),
             DeclareLaunchArgument(
+                "render_mode",
+                default_value="",
+                description="auto (effective default), gpu (required), or cpu (llvmpipe), for Gazebo and RViz",
+            ),
+            DeclareLaunchArgument(
                 "hardware_acceleration",
                 default_value="true",
-                description="Use EGL without GUI, or VirtualGL / EGL for the GUI when available",
+                description="Legacy Gazebo alias when render_mode is unset: true=auto, false=cpu",
             ),
             DeclareLaunchArgument(
                 "verbose",
@@ -239,7 +246,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "rviz_hardware_acceleration",
                 default_value="true",
-                description="Use VirtualGL / EGL to accelerate RViz when available",
+                description="Legacy RViz alias when render_mode is unset: true=auto, false=cpu",
             ),
             DeclareLaunchArgument(
                 "use_ground_truth_odom",

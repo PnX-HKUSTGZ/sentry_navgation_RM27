@@ -143,6 +143,11 @@ gui:=false \
 use_rviz:=true
 ```
 
+渲染默认自动选择 GPU 或 CPU。WSL2 下 Gazebo 传感器渲染仍需要 WSLg 显示环境，
+即使设置 `gui:=false` 也一样。可传入 `render_mode:=gpu`、`render_mode:=cpu` 或
+`render_mode:=auto` 指定模式；详细说明和渲染器诊断命令见
+[仿真渲染模式](docs/simulation_rendering.md)。
+
 如果 Gazebo 和机器人已经单独启动，也可以只启动导航：
 
 ```bash

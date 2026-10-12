@@ -22,6 +22,10 @@ if(BUILD_TESTING)
     test/test_navigation_launch.py
     TIMEOUT 30
   )
+  ament_add_pytest_test(test_rendering_launch
+    test/test_rendering_launch.py
+    TIMEOUT 30
+  )
 endif()
 
 ament_auto_package(

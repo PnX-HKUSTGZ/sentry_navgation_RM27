@@ -28,18 +28,37 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
+from launch.logging import get_logger
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from rm27_rendering import resolve_render_mode, select_rendering
 
 
 def _launch_rviz(context, *args, **kwargs):
     del args, kwargs
     prefix = None
     rendering = "desktop OpenGL"
+    environment = None
+    warning = ""
+    explicit_mode = LaunchConfiguration("render_mode").perform(context).strip()
+    simulation = LaunchConfiguration("simulation_rendering").perform(context).strip().lower() in {"true", "1", "yes", "on"}
     hardware_acceleration = LaunchConfiguration("rviz_hardware_acceleration").perform(
         context
     ).strip().lower() in {"true", "1", "yes", "on"}
-    if hardware_acceleration:
+    if simulation or explicit_mode:
+        mode = resolve_render_mode(
+            explicit_mode,
+            LaunchConfiguration("rviz_hardware_acceleration").perform(context),
+        )
+        child_environment = dict(context.environment)
+        child_environment["QT_QPA_PLATFORM"] = LaunchConfiguration("rviz_qt_platform").perform(context)
+        selection = select_rendering(mode, purpose="rviz", environ=child_environment)
+        environment = selection.environment
+        prefix = shlex.join(selection.prefix) if selection.prefix else None
+        warning = selection.warning
+        rendering = (f"requested={mode}, selected={selection.mode}, "
+                     f"backend={selection.backend}, renderer={selection.renderer}")
+    elif hardware_acceleration:
         vglrun = shutil.which("vglrun")
         if not vglrun:
             for candidate in (
@@ -66,12 +85,17 @@ def _launch_rviz(context, *args, **kwargs):
         parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
         output="screen",
         prefix=prefix,
-        additional_env={"QT_QPA_PLATFORM": LaunchConfiguration("rviz_qt_platform")},
+        # A full replacement environment also removes conflicting inherited selectors.
+        env=environment,
+        additional_env=({"QT_QPA_PLATFORM": LaunchConfiguration("rviz_qt_platform")}
+                        if environment is None else None),
         remappings=[
             ("/tf", "tf"),
             ("/tf_static", "tf_static"),
         ],
     )
+    if warning:
+        get_logger("pb2025_nav_bringup.rendering").warning(warning)
     return [
         LogInfo(msg=f"[pb2025_nav_bringup] RViz rendering: {rendering}"),
         RegisterEventHandler(
@@ -127,6 +151,15 @@ def generate_launch_description():
         ),
     )
 
+    declare_render_mode_cmd = DeclareLaunchArgument(
+        "render_mode", default_value="",
+        description="Simulation render mode: auto, gpu, cpu; explicit mode overrides legacy acceleration",
+    )
+    declare_simulation_rendering_cmd = DeclareLaunchArgument(
+        "simulation_rendering", default_value="false",
+        description="Apply simulation preflight policy; real-robot launch keeps its legacy rendering default",
+    )
+
     # Create the launch description and populate
     ld = LaunchDescription()
 
@@ -136,6 +169,8 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_rviz_qt_platform_cmd)
     ld.add_action(declare_rviz_hardware_acceleration_cmd)
+    ld.add_action(declare_render_mode_cmd)
+    ld.add_action(declare_simulation_rendering_cmd)
 
     ld.add_action(OpaqueFunction(function=_launch_rviz))
 

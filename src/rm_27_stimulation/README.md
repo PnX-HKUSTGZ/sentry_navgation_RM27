@@ -122,31 +122,39 @@ MINCO 仿真速度集中在 `pb2025_nav_bringup/config/simulation/minco_params.y
 `uphill_startup_min_command_speed: 1.0` 是有安全运动方向时的上坡助力指令，
 不是实际车速保证，也不绕过碰撞或停车检查。
 
-### 核显加速
+### 仿真渲染模式
 
-两个仿真启动入口默认启用 `hardware_acceleration:=true`。`gui:=false` 时使用
-Gazebo 原生 `--headless-rendering`，通过 EGL 渲染雷达；`gui:=true` 时优先寻找
-`vglrun`，包括 NoMachine 自带的 `/usr/NX/scripts/vgl/vglrun`，通过 VirtualGL
-的 EGL 后端渲染 Gazebo 窗口。没有 VirtualGL 的机器保留桌面 OpenGL 启动方式。
-该设置只作用于 Gazebo，不向导航节点注入 VirtualGL，也不改变物理、碰撞或雷达采样。
-
-远程桌面下启动 MINCO 仿真：
+Gazebo 和仿真 RViz 共用 `render_mode`：`auto` 自动选择可用的 GPU，失败时回退到
+CPU llvmpipe；`gpu` 要求 GPU，否则启动失败并给出原因；`cpu` 强制使用 llvmpipe。
+默认有效模式是 `auto`。一键脚本会把额外 launch 参数传给 ROS 2 launch：
 
 ```bash
-ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 navigation_mode:=minco gui:=true use_rviz:=true
+./tools/stimulation/start_nav_stimulation.bash render_mode:=auto
+./tools/stimulation/start_nav_stimulation.bash render_mode:=gpu
+./tools/stimulation/start_nav_stimulation.bash render_mode:=cpu
 ```
 
-启动后查看 `~/.gz/rendering/ogre2.log` 中的 `GL_RENDERER`。当前 Intel 机器应显示
-`Mesa Intel(R) Graphics (ADL GT2)`；`llvmpipe` 表示仍在软件渲染。核显驱动或权限
-不可用时，EGL 也可能回退到软件渲染，不能仅凭启动参数判断加速已经生效。
-需要对比原启动方式时加 `hardware_acceleration:=false`。
+直接启动时也可传相同的 `render_mode:=...` 参数。旧参数仍可用：当没有显式设置
+`render_mode` 时，`hardware_acceleration:=true` 或 `rviz_hardware_acceleration:=true`
+映射到 `auto`，`false` 映射到 `cpu`；显式 `render_mode` 优先。
 
-实车的 Point-LIO、ROG 地图、MINCO 规划和 MPC 控制当前使用 CPU，不依赖核显。
-实车、仿真和单独启动 RViz 都默认启用 `rviz_hardware_acceleration:=true`，
-使用同样的 VirtualGL / EGL 后端减少显示占用的 CPU。该开关独立于 Gazebo 的
-`hardware_acceleration`，只作用于 RViz 进程；需要恢复桌面 OpenGL 时加
-`rviz_hardware_acceleration:=false`。没有 VirtualGL 时使用桌面 OpenGL。
-不需要本机显示时可关闭 RViz。
+WSL2 下 Gazebo 通过 WSLg X11/GLX、Mesa D3D12 和 NVIDIA 显卡渲染，不使用 CUDA、
+VirtualGL 或 headless EGL。GPU 和 CPU 两种传感器渲染都需要可用的 WSLg 显示连接，
+即使 `gui:=false` 也一样；CPU 模式通过 GLX 使用 llvmpipe。如果 NVIDIA D3D12 设备
+不可用但 WSLg 显示仍正常，可选 `cpu` 或 `auto`。没有可用 WSLg 显示时，Gazebo 无法
+渲染模拟传感器。原生 Linux 在 `gui:=false` 时使用 EGL 渲染传感器。
+
+渲染选择只改变 Gazebo/RViz 渲染进程的图形环境，不改变物理、碰撞、传感器位置、
+ROS topic 或消息布局。可在构建并 source 工作空间后查看探测结果：
+
+```bash
+python3 -m rm27_rendering --mode auto --purpose gazebo --gui true
+python3 -m rm27_rendering --mode gpu --purpose gazebo --gui false
+```
+
+实车的 Point-LIO、ROG 地图、MINCO 规划和 MPC 控制仍由 CPU 执行。物理机器人入口和
+单独启动 RViz 保留 `rviz_hardware_acceleration` 旧行为：`true` 尝试 VirtualGL/EGL，
+`false` 使用桌面 OpenGL。仿真中则由新的统一 `render_mode` 管理 Gazebo 和 RViz。
 
 只在单独调试 Point-LIO 和 small_gicp 时关闭真值模式：
 

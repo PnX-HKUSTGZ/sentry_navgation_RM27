@@ -150,6 +150,12 @@ gui:=true \
 use_rviz:=true
 ```
 
+Rendering defaults to automatic GPU/CPU selection. On WSL2, keep WSLg's display
+available for Gazebo sensor rendering, including with `gui:=false`. To force a
+mode, pass `render_mode:=gpu`, `render_mode:=cpu`, or `render_mode:=auto`; see
+[simulation rendering modes](docs/simulation_rendering.md) for details and the
+renderer diagnostic command.
+
 SLAM mode：
 
 ```bash

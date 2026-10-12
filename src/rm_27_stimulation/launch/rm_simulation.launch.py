@@ -2,7 +2,6 @@
 
 import os
 import shlex
-import shutil
 import xml.etree.ElementTree as ET
 
 import yaml
@@ -14,12 +13,15 @@ from launch.actions import (
     IncludeLaunchDescription,
     LogInfo,
     OpaqueFunction,
-    SetLaunchConfiguration,
+    SetEnvironmentVariable,
+    UnsetEnvironmentVariable,
 )
 from launch.actions.append_environment_variable import AppendEnvironmentVariable
+from launch.logging import get_logger
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from rm27_rendering import resolve_render_mode, select_rendering
 
 
 def _load_yaml(path):
@@ -67,9 +69,11 @@ def _launch_gz_sim(context, *args, **kwargs):
     world_path, _ = _world_file_and_name(context)
     gz_args = []
     gui = _as_bool(LaunchConfiguration("gui").perform(context))
-    hardware_acceleration = _as_bool(
-        LaunchConfiguration("hardware_acceleration").perform(context)
+    mode = resolve_render_mode(
+        LaunchConfiguration("render_mode").perform(context),
+        LaunchConfiguration("hardware_acceleration").perform(context),
     )
+    rendering = select_rendering(mode, gui=gui, purpose="gazebo", environ=dict(context.environment))
 
     if _as_bool(LaunchConfiguration("verbose").perform(context)):
         gz_args.extend(["-v", "4"])
@@ -97,8 +101,13 @@ def _launch_gz_sim(context, *args, **kwargs):
     if extra_args:
         gz_args.extend(shlex.split(extra_args))
 
-    if hardware_acceleration and not gui and "--headless-rendering" not in gz_args:
+    if rendering.backend == "egl" and "--headless-rendering" not in gz_args:
         gz_args.append("--headless-rendering")
+    elif rendering.backend == "glx" and "--headless-rendering" in gz_args:
+        raise RuntimeError(
+            "--headless-rendering conflicts with the selected display OpenGL backend; "
+            "remove it from extra_gazebo_args (WSLg sensors require display OpenGL)."
+        )
 
     gz_args.append(world_path)
 
@@ -111,52 +120,28 @@ def _launch_gz_sim(context, *args, **kwargs):
         }.items(),
     )
 
-    if hardware_acceleration and gui:
-        vglrun = shutil.which("vglrun")
-        if not vglrun:
-            for candidate in (
-                "/usr/NX/scripts/vgl/vglrun",
-                "/opt/VirtualGL/bin/vglrun",
-            ):
-                if os.access(candidate, os.X_OK):
-                    vglrun = candidate
-                    break
-        if vglrun:
-            egl_device = (
-                "egl" if os.path.realpath(vglrun).startswith("/usr/NX/") else "egl0"
-            )
-            # Scope the prefix to Gazebo so navigation processes do not inherit it.
-            return [
-                LogInfo(msg="[rm_27_stimulation] Gazebo rendering: VirtualGL / EGL"),
-                GroupAction(
-                    actions=[
-                        SetLaunchConfiguration(
-                            "launch-prefix", shlex.join(["exec", vglrun, "-d", egl_device])
-                        ),
-                        SetLaunchConfiguration("launch-prefix-filter", ""),
-                        gazebo,
-                    ]
-                ),
-            ]
-        return [
-            LogInfo(
-                msg=(
-                    "[rm_27_stimulation] VirtualGL not found; using desktop OpenGL. "
-                    "Use gui:=false for EGL sensor rendering."
-                )
-            ),
-            gazebo,
-        ]
-
-    return [
-        LogInfo(
-            msg=(
-                "[rm_27_stimulation] Gazebo rendering: "
-                + ("headless EGL" if hardware_acceleration else "desktop OpenGL")
-            )
-        ),
-        gazebo,
+    environment_actions = [
+        UnsetEnvironmentVariable(name) for name in rendering.unset_env
+    ] + [
+        SetEnvironmentVariable(name, value)
+        for name, value in rendering.set_env.items()
     ]
+    if rendering.prefix:
+        # Only native Linux may use VirtualGL; this prefix is local to Gazebo.
+        from launch.actions import SetLaunchConfiguration
+        environment_actions.extend([
+            SetLaunchConfiguration("launch-prefix", shlex.join(["exec", *rendering.prefix])),
+            SetLaunchConfiguration("launch-prefix-filter", ""),
+        ])
+    actions = [LogInfo(msg=(
+        f"[rm_27_stimulation] Gazebo rendering: requested={mode}, "
+        f"selected={rendering.mode}, backend={rendering.backend}, "
+        f"renderer={rendering.renderer}"
+    ))]
+    if rendering.warning:
+        get_logger("rm_27_stimulation.rendering").warning(rendering.warning)
+    actions.append(GroupAction(actions=[*environment_actions, gazebo], scoped=True))
+    return actions
 
 
 def _launch_ros_gz_bridge(context, *args, **kwargs):
@@ -200,9 +185,14 @@ def generate_launch_description():
                 description="Start Gazebo GUI when true",
             ),
             DeclareLaunchArgument(
+                "render_mode",
+                default_value="",
+                description="auto (effective default), gpu (required), or cpu (llvmpipe); overrides legacy acceleration",
+            ),
+            DeclareLaunchArgument(
                 "hardware_acceleration",
                 default_value="true",
-                description="Use EGL without GUI, or VirtualGL / EGL for the GUI when available",
+                description="Legacy alias when render_mode is unset: true=auto, false=cpu",
             ),
             DeclareLaunchArgument(
                 "gui_config",
