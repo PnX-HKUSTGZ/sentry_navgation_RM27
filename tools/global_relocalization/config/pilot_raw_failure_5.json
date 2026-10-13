@@ -1,0 +1,74 @@
+{
+  "seed": 20261013,
+  "sampling_map": "/home/zhang/navi/sentry_navgation_RM27/src/pb2025_nav_bringup/map/simulation/RMUC2026.yaml",
+  "clearance": 0.5,
+  "count": 5,
+  "search_prior": {
+    "search_side": "negative_x",
+    "side_boundary_x": 0.0,
+    "source": "user-authorized fixed half-field prior"
+  },
+  "trials": [
+    {
+      "trial_id": "p01_yaw1",
+      "trial_index": 5,
+      "requested_pose": {
+        "x": -10.175,
+        "y": 1.165,
+        "z": 0.08900000000000012,
+        "yaw": 1.5707963267948966
+      },
+      "source_trial_index": 5
+    },
+    {
+      "trial_id": "p06_yaw0",
+      "trial_index": 24,
+      "requested_pose": {
+        "x": -4.624999999999998,
+        "y": -2.535,
+        "z": 0.08900000000000012,
+        "yaw": 0.0
+      },
+      "source_trial_index": 24
+    },
+    {
+      "trial_id": "p13_yaw3",
+      "trial_index": 55,
+      "requested_pose": {
+        "x": -9.575,
+        "y": -1.2850000000000001,
+        "z": 0.08900000000000012,
+        "yaw": -1.5707963267948966
+      },
+      "source_trial_index": 55
+    },
+    {
+      "trial_id": "p26_yaw0",
+      "trial_index": 100,
+      "requested_pose": {
+        "x": -13.225,
+        "y": 1.665,
+        "z": 0.08900000000000012,
+        "yaw": 0.0
+      },
+      "source_trial_index": 104
+    },
+    {
+      "trial_id": "p30_yaw1",
+      "trial_index": 113,
+      "requested_pose": {
+        "x": -12.475,
+        "y": -3.1350000000000002,
+        "z": 0.08900000000000012,
+        "yaw": 1.5707963267948966
+      },
+      "source_trial_index": 121
+    }
+  ],
+  "purpose": "pilot_raw_imu_previous_failure_categories",
+  "matrix_revision": "physical_replacement_v1",
+  "replacement_rule": "remove original physically invalid p17,p29; retain original 28 positions; append same-seed p30,p31 selected by independent static physics before localization; no localization-success selection",
+  "previous_formal_results_unchanged": true,
+  "physical_precheck_required": true,
+  "selection_rule": "predetermined prior failure categories, not new localization-success selection; matrix unchanged"
+}
