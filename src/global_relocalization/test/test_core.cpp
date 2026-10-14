@@ -5,6 +5,8 @@
 #include <pcl/io/pcd_io.h>
 #include <cstdio>
 #include <random>
+#include <chrono>
+#include <atomic>
 using namespace global_relocalization;
 TEST(ScanContext,AnalyticPolarMaxHeightCells) {
   Cloud cloud;cloud.emplace_back(1,0,-1);cloud.emplace_back(1,0,2);
@@ -100,12 +102,25 @@ TEST(Registration,GlobalRetrievalAndIndependentScanWithNonzeroExtrinsics) {
   Params params;params.db_grid_resolution=.5;params.db_min_points=20;params.db_max_radius=10;
   params.gicp_leaf_size=.06;params.gicp_max_iterations=60;params.top_k=8;params.max_fitness=.04;
   params.min_inlier_ratio=.9;
+  for(bool deterministic:{false,true}) {
+  params.deterministic_preprocessing=deterministic;
   Core core(params);core.loadMap(path);
   auto result=core.search(query,independent,Eigen::Vector3d(.1,.126,.21),[]{return false;});
   ASSERT_TRUE(result.success)<<result.reason<<" fitness="<<result.candidate.fitness;
   EXPECT_LT((result.candidate.map_from_reference.translation()-truth.translation()).norm(),.025);
   EXPECT_LT(Eigen::AngleAxisd(result.candidate.map_from_reference.rotation().transpose()*truth.rotation()).angle(),.01);
   EXPECT_GT(result.candidates_tested,1u);
+  EXPECT_EQ(result.query_preparations,1u);
+  EXPECT_EQ(result.independent_preparations,1u);
+  // Confirmation inputs keep their own point sets: a bad third scan must not
+  // accidentally reuse the query or an earlier valid confirmation cache.
+  std::vector<Cloud> stopped{independent,independent,Cloud{}};
+  auto rejected=core.search(query,stopped,Eigen::Vector3d(.1,.126,.21),[]{return false;});
+  EXPECT_FALSE(rejected.success);
+  EXPECT_EQ(rejected.query_preparations,1u);
+  EXPECT_EQ(rejected.independent_preparations,3u);
+  EXPECT_EQ(rejected.reason,"independent stopped scan failed quality or search-side gates");
+  }
   std::remove(path.c_str());
 }
 TEST(Registration,SymmetricMapRequiresCoarseSidePrior) {
@@ -123,6 +138,10 @@ TEST(Registration,SymmetricMapRequiresCoarseSidePrior) {
   Cloud independent;for(size_t i=0;i<query.size();i+=3)independent.push_back(query[i]);
   Params p;p.db_grid_resolution=.5;p.db_min_points=20;p.db_max_radius=12;
   p.gicp_leaf_size=.06;p.gicp_max_iterations=60;p.top_k=20;p.max_fitness=.04;p.min_inlier_ratio=.9;
+  for(bool deterministic:{false,true}) for(int workers:{1,2}) {
+  p.candidate_workers=workers;
+  p.deterministic_preprocessing=deterministic;p.search_side="all";p.side_boundary_x=0;
+  pcl::io::savePCDFileBinary(path,map);
   Core unrestricted(p);unrestricted.loadMap(path);
   auto both=unrestricted.search(query,independent,Eigen::Vector3d::Zero(),[]{return false;});
   EXPECT_FALSE(both.success);EXPECT_EQ(both.reason,"ambiguous distinct global registration hypotheses");
@@ -158,6 +177,7 @@ TEST(Registration,SymmetricMapRequiresCoarseSidePrior) {
   auto unresolved=same_side.search(query,independent,Eigen::Vector3d::Zero(),[]{return false;});
   EXPECT_FALSE(unresolved.success);
   EXPECT_EQ(unresolved.reason,"ambiguous distinct global registration hypotheses");
+  }
   std::remove(path.c_str());
 }
 TEST(Retrieval,RetainsContextHypothesesAndIndependentRingKeyCoverage) {
@@ -179,4 +199,61 @@ TEST(Retrieval,RetainsContextHypothesesAndIndependentRingKeyCoverage) {
   EXPECT_TRUE(nearby->from_ring_key);EXPECT_FALSE(nearby->from_scan_context);
   EXPECT_EQ(std::count_if(covered.begin(),covered.end(),[](const Candidate&c){return c.from_scan_context;}),10);
   EXPECT_EQ(std::count_if(covered.begin(),covered.end(),[](const Candidate&c){return c.from_ring_key;}),5);
+}
+
+TEST(Registration,ParallelCandidatesPreserveAllSeedsQualityOrderAndConfirmations) {
+  const std::string path="/tmp/global_relocalization_parallel_test.pcd";
+  Cloud map;std::mt19937 generator(27);
+  std::uniform_real_distribution<float> x(-4,4),y(-3,3),z(-.2,2.);
+  for(int i=0;i<1800;++i)map.emplace_back(x(generator),y(generator),z(generator));
+  pcl::io::savePCDFileBinary(path,map);
+  Eigen::Isometry3d truth=Eigen::Isometry3d::Identity();truth.translation()<<1,1,0;
+  truth.linear()=Eigen::AngleAxisd(-M_PI/2,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  Cloud query;pcl::transformPointCloud(map,query,truth.inverse().matrix().cast<float>());
+  Cloud independent;for(size_t i=0;i<query.size();i+=3)independent.push_back(query[i]);
+  Params p;p.db_grid_resolution=.5;p.db_min_points=20;p.db_max_radius=10;
+  p.gicp_leaf_size=.06;p.gicp_max_iterations=60;p.top_k=8;p.ring_key_candidates=3;
+  p.max_fitness=.04;p.min_inlier_ratio=.9;p.deterministic_preprocessing=true;
+  Core serial(p);serial.loadMap(path);
+  const auto one=serial.search(query,std::vector<Cloud>{independent,independent,independent},Eigen::Vector3d::Zero(),[]{return false;});
+  p.candidate_workers=2;Core parallel(p);parallel.loadMap(path);
+  const auto two=parallel.search(query,std::vector<Cloud>{independent,independent,independent},Eigen::Vector3d::Zero(),[]{return false;});
+  ASSERT_TRUE(one.success)<<one.reason;ASSERT_TRUE(two.success)<<two.reason;
+  ASSERT_GT(one.hypotheses.size(),2u);ASSERT_EQ(one.hypotheses.size(),two.hypotheses.size());
+  EXPECT_EQ(two.candidates_tested,two.retrieval_candidate_count);
+  EXPECT_EQ(one.candidates_tested,two.candidates_tested);EXPECT_EQ(one.reason,two.reason);
+  EXPECT_EQ(two.query_preparations,1u);EXPECT_EQ(two.independent_preparations,3u);
+  ASSERT_EQ(two.confirmations.size(),3u);
+  for(size_t i=0;i<one.hypotheses.size();++i) {
+    const auto & a=one.hypotheses[i];const auto & b=two.hypotheses[i];
+    EXPECT_EQ(a.ring_key_rank,b.ring_key_rank);EXPECT_EQ(a.scan_context_rank,b.scan_context_rank);
+    EXPECT_EQ(a.from_scan_context,b.from_scan_context);EXPECT_EQ(a.from_ring_key,b.from_ring_key);
+    EXPECT_TRUE(a.seed_translation.isApprox(b.seed_translation,1e-12));EXPECT_DOUBLE_EQ(a.seed_yaw,b.seed_yaw);
+    EXPECT_EQ(a.converged,b.converged);EXPECT_EQ(a.within_search_side,b.within_search_side);
+    EXPECT_NEAR(a.fitness,b.fitness,1e-6);EXPECT_NEAR(a.inlier_ratio,b.inlier_ratio,1e-6);
+    EXPECT_TRUE(a.map_from_reference.matrix().isApprox(b.map_from_reference.matrix(),1e-6));
+    EXPECT_EQ(a.source_points,b.source_points);EXPECT_GT(b.coarse_iterations,0u);EXPECT_GT(b.fine_iterations,0u);
+    EXPECT_GT(b.coarse_sec,0.);EXPECT_GT(b.fine_sec,0.);EXPECT_GT(b.quality_sec,0.);EXPECT_FALSE(b.canceled);
+  }
+  EXPECT_TRUE(one.candidate.map_from_reference.matrix().isApprox(two.candidate.map_from_reference.matrix(),1e-6));
+  auto rejected=parallel.search(query,std::vector<Cloud>{independent,independent,Cloud{}},Eigen::Vector3d::Zero(),[]{return false;});
+  EXPECT_FALSE(rejected.success);EXPECT_EQ(rejected.independent_preparations,3u);
+  EXPECT_EQ(rejected.reason,"independent stopped scan failed quality or search-side gates");
+  // Cancel from inside optimizer-stage checks after retrieval has selected >2
+  // candidates. Joining must return diagnostics without accepting any result.
+  int checks=0;std::chrono::steady_clock::time_point requested;
+  const auto interrupted=parallel.search(query,independent,Eigen::Vector3d::Zero(),[&]{
+    if(++checks<30)return false;if(checks==30)requested=std::chrono::steady_clock::now();return true;
+  });
+  const double join_sec=std::chrono::duration<double>(std::chrono::steady_clock::now()-requested).count();
+  EXPECT_FALSE(interrupted.success);EXPECT_GT(interrupted.retrieval_candidate_count,2u);
+  EXPECT_EQ(interrupted.reason,"canceled during GICP");EXPECT_LT(join_sec,1.0);
+  EXPECT_TRUE(std::any_of(interrupted.hypotheses.begin(),interrupted.hypotheses.end(),[](const Candidate & c){return c.canceled&&c.total_sec>0.;}));
+  RecordProperty("cancel_join_sec",join_sec);
+  // A subsequent complete search proves all canceled worker tasks were joined.
+  const auto retry=parallel.search(query,independent,Eigen::Vector3d::Zero(),[]{return false;});
+  EXPECT_TRUE(retry.success)<<retry.reason;
+  p.candidate_workers=3;EXPECT_THROW(Core invalid(p),std::invalid_argument);
+  p.candidate_workers=0;EXPECT_THROW(Core invalid(p),std::invalid_argument);
+  std::remove(path.c_str());
 }

@@ -21,8 +21,10 @@ commands=[];complete=False
 try:
  time.sleep(3)
  for station in stations:
-  command,result=reset_pose(station['requested_pose'])
-  commands.append({'station':station,'command':command,'result':result,'wall_time':time.time()})
+  attempts=[]
+  command,result=reset_pose(station['requested_pose'], attempts=attempts,
+   log_path=output.parent/(output.name+'.'+station['trial_id']+'.reset_attempts.json'))
+  commands.append({'station':station,'command':command,'result':result,'reset_attempts':attempts,'wall_time':time.time()})
   time.sleep(a.dwell_wall)
   print(f"captured station {station['trial_id']}",flush=True)
  complete=True
@@ -36,5 +38,5 @@ finally:
    station_count=len(commands),requested_station_count=len(stations),station_dwell_wall_sec=a.dwell_wall,
    stations=commands,reason='all stationary acquisition stations completed' if complete else 'station acquisition interrupted')
   manifest_path.write_text(json.dumps(manifest,indent=2)+'\n')
- if not complete:
-  raise SystemExit(2)
+if not complete:
+ raise SystemExit(2)

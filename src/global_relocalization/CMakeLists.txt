@@ -34,12 +34,14 @@ target_link_libraries(global_relocalization_core PUBLIC Eigen3::Eigen ${PCL_LIBR
   OpenMP::OpenMP_CXX small_gicp OpenSSL::Crypto nlohmann_json::nlohmann_json)
 add_executable(global_relocalization_offline_query src/offline_query.cpp)
 target_link_libraries(global_relocalization_offline_query global_relocalization_core nlohmann_json::nlohmann_json yaml-cpp)
+add_executable(global_relocalization_raw_replay src/raw_replay.cpp)
+target_link_libraries(global_relocalization_raw_replay global_relocalization_core)
 add_executable(global_relocalization_node src/node.cpp)
 target_link_libraries(global_relocalization_node global_relocalization_core nlohmann_json::nlohmann_json)
 ament_target_dependencies(global_relocalization_node rclcpp rclcpp_action
   global_relocalization_interfaces geometry_msgs nav_msgs sensor_msgs std_msgs
   tf2 tf2_ros tf2_eigen pcl_conversions)
-install(TARGETS global_relocalization_core global_relocalization_node global_relocalization_offline_query
+install(TARGETS global_relocalization_core global_relocalization_node global_relocalization_offline_query global_relocalization_raw_replay
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 install(FILES ${small_gicp_SOURCE_DIR}/LICENSE DESTINATION share/${PROJECT_NAME}/third_party RENAME small_gicp_LICENSE)
@@ -55,6 +57,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_core global_relocalization_core)
   ament_add_gtest(test_raw_frontend test/test_raw_frontend.cpp)
   target_link_libraries(test_raw_frontend global_relocalization_core)
+  ament_add_gtest(test_raw_scan_worker test/test_raw_scan_worker.cpp)
+  target_link_libraries(test_raw_scan_worker global_relocalization_core)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_action_contract test/test_action_contract.py
     TIMEOUT 30 ENV "GLOBAL_RELOCALIZATION_NODE=$<TARGET_FILE:global_relocalization_node>")

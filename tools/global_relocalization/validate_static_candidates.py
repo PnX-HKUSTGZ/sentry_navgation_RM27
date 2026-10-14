@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Select supplemental starts using physical GT checks before any localization goal."""
 import argparse
+import hashlib
+import datetime
 import json
 import math
 import time
@@ -13,7 +15,7 @@ from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rosgraph_msgs.msg import Clock
-from batch_run import reset_pose
+from batch_run import reset_pose, ROOT
 
 
 class Check(Node):
@@ -61,6 +63,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--candidates', required=True)
     p.add_argument('--output', required=True)
+    p.add_argument('--map-manifest', help='Frozen map manifest for auditable physical precheck provenance')
     p.add_argument('--start-position-index', type=int, default=30)
     p.add_argument('--needed-positions', type=int, default=2)
     p.add_argument('--validate-all', action='store_true', help='Audit every frozen trial; retain failures and do not select/remove positions')
@@ -68,18 +71,37 @@ def main():
     source = json.loads(Path(a.candidates).read_text())
     output = Path(a.output); output.mkdir(parents=True, exist_ok=False)
     trials = source['trials']; checks = []; selected = []
+    inputs = [Path(a.candidates).resolve(), ROOT/'tools/global_relocalization/.build/robot_velocity.json']
+    controller = json.loads(inputs[1].read_text())
+    inputs.append(Path(controller['robot_description']))
+    map_manifest = json.loads(Path(a.map_manifest).read_text()) if a.map_manifest else None
+    if a.map_manifest:
+        inputs.extend([Path(a.map_manifest).resolve(), Path(map_manifest.get('map_path', str(Path(a.map_manifest).resolve().parent/'map.pcd')))])
+    fingerprints = {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
+    if fingerprints[controller['robot_description']] != controller['robot_description_sha256']:
+        raise ValueError('Physical precheck robot description differs from controller provenance')
+    if map_manifest and fingerprints[str(inputs[-1])] != map_manifest['map_sha256']:
+        raise ValueError('Physical precheck map bytes differ from frozen map manifest')
+    provenance = {'created_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'matrix_path': str(inputs[0]), 'matrix_sha256': fingerprints[str(inputs[0])],
+        'map_sha256': map_manifest['map_sha256'] if map_manifest else None,
+        'controller_provenance': controller, 'verified_inputs': fingerprints,
+        'source_input_hashes_verified_at_end': False}
+    (output/'manifest.json').write_text(json.dumps(provenance, indent=2)+'\n')
     rclpy.init(); node = Check()
     try:
         for index in sorted({t['trial_index'] // 4 for t in trials if a.validate_all or t['trial_index'] // 4 >= a.start_position_index}):
             candidate = [t for t in trials if t['trial_index'] // 4 == index]
             valid = True
             for trial in candidate:
-                reset_pose(trial['requested_pose'])
+                reset_attempts = []
+                reset_pose(trial['requested_pose'], attempts=reset_attempts,
+                           log_path=output/(trial['trial_id']+'.reset_attempts.json'))
                 node.wait_sim(3)
                 node.rows = []
                 node.wait_sim(3)
                 result = node.inspect(trial['requested_pose'])
-                check = {**trial, **result, 'gt_used_to_choose_localization_candidates': False}
+                check = {**trial, **result, 'reset_attempts': reset_attempts, 'gt_used_to_choose_localization_candidates': False}
                 checks.append(check)
                 (output/'checks.json').write_text(json.dumps(checks, indent=2) + '\n')
                 (output/(trial['trial_id']+'.gt.jsonl')).write_text(''.join(json.dumps(r)+'\n' for r in node.rows))
@@ -91,6 +113,11 @@ def main():
                 break
     finally:
         node.pub.publish(Twist()); node.destroy_node(); rclpy.shutdown()
+    for path, expected in fingerprints.items():
+        if hashlib.sha256(Path(path).read_bytes()).hexdigest() != expected:
+            raise RuntimeError('Physical precheck input changed: '+path)
+    provenance['source_input_hashes_verified_at_end'] = True
+    (output/'manifest.json').write_text(json.dumps(provenance, indent=2)+'\n')
     if a.validate_all:
         summary = {'planned_trials': len(trials), 'observed_trials': len(checks),
             'physical_valid_trials': sum(c['physical_valid'] for c in checks),

@@ -348,6 +348,9 @@ class BatchAggregationTests(unittest.TestCase):
             self.assertEqual(batch["observed_trials"], 3)
             self.assertEqual(batch["success_count"], 1)
             self.assertEqual(batch["failure_count"], 2)
+            recovery = report["summary"]["algorithm_recovery_outcomes"]
+            self.assertEqual(recovery["wrong_pose_accepted_count"], 1)
+            self.assertEqual(recovery["action_failure_count"], 1)
             self.assertAlmostEqual(batch["failure_rate"], 2.0 / 3.0)
             self.assertEqual(batch["timeout_count"], 1)
             self.assertAlmostEqual(batch["success_rate"], 1.0 / 3.0)
@@ -505,6 +508,22 @@ class BatchAggregationTests(unittest.TestCase):
                     "imu_received": 2600, "imu_accepted": 2600, "imu_rejected": 0,
                     "queue_dropped": 3, "processing_sec": 0.004,
                     "worker_wall_sec": 0.006, "max_worker_wall_sec": 0.010,
+                    "generation": 1, "scan_queue_capacity": 32,
+                    "max_scan_message_bytes": 4194304, "scan_queue_depth": 2,
+                    "scan_result_depth": 0, "scan_outstanding_count": 1,
+                    "scan_queue_bytes": 1200000, "scan_queue_high_watermark": 5,
+                    "scan_queue_max_bytes": 8388608, "queue_overflow_count": 3,
+                    "oversized_scan_count": 0, "stale_scan_count": 0,
+                    "capture_ignored_count": 0, "canceled_scan_count": 0,
+                    "lidar_max_received_stamp_gap_sec": 0.05,
+                    "lidar_latest_receipt_ros_delay_sec": 0.06,
+                    "lidar_max_receipt_ros_delay_sec": 0.08,
+                    "processed_source_age_sec": 0.02,
+                    "converged": True, "transform_finite": True,
+                    "iterations": 12, "first_attempt_iterations": 12, "retry_count": 0,
+                    "rejected_gates": [],
+                    "registration_attempts": [{"attempt": 1, "iterations": 12,
+                        "converged": True, "transform_finite": True, "rejected_gates": []}],
                 },
                 "stage_wall_sec": {"SPINNING": 18.0, "SEARCHING": 2.0},
             }
@@ -516,6 +535,26 @@ class BatchAggregationTests(unittest.TestCase):
                     "imu_received": 3400, "imu_accepted": 3400, "imu_rejected": 0,
                     "queue_dropped": 0, "processing_sec": 0.005,
                     "worker_wall_sec": 0.007, "max_worker_wall_sec": 0.012,
+                    "generation": 2, "scan_queue_capacity": 32,
+                    "max_scan_message_bytes": 4194304, "scan_queue_depth": 4,
+                    "scan_result_depth": 1, "scan_outstanding_count": 2,
+                    "scan_queue_bytes": 3600000, "scan_queue_high_watermark": 8,
+                    "scan_queue_max_bytes": 8388608, "queue_overflow_count": 5,
+                    "oversized_scan_count": 1, "stale_scan_count": 2,
+                    "capture_ignored_count": 0, "canceled_scan_count": 1,
+                    "lidar_max_received_stamp_gap_sec": 0.35,
+                    "lidar_latest_receipt_ros_delay_sec": 0.24,
+                    "lidar_max_receipt_ros_delay_sec": 0.30,
+                    "processed_source_age_sec": 0.12,
+                    "converged": False, "transform_finite": True,
+                    "iterations": 25, "first_attempt_iterations": 15, "retry_count": 1,
+                    "rejected_gates": ["coverage_gap"], "worker_error": "queue overflow",
+                    "registration_attempts": [
+                        {"attempt": 1, "iterations": 15, "converged": False,
+                         "transform_finite": True, "rejected_gates": ["coverage_gap"]},
+                        {"attempt": 2, "iterations": 10, "converged": False,
+                         "transform_finite": True, "rejected_gates": ["coverage_gap"]},
+                    ],
                 },
                 "stage_wall_sec": {"SPINNING": 18.0, "SEARCHING": 3.0},
             }
@@ -573,12 +612,232 @@ class BatchAggregationTests(unittest.TestCase):
             self.assertEqual(raw_summary["inputs"]["imu"]["stale"]["count"], 0)
             self.assertIsNone(raw_summary["rejection_reasons"]["lidar"])
             self.assertEqual(raw_summary["metrics"]["queue_dropped"]["mean"], 1.5)
+            self.assertEqual(raw_summary["metrics"]["queue_overflow_count"]["mean"], 4.0)
+            self.assertEqual(raw_summary["metrics"]["scan_queue_capacity"]["max"], 32.0)
+            self.assertAlmostEqual(raw_summary["metrics"]["lidar_max_received_stamp_gap_sec"]["mean"], 0.2)
+            self.assertAlmostEqual(raw_summary["metrics"]["lidar_latest_receipt_ros_delay_sec"]["mean"], 0.15)
+            self.assertEqual(raw_summary["metrics"]["retry_count"]["mean"], 0.5)
+            self.assertEqual(raw_summary["metrics"]["iterations"]["mean"], 18.5)
+            self.assertEqual(raw_summary["converged"]["true_count"], 1)
+            self.assertEqual(raw_summary["converged"]["false_count"], 1)
+            self.assertEqual(raw_summary["rejected_gate_trial_counts"], {"coverage_gap": 1})
+            self.assertEqual(raw_summary["worker_error_counts"], {"queue overflow": 1})
             self.assertEqual(raw_summary["metrics"]["max_worker_wall_sec"]["max"], 0.012)
             self.assertEqual(normalized["resource_group"], "algorithm_process")
             self.assertFalse(normalized["separate_cpu_rss_accounting"])
+            self.assertEqual(normalized["retry_count"], 0)
+            self.assertEqual(len(normalized["registration_attempts"]), 1)
             self.assertEqual(report["trials"][0]["terminal_status"], terminal_ok)
             self.assertEqual(report["trials"][0]["status_events"], [terminal_ok])
             self.assertIsNone(report["summary"]["lio_pipeline"]["cpu_percent"]["mean"])
+
+    def test_reset_attempts_are_summarized_without_expanding_trial_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trials_path = pathlib.Path(directory) / "trials.jsonl"
+            scores_path = pathlib.Path(directory) / "pose_errors.jsonl"
+            output_prefix = pathlib.Path(directory) / "aggregate"
+            first_success = {
+                "attempt": 1, "success": True, "classification": "success",
+                "wall_sec": 0.1, "returncode": 0,
+            }
+            timeout = {
+                "attempt": 1, "success": False, "classification": "cli_timeout",
+                "wall_sec": 10.0, "returncode": None,
+            }
+            retry_success = {
+                "attempt": 2, "success": True, "classification": "success",
+                "wall_sec": 0.1, "returncode": 0,
+            }
+            trials = [
+                {"trial_id": "reset-first-pass", "action": {"success": False},
+                 "reset_attempts": [first_success]},
+                {"trial_id": "reset-recovered", "action": {"success": False},
+                 "reset_attempts": [timeout, retry_success]},
+                {"trial_id": "reset-not-attempted", "action": {"success": False},
+                 "reset_attempts": []},
+            ]
+            trials_path.write_text(
+                "\n".join(json.dumps(row) for row in trials) + "\n", encoding="utf-8"
+            )
+            scores_path.write_text("", encoding="utf-8")
+
+            report = evaluator.aggregate_batch(
+                str(trials_path), str(scores_path), str(output_prefix), expected_trials=3
+            )
+
+            reset = report["summary"]["batch"]["reset_summary"]
+            self.assertEqual(len(report["trials"]), 3)
+            self.assertEqual(reset["planned_trial_count"], 3)
+            self.assertEqual(reset["available_trial_count"], 3)
+            self.assertEqual(reset["attempted_trial_count"], 2)
+            self.assertEqual(reset["first_attempt_success_count"], 1)
+            self.assertEqual(reset["first_attempt_success_rate"], 0.5)
+            self.assertEqual(reset["recovered_on_retry_count"], 1)
+            self.assertEqual(reset["failed_after_reset_count"], 0)
+            self.assertEqual(reset["total_attempt_count"], 3)
+            self.assertEqual(report["trials"][1]["reset_attempts"], [timeout, retry_success])
+            self.assertEqual(len(pathlib.Path(str(output_prefix) + ".trials.csv").read_text().splitlines()), 4)
+
+    def test_three_round_identity_joins_scores_and_separates_deadline_and_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trials_path = pathlib.Path(directory) / "trials.jsonl"
+            scores_path = pathlib.Path(directory) / "pose_errors.jsonl"
+            output_prefix = pathlib.Path(directory) / "aggregate"
+            trials = []
+            scores = []
+            for repetition, stamp, elapsed, recoveries in (
+                (1, 101, 12.0, 0), (2, 201, 15.001, 1), (3, 301, 15.0, 0),
+            ):
+                trials.append({
+                    "run_id": "fix45-run", "repetition": repetition,
+                    "trial_id": "p05_yaw0", "trial_index": 1, "source_trial_index": 5,
+                    "action": {"success": True, "timeout": False, "pose_stamp_ns": stamp,
+                               "elapsed_sec": elapsed},
+                    "status_events": [{"stage": "SUCCEEDED", "elapsed_sec": elapsed,
+                                       "raw_frontend": {"recovery_attempts": recoveries}}],
+                })
+                scores.append({
+                    "run_id": "fix45-run", "repetition": repetition,
+                    "pose_stamp_ns": stamp, "evaluation_valid": True, "success": True,
+                    "position_3d_error_m": 0.01, "orientation_geodesic_error_deg": 0.5,
+                })
+            trials_path.write_text("\n".join(json.dumps(row) for row in trials) + "\n", encoding="utf-8")
+            scores_path.write_text("\n".join(json.dumps(row) for row in scores) + "\n", encoding="utf-8")
+
+            report = evaluator.aggregate_batch(
+                str(trials_path), str(scores_path), str(output_prefix), expected_trials=3
+            )
+            summary = report["summary"]
+
+            self.assertEqual([row["repetition"] for row in report["trials"]], [1, 2, 3])
+            self.assertEqual([row["source_trial_index"] for row in report["trials"]], [5, 5, 5])
+            self.assertEqual(summary["cohort_identity"]["unique_trial_identity_count"], 3)
+            self.assertEqual(summary["batch"]["success_count"], 3)
+            deadline = summary["correct_localization_within_15s"]
+            self.assertEqual(deadline["confirmed_correct_count"], 2)
+            self.assertAlmostEqual(deadline["confirmed_correct_rate_all_cohort"], 2 / 3)
+            self.assertAlmostEqual(deadline["confirmed_correct_rate_among_successful_actions"], 2 / 3)
+            recovery = summary["algorithm_recovery_outcomes"]
+            self.assertEqual(recovery["correct_without_recovery_count"], 2)
+            self.assertEqual(recovery["correct_after_one_recovery_count"], 1)
+            self.assertEqual(recovery["action_failure_count"], 0)
+
+    def test_tagged_score_from_another_repetition_is_rejected_as_orphan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trials_path = pathlib.Path(directory) / "trials.jsonl"
+            scores_path = pathlib.Path(directory) / "pose_errors.jsonl"
+            trial = {
+                "run_id": "fix45-run", "repetition": 2,
+                "trial_id": "p05_yaw0", "trial_index": 1, "source_trial_index": 5,
+                "action": {"success": True, "timeout": False, "pose_stamp_ns": 101,
+                           "elapsed_sec": 10.0},
+            }
+            stale_score = {
+                "run_id": "fix45-run", "repetition": 1,
+                "pose_stamp_ns": 101, "evaluation_valid": True, "success": True,
+            }
+            trials_path.write_text(json.dumps(trial) + "\n", encoding="utf-8")
+            scores_path.write_text(json.dumps(stale_score) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "do not match an action identity/stamp"):
+                evaluator.aggregate_batch(
+                    str(trials_path), str(scores_path), str(pathlib.Path(directory) / "aggregate"),
+                    expected_trials=1,
+                )
+
+    def test_partial_round_identity_and_duplicate_action_identity_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trials_path = pathlib.Path(directory) / "trials.jsonl"
+            scores_path = pathlib.Path(directory) / "pose_errors.jsonl"
+            output_prefix = pathlib.Path(directory) / "aggregate"
+            scores_path.write_text("", encoding="utf-8")
+
+            trials_path.write_text(json.dumps({
+                "run_id": "fix45-run", "trial_id": "p05_yaw0", "action": {"success": False},
+            }) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "positive integer repetition"):
+                evaluator.aggregate_batch(
+                    str(trials_path), str(scores_path), str(output_prefix), expected_trials=1,
+                )
+
+            duplicate = {
+                "run_id": "fix45-run", "repetition": 1,
+                "trial_id": "p05_yaw0", "source_trial_index": 5,
+                "action": {"success": False},
+            }
+            trials_path.write_text(
+                json.dumps(duplicate) + "\n" + json.dumps(duplicate) + "\n", encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "duplicate trial identity"):
+                evaluator.aggregate_batch(
+                    str(trials_path), str(scores_path), str(output_prefix), expected_trials=2,
+                )
+
+    def test_missing_poses_remain_null_in_full_45_trial_denominator(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trials_path = pathlib.Path(directory) / "trials.jsonl"
+            scores_path = pathlib.Path(directory) / "pose_errors.jsonl"
+            output_prefix = pathlib.Path(directory) / "aggregate"
+            trials = []
+            for repetition in (1, 2, 3):
+                for index in range(15):
+                    is_only_scored_trial = repetition == 1 and index == 0
+                    trials.append({
+                        "run_id": "fix45-run", "repetition": repetition,
+                        "trial_id": f"cell-{index}", "trial_index": index,
+                        "source_trial_index": index,
+                        "action": {
+                            "success": is_only_scored_trial, "timeout": False,
+                            "pose_stamp_ns": 101 if is_only_scored_trial else None,
+                            "elapsed_sec": 14.0 if is_only_scored_trial else 3.0,
+                        },
+                        "status_events": [{"stage": "SUCCEEDED" if is_only_scored_trial else "FAILED",
+                                           "raw_frontend": {"recovery_attempts": 0}}],
+                    })
+            score = {
+                "run_id": "fix45-run", "repetition": 1, "pose_stamp_ns": 101,
+                "evaluation_valid": True, "success": True,
+                "position_3d_error_m": 0.01, "orientation_geodesic_error_deg": 0.5,
+            }
+            trials_path.write_text("\n".join(json.dumps(row) for row in trials) + "\n", encoding="utf-8")
+            scores_path.write_text(json.dumps(score) + "\n", encoding="utf-8")
+
+            report = evaluator.aggregate_batch(
+                str(trials_path), str(scores_path), str(output_prefix), expected_trials=45
+            )
+            deadline = report["summary"]["correct_localization_within_15s"]
+
+            self.assertEqual(report["summary"]["batch"]["observed_trials"], 45)
+            self.assertEqual(report["summary"]["batch"]["failure_count"], 44)
+            self.assertEqual(sum(row["pose_stamp_ns"] is None for row in report["trials"]), 44)
+            self.assertEqual(deadline["expected_cohort_count"], 45)
+            self.assertEqual(deadline["confirmed_correct_count"], 1)
+            self.assertAlmostEqual(deadline["confirmed_correct_rate_all_cohort"], 1 / 45)
+
+    def test_legacy_formal_raw120_without_new_fields_still_aggregates_to_58_of_120(self):
+        repository_root = SCRIPT_DIR.parents[2]
+        formal = repository_root / "tools/global_relocalization/data/session_20261013T160806Z_0f2b982a/formal_raw120_run01"
+        trials_path = formal / "trials.jsonl"
+        scores_path = formal / "pose_errors.jsonl"
+        self.assertTrue(trials_path.is_file())
+        self.assertTrue(scores_path.is_file())
+        with tempfile.TemporaryDirectory() as directory:
+            report = evaluator.aggregate_batch(
+                str(trials_path), str(scores_path), str(pathlib.Path(directory) / "legacy"),
+                expected_trials=120,
+            )
+
+        batch = report["summary"]["batch"]
+        self.assertEqual(batch["observed_trials"], 120)
+        self.assertEqual(batch["success_count"], 58)
+        self.assertEqual(batch["failure_count"], 62)
+        self.assertAlmostEqual(batch["success_rate"], 58 / 120)
+        self.assertEqual(report["summary"]["accuracy"]["valid_pose_count"], 58)
+        self.assertEqual(batch["reset_summary"]["available_trial_count"], 0)
+        self.assertIsNone(batch["reset_summary"]["first_attempt_success_rate"])
+        recovery = report["summary"]["algorithm_recovery_outcomes"]
+        self.assertIsNone(recovery["correct_without_recovery_count"])
+        self.assertEqual(recovery["correct_with_unknown_recovery_history_count"], 58)
 
 
 if __name__ == "__main__":

@@ -16,11 +16,14 @@ struct Params {
   double side_boundary_x{0.0};
   int sc_rings{20}, sc_sectors{60}, top_k{5}, ring_key_candidates{0};
   bool retrieval_all_views{false};
+  bool deterministic_preprocessing{false};
   double db_grid_resolution{2.0}, db_base_z{0.0}, db_max_radius{25.0};
   int db_min_points{80};
   double db_min_elevation_deg{-40.0}, db_max_elevation_deg{85.0};
   double gicp_leaf_size{0.15}, gicp_max_correspondence{1.0};
   int gicp_max_iterations{40};
+  // At most two candidate tasks, each using four OpenMP registration threads.
+  int candidate_workers{1};
   double max_fitness{0.20}, min_inlier_ratio{0.65}, ambiguity_margin{0.15};
   double confirmation_max_translation{0.15}, confirmation_max_rotation{0.0872664626};
 };
@@ -46,6 +49,10 @@ struct Candidate {
   bool converged{false};
   bool within_search_side{true};
   size_t inliers{0};
+  size_t source_points{0}, coarse_source_points{0};
+  size_t coarse_iterations{0}, fine_iterations{0};
+  double coarse_sec{0.0}, fine_sec{0.0}, quality_sec{0.0}, total_sec{0.0};
+  bool canceled{false};
 };
 std::vector<Candidate> selectRetrievalCandidates(std::vector<Candidate> candidates,
   int scan_context_count, int ring_key_count);
@@ -55,8 +62,12 @@ struct SearchResult {
   Candidate candidate;
   double retrieval_sec{0.0}, gicp_sec{0.0}, confirmation_sec{0.0};
   size_t database_size{0}, candidates_tested{0}, retrieval_scored_views{0}, retrieval_candidate_count{0}, retrieval_ring_added{0};
+  // Preparation counts exclude target-map preprocessing and never depend on candidate count.
+  size_t query_preparations{0}, independent_preparations{0};
+  int candidate_workers{1};
   std::string map_hash;
   std::vector<Candidate> hypotheses;
+  std::vector<Candidate> confirmations;
 };
 class Core {
 public:

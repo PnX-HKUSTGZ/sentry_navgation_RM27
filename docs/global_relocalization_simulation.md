@@ -1,6 +1,31 @@
 # 全局重定位仿真评估报告
 
-## 正式左半场批测结果（2026-10-13）
+**关机检查点：**本轮已按用户要求暂停，下一步顺序和冻结版本 hash 见[恢复检查点](global_relocalization_resume.md)。
+
+## 最新鲁棒恢复回归状态（2026-10-14；首轮中止）
+
+首个鲁棒 profile [`raw_imu_robust_left_half.yaml`](../src/global_relocalization/config/raw_imu_robust_left_half.yaml)（53 个参数键；本次冻结 SHA-256 `7b257f9cccf437a59d9bca777bb874ca2ce917edf0640671f7db261c3470de26`）的固定 15-cell × 3 轮回归，在 fresh session `robust_correctness_fresh_20261014T101242Z_87dd84d4`、ROS domain 139 中第 2 轮发生全局搜索超时并停止：计划 45 项、执行 30 项，其中 29 项 action 成功且严格全姿态评分通过；1 项 action 超时，第三轮 15 项未尝试。session 实际 15/15 物理预检有效。分轮为 round 1：15/15 正确，round 2：14/15 正确并有 1 次超时，round 3：未启动。该 run 的 `passed_45_of_45=false`，29/30 只是已执行部分的条件结果，不能写成 45/45 或完整成功率。旧正式 120 次和旧固定 15 次结果仍是其他配置/矩阵的历史数据。
+
+超时发生在 `p16_yaw2`：server 60 秒预算结束时，14 个检索候选已测试 12 个；与目标区域接近的候选 fitness 为 0.08648、inlier ratio 为 1.0，但还没有完成独立停稳确认，因此没有输出 pose 或评分。raw 前端 queue drop/overflow 为 0、队列深度为 0，单扫描 worker 最大时间约 20.4 ms；本次证据定位到全局候选搜索尚未完成，不支持把它归因于 raw 前端接收积压。该 60 秒门限未放宽。
+
+同一位置的一次独立单 cell 诊断 action 在 54.153 秒内得到严格评分通过，完整 3D 误差为 3.151 mm，SO(3) 误差为 0.03831°。这条诊断记录不属于 45-cell 回归分母。后续 candidate-workers=2 版本现已冻结：54 个参数键，profile SHA-256 `c45f008347edc394dc1b2a0cb09ec05550f222a2ef1408e2a4ea967ae2de238b`，installed core `f3d8063527e4dad6ed815c08e049e4f7fb54acb3a84a3be4a806d7fcb1d355ea`，node `5255eb8295d35ff7935a2b3666ad42dfe79b9221f665a0ea8e13a309f4da88e2`；Release build/install 与 36 个 checks 通过，证据见[关机恢复检查点](global_relocalization_resume.md)。同输入 serial/parallel 对照、取消成本、p16 三次验证和新版本 15×3 回归尚未完成，故不报告速度收益或新版本正确率。
+
+| 已执行轮次 | 严格正确 | 3D 位置误差 RMSE / 最大 | SO(3) 误差 RMSE / 最大 | action wall 均值 / P95 / 最大 | 15 秒内正确 | 恢复分类 |
+|---|---:|---:|---:|---:|---:|---|
+| round 1（15 项） | 15/15 | 1.525 / 3.017 mm | 0.03868 / 0.09864° | 29.741 / 35.913 / 42.523 s | 0/15 | 首次正确 14；一次恢复后正确 1 |
+| round 2（15 项） | 14/15 | 1.364 / 2.711 mm（14 个有效评分） | 0.04034 / 0.09904°（14 个有效评分） | 30.955 / 40.479 / 60.218 s | 0/15 | 首次正确 14；超时 1 |
+
+这 30 项里有 28 次首次正确、1 次一次内部恢复后正确、1 次 action 超时；没有错误接受或未评分成功 action。以已观察样本计算，15 秒内正确为 0/30，成功 action 条件率为 0/29；另有 15 项未观察，不能当作通过。round 1/2 的算法 CPU 均值/P95 分别为 78.42%/122.13% 与 79.21%/116.10%，peak RSS 最大值分别为 217.6 MiB 与 223.6 MiB；Gazebo CPU 均值/P95 为 85.76%/88.82% 与 86.51%/90.69%，peak RSS 最大值为 2,101.3 MiB 与 2,643.9 MiB。CPU 100% 表示一个逻辑核全占用。
+
+完整逐轮 ledger、计时/资源表和 frozen-input 证明见 [首轮 regression manifest](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/regression45/regression_manifest.json)、[round 1 summary](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/regression45/round_01/results.summary.json)、[round 2 summary](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/regression45/round_02/results.summary.json)、[p16 超时诊断](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/p16_timeout_diagnosis.json) 与 [p16 独立诊断结果](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/p16_search_capture/live/results.summary.json)。本轮没有启动 timed-scan、Point-LIO 地图/速度比较、长时稳定性或 120 次稳定性评估；这些后续项目仍暂停。
+
+## 上一版 raw LiDAR + IMU 正式批测（2026-10-14）
+
+最新正式批次覆盖 30 个静置位置、每点 4 个初始航向，共 120 次；定位成功 58 次（48.33%），未达到 ≥114/120（95%）验收目标。58 个成功姿态的 3D 位置误差均值/RMSE/P95/最大为 1.451/1.828/3.969/4.982 mm，SO(3) 为 0.0374/0.0555/0.1213/0.2005°。成功动作墙钟均值/P95/最大为 31.331/41.748/47.617 s。51 次失败为 raw scan coverage gap，且全部伴随队列丢帧；详细精度、计时、负荷、来源 hash 与失败分析见 [正式测试报告](../tools/global_relocalization/data/session_20261013T160806Z_0f2b982a/formal_raw120_run01/analysis.md)、[批次 summary](../tools/global_relocalization/data/session_20261013T160806Z_0f2b982a/formal_raw120_run01/results.summary.json) 和 [完整性核验](../tools/global_relocalization/data/session_20261013T160806Z_0f2b982a/formal_integrity_check.json)。
+
+本段结果来自 raw LiDAR + IMU 路线。下方 2026-10-13 章节记录的是此前 Point-LIO 输入路线的独立实验，运行配置和失败原因不同，两组数据分别保留。
+
+## 历史正式左半场批测结果（2026-10-13，Point-LIO 输入路线）
 
 这是隔离仿真的静置 → 实际自转 → 停稳 → Scan Context 检索 → 独立停稳扫描 GICP 确认流程。只启动评估所需的 Point-LIO 和全局重定位节点；不启动 Nav2、旧 relocation manager 或实车。Point-LIO 使用 `/registered_scan` 与 `/odometry`，真值 topic 只供评估器读取，定位器不订阅真值、不发布 localization TF。
 
@@ -154,11 +179,11 @@ tools/global_relocalization/run_batch.bash \
 
 此前 ROS domain 86 时钟污染及全场诊断不属于正式左半场统计，证据留在其原目录；它们没有混入本次 120 次汇总。
 
-## 原始 LiDAR+IMU 路线阶段进展（2026-10-13；正式 120 次尚未运行）
+## 原始 LiDAR+IMU 路线阶段记录（截至 2026-10-13；当时正式 120 次尚未运行）
 
 本节记录一条独立的原始传感器路线：定位器直接接收瞬时 LiDAR 点云和 IMU，利用 IMU 重力/陀螺初始化和局部 6D GICP 估计静置自转运动，再执行全局候选检索和停稳扫描确认。配置明确使用 `raw_scan_model: instantaneous`；点云没有逐点采样时间，因此这批数据不能证明 timed-scan 去畸变效果，也没有验证实车力控。Ground truth 仅供离线物理前提检查和按时间戳评分，不进入定位或控制。
 
-原正式基线仍是上文的旧 30 点矩阵：68/120（56.7%）。新的候选 120 矩阵由 28 个旧位置和 p30、p31 两个替换位置组成；旧矩阵中 p17、p29 的物理前提检查不通过，因此新旧整体成功率不是严格同矩阵对照。新矩阵已完成 120/120 静置真值物理预检，结果为全通过；该预检不测定位成功率。证据在 [静态预检 summary](../tools/global_relocalization/data/raw_left120_static_precheck_20261013/summary.json) 和 [固定矩阵](../tools/global_relocalization/config/trials_left_physical_120.json)。正式 120 次定位批测尚未启动，95% 目标尚无正式结果。
+截至该阶段记录时，原正式基线仍是上文旧 30 点矩阵：68/120（56.7%）。新的候选 120 矩阵由 28 个旧位置和 p30、p31 两个替换位置组成；旧矩阵中 p17、p29 的物理前提检查不通过，因此新旧整体成功率不是严格同矩阵对照。新矩阵已完成 120/120 静置真值物理预检，结果为全通过；该预检不测定位成功率。证据在 [静态预检 summary](../tools/global_relocalization/data/raw_left120_static_precheck_20261013/summary.json) 和 [固定矩阵](../tools/global_relocalization/config/trials_left_physical_120.json)。随后进行的正式 raw LiDAR + IMU 120 次批测结果见本报告顶部。
 
 ### 五次路线预检
 
@@ -195,3 +220,12 @@ DAQ pilot 中 `processing_sec` 五次都有测量，均值 4.035 ms、最大 5.0
 DAQ pilot 的 [batch manifest](../tools/global_relocalization/data/pilot_raw_failure5_daq_20261013_48dc198665e4/batch_manifest.json) 记录了当次实际输入和程序来源：执行节点 SHA-256 `315541f397e8a247f5d05731ae0b47b1ea849d9b9afc1c8074167fa036ae8182`，core 库 `64dd03e2695092452f46bc7cffc45b538e32b1ee454f9f08284efaf44bedfbef`，地图 `2b9e08cda8a63ade7ec3e153fe56363a4effd6566ed4a066c764b369abda0570`，该 pilot 生效参数 `global.yaml` `e229c648e05cd03de2d5647af2d41eaf9d3d420b3e498ccdb5ff37820930ff14`，pilot 五次输入 `trials.json` `dd52d638fb5cd05702b907227e5567ab7e4e41a4ce06df05b0ae162d60d731dc`，Gazebo controller snapshot `2a2a6dc2182eb912843b69f12d92f697024d4ebfbe6cbf51b544430995f88638`。当次源文件逐文件哈希和 map manifest 哈希也在该 manifest 中。新增离线归一化评估器 SHA-256 为 `b3a6b44b47cf6167a036aa321471628a3dea385b8b6b6e8ba195c046a7d2cfd7`；它用于重聚合，不是当次定位节点二进制的一部分。
 
 待测 120 矩阵 SHA-256 为 `3c3332f4b932ce89f34d3273106396ce5457ddf3f238730f31ae18aff946356c`；静态物理预检 manifest 记录同一哈希，且 120/120 物理检查通过。后续需先完成固定 5 次和 10 次路线预检，再决定启动正式 120 次。候选 top-k 覆盖修复尚未冻结；在正式批测前继续保持当前门限、固定矩阵和离线评分协议。
+
+
+## 2026-10-14 前端修复固定15诊断
+
+原58/120正式结果保留，本轮没有重跑120。使用预先冻结、保留physical120原ID/pose/index的15个诊断cells，仅执行一次：13/15严格成功、2个前端拒绝；六个原formal localfail cells均成功，但原pilot cell p13_yaw3出现convergence拒绝（same-pair15→30iterations retry一次仍不收敛），p26_yaw2仍触发linear_speed0.36215454m/s>原0.35门限。门限没有放松，也没有GT候选oracle。
+
+实际预检15/15有效、runtime43/43全匹配，estimator不订阅GT；全部15terminal queue_drop/overflow0、worker_error为空、队列高水位1，独立可靠observer与node source stamp gap均0.1s、callback gap最大约0.122s。13有效输出的位置RMSE0.001643m、最大0.003179m，SO3最大0.113658°。成功action wall平均33.923s/p95 45.677s/最大49.351s；probe资源独立计入diagnostic recorder，这些诊断样本不能作为formal120性能结论。
+
+build/core27+evaluator23+harness7共57checks通过。新session最终remaining owned=0，原artifacts全部保留。长时源输送burst未在本轮15中复现，所以本轮结果不能宣称所有问题修好。完整数据与限制见[固定15分析](../tools/global_relocalization/data/session_frontend_fix15_20261013T181313Z_64ccf218/pilot_raw_frontend_fix15_run01/analysis.md)、[summary](../tools/global_relocalization/data/session_frontend_fix15_20261013T181313Z_64ccf218/pilot_raw_frontend_fix15_run01/results.summary.json)、[成功cohort](../tools/global_relocalization/data/session_frontend_fix15_20261013T181313Z_64ccf218/pilot_raw_frontend_fix15_run01/results.success_cohort.json)、[cleanup](../tools/global_relocalization/data/session_frontend_fix15_20261013T181313Z_64ccf218/cleanup.json)；复现命令见test guide第12节。后续120或新算法试验需要独立授权，本轮未自动继续。

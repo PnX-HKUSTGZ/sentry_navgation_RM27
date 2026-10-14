@@ -6,7 +6,6 @@ import argparse
 import datetime
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import signal
@@ -17,6 +16,8 @@ import platform
 import shutil
 import yaml
 import psutil
+
+from reset_pose import reset_pose, reset_summary
 
 ROOT=Path(__file__).resolve().parents[2]
 
@@ -72,19 +73,10 @@ def launch(command,log):
     return process
 
 
-def reset_pose(pose):
-    half=pose['yaw']/2
-    request=(f'name: "rm27_sentry", position: {{x: {pose["x"]}, y: {pose["y"]}, z: {pose["z"]}}}, '
-             f'orientation: {{x: 0, y: 0, z: {math.sin(half)}, w: {math.cos(half)}}}')
-    command=['gz','service','-s','/world/default/set_pose','--reqtype','gz.msgs.Pose','--reptype','gz.msgs.Boolean','--timeout','10000','--req',request]
-    result=subprocess.run(command,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=15)
-    if result.returncode or 'true' not in result.stdout:
-        raise RuntimeError('Gazebo pose reset failed: '+result.stdout)
-    return command,result.stdout
-
-
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--run-id',help='Frozen regression run identity shared across repetitions')
+    parser.add_argument('--repetition',type=int,help='Positive repetition index within a frozen regression')
     parser.add_argument('--map',required=True)
     parser.add_argument('--manifest',required=True)
     parser.add_argument('--output',required=True)
@@ -98,6 +90,8 @@ def main():
     parser.add_argument('--physical-precheck',help='Directory with independent static physical checks for every selected raw trial')
     parser.add_argument('--simulation-audit',help='Passing stream/graph audit from this live isolated session')
     args=parser.parse_args()
+    if (args.run_id is None) != (args.repetition is None) or (args.repetition is not None and args.repetition<1):
+        parser.error('--run-id and positive --repetition must be supplied together')
     output=Path(args.output).resolve();output.mkdir(parents=True,exist_ok=False)
     cases=json.loads(Path(args.trials).read_text());trials=cases['trials'][:args.limit] if args.limit else cases['trials']
     parameters=yaml.safe_load(Path(args.params).read_text())['global_relocalization']['ros__parameters']
@@ -120,6 +114,7 @@ def main():
         'map_sha256':manifest['map_sha256'],'manifest_path':str(Path(args.manifest).resolve()),
         'parameters':Path(args.params).read_text(),'parameters_sha256':hashlib.sha256(Path(args.params).read_bytes()).hexdigest(),
         'limits':{'wall_timeout':args.wall_timeout,'ready_timeout':args.ready_timeout},'commands':[]}
+    metadata['run_id']=args.run_id;metadata['repetition']=args.repetition
     metadata['search_prior']={'search_side':search_side,'side_boundary_x':boundary,
         'source':requested_prior.get('source','none'),'fixed_for_entire_batch':True,
         'ground_truth_used_to_select_candidates':False}
@@ -142,12 +137,22 @@ def main():
             raise ValueError('raw batch requires --physical-precheck evidence before localization')
         precheck=Path(args.physical_precheck).resolve()
         checks=json.loads((precheck/'checks.json').read_text())
+        physical_manifest=json.loads((precheck/'manifest.json').read_text())
+        physical_matrix=Path(physical_manifest.get('matrix_path',''))
+        if not physical_matrix.is_file() or physical_manifest.get('matrix_sha256') != hashlib.sha256(physical_matrix.read_bytes()).hexdigest() or physical_manifest.get('map_sha256') != manifest['map_sha256']:
+            raise ValueError('physical precheck matrix/map identity differs from frozen batch')
+        controller_path=ROOT/'tools/global_relocalization/.build/robot_velocity.json'
+        if physical_manifest.get('controller_provenance') != json.loads(controller_path.read_text()) or not physical_manifest.get('source_input_hashes_verified_at_end'):
+            raise ValueError('physical precheck controller identity or end verification differs')
+        for path,expected in physical_manifest.get('verified_inputs',{}).items():
+            if hashlib.sha256(Path(path).read_bytes()).hexdigest()!=expected:
+                raise ValueError('physical precheck frozen input changed: '+path)
         by_id={row['trial_id']:row for row in checks}
         if len(by_id)!=len(checks):
             raise ValueError('duplicate trial ID in physical precheck')
         for trial in trials:
             check=by_id.get(trial['trial_id'])
-            if not check or check['requested_pose']!=trial['requested_pose'] or not check['physical_valid']:
+            if not check or check['requested_pose']!=trial['requested_pose'] or check.get('trial_index')!=trial['trial_index'] or not check['physical_valid']:
                 raise ValueError('raw trial lacks matching valid independent physical precheck: '+trial['trial_id'])
         metadata['physical_precheck']={'directory':str(precheck),'matched_selected_trials':len(trials),
             'localization_success_used_for_selection':False,'files':{}}
@@ -165,8 +170,13 @@ def main():
     metadata['resource_groups']={'algorithm_process':'algorithm including in-process raw frontend' if args.input_mode=='raw_imu' else 'algorithm',
         'frontend_process':'included_in_algorithm; no separate CPU/RSS attribution' if args.input_mode=='raw_imu' else 'legacy LIO group',
         'lio_pipeline':'disabled; null measurements' if args.input_mode=='raw_imu' else 'Point-LIO and adapters',
-        'gazebo_process_load':'private-domain Gazebo server', 'trial_evaluator_process':'GT observation/client; excluded from estimator'}
-    execution_sources=[Path(__file__), ROOT/'src/global_relocalization/scripts/run_trial.py',
+        'gazebo_process_load':'private-domain Gazebo server', 'trial_evaluator_process':'GT observation/client; excluded from estimator',
+        'diagnostic_recorder_process':'raw bag recorders and optional passive receipt probe; excluded from estimator'}
+    execution_sources=[Path(__file__), ROOT/'tools/global_relocalization/reset_pose.py',
+            ROOT/'tools/global_relocalization/passive_receipt_probe.py',
+            ROOT/'tools/global_relocalization/receipt_metrics.py',
+            ROOT/'tools/global_relocalization/validate_static_candidates.py',
+            ROOT/'tools/global_relocalization/capture_stations.py', ROOT/'src/global_relocalization/scripts/run_trial.py',
             ROOT/'src/global_relocalization/scripts/evaluate_pose.py',
             ROOT/'src/global_relocalization/scripts/instantaneous_cloud_converter.py',
             ROOT/'tools/global_relocalization/odometry_probe.py',
@@ -174,6 +184,8 @@ def main():
             ROOT/'src/global_relocalization/launch/raw_imu.launch.py',
             ROOT/'src/global_relocalization/launch/simulation.launch.py',
             ROOT/'tools/global_relocalization/audit_runtime_parameters.py',
+            *sorted((ROOT/'tools/global_relocalization').glob('*replay*.py')),
+            *sorted((ROOT/'tools/global_relocalization').glob('*regression*.py')),
             ROOT/'tools/global_relocalization/audit_simulation.py',
             ROOT/'tools/global_relocalization/summarize_success_cohort.py',
             ROOT/'tools/global_relocalization/environment.bash',
@@ -240,6 +252,8 @@ def main():
     launch_file='raw_imu.launch.py' if args.input_mode=='raw_imu' else 'algorithm.launch.py'
     algorithm_command=['ros2','launch',str(ROOT/'src/global_relocalization/launch'/launch_file),f'map_path:={map_path}',f'manifest_path:={output/"map_manifest.json"}',f'params_file:={output/"global.yaml"}']
     evaluator_command=['/usr/bin/python3',str(ROOT/'src/global_relocalization/scripts/evaluate_pose.py'),'--ros-args','-p',f'output_prefix:={output/"pose_errors"}','-p',f'map_manifest_path:={Path(args.manifest).resolve()}','-p','use_sim_time:=true']
+    if args.run_id is not None:
+        evaluator_command.extend(['-p',f'run_id:={args.run_id}','-p',f'repetition:={args.repetition}'])
     algorithm=launch(algorithm_command,output/'algorithm.log')
     evaluator=launch(evaluator_command,output/'evaluator.log')
     metadata['commands']=[algorithm_command,evaluator_command]
@@ -260,11 +274,11 @@ def main():
                 audit_log.write('\nRuntime parameter audit outer timeout\n')
         for trial in trials:
             folder=output/trial['trial_id'];folder.mkdir()
-            pose=trial['requested_pose'];record={**trial}
+            pose=trial['requested_pose'];record={**trial};reset_attempts=[]
             try:
                 if audit_returncode:
                     raise RuntimeError('frozen runtime parameter audit failed; see runtime_parameters.json/log')
-                command,reset_output=reset_pose(pose)
+                command,reset_output=reset_pose(pose, attempts=reset_attempts, log_path=folder/'reset_attempts.json')
                 (folder/'reset.log').write_text(reset_output)
                 time.sleep(3)
                 if trial['trial_id'] in record_trials or '*' in record_trials:
@@ -286,6 +300,9 @@ def main():
                     '--requested-pose',json.dumps(pose),'--timeout',str(args.wall_timeout),'--ready-timeout',str(args.ready_timeout),
                     '--input-mode',args.input_mode,'--raw-cloud-topic',parameters.get('raw_cloud_topic','/livox/lidar'),
                     '--raw-imu-topic',parameters.get('imu_topic','/livox/imu')]
+                if args.run_id is not None:
+                    client_command.extend(['--run-id',args.run_id,'--repetition',str(args.repetition),
+                        '--source-trial-index',str(trial.get('source_trial_index',trial['trial_index']))])
                 (folder/'commands.json').write_text(json.dumps([command,lio_command,client_command],indent=2)+'\n')
                 client=launch(client_command,folder/'client.log')
                 outer_timeout=False
@@ -309,6 +326,10 @@ def main():
                 for recorder in recorders:
                     stop(recorder)
                 recorders=[]
+            if args.run_id is not None:
+                record['run_id']=args.run_id;record['repetition']=args.repetition
+                record['source_trial_index']=trial.get('source_trial_index',trial['trial_index'])
+            record['reset_attempts']=reset_attempts
             with (output/'trials.jsonl').open('a') as stream:
                 stream.write(json.dumps(record,allow_nan=False)+'\n');stream.flush();os.fsync(stream.fileno())
             print(json.dumps({'trial_id':trial['trial_id'],'action':record['action'],'timing_sec':record.get('timing_sec',{})}),flush=True)
@@ -322,7 +343,9 @@ def main():
             stop(recorder)
         stop(evaluator);stop(algorithm)
         metadata['finished_utc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
-        metadata['observed_trials']=sum(1 for _ in (output/'trials.jsonl').open()) if (output/'trials.jsonl').exists() else 0
+        rows=[json.loads(line) for line in (output/'trials.jsonl').read_text().splitlines()] if (output/'trials.jsonl').exists() else []
+        metadata['observed_trials']=len(rows)
+        metadata['reset_summary']=reset_summary(rows)
         (output/'batch_manifest.json').write_text(json.dumps(metadata,indent=2)+'\n')
     aggregate=['/usr/bin/python3',str(ROOT/'src/global_relocalization/scripts/evaluate_pose.py'),'--aggregate',
         '--trials',str(output/'trials.jsonl'),'--pose-errors',str(output/'pose_errors.jsonl'),

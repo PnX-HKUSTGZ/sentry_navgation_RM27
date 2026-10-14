@@ -2,6 +2,7 @@
 // Scan Context descriptor implemented here from the published polar max-height
 // definition (Kim and Kim, IROS 2018); no upstream Scan Context code is copied.
 #include "global_relocalization/core.hpp"
+#include "global_relocalization/raw_preprocessing.hpp"
 #include <pcl/common/common.h>
 #include <pcl/common/transforms.h>
 #include <pcl/filters/voxel_grid.h>
@@ -22,6 +23,9 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <filesystem>
+#include <atomic>
+#include <future>
+#include <mutex>
 #include <nlohmann/json.hpp>
 
 namespace global_relocalization {
@@ -43,6 +47,20 @@ Cloud translated(const Cloud & input, const Eigen::Vector3d & translation) {
 double rotationDistance(const Eigen::Isometry3d & a,const Eigen::Isometry3d & b) {
   return Eigen::AngleAxisd(a.rotation().transpose()*b.rotation()).angle();
 }
+struct SearchCanceled {};
+// Preserve upstream numerical reductions exactly. Cancellation is checked on
+// the calling worker between optimizer stages, never thrown inside OpenMP.
+struct CancelableReduction : small_gicp::ParallelReductionOMP {
+  std::function<bool()> canceled;
+  template<class... Args> auto linearize(Args&&... args) const {
+    if(canceled())throw SearchCanceled{};
+    return small_gicp::ParallelReductionOMP::linearize(std::forward<Args>(args)...);
+  }
+  template<class... Args> double error(Args&&... args) const {
+    if(canceled())throw SearchCanceled{};
+    return small_gicp::ParallelReductionOMP::error(std::forward<Args>(args)...);
+  }
+};
 }
 
 bool poseInSearchSide(const Eigen::Isometry3d & base_pose,const Params & params) {
@@ -134,7 +152,9 @@ struct Core::Impl {
   pcl::PointCloud<pcl::PointCovariance>::Ptr target,coarse_target;
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> coarse_tree;
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> tree;
-  pcl::KdTreeFLANN<pcl::PointXYZ> quality_tree;
+  // FLANN's shared-query concurrency is not assumed. Build once per worker
+  // at map load; each query owns its indices/distances and Registration.
+  std::vector<std::unique_ptr<pcl::KdTreeFLANN<pcl::PointXYZ>>> quality_trees;
 
   Cloud visible(const Eigen::Vector3d & origin) const {
     // Fixed spherical z-buffer: all map points are tested, then returns behind
@@ -159,38 +179,78 @@ struct Core::Impl {
     return out;
   }
 
-  Candidate refine(const Cloud & input,const Eigen::Isometry3d & guess,bool coarse=false) {
+  pcl::PointCloud<pcl::PointCovariance>::Ptr covarianceCloud(const Cloud & input,double leaf,int threads=4) const {
+    if(!params.deterministic_preprocessing)
+      return small_gicp::voxelgrid_sampling_omp<Cloud,pcl::PointCloud<pcl::PointCovariance>>(input,leaf,threads);
+    const auto points=deterministicVoxel(input,leaf);
+    auto cloud=std::make_shared<pcl::PointCloud<pcl::PointCovariance>>();cloud->resize(points->size());
+    for(size_t i=0;i<points->size();++i) {
+      auto & point=(*cloud)[i];const auto & xyz=(*points)[i];
+      point.getVector4fMap()<<xyz.x,xyz.y,xyz.z,1.F;point.cov.setZero();
+    }
+    return cloud;
+  }
+  struct PreparedSource {
+    pcl::PointCloud<pcl::PointCovariance>::Ptr fine,coarse;
+  };
+  // Source coordinates and covariances are independent of the candidate seed.
+  // Keep these local to one search; each stopped scan is prepared separately.
+  PreparedSource prepareSource(const Cloud & input,bool coarse) const {
+    PreparedSource prepared;
+    prepared.fine=covarianceCloud(input,params.gicp_leaf_size);
+    if(prepared.fine&&prepared.fine->size()>=20)
+      small_gicp::estimate_covariances_omp(*prepared.fine,20,4);
+    if(coarse) {
+      prepared.coarse=covarianceCloud(input,std::max(.20,params.gicp_leaf_size));
+      if(prepared.coarse&&prepared.coarse->size()>=20)
+        small_gicp::estimate_covariances_omp(*prepared.coarse,20,4);
+    }
+    return prepared;
+  }
+  Candidate refine(const PreparedSource & prepared,const Eigen::Isometry3d & guess,
+    const std::function<bool()> & canceled,size_t worker=0,bool coarse=false) {
+    const auto began=Clock::now();
     Candidate candidate;candidate.map_from_reference=guess;
-    auto source=small_gicp::voxelgrid_sampling_omp<Cloud,pcl::PointCloud<pcl::PointCovariance>>(
-      input,params.gicp_leaf_size);
+    const auto & source=prepared.fine;
+    candidate.source_points=source?source->size():0;
+    candidate.coarse_source_points=coarse&&prepared.coarse?prepared.coarse->size():0;
     if(!source||source->size()<20)return candidate;
-    small_gicp::estimate_covariances_omp(*source,20,4);
-    small_gicp::Registration<small_gicp::GICPFactor,small_gicp::ParallelReductionOMP> registration;
+    try {
+    if(canceled())throw SearchCanceled{};
+    small_gicp::Registration<small_gicp::GICPFactor,CancelableReduction> registration;
+    registration.reduction.canceled=canceled;
     registration.reduction.num_threads=4;
     registration.rejector.max_dist_sq=params.gicp_max_correspondence*params.gicp_max_correspondence;
     registration.optimizer.max_iterations=params.gicp_max_iterations;
     Eigen::Isometry3d seed=guess;
     if(coarse) {
-      const double coarse_leaf=std::max(.20,params.gicp_leaf_size);
-      auto coarse_source=small_gicp::voxelgrid_sampling_omp<Cloud,pcl::PointCloud<pcl::PointCovariance>>(input,coarse_leaf,4);
-      if(coarse_source->size()>=20) {
-        small_gicp::estimate_covariances_omp(*coarse_source,20,4);
+      const auto & coarse_source=prepared.coarse;
+      if(coarse_source&&coarse_source->size()>=20) {
         registration.rejector.max_dist_sq=std::pow(std::max(1.5,params.gicp_max_correspondence),2);
         registration.optimizer.max_iterations=std::min(30,params.gicp_max_iterations);
+        const auto coarse_start=Clock::now();
         const auto initial=registration.align(*coarse_target,*coarse_source,*coarse_tree,guess);
+        candidate.coarse_sec=seconds(coarse_start);candidate.coarse_iterations=initial.iterations+1;
         if(initial.T_target_source.matrix().allFinite())seed=initial.T_target_source;
         registration.rejector.max_dist_sq=params.gicp_max_correspondence*params.gicp_max_correspondence;
         registration.optimizer.max_iterations=params.gicp_max_iterations;
       }
     }
+    if(canceled())throw SearchCanceled{};
+    const auto fine_start=Clock::now();
     const auto result=registration.align(*target,*source,*tree,seed);
+    candidate.fine_sec=seconds(fine_start);candidate.fine_iterations=result.iterations+1;
     candidate.converged=result.converged;
     candidate.map_from_reference=result.T_target_source;
     if(!candidate.map_from_reference.matrix().allFinite())return candidate;
     candidate.within_search_side=poseInSearchSide(candidate.map_from_reference,params);
-    std::vector<int> indices(1);std::vector<float> distances(1);double sum=0;size_t count=0;
+    if(canceled())throw SearchCanceled{};
+    const auto quality_start=Clock::now();
+    auto & quality_tree=*quality_trees.at(worker);
+    std::vector<int> indices(1);std::vector<float> distances(1);double sum=0;size_t count=0,visited=0;
     const double maxsq=params.gicp_max_correspondence*params.gicp_max_correspondence;
     for(const auto & p:*source) {
+      if((visited++%256)==0&&canceled())throw SearchCanceled{};
       const Eigen::Vector3d v=result.T_target_source*Eigen::Vector3d(p.x,p.y,p.z);
       pcl::PointXYZ transformed(v.x(),v.y(),v.z());
       if(quality_tree.nearestKSearch(transformed,1,indices,distances)>0&&distances[0]<=maxsq)
@@ -198,6 +258,9 @@ struct Core::Impl {
     }
     candidate.inliers=count;candidate.inlier_ratio=double(count)/source->size();
     candidate.fitness=count?std::sqrt(sum/count):1e9;
+    candidate.quality_sec=seconds(quality_start);
+    }catch(const SearchCanceled &){candidate.canceled=true;}
+    candidate.total_sec=seconds(began);
     return candidate;
   }
   bool accepted(const Candidate & c) const {
@@ -207,7 +270,7 @@ struct Core::Impl {
 };
 
 Core::Core(const Params & params):impl_(std::make_unique<Impl>(params)) {
-  if(params.db_grid_resolution<=0||params.gicp_leaf_size<=0||params.top_k<1||params.ring_key_candidates<0||params.ring_key_candidates>64)
+  if(params.db_grid_resolution<=0||params.gicp_leaf_size<=0||params.top_k<1||params.ring_key_candidates<0||params.ring_key_candidates>64||params.candidate_workers<1||params.candidate_workers>2)
     throw std::invalid_argument("Invalid database/registration parameters");
   if((params.search_side!="all"&&params.search_side!="negative_x"&&params.search_side!="positive_x")||
     !std::isfinite(params.side_boundary_x))throw std::invalid_argument("Invalid half-field search prior");
@@ -216,15 +279,18 @@ Core::Core(const Params & params):impl_(std::make_unique<Impl>(params)) {
 Core::~Core()=default;
 void Core::loadMap(const std::string & path) {
   Cloud input;if(pcl::io::loadPCDFile(path,input)<0||input.empty())throw std::runtime_error("Cannot load nonempty prior PCD: "+path);
-  impl_->hash=sha256File(path);impl_->map=downsample(input,impl_->params.gicp_leaf_size);
+  impl_->hash=sha256File(path);
+  impl_->map=impl_->params.deterministic_preprocessing?deterministicVoxel(input,impl_->params.gicp_leaf_size):downsample(input,impl_->params.gicp_leaf_size);
   if(impl_->map->size()<20)throw std::runtime_error("Prior PCD has too few finite points");
-  impl_->target=small_gicp::voxelgrid_sampling_omp<Cloud,pcl::PointCloud<pcl::PointCovariance>>(*impl_->map,impl_->params.gicp_leaf_size);
+  impl_->target=impl_->covarianceCloud(*impl_->map,impl_->params.gicp_leaf_size);
   small_gicp::estimate_covariances_omp(*impl_->target,20,4);
   impl_->tree=std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(impl_->target,small_gicp::KdTreeBuilderOMP(4));
-  impl_->coarse_target=small_gicp::voxelgrid_sampling_omp<Cloud,pcl::PointCloud<pcl::PointCovariance>>(*impl_->map,std::max(.20,impl_->params.gicp_leaf_size),4);
+  impl_->coarse_target=impl_->covarianceCloud(*impl_->map,std::max(.20,impl_->params.gicp_leaf_size));
   small_gicp::estimate_covariances_omp(*impl_->coarse_target,20,4);
   impl_->coarse_tree=std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(impl_->coarse_target,small_gicp::KdTreeBuilderOMP(4));
-  impl_->quality_tree.setInputCloud(impl_->map);impl_->database.clear();
+  impl_->quality_trees.clear();
+  for(int i=0;i<impl_->params.candidate_workers;++i){auto quality=std::make_unique<pcl::KdTreeFLANN<pcl::PointXYZ>>();quality->setInputCloud(impl_->map);impl_->quality_trees.push_back(std::move(quality));}
+  impl_->database.clear();
 }
 void Core::buildDatabase(const Eigen::Vector3d & offset) {
   if(!impl_->map)throw std::runtime_error("Map must be loaded before database construction");
@@ -253,11 +319,14 @@ SearchResult Core::search(const Cloud & query,const Cloud & independent,const Ei
 }
 SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & independent,const Eigen::Vector3d & offset,
   const std::function<bool()> & canceled) {
-  SearchResult out;out.map_hash=impl_->hash;auto start=Clock::now();
+  SearchResult out;out.map_hash=impl_->hash;out.candidate_workers=impl_->params.candidate_workers;auto start=Clock::now();
+  // Serialize callbacks so even a stateful caller predicate is never raced.
+  std::mutex cancel_mutex;
+  const auto checkedCancel=[&]{std::lock_guard<std::mutex> lock(cancel_mutex);return canceled();};
   if(independent.empty()){out.reason="no independent stopped scan provided";return out;}
   omp_set_num_threads(4);
   buildDatabase(offset);out.database_size=impl_->database.size();
-  if(canceled()){out.reason="canceled before retrieval";return out;}
+  if(checkedCancel()){out.reason="canceled before retrieval";return out;}
   const auto & p=impl_->params;
   const Descriptor descriptor=scanContext(translated(query,-offset),p.sc_rings,p.sc_sectors,p.db_max_radius);
   std::vector<std::pair<double,size_t>> shortlist;
@@ -299,19 +368,45 @@ SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & indepen
   out.retrieval_ring_added=std::count_if(guesses.begin(),guesses.end(),[](const Candidate & c){return c.from_ring_key&&!c.from_scan_context;});
   out.retrieval_sec=seconds(start);start=Clock::now();
   if(guesses.empty()){out.reason="no retrieved base-pose seed lies inside configured search side";return out;}
+  const auto query_source=impl_->prepareSource(query,true);++out.query_preparations;
+  if(checkedCancel()){out.gicp_sec=seconds(start);out.reason="canceled preparing GICP";return out;}
+  std::vector<Candidate> refined(guesses.size());
+  std::vector<unsigned char> started(guesses.size(),0);
+  std::atomic<size_t> next{0};std::atomic_bool stop{false};
+  const auto evaluate=[&](size_t worker) {
+    omp_set_num_threads(4);
+    while(!stop.load()) {
+      if(checkedCancel()){stop.store(true);break;}
+      const size_t index=next.fetch_add(1);if(index>=guesses.size())break;
+      const auto & guess=guesses[index];
+      auto c=impl_->refine(query_source,guess.map_from_reference,checkedCancel,worker,true);
+      c.descriptor_distance=guess.descriptor_distance;
+      c.ring_key_rank=guess.ring_key_rank;c.scan_context_rank=guess.scan_context_rank;
+      c.from_scan_context=guess.from_scan_context;c.from_ring_key=guess.from_ring_key;
+      c.seed_translation=guess.seed_translation;c.seed_yaw=guess.seed_yaw;
+      refined[index]=std::move(c);started[index]=1;
+      if(refined[index].canceled)stop.store(true);
+    }
+  };
+  if(p.candidate_workers==1)evaluate(0);
+  else {
+    // Futures join on scope exit, including exceptions. No detached work can
+    // outlive the prepared sources, map trees or caller cancellation predicate.
+    std::vector<std::future<void>> tasks;
+    for(int worker=0;worker<p.candidate_workers;++worker)
+      tasks.push_back(std::async(std::launch::async,[&,worker]{evaluate(worker);}));
+    for(auto & task:tasks)task.get();
+  }
+  // Aggregate only after joining, in original retrieval order. Every seed is
+  // evaluated before quality ranking/ambiguity; completion order has no vote.
   std::vector<Candidate> accepted;
-  for(const auto & guess:guesses) {
-    if(canceled()){out.reason="canceled during GICP";return out;}
-    auto c=impl_->refine(query,guess.map_from_reference,true);++out.candidates_tested;
-    c.descriptor_distance=guess.descriptor_distance;
-    c.ring_key_rank=guess.ring_key_rank;c.scan_context_rank=guess.scan_context_rank;
-    c.from_scan_context=guess.from_scan_context;c.from_ring_key=guess.from_ring_key;
-    c.seed_translation=guess.seed_translation;c.seed_yaw=guess.seed_yaw;
-    out.hypotheses.push_back(c);
-    if(c.fitness<out.candidate.fitness)out.candidate=c;
-    if(impl_->accepted(c))accepted.push_back(c);
+  for(size_t index=0;index<guesses.size();++index)if(started[index]) {
+    const auto & c=refined[index];++out.candidates_tested;out.hypotheses.push_back(c);
+    if(!c.canceled&&c.fitness<out.candidate.fitness)out.candidate=c;
+    if(!c.canceled&&impl_->accepted(c))accepted.push_back(c);
   }
   out.gicp_sec=seconds(start);
+  if(stop.load()||checkedCancel()){out.reason="canceled during GICP";return out;}
   if(accepted.empty()){out.reason="no retrieved candidate passed GICP quality and search-side gates";return out;}
   std::sort(accepted.begin(),accepted.end(),[](const Candidate & a,const Candidate & b){return a.fitness<b.fitness;});
   const auto & best=accepted.front();out.candidate=best;
@@ -322,11 +417,14 @@ SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & indepen
       out.reason="ambiguous distinct global registration hypotheses";return out;
     }
   }
-  if(canceled()){out.reason="canceled before independent confirmation";return out;}
+  if(checkedCancel()){out.reason="canceled before independent confirmation";return out;}
   start=Clock::now();Candidate confirmation=best;std::vector<Candidate> confirmed;
   for(const auto & scan:independent) {
-    if(canceled()){out.confirmation_sec=seconds(start);out.reason="canceled during independent confirmation";return out;}
-    confirmation=impl_->refine(scan,best.map_from_reference);
+    if(checkedCancel()){out.confirmation_sec=seconds(start);out.reason="canceled during independent confirmation";return out;}
+    const auto stopped_source=impl_->prepareSource(scan,false);++out.independent_preparations;
+    confirmation=impl_->refine(stopped_source,best.map_from_reference,checkedCancel);
+    out.confirmations.push_back(confirmation);
+    if(confirmation.canceled||checkedCancel()){out.confirmation_sec=seconds(start);out.reason="canceled during independent confirmation";return out;}
   if(!impl_->accepted(confirmation)){out.confirmation_sec=seconds(start);out.reason="independent stopped scan failed quality or search-side gates";return out;}
   if((confirmation.map_from_reference.translation()-best.map_from_reference.translation()).norm()>p.confirmation_max_translation||
     rotationDistance(confirmation.map_from_reference,best.map_from_reference)>p.confirmation_max_rotation) {
@@ -338,6 +436,7 @@ SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & indepen
     confirmed.push_back(confirmation);
   }
   out.confirmation_sec=seconds(start);
+  if(checkedCancel()){out.reason="canceled after independent confirmation";return out;}
   out.candidate=confirmation;out.success=true;out.reason="retrieval and independent stopped-scan registration accepted";return out;
 }
 }

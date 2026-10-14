@@ -89,7 +89,8 @@ class Trial(Node):
         self.gazebo = ProcessCost(lambda c: bool(c) and (c[0].startswith('gz sim ') or 'gz-sim-server' in c[0] or (Path(c[0]).name=='gz' and len(c)>1 and c[1]=='sim')))
         self.lio = ProcessCost(lambda c: args.input_mode == 'lio' and bool(c) and any(Path(a).name in ['pointlio_mapping','loam_interface_node','sensor_scan_generation_node','instantaneous_cloud_converter.py'] for a in c))
         self.evaluator = ProcessCost(lambda c: bool(c) and any(Path(a).name=='run_trial.py' for a in c))
-        self.recorder = ProcessCost(lambda c: bool(c) and 'bag' in c and 'record' in c)
+        self.recorder = ProcessCost(lambda c: bool(c) and (('bag' in c and 'record' in c) or
+            any(Path(a).name == 'passive_receipt_probe.py' for a in c)))
         self.create_timer(.2, self.sample)
 
     def sample(self):
@@ -200,11 +201,17 @@ class Trial(Node):
         self.sample()
         success, reason, timeout, pose, metrics = False, 'pipeline readiness timeout', not ready, None, {}
         timeout_source = 'readiness:'+','.join(readiness['unmet']) if not ready else None
+        goal_started_wall = None
+        goal_started_ros_ns = None
         if not ready:
             reason='pipeline readiness timeout: '+','.join(readiness['unmet'])
         if ready:
+            # This timestamp begins once for the original goal and is never
+            # restarted for internal localization recovery attempts.
+            goal_started_wall = time.monotonic()
+            goal_started_ros_ns = self.clock_ns
             goal_future = self.client.send_goal_async(Relocalize.Goal())
-            deadline = started+self.args.timeout
+            deadline = goal_started_wall+self.args.timeout
             if self.wait(goal_future.done,deadline):
                 handle = goal_future.result()
                 if handle.accepted:
@@ -252,6 +259,7 @@ class Trial(Node):
             self.wait(lambda:any(e['wall']>=started and str(e.get('stage','')).upper() in
                 ['SUCCEEDED','FAILED','CANCELED'] for e in self.events),time.monotonic()+.5)
         timing = {'total_ros':(ros_finished-ros_start)*1e-9 if ros_start and ros_finished else None,'total_wall':finished-started,
+                  'goal_to_client_finish_wall':finished-goal_started_wall if goal_started_wall is not None else None,
                   'pipeline_ready_wall':started-preparation_start}
         stage_names={'settling':'static','settle':'static','static':'static','spinning':'sweep','sweeping':'sweep','spin':'sweep','sweep':'sweep',
                      'retrieving':'retrieval','retrieval':'retrieval','refining':'gicp','gicp':'gicp','confirming':'confirmation','confirmation':'confirmation','stopping':'stop_settle','searching':'search_total'}
@@ -274,8 +282,12 @@ class Trial(Node):
                 value=event.get('metrics',{}).get(stage+'_sec')
                 if isinstance(value,(int,float)) and math.isfinite(value) and value>0:
                     timing[stage]['wall']=value
-        row={'trial_id':self.args.trial_id,'trial_index':self.args.trial_index,
+        row={'run_id':self.args.run_id,'repetition':self.args.repetition,
+            'trial_id':self.args.trial_id,'trial_index':self.args.trial_index,
+            'source_trial_index':self.args.source_trial_index if self.args.source_trial_index is not None else self.args.trial_index,
             'requested_pose':json.loads(self.args.requested_pose),'initial_stamp_ns':ros_start,'final_stamp_ns':ros_finished,
+            'action_goal_start_ros_ns':goal_started_ros_ns,
+            'action_goal_started_wall_monotonic_sec':goal_started_wall,
             'input_mode':self.args.input_mode,
             'action_window_exists':bool(ready),
             'readiness_observation':readiness,
@@ -306,6 +318,9 @@ def main():
     p.add_argument('--output',required=True)
     p.add_argument('--trial-id',default='pilot_000')
     p.add_argument('--trial-index',type=int,default=0)
+    p.add_argument('--source-trial-index',type=int)
+    p.add_argument('--run-id')
+    p.add_argument('--repetition',type=int)
     p.add_argument('--requested-pose',default='{}')
     p.add_argument('--ready-timeout',type=float,default=90)
     p.add_argument('--timeout',type=float,default=180)
@@ -313,6 +328,12 @@ def main():
     p.add_argument('--raw-cloud-topic', default='/livox/lidar')
     p.add_argument('--raw-imu-topic', default='/livox/imu')
     args=p.parse_args()
+    if (args.run_id is None) != (args.repetition is None):
+        p.error('--run-id and --repetition must be supplied together')
+    if args.run_id is not None and (not args.run_id.strip() or args.repetition <= 0):
+        p.error('--run-id must be non-empty and --repetition must be positive')
+    if args.source_trial_index is not None and args.source_trial_index < 0:
+        p.error('--source-trial-index must be non-negative')
     rclpy.init(args=[])
     node=Trial(args)
     try:

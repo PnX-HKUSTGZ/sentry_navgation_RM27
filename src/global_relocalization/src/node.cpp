@@ -1,6 +1,7 @@
 // Copyright 2026 RM27 contributors. SPDX-License-Identifier: Apache-2.0
 #include "global_relocalization/core.hpp"
 #include "global_relocalization/stationary_raw_frontend.hpp"
+#include "global_relocalization/raw_scan_worker.hpp"
 #include <global_relocalization_interfaces/action/relocalize.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <nav_msgs/msg/odometry.hpp>
@@ -37,16 +38,25 @@ public:
     if(input_mode_!="registered"&&input_mode_!="raw_imu")throw std::invalid_argument("input_mode must be registered or raw_imu");
     raw_scan_model_=str("raw_scan_model","instantaneous");
     if(raw_scan_model_!="instantaneous")throw std::invalid_argument("timed raw scans require explicit measured per-point timing; unsupported in this profile");
+    raw_params_.range_filter=declare_parameter<bool>("raw_range_filter",false);
+    raw_params_.deterministic=declare_parameter<bool>("raw_deterministic",false);
+    raw_params_.submap_scans=declare_parameter<int>("raw_submap_scans",1);
+    raw_params_.imu_rotation_prior=declare_parameter<bool>("raw_imu_rotation_prior",false);
+    raw_params_.numerical_recovery=declare_parameter<bool>("raw_numerical_recovery",false);
+    raw_params_.min_range=number("raw_min_range",0.5);raw_params_.max_range=number("raw_max_range",30.0);
+    raw_params_.gyro_noise_density=number("raw_gyro_noise_density",0.005);raw_params_.rotation_sigma_floor=number("raw_rotation_sigma_floor",0.005);
+    raw_diagnostic_directory_=str("raw_diagnostic_directory","");
     raw_calibration_sec_=number("raw_calibration_sec",2.0);
     raw_params_.leaf_size=number("raw_local_leaf_size",.12);
     raw_params_.max_correspondence=number("raw_local_max_correspondence",.5);
     raw_params_.max_iterations=declare_parameter<int>("raw_local_max_iterations",15);
+    raw_params_.retry_iterations=declare_parameter<int>("raw_local_retry_iterations",15);
     raw_params_.max_fitness=number("raw_local_max_fitness",.12);
     raw_params_.min_inlier_ratio=number("raw_local_min_inlier_ratio",.65);
     raw_params_.diagnostic_budget_sec=number("raw_local_budget_ms",100.)/1000.;
     raw_params_.stationary_duration=raw_calibration_sec_;
     raw_confirmation_frames_=declare_parameter<int>("raw_confirmation_frames",3);
-    if(raw_confirmation_frames_<3||raw_confirmation_frames_>10||raw_calibration_sec_<=0||raw_params_.leaf_size<=0||raw_params_.max_correspondence<=0||raw_params_.max_iterations<1||raw_params_.max_fitness<=0||raw_params_.min_inlier_ratio<=0||raw_params_.min_inlier_ratio>1||raw_params_.diagnostic_budget_sec<=0)
+    if(raw_params_.submap_scans<1||raw_params_.submap_scans>5||raw_params_.min_range<0||raw_params_.max_range<=raw_params_.min_range||raw_params_.gyro_noise_density<=0||raw_params_.rotation_sigma_floor<=0||raw_params_.retry_iterations<0||raw_params_.retry_iterations>15||raw_confirmation_frames_<3||raw_confirmation_frames_>10||raw_calibration_sec_<=0||raw_params_.leaf_size<=0||raw_params_.max_correspondence<=0||raw_params_.max_iterations<1||raw_params_.max_fitness<=0||raw_params_.min_inlier_ratio<=0||raw_params_.min_inlier_ratio>1||raw_params_.diagnostic_budget_sec<=0)
       throw std::invalid_argument("invalid raw calibration/registration/confirmation parameters");
     map_frame_=str("map_frame","map");odom_frame_=str("odom_frame","odom");
     base_frame_=str("base_frame","base_footprint");lidar_frame_=str("lidar_frame","left_mid360");
@@ -56,6 +66,7 @@ public:
     accumulation_leaf_=number("accumulation_leaf_size",0.05);
     max_translation_=number("max_spin_translation",0.30);
     Params p;
+    p.deterministic_preprocessing=raw_params_.deterministic;
     p.diagnostic_output_dir=str("diagnostic_output_dir","");
     p.search_side=str("search_side","all");p.side_boundary_x=number("side_boundary_x",0.0);search_prior_=p;
     p.sc_rings=declare_parameter<int>("sc_rings",20);p.sc_sectors=declare_parameter<int>("sc_sectors",60);
@@ -68,6 +79,7 @@ public:
     p.db_max_elevation_deg=number("db_max_elevation_deg",85.0);
     p.gicp_leaf_size=number("gicp_leaf_size",0.15);p.gicp_max_correspondence=number("gicp_max_correspondence",1.0);
     p.gicp_max_iterations=declare_parameter<int>("gicp_max_iterations",40);
+    p.candidate_workers=declare_parameter<int>("candidate_workers",1);
     p.max_fitness=number("max_fitness",0.20);p.min_inlier_ratio=number("min_inlier_ratio",0.65);
     p.ambiguity_margin=number("ambiguity_margin",0.15);
     p.confirmation_max_translation=number("confirmation_max_translation",0.15);
@@ -96,7 +108,10 @@ public:
       cloud_sub_=create_subscription<sensor_msgs::msg::PointCloud2>(registered_topic,rclcpp::SensorDataQoS(),[this](sensor_msgs::msg::PointCloud2::ConstSharedPtr msg){cloud(msg);});
       odom_sub_=create_subscription<nav_msgs::msg::Odometry>(odometry_topic,rclcpp::SensorDataQoS(),[this](nav_msgs::msg::Odometry::ConstSharedPtr msg){odom(msg);});
     }else {
-      cloud_sub_=create_subscription<sensor_msgs::msg::PointCloud2>(raw_topic,rclcpp::QoS(rclcpp::KeepLast(20)).reliable(),[this](sensor_msgs::msg::PointCloud2::ConstSharedPtr msg){rawCloud(msg);});
+      cloud_group_=create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+      rclcpp::SubscriptionOptions cloud_options;cloud_options.callback_group=cloud_group_;
+      raw_pipeline_=std::make_unique<RawPipeline>([this](const RawPipeline::Item & item){return processRawItem(item);},[this]{return now().seconds();},data_timeout_);
+      cloud_sub_=create_subscription<sensor_msgs::msg::PointCloud2>(raw_topic,rclcpp::QoS(rclcpp::KeepLast(20)).reliable(),[this](sensor_msgs::msg::PointCloud2::ConstSharedPtr msg){rawCloud(msg);},cloud_options);
       imu_group_=create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
       rclcpp::SubscriptionOptions imu_options;imu_options.callback_group=imu_group_;
       imu_sub_=create_subscription<sensor_msgs::msg::Imu>(imu_topic,rclcpp::QoS(rclcpp::KeepLast(200)).reliable(),[this](sensor_msgs::msg::Imu::ConstSharedPtr msg){rawImu(msg);},imu_options);
@@ -104,14 +119,21 @@ public:
     server_=rclcpp_action::create_server<Action>(this,"/global_relocalization/run",
       [this](const rclcpp_action::GoalUUID &,std::shared_ptr<const Action::Goal>){
         std::lock_guard<std::mutex> lock(mutex_);
-        return (handle_||(raw_worker_.valid()&&raw_worker_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)||shutting_down_.load())?rclcpp_action::GoalResponse::REJECT:rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        return (handle_||shutting_down_.load())?rclcpp_action::GoalResponse::REJECT:rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
       },
       [this](std::shared_ptr<Handle>){cancel_.store(true);return rclcpp_action::CancelResponse::ACCEPT;},
       [this](std::shared_ptr<Handle> h){
         std::lock_guard<std::mutex> lock(mutex_);handle_=h;cancel_.store(false);start_=Clock::now();
         stage_start_=start_;stable_start_=start_;sim_start_=now();accumulated_.clear();yaw_=0;have_yaw_=false;
         have_reference_=false;failure_.clear();input_error_.clear();run_id_=std::to_string(++run_count_);
-        if(input_mode_=="raw_imu"){if(raw_worker_.valid())raw_worker_.get();{std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_=RawImuIngress{};raw_ingress_.active=true;}raw_frontend_.reset();pending_raw_.clear();confirmations_.clear();have_cloud_=have_odom_=false;raw_status_=rawInitialStatus();last_raw_stamp_=latest_imu_stamp_=-1;raw_yaw_at_spin_=raw_latest_yaw_=0;raw_bias_.setZero();}
+        if(input_mode_=="raw_imu"){
+          raw_capture_mode_.store(0);raw_pipeline_->cancel();raw_pipeline_->waitIdle();
+          {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_=RawImuIngress{};}
+          raw_ingress_fault_.store(false);raw_capture_=std::make_shared<RawCapture>();raw_capture_mode_.store(1);
+          raw_generation_=raw_pipeline_->begin();
+          {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_.active=true;}
+          raw_frontend_.reset();raw_recovery_stage_.clear();raw_recovery_stop_tick_=false;confirmations_.clear();have_cloud_=have_odom_=false;raw_status_=rawInitialStatus();latest_imu_stamp_=-1;raw_yaw_at_spin_=raw_latest_yaw_=0;raw_bias_.setZero();
+        }
         result_=SearchResult{};stage_ros_times_=nlohmann::json::object();stage_times_=nlohmann::json::object();stage_="IDLE";changeStage("SETTLING");
       });
     timer_=create_wall_timer(std::chrono::milliseconds(50),[this]{tick();});
@@ -119,7 +141,7 @@ public:
       // A stop published after rmw_shutdown is too late to reach the bridge.
       // Serialize with tick while DDS is still alive, then wait briefly for
       // reliable subscribers to acknowledge the zero command.
-      shutting_down_.store(true);cancel_.store(true);
+      shutting_down_.store(true);cancel_.store(true);if(raw_pipeline_)raw_pipeline_->cancel();
       std::lock_guard<std::mutex> lock(mutex_);
       try {
         cmd_pub_->publish(geometry_msgs::msg::Twist{});
@@ -134,7 +156,7 @@ public:
     try{cmd_pub_->publish(geometry_msgs::msg::Twist{});}
     catch(const std::exception & e){std::cerr<<"global_relocalization shutdown stop publication: "<<e.what()<<std::endl;}
     if(worker_.valid())worker_.wait();
-    if(raw_worker_.valid())raw_worker_.wait();
+    if(raw_pipeline_)raw_pipeline_->close();
     // ServerGoalHandle's destructor auto-cancels active goals and invokes its
     // weak Server terminal callback. Release Server first so shutdown cannot
     // dispatch a result into an action server that has already removed goals.
@@ -188,12 +210,10 @@ private:
       }
     }catch(const std::exception & e){input_error_=e.what();}
   }
-  struct PendingRaw {sensor_msgs::msg::PointCloud2::ConstSharedPtr message;Clock::time_point received;};
-  struct RawProcessed {
-    RawFrontendResult frontend;
-    Cloud reference_cloud, local_cloud, accumulated;
-    double processing_wall_sec{0}, queue_wait_sec{0};
-  };
+  struct RawJob {sensor_msgs::msg::PointCloud2::ConstSharedPtr message;};
+  struct RawProcessed {RawFrontendResult frontend;Cloud local_cloud;builtin_interfaces::msg::Time stamp;};
+  using RawPipeline=RawScanWorker<RawJob,RawProcessed>;
+  struct RawCapture {Cloud accumulated;Eigen::Isometry3d origin{Eigen::Isometry3d::Identity()};bool have_origin{false};};
   struct RawImuIngress {
     bool active{false};std::shared_ptr<StationaryRawFrontend> frontend;
     std::string frame,error,tf_error;
@@ -206,17 +226,15 @@ private:
   };
   static nlohmann::json rawInitialStatus(){return {{"gravity_initialized",false},{"accepted",false},{"queue_dropped",0},{"lidar_received",0},{"lidar_used",0},{"lidar_rejected",0},{"lidar_max_received_stamp_gap_sec",0.0},{"lidar_max_callback_wall_gap_sec",0.0}};}
   void rawCloud(sensor_msgs::msg::PointCloud2::ConstSharedPtr msg) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if(!handle_||cancel_.load())return;
-    raw_status_["lidar_received"]=raw_status_.value("lidar_received",0)+1;
-    if(msg->header.frame_id!=lidar_frame_){raw_status_["lidar_rejected"]=raw_status_.value("lidar_rejected",0)+1;input_error_="raw scan frame must equal configured lidar_frame";return;}
-    const double stamp=rclcpp::Time(msg->header.stamp).seconds();
-    if(!std::isfinite(stamp)||stamp<=last_raw_stamp_){raw_status_["lidar_rejected"]=raw_status_.value("lidar_rejected",0)+1;failure_="raw scan timestamp not strictly increasing";cancel_.store(true);return;}
-    if(last_raw_stamp_>=0){raw_status_["lidar_max_received_stamp_gap_sec"]=std::max(raw_status_.value("lidar_max_received_stamp_gap_sec",0.0),stamp-last_raw_stamp_);raw_status_["lidar_max_callback_wall_gap_sec"]=std::max(raw_status_.value("lidar_max_callback_wall_gap_sec",0.0),std::chrono::duration<double>(Clock::now()-raw_input_received_).count());}
-    last_raw_stamp_=stamp;raw_input_stamp_=msg->header.stamp;raw_input_received_=Clock::now();
-    if(stage_=="SEARCHING")return;
-    pending_raw_.push_back({msg,raw_input_received_});
-    while(pending_raw_.size()>4){pending_raw_.pop_front();raw_status_["queue_dropped"]=raw_status_.value("queue_dropped",0)+1;}
+    // Independent ingress group: no action-state or registration mutex.
+    if(cancel_.load()||shutting_down_.load())return;
+    if(msg->header.frame_id!=lidar_frame_) {
+      if(raw_pipeline_->stats().generation==raw_generation_.load()){raw_ingress_fault_.store(true);cmd_pub_->publish(geometry_msgs::msg::Twist{});}
+      return;
+    }
+    const auto received=Clock::now();const auto receipt_ros=now().seconds();
+    if(!raw_pipeline_->enqueue({msg},msg->data.size(),rclcpp::Time(msg->header.stamp).seconds(),receipt_ros,received))
+      cmd_pub_->publish(geometry_msgs::msg::Twist{});
   }
   void rawImu(sensor_msgs::msg::Imu::ConstSharedPtr msg) {
     // This callback never takes mutex_: cloud processing and action state cannot
@@ -232,7 +250,8 @@ private:
       try {
         ingress.base_sensor=transform(base_frame_,lidar_frame_,builtin_interfaces::msg::Time{});
         const auto sensor_imu=transform(lidar_frame_,msg->header.frame_id,builtin_interfaces::msg::Time{});
-        ingress.frontend=std::make_shared<StationaryRawFrontend>(raw_params_,sensor_imu,ingress.base_sensor);
+        auto frontend_params=raw_params_;if(!raw_diagnostic_directory_.empty())frontend_params.diagnostic_directory=raw_diagnostic_directory_+"/action_"+run_id_+"_"+std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        ingress.frontend=std::make_shared<StationaryRawFrontend>(frontend_params,sensor_imu,ingress.base_sensor);
         ingress.frame=msg->header.frame_id;ingress.tf_error.clear();
       }catch(const std::exception&e){ingress.tf_error=e.what();return;}
     }
@@ -243,6 +262,7 @@ private:
     std::string reason;
     if(!ingress.frontend->addImu(sample,&reason)){ingress.error=reason;++ingress.rejected_count;return;}
     ++ingress.accepted_count;ingress.stamp_sec=stamp;ingress.stamp=msg->header.stamp;
+    raw_pipeline_->watermark(stamp);
     ingress.received=received;ingress.gyro=sample.angular_velocity;
   }
   void snapshotRawImu() {
@@ -257,71 +277,86 @@ private:
     latest_imu_stamp_=ingress.stamp_sec;
     if(ingress.accepted_count){angular_speed_=(ingress.gyro-ingress.bias).norm();odom_stamp_=ingress.stamp;odom_received_=ingress.received;}
   }
-  void processRaw() {
-    snapshotRawImu();
-    if(raw_worker_.valid()&&raw_worker_.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
-      RawProcessed processed;
-      try{processed=raw_worker_.get();}catch(const std::exception&e){failure_=e.what();cancel_.store(true);return;}
-      const auto & update=processed.frontend;
-      accumulated_=std::move(processed.accumulated);
-      raw_status_["max_worker_wall_sec"]=std::max(raw_status_.value("max_worker_wall_sec",0.0),processed.processing_wall_sec);
-      raw_status_["max_scan_queue_wait_sec"]=std::max(raw_status_.value("max_scan_queue_wait_sec",0.0),processed.queue_wait_sec);
-      raw_status_.update({{"worker_wall_sec",processed.processing_wall_sec},{"scan_queue_wait_sec",processed.queue_wait_sec},{"accepted",update.accepted},{"reason",update.reason},{"gravity_initialized",update.gravity_initialized},{"imu_covered",update.imu_covered},
+  RawProcessed processRawItem(const RawPipeline::Item & item) {
+    RawProcessed processed;processed.stamp=item.payload.message->header.stamp;std::shared_ptr<StationaryRawFrontend> frontend;
+    {std::lock_guard<std::mutex> lock(raw_imu_mutex_);frontend=raw_ingress_.frontend;}
+    if(!frontend)throw std::runtime_error("raw worker has no initialized IMU ingress");
+    Cloud scan;pcl::fromROSMsg(*item.payload.message,scan);processed.frontend=frontend->processScan(scan,item.stamp,true);
+    if(processed.frontend.accepted) {
+      const Cloud & finite=processed.frontend.filtered_sensor_cloud;
+      Cloud reference_cloud;pcl::transformPointCloud(finite,reference_cloud,processed.frontend.reference_from_sensor.matrix().cast<float>());
+      auto & capture=*raw_capture_;
+      if(!capture.have_origin){capture.origin.setIdentity();capture.origin.translation()=processed.frontend.reference_from_base.translation();capture.have_origin=true;}
+      pcl::transformPointCloud(reference_cloud,processed.local_cloud,capture.origin.inverse().matrix().cast<float>());
+      if(raw_capture_mode_.load()==1) {
+        capture.accumulated+=processed.local_cloud;
+        if(capture.accumulated.size()>250000){pcl::VoxelGrid<pcl::PointXYZ> voxel;voxel.setInputCloud(capture.accumulated.makeShared());voxel.setLeafSize(accumulation_leaf_,accumulation_leaf_,accumulation_leaf_);Cloud filtered;voxel.filter(filtered);capture.accumulated=std::move(filtered);}
+      }
+    }
+    return processed;
+  }
+  void consumeRawResults() {
+    for(size_t count=0;count<RawPipeline::capacity;++count) {
+      auto completed=raw_pipeline_->takeResult();if(!completed)break;auto & done=*completed;
+      if(done.item.generation!=raw_generation_.load()||!handle_||cancel_.load())continue;
+      auto & processed=done.result;const auto & update=processed.frontend;
+      raw_status_["max_worker_wall_sec"]=std::max(raw_status_.value("max_worker_wall_sec",0.0),done.worker_wall_sec);
+      raw_status_["max_scan_queue_wait_sec"]=std::max(raw_status_.value("max_scan_queue_wait_sec",0.0),done.queue_wait_sec);
+      raw_status_.update({{"worker_wall_sec",done.worker_wall_sec},{"scan_queue_wait_sec",done.queue_wait_sec},
+        {"processed_source_stamp_sec",done.item.stamp},{"processed_source_age_sec",done.source_age_sec},
+        {"failure_class",update.failure_class},{"recovery_pending",update.recovery_pending},{"recovery_attempts",update.recovery_attempts},{"recovered_scan_count",update.recovered_scan_count},{"input_points",update.input_points},{"finite_points",update.finite_points},{"range_points",update.range_points},{"downsampled_points",update.points},{"submap_size",update.submap_size},{"rotation_prior_sigma",update.rotation_prior_sigma},{"rotation_prior_weight",update.rotation_prior_weight},
+        {"accepted",update.accepted},{"reason",update.reason},{"gravity_initialized",update.gravity_initialized},{"imu_covered",update.imu_covered},
         {"fitness",update.fitness},{"inlier_ratio",update.inlier_ratio},{"processing_sec",update.processing_sec},{"over_budget",update.over_budget},
         {"geometry_eigen_ratio",update.geometry_eigen_ratio},{"information_eigen_ratio",update.information_eigen_ratio},{"rotation_prior_error",update.rotation_prior_error},
         {"translation_step",update.translation_step},{"linear_speed",update.linear_speed},{"cumulative_yaw",update.cumulative_yaw},
-        {"gyro_bias",{update.gyro_bias.x(),update.gyro_bias.y(),update.gyro_bias.z()}}});
-      if(handle_&&!cancel_.load()) {
-        if(update.accepted) {
-          raw_status_["lidar_used"]=raw_status_.value("lidar_used",0)+1;
-          {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_.bias=update.gyro_bias;}
-          raw_bias_=update.gyro_bias;latest_base_=update.reference_from_base;
-          if(!have_reference_) {
-            // Gravity-aligned initial base origin. Preserve initial base tilt in latest_base_.
-            odom_reference_.setIdentity();odom_reference_.translation()=latest_base_.translation();
-            raw_reference_sensor_offset_=-latest_base_.translation();have_reference_=true;
-          }
-          latest_cloud_=std::move(processed.reference_cloud);
-          cloud_stamp_=raw_inflight_.message->header.stamp;cloud_received_=raw_inflight_.received;
-          have_cloud_=have_odom_=true;linear_speed_=update.linear_speed;input_error_.clear();
-          if(stage_=="SPINNING")yaw_=(update.cumulative_yaw-raw_yaw_at_spin_)*(spin_speed_>0?1:-1);
-          raw_latest_yaw_=update.cumulative_yaw;
-          if(stage_=="STOPPING") {
-            if(linear_speed_>.04||angular_speed_>.06)confirmations_.clear();
-            else if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_){confirmations_.push_back(std::move(processed.local_cloud));while(confirmations_.size()>size_t(raw_confirmation_frames_))confirmations_.erase(confirmations_.begin());}
-          }
-        }else {
-          input_error_=update.reason;
-          const bool waiting=update.reason.rfind("waiting",0)==0||(!update.gravity_initialized&&update.reason.rfind("IMU calibration",0)==0);
-          if(!waiting){raw_status_["lidar_rejected"]=raw_status_.value("lidar_rejected",0)+1;failure_=update.reason;cancel_.store(true);}
+        {"gyro_bias",{update.gyro_bias.x(),update.gyro_bias.y(),update.gyro_bias.z()}},
+        {"converged",update.converged},{"transform_finite",update.transform_finite},{"iterations",update.iterations},
+        {"first_attempt_iterations",update.first_attempt_iterations},{"retry_count",update.retry_count},{"rejected_gates",update.rejected_gates}});
+      raw_status_["registration_attempts"]=nlohmann::json::array();
+      for(const auto & a:update.registration_attempts)raw_status_["registration_attempts"].push_back({{"attempt",a.attempt},{"iterations",a.iterations},{"converged",a.converged},{"transform_finite",a.transform_finite},{"fitness",a.fitness},{"inlier_ratio",a.inlier_ratio},{"information_eigen_ratio",a.information_eigen_ratio},{"rotation_prior_error",a.rotation_prior_error},{"translation_step",a.translation_step},{"linear_speed",a.linear_speed},{"rejected_gates",a.rejected_gates}});
+      if(update.accepted) {
+        if(stage_=="RECOVERING"){changeStage(raw_recovery_stage_);raw_recovery_stage_.clear();}
+        raw_status_["lidar_used"]=raw_status_.value("lidar_used",0)+1;
+        {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_.bias=update.gyro_bias;}
+        raw_bias_=update.gyro_bias;latest_base_=update.reference_from_base;
+        if(!have_reference_){odom_reference_.setIdentity();odom_reference_.translation()=latest_base_.translation();raw_reference_sensor_offset_=-latest_base_.translation();have_reference_=true;}
+        cloud_stamp_=processed.stamp;cloud_received_=done.item.received;
+        have_cloud_=have_odom_=true;linear_speed_=update.linear_speed;input_error_.clear();
+        if(stage_=="SPINNING")yaw_=(update.cumulative_yaw-raw_yaw_at_spin_)*(spin_speed_>0?1:-1);
+        raw_latest_yaw_=update.cumulative_yaw;
+        if(stage_=="STOPPING") {
+          if(linear_speed_>.04||update.angular_speed>.06)confirmations_.clear();
+          else if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_&&done.item.stamp>=raw_stable_ros_stamp_+settle_sec_){confirmations_.push_back(std::move(processed.local_cloud));while(confirmations_.size()>size_t(raw_confirmation_frames_))confirmations_.erase(confirmations_.begin());}
         }
+      }else {
+        input_error_=update.reason;
+        if(update.failure_class=="numerical_recoverable") {
+          cmd_pub_->publish(geometry_msgs::msg::Twist{});
+          if(raw_frontend_)raw_frontend_->authorizeRecoveryAfterStop(now().seconds());
+          stable_start_=Clock::now();raw_stable_ros_stamp_=now().seconds();confirmations_.clear();
+          raw_recovery_stage_=stage_;raw_status_["recovery_reason"]=update.reason;changeStage("RECOVERING");
+          // Stop remains visible for this tick. Do not consume a queued recovery result here.
+          raw_recovery_stop_tick_=true;break;
+        }
+        const bool waiting=update.failure_class=="waiting";
+        if(!waiting){raw_status_["lidar_rejected"]=raw_status_.value("lidar_rejected",0)+1;failure_=update.reason;cancel_.store(true);raw_pipeline_->cancel();break;}
       }
     }
-    if(!handle_||cancel_.load()||stage_=="SEARCHING"||!raw_frontend_||raw_worker_.valid()||pending_raw_.empty())return;
-    if(stage_=="STOPPING"&&confirmations_.size()>=size_t(raw_confirmation_frames_)&&angular_speed_<=.06&&linear_speed_<=.04&&std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_)return;
-    if(latest_imu_stamp_<rclcpp::Time(pending_raw_.front().message->header.stamp).seconds())return;
-    raw_inflight_=pending_raw_.front();pending_raw_.pop_front();
-    const auto frontend=raw_frontend_;const auto message=raw_inflight_.message;
-    const auto reference=odom_reference_;const bool have_reference=have_reference_;
-    const bool accumulate=stage_=="SETTLING"||stage_=="SPINNING";
-    const auto received=raw_inflight_.received;const double leaf=accumulation_leaf_;
-    raw_worker_=std::async(std::launch::async,[frontend,message,reference,have_reference,accumulate,received,leaf,accumulated=std::move(accumulated_)]()mutable {
-      RawProcessed processed;const auto started=Clock::now();processed.queue_wait_sec=std::chrono::duration<double>(started-received).count();
-      processed.accumulated=std::move(accumulated);Cloud scan;pcl::fromROSMsg(*message,scan);
-      processed.frontend=frontend->processScan(scan,rclcpp::Time(message->header.stamp).seconds(),true);
-      if(processed.frontend.accepted) {
-        Cloud finite;for(const auto&p:scan)if(std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z))finite.push_back(p);
-        pcl::transformPointCloud(finite,processed.reference_cloud,processed.frontend.reference_from_sensor.matrix().cast<float>());
-        auto origin=reference;if(!have_reference){origin.setIdentity();origin.translation()=processed.frontend.reference_from_base.translation();}
-        pcl::transformPointCloud(processed.reference_cloud,processed.local_cloud,origin.inverse().matrix().cast<float>());
-        if(accumulate) {
-          processed.accumulated+=processed.local_cloud;
-          if(processed.accumulated.size()>250000){pcl::VoxelGrid<pcl::PointXYZ> voxel;voxel.setInputCloud(processed.accumulated.makeShared());voxel.setLeafSize(leaf,leaf,leaf);Cloud filtered;voxel.filter(filtered);processed.accumulated=std::move(filtered);}
-        }
-      }
-      processed.processing_wall_sec=std::chrono::duration<double>(Clock::now()-started).count();return processed;
-    });
   }
+  void snapshotRawScans() {
+    const auto s=raw_pipeline_->stats();
+    raw_status_.update({{"generation",s.generation},{"scan_queue_capacity",RawPipeline::capacity},{"max_scan_message_bytes",RawPipeline::max_message_bytes},
+      {"scan_queue_depth",s.queue_depth},{"scan_result_depth",s.result_depth},{"scan_outstanding_count",s.outstanding},{"scan_queue_bytes",s.bytes},
+      {"scan_queue_high_watermark",s.high_watermark},{"scan_queue_max_bytes",s.max_bytes},{"queue_overflow_count",s.overflow_count},
+      {"oversized_scan_count",s.oversized_count},{"stale_scan_count",s.stale_count},{"capture_ignored_count",s.ignored_count},{"canceled_scan_count",s.canceled_count},
+      {"lidar_received",s.received_count},{"lidar_max_received_stamp_gap_sec",s.max_stamp_gap},{"lidar_max_callback_wall_gap_sec",s.max_callback_gap},
+      {"lidar_latest_source_stamp_sec",s.latest_stamp},{"lidar_latest_receipt_wall_sec",s.receipt_wall_sec},{"lidar_latest_receipt_ros_sec",s.receipt_ros_sec},
+      {"lidar_latest_receipt_ros_delay_sec",s.receipt_delay_sec},{"lidar_max_receipt_ros_delay_sec",s.max_receipt_delay_sec},{"worker_error",s.error}});
+    if(s.latest_stamp>=0){raw_input_stamp_=rclcpp::Time(static_cast<int64_t>(std::llround(s.latest_stamp*1e9)),RCL_ROS_TIME);raw_input_received_=Clock::time_point(std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(s.receipt_wall_sec)));}
+    if(!s.error.empty()){failure_=s.error;cancel_.store(true);}
+    if(raw_ingress_fault_.exchange(false)){failure_="raw scan frame must equal configured lidar_frame";cancel_.store(true);}
+  }
+  void processRaw() {snapshotRawImu();snapshotRawScans();consumeRawResults();}
   void odom(nav_msgs::msg::Odometry::ConstSharedPtr msg) {
     std::lock_guard<std::mutex> lock(mutex_);
     if(msg->header.frame_id!=odom_frame_||msg->child_frame_id!=base_frame_) {
@@ -362,12 +397,12 @@ private:
     return cr<data_timeout_&&od<data_timeout_&&ca>=-0.1&&ca<data_timeout_&&oa>=-0.1&&oa<data_timeout_;
   }
   void changeStage(const std::string & stage) {
-    if(stage_!="IDLE"){stage_times_[stage_]=stageElapsed();stage_ros_times_[stage_]=(now()-stage_ros_start_).seconds();}
+    if(stage_!="IDLE"){stage_times_[stage_]=stage_times_.value(stage_,0.0)+stageElapsed();stage_ros_times_[stage_]=stage_ros_times_.value(stage_,0.0)+(now()-stage_ros_start_).seconds();}
     stage_ros_start_=now();stage_=stage;stage_start_=Clock::now();publishStatus("");
   }
   void publishStatus(const std::string & reason) {
     std_msgs::msg::String msg;
-    nlohmann::json data={{"run_id",run_id_},{"stage",stage_},{"reason",reason},{"elapsed_sec",handle_?elapsed():last_elapsed_},
+    nlohmann::json data={{"status_ros_ns",now().nanoseconds()},{"status_steady_sec",std::chrono::duration<double>(Clock::now().time_since_epoch()).count()},{"run_id",run_id_},{"stage",stage_},{"reason",reason},{"elapsed_sec",handle_?elapsed():last_elapsed_},
       {"estimate_frame",base_frame_},{"map_frame",map_frame_},{"map_sha256",core_->mapHash()},
       {"search_prior",{{"side",search_prior_.search_side},{"boundary_x",search_prior_.side_boundary_x}}},
       {"elapsed_sim_sec",handle_?(now()-sim_start_).seconds():last_sim_elapsed_},
@@ -377,15 +412,20 @@ private:
       {"accumulated_yaw",yaw_},{"metrics",{{"fitness",result_.candidate.fitness},{"inlier_ratio",result_.candidate.inlier_ratio},
       {"retrieval_sec",result_.retrieval_sec},{"gicp_sec",result_.gicp_sec},{"confirmation_sec",result_.confirmation_sec},
       {"database_size",result_.database_size},{"candidates_tested",result_.candidates_tested},
-      {"retrieval_scored_views",result_.retrieval_scored_views},{"retrieval_candidate_count",result_.retrieval_candidate_count},{"retrieval_ring_added",result_.retrieval_ring_added}}}};
+      {"candidate_workers",result_.candidate_workers},{"retrieval_scored_views",result_.retrieval_scored_views},{"retrieval_candidate_count",result_.retrieval_candidate_count},{"retrieval_ring_added",result_.retrieval_ring_added}}}};
     if(input_mode_=="raw_imu")data["raw_frontend"]=raw_status_;
     data["metrics"]["hypotheses"]=nlohmann::json::array();
     for(const auto & h:result_.hypotheses)data["metrics"]["hypotheses"].push_back(
       {{"fitness",h.fitness},{"inlier_ratio",h.inlier_ratio},{"converged",h.converged},
+      {"source_points",h.source_points},{"coarse_source_points",h.coarse_source_points},{"coarse_iterations",h.coarse_iterations},{"fine_iterations",h.fine_iterations},
+      {"coarse_sec",h.coarse_sec},{"fine_sec",h.fine_sec},{"quality_sec",h.quality_sec},{"total_sec",h.total_sec},{"canceled",h.canceled},
       {"within_search_side",h.within_search_side},
       {"descriptor_distance",h.descriptor_distance},{"ring_key_rank",h.ring_key_rank},{"scan_context_rank",h.scan_context_rank},
       {"from_scan_context",h.from_scan_context},{"from_ring_key",h.from_ring_key},{"seed_xyz",{h.seed_translation.x(),h.seed_translation.y(),h.seed_translation.z()}},{"seed_yaw",h.seed_yaw},{"xyz",{h.map_from_reference.translation().x(),h.map_from_reference.translation().y(),h.map_from_reference.translation().z()}},
       {"yaw",yaw(h.map_from_reference)}});
+    data["metrics"]["confirmations"]=nlohmann::json::array();
+    for(const auto & h:result_.confirmations)data["metrics"]["confirmations"].push_back({{"fitness",h.fitness},{"inlier_ratio",h.inlier_ratio},{"converged",h.converged},
+      {"source_points",h.source_points},{"fine_iterations",h.fine_iterations},{"fine_sec",h.fine_sec},{"quality_sec",h.quality_sec},{"total_sec",h.total_sec},{"canceled",h.canceled}});
     msg.data=data.dump();status_pub_->publish(msg);
   }
   void finish(bool success,const std::string & reason,
@@ -396,7 +436,7 @@ private:
     }
     auto message=std::make_shared<Action::Result>();message->success=success;message->reason=reason;message->pose=pose;
     message->fitness=result_.candidate.fitness;message->inlier_ratio=result_.candidate.inlier_ratio;message->elapsed_sec=elapsed();last_elapsed_=message->elapsed_sec;last_sim_elapsed_=(now()-sim_start_).seconds();
-    stage_times_[stage_]=stageElapsed();stage_ros_times_[stage_]=(now()-stage_ros_start_).seconds();stage_=success?"SUCCEEDED":(handle_->is_canceling()?"CANCELED":"FAILED");publishStatus(reason);
+    stage_times_[stage_]=stage_times_.value(stage_,0.0)+stageElapsed();stage_ros_times_[stage_]=stage_ros_times_.value(stage_,0.0)+(now()-stage_ros_start_).seconds();stage_=success?"SUCCEEDED":(handle_->is_canceling()?"CANCELED":"FAILED");publishStatus(reason);
     try {
       if(success){handle_->succeed(message);pose_pub_->publish(pose);}
       else if(handle_->is_canceling())handle_->canceled(message);else handle_->abort(message);
@@ -408,6 +448,7 @@ private:
       std::cerr<<"global_relocalization action stopped during shutdown: "<<e.what()<<std::endl;
     }
     {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_.active=false;}
+    if(raw_pipeline_)raw_pipeline_->cancel();raw_capture_mode_.store(0);
     handle_.reset();accumulated_.clear();have_reference_=false;
   }
   void tick() {
@@ -420,6 +461,7 @@ private:
       if(!input_error_.empty())failure_+=": "+input_error_;
       cancel_.store(true);}
     if(cancel_.load()) {
+      if(raw_pipeline_&&raw_capture_mode_.exchange(0)!=0)raw_pipeline_->cancel();
       cmd_pub_->publish(cmd);
       if(worker_.valid()&&worker_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
       if(worker_.valid())try{result_=worker_.get();}catch(...){}
@@ -433,6 +475,8 @@ private:
       failure_+=" "+input_health_.dump();
       cancel_.store(true);return;
     }
+    if(raw_recovery_stop_tick_){raw_recovery_stop_tick_=false;cmd_pub_->publish(cmd);publishStatus("numerical recovery stop published");return;}
+    if(stage_=="RECOVERING"){cmd_pub_->publish(cmd);publishStatus("waiting for one post-stop scan against last trusted submap");return;}
     if(stage_=="SETTLING") {
       if(!have_reference_) {
         try {base_lidar_=transform(base_frame_,lidar_frame_,cloud_stamp_);odom_reference_=latest_base_;have_reference_=true;}
@@ -443,12 +487,17 @@ private:
     }else if(stage_=="SPINNING") {
       if((latest_base_.translation()-odom_reference_.translation()).norm()>max_translation_) {
         failure_="local odometry shows excessive translation during rotation";cancel_.store(true);
-      }else if(yaw_>=spin_angle_){stable_start_=Clock::now();confirmations_.clear();changeStage("STOPPING");}
+      }else if(yaw_>=spin_angle_){stable_start_=Clock::now();raw_stable_ros_stamp_=now().seconds();raw_capture_mode_.store(2);confirmations_.clear();changeStage("STOPPING");}
       else cmd.angular.z=spin_speed_;
     }else if(stage_=="STOPPING") {
-      if(linear_speed_>0.04||angular_speed_>0.06)stable_start_=Clock::now();
+      if(linear_speed_>0.04||angular_speed_>0.06){stable_start_=Clock::now();raw_stable_ros_stamp_=now().seconds();}
       if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_) {
-        if(input_mode_=="raw_imu"&&(raw_worker_.valid()||confirmations_.size()<size_t(raw_confirmation_frames_))){cmd_pub_->publish(cmd);return;}
+        if(input_mode_=="raw_imu") {
+          if(confirmations_.size()<size_t(raw_confirmation_frames_)){cmd_pub_->publish(cmd);return;}
+          raw_pipeline_->freeze();consumeRawResults();snapshotRawScans();
+          if(cancel_.load()){cmd_pub_->publish(cmd);return;}
+          accumulated_=std::move(raw_capture_->accumulated);raw_capture_mode_.store(3);
+        }
         if(accumulated_.size()<100){finish(false,"insufficient accumulated points");return;}
         Cloud independent;if(input_mode_=="registered")pcl::transformPointCloud(latest_cloud_,independent,odom_reference_.inverse().matrix().cast<float>());
         final_odom_=latest_base_;final_stamp_=cloud_stamp_;
@@ -474,19 +523,19 @@ private:
     feedback->progress=stage_=="SPINNING"?float(std::clamp(yaw_/spin_angle_,0.,1.)*.6+.1):stage_=="SETTLING"?0.:.8;
     feedback->accumulated_yaw=yaw_;handle_->publish_feedback(feedback);
   }
-  PendingRaw raw_inflight_;
   Eigen::Vector3d raw_bias_{Eigen::Vector3d::Zero()},raw_reference_sensor_offset_{Eigen::Vector3d::Zero()};
   builtin_interfaces::msg::Time raw_input_stamp_;
   Clock::time_point raw_input_received_;
-  double last_raw_stamp_{-1},latest_imu_stamp_{-1},raw_yaw_at_spin_{0},raw_latest_yaw_{0};
+  double latest_imu_stamp_{-1},raw_yaw_at_spin_{0},raw_latest_yaw_{0},raw_stable_ros_stamp_{0};
+  std::atomic<uint64_t> raw_generation_{0};std::atomic<int> raw_capture_mode_{0};std::atomic_bool raw_ingress_fault_{false};
   std::string imu_frame_;
-  std::string input_mode_,raw_scan_model_;double raw_calibration_sec_;int raw_confirmation_frames_;
+  std::string input_mode_,raw_scan_model_,raw_diagnostic_directory_,raw_recovery_stage_;bool raw_recovery_stop_tick_{false};double raw_calibration_sec_;int raw_confirmation_frames_;
   RawFrontendParams raw_params_;std::shared_ptr<StationaryRawFrontend> raw_frontend_;
-  std::future<RawProcessed> raw_worker_;
+  std::unique_ptr<RawPipeline> raw_pipeline_;std::shared_ptr<RawCapture> raw_capture_;
   std::mutex raw_imu_mutex_;RawImuIngress raw_ingress_;
-  rclcpp::CallbackGroup::SharedPtr imu_group_;
+  rclcpp::CallbackGroup::SharedPtr imu_group_,cloud_group_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
-  std::deque<PendingRaw> pending_raw_;std::vector<Cloud> confirmations_;
+  std::vector<Cloud> confirmations_;
   nlohmann::json raw_status_;nlohmann::json stage_ros_times_=nlohmann::json::object();
   rclcpp::Time stage_ros_start_{0,0,RCL_ROS_TIME};
   std::mutex mutex_;std::atomic_bool cancel_{false},shutting_down_{false};

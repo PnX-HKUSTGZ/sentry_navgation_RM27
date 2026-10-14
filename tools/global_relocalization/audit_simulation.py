@@ -24,10 +24,12 @@ def main():
     topics = {'/clock': Clock, '/ground_truth/odometry': Odometry,
               '/livox/lidar': PointCloud2, '/livox/imu': Imu}
     stamps = {topic: [] for topic in topics}
+    last_received = {}
     frames = {topic: set() for topic in topics}
     def observe(topic, message):
         stamp = message.clock if topic == '/clock' else message.header.stamp
         stamps[topic].append(stamp.sec*1000000000+stamp.nanosec)
+        last_received[topic] = time.monotonic()
         if topic != '/clock':
             frames[topic].add(message.header.frame_id)
     for topic, message_type in topics.items():
@@ -50,9 +52,12 @@ def main():
             'last_stamp_ns': values[-1] if values else None,
             'advancing': len(values)>=2 and values[-1]>values[0],
             'nondecreasing': all(b>=a for a,b in zip(values,values[1:])),
-            'frames': sorted(frames[topic])}
+            'frames': sorted(frames[topic]),
+            'last_callback_wall_age_sec': time.monotonic()-last_received[topic] if topic in last_received else None}
     report['passed'] = all(item['publisher_count']==1 and item['samples']>=2 and
-        item['advancing'] and item['nondecreasing'] for item in report['topics'].values())
+        item['advancing'] and item['nondecreasing'] and
+        item['last_callback_wall_age_sec'] is not None and item['last_callback_wall_age_sec'] < 1.5
+        for item in report['topics'].values())
     Path(args.output).write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report), flush=True)
     node.destroy_node()

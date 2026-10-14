@@ -24,6 +24,7 @@ from typing import Any, Optional, Sequence
 
 Vector3 = tuple[float, float, float]
 Quaternion = tuple[float, float, float, float]  # x, y, z, w
+CORRECT_LOCALIZATION_DEADLINE_SEC = 15.0
 
 
 def _finite_tuple(values: Sequence[float], size: int, name: str) -> tuple[float, ...]:
@@ -412,6 +413,8 @@ def make_sample_record(
     base_frame: str = "base_footprint",
     failure_reason: Optional[str] = None,
     alignment_metadata: Optional[dict[str, Any]] = None,
+    run_id: Optional[str] = None,
+    repetition: Optional[int] = None,
     timing_source: str = "unavailable: timing is not present in the two subscribed topics",
 ) -> dict[str, Any]:
     record: dict[str, Any] = {
@@ -440,6 +443,13 @@ def make_sample_record(
             "verification": "unverified_alignment_without_map_manifest",
         },
     }
+    if run_id is not None or repetition is not None:
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise ValueError("pose score repetition requires a non-empty run_id")
+        if isinstance(repetition, bool) or not isinstance(repetition, int) or repetition <= 0:
+            raise ValueError("pose score run_id requires a positive integer repetition")
+        record["run_id"] = run_id
+        record["repetition"] = repetition
     if failure_reason is not None:
         record["failure_reason"] = failure_reason
         record["outcome"] = "failure"
@@ -476,7 +486,7 @@ def make_sample_record(
 
 
 CSV_FIELDS = [
-    "sample_index", "pose_stamp_ns", "pose_stamp_sec", "pose_frame", "estimate_child_frame",
+    "run_id", "repetition", "sample_index", "pose_stamp_ns", "pose_stamp_sec", "pose_frame", "estimate_child_frame",
     "ground_truth_interpolation_validity", "ground_truth_interpolation_alpha",
     "ground_truth_lower_stamp_ns", "ground_truth_upper_stamp_ns", "evaluation_valid",
     "success", "outcome", "failure_reason", "dx_m", "dy_m", "dz_m",
@@ -654,6 +664,68 @@ def _trial_pose_stamp(trial: dict[str, Any]) -> Optional[int]:
     return candidate if candidate >= 0 else None
 
 
+def _cohort_identity(record: dict[str, Any], description: str) -> Optional[tuple[str, int]]:
+    """Read optional round identity; partial or malformed identities are unsafe to join."""
+    run_id = record.get("run_id")
+    repetition = record.get("repetition")
+    if run_id is None and repetition is None:
+        return None
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise ValueError(f"{description} has repetition without a non-empty run_id")
+    if isinstance(repetition, bool) or not isinstance(repetition, int) or repetition <= 0:
+        raise ValueError(f"{description} has run_id without a positive integer repetition")
+    return run_id, repetition
+
+
+def _action_elapsed_sec(trial: dict[str, Any], terminal_status: dict[str, Any]) -> Optional[float]:
+    action = trial.get("action")
+    value = action.get("elapsed_sec") if isinstance(action, dict) else None
+    if value is None:
+        value = terminal_status.get("elapsed_sec")
+    return _optional_float(value)
+
+
+def _registration_attempt_outcome(raw_frontend: Any) -> Optional[str]:
+    """Classify the algorithm's local registration history; missing legacy data stays unknown."""
+    if not isinstance(raw_frontend, dict):
+        return None
+    attempts = raw_frontend.get("registration_attempts")
+    if not isinstance(attempts, list):
+        return None
+    if not attempts:
+        return "no_registration_attempt"
+    if any(not isinstance(attempt, dict) for attempt in attempts):
+        return "invalid_attempt_history"
+
+    def accepted(attempt: dict[str, Any]) -> Optional[bool]:
+        converged = attempt.get("converged")
+        finite = attempt.get("transform_finite")
+        gates = attempt.get("rejected_gates")
+        if not isinstance(converged, bool) or not isinstance(finite, bool) or not isinstance(gates, list):
+            return None
+        return converged and finite and not gates
+
+    numbered: list[tuple[int, dict[str, Any]]] = []
+    for attempt in attempts:
+        number = attempt.get("attempt")
+        if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+            return "invalid_attempt_history"
+        numbered.append((number, attempt))
+    numbered.sort(key=lambda item: item[0])
+    if [number for number, _ in numbered] != list(range(1, len(numbered) + 1)):
+        return "invalid_attempt_history"
+    outcomes = [accepted(attempt) for _, attempt in numbered]
+    if any(value is None for value in outcomes):
+        return "invalid_attempt_history"
+    if len(outcomes) == 1 and outcomes[0] is True:
+        return "first_attempt_success"
+    if len(outcomes) == 2 and outcomes[0] is False and outcomes[1] is True:
+        return "recovered_after_one_retry"
+    if not any(outcomes):
+        return "registration_failed"
+    return "other_attempt_pattern"
+
+
 def _terminal_status_event(trial: dict[str, Any]) -> dict[str, Any]:
     events = trial.get("status_events")
     if not isinstance(events, list):
@@ -668,8 +740,42 @@ def _terminal_status_event(trial: dict[str, Any]) -> dict[str, Any]:
 
 _RAW_COUNTER_KEYS = (
     "lidar_received", "lidar_used", "lidar_rejected", "imu_received",
-    "imu_accepted", "imu_rejected", "queue_dropped",
+    "imu_accepted", "imu_rejected", "queue_dropped", "queue_overflow_count",
+    "oversized_scan_count", "stale_scan_count", "capture_ignored_count",
+    "canceled_scan_count",
 )
+
+_RAW_INTEGER_FIELDS = (
+    "generation", "scan_queue_capacity", "max_scan_message_bytes", "scan_queue_depth",
+    "scan_result_depth", "scan_outstanding_count", "scan_queue_bytes",
+    "scan_queue_high_watermark", "scan_queue_max_bytes", "queue_overflow_count",
+    "oversized_scan_count", "stale_scan_count", "capture_ignored_count",
+    "canceled_scan_count", "iterations", "first_attempt_iterations", "retry_count",
+    "recovery_attempts", "recovered_scan_count",
+)
+
+_RAW_FLOAT_FIELDS = (
+    "lidar_latest_source_stamp_sec", "lidar_latest_receipt_wall_sec",
+    "lidar_latest_receipt_ros_sec", "lidar_latest_receipt_ros_delay_sec",
+    "lidar_max_receipt_ros_delay_sec", "processed_source_stamp_sec",
+    "processed_source_age_sec",
+)
+
+
+def _optional_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _optional_bool(value: Any) -> Optional[bool]:
+    return value if isinstance(value, bool) else None
+
+
+def _string_list(value: Any) -> Optional[list[str]]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        return None
+    return list(value)
 
 
 def _normalize_raw_frontend(raw: Any) -> Optional[dict[str, Any]]:
@@ -687,7 +793,7 @@ def _normalize_raw_frontend(raw: Any) -> Optional[dict[str, Any]]:
     # Keep support for previously produced/test nested records. The enclosing
     # terminal_status and status_events are always kept verbatim by the caller.
     if isinstance(raw.get("inputs"), dict):
-        return raw
+        return dict(raw)
 
     def measured_count(name: str) -> Any:
         value = raw.get(name)
@@ -696,7 +802,21 @@ def _normalize_raw_frontend(raw: Any) -> Optional[dict[str, Any]]:
         return value if math.isfinite(float(value)) else None
 
     measurement_valid = any(measured_count(key) is not None for key in _RAW_COUNTER_KEYS)
+    measurement_valid = measurement_valid or any(
+        _optional_int(raw.get(field)) is not None for field in _RAW_INTEGER_FIELDS
+    ) or any(_optional_float(raw.get(field)) is not None for field in _RAW_FLOAT_FIELDS)
+    measurement_valid = measurement_valid or any(
+        _optional_bool(raw.get(field)) is not None
+        for field in ("converged", "transform_finite")
+    ) or _string_list(raw.get("rejected_gates")) is not None
     normalized = dict(raw)
+    for field in _RAW_INTEGER_FIELDS:
+        normalized[field] = _optional_int(raw.get(field))
+    for field in _RAW_FLOAT_FIELDS:
+        normalized[field] = _optional_float(raw.get(field))
+    for field in ("converged", "transform_finite"):
+        normalized[field] = _optional_bool(raw.get(field))
+    normalized["rejected_gates"] = _string_list(raw.get("rejected_gates"))
     normalized.update({
         "schema": "node_flat_raw_frontend_v1",
         "measurement_valid": measurement_valid,
@@ -724,6 +844,8 @@ def _normalize_raw_frontend(raw: Any) -> Optional[dict[str, Any]]:
         },
         "metrics": {
             "queue_dropped": measured_count("queue_dropped"),
+            **{field: _optional_int(raw.get(field)) for field in _RAW_INTEGER_FIELDS},
+            **{field: _optional_float(raw.get(field)) for field in _RAW_FLOAT_FIELDS},
             "processing_sec": _optional_float(raw.get("processing_sec")),
             "worker_wall_sec": _optional_float(raw.get("worker_wall_sec")),
             "max_worker_wall_sec": _optional_float(raw.get("max_worker_wall_sec")),
@@ -741,6 +863,15 @@ def _normalize_raw_frontend(raw: Any) -> Optional[dict[str, Any]]:
             "imu_max_callback_wall_gap_sec": _optional_float(raw.get("imu_max_callback_wall_gap_sec")),
             "imu_latest_callback_ros_delay_sec": _optional_float(raw.get("imu_latest_callback_ros_delay_sec")),
         },
+        "converged": _optional_bool(raw.get("converged")),
+        "transform_finite": _optional_bool(raw.get("transform_finite")),
+        "rejected_gates": _string_list(raw.get("rejected_gates")),
+        "registration_attempts": raw.get("registration_attempts")
+        if isinstance(raw.get("registration_attempts"), list) else None,
+        "worker_error": raw.get("worker_error") if isinstance(raw.get("worker_error"), str) else None,
+        "recovery_pending": _optional_bool(raw.get("recovery_pending")),
+        "failure_class": raw.get("failure_class") if isinstance(raw.get("failure_class"), str) else None,
+        "recovery_reason": raw.get("recovery_reason") if isinstance(raw.get("recovery_reason"), str) else None,
         "failure_reason": (
             raw.get("reason") if raw.get("accepted") is False and
             isinstance(raw.get("reason"), str) and
@@ -766,6 +897,58 @@ def _resource_summary(scored_trials: list[dict[str, Any]], resource_name: str) -
     return resource_summary
 
 
+def _reset_attempt_summary(scored_trials: list[dict[str, Any]], expected_trials: int) -> dict[str, Any]:
+    """Summarize recorded reset retries without treating legacy omissions as zero."""
+    available = [trial["reset_attempts"] for trial in scored_trials
+                 if isinstance(trial.get("reset_attempts"), list)]
+    summary: dict[str, Any] = {
+        "planned_trial_count": expected_trials,
+        "available_trial_count": len(available),
+        "attempted_trial_count": None,
+        "first_attempt_success_count": None,
+        "first_attempt_success_rate": None,
+        "recovered_on_retry_count": None,
+        "failed_after_reset_count": None,
+        "total_attempt_count": None,
+    }
+    if not available:
+        return summary
+
+    attempts_by_trial = [attempts for attempts in available if attempts]
+    first_attempts = [
+        next((attempt for attempt in attempts if isinstance(attempt, dict) and attempt.get("attempt") == 1), None)
+        for attempts in attempts_by_trial
+    ]
+    first_attempts = [attempt for attempt in first_attempts if attempt is not None]
+    first_successes = sum(1 for attempt in first_attempts if attempt.get("success") is True)
+    recovered = 0
+    failed_after_reset = 0
+    for attempts in attempts_by_trial:
+        first = next((attempt for attempt in attempts
+                      if isinstance(attempt, dict) and attempt.get("attempt") == 1), None)
+        retry = next((attempt for attempt in attempts
+                      if isinstance(attempt, dict) and attempt.get("attempt") == 2), None)
+        if first and retry and first.get("success") is False and retry.get("success") is True:
+            recovered += 1
+        final = max(
+            (attempt for attempt in attempts if isinstance(attempt, dict)),
+            key=lambda attempt: attempt.get("attempt", 0)
+            if isinstance(attempt.get("attempt"), int) and not isinstance(attempt.get("attempt"), bool) else 0,
+            default=None,
+        )
+        if final is not None and final.get("success") is False:
+            failed_after_reset += 1
+    summary.update({
+        "attempted_trial_count": len(attempts_by_trial),
+        "first_attempt_success_count": first_successes,
+        "first_attempt_success_rate": first_successes / len(first_attempts) if first_attempts else None,
+        "recovered_on_retry_count": recovered,
+        "failed_after_reset_count": failed_after_reset,
+        "total_attempt_count": sum(len(attempts) for attempts in available),
+    })
+    return summary
+
+
 def _timing_with_composites(timing: Any) -> dict[str, Any]:
     result = dict(timing) if isinstance(timing, dict) else {}
     for composite, components in _TIMING_COMPOSITES.items():
@@ -777,6 +960,153 @@ def _timing_with_composites(timing: Any) -> dict[str, Any]:
             ]
             result[composite][clock] = sum(values) if all(value is not None for value in values) else None
     return result
+
+
+def _registration_attempt_summary(scored_trials: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize only the terminal snapshot's latest processed scan, not the whole action."""
+    outcomes = [trial.get("registration_attempt_outcome") for trial in scored_trials]
+    available = [outcome for outcome in outcomes if isinstance(outcome, str)]
+    counts = {
+        name: available.count(name)
+        for name in (
+            "first_attempt_success", "recovered_after_one_retry", "registration_failed",
+            "no_registration_attempt", "invalid_attempt_history", "other_attempt_pattern",
+        )
+    }
+    return {
+        "trial_count": len(scored_trials),
+        "attempt_history_available_trial_count": len(available),
+        "unknown_or_missing_history_trial_count": len(scored_trials) - len(available),
+        "classification_denominator": len(available) if available else None,
+        **{f"{name}_count": count if available else None for name, count in counts.items()},
+    }
+
+
+def _algorithm_recovery_summary(scored_trials: list[dict[str, Any]]) -> dict[str, Any]:
+    outcomes: list[str] = []
+    known_attempts: list[int] = []
+    recovered_scan_counts: list[int] = []
+    recovery_pending_values: list[bool] = []
+    failure_class_counts: dict[str, int] = {}
+    recovery_reason_counts: dict[str, int] = {}
+    for trial in scored_trials:
+        raw_frontend = trial.get("raw_frontend")
+        if isinstance(raw_frontend, dict):
+            recovered_scan_count = _optional_int(raw_frontend.get("recovered_scan_count"))
+            if recovered_scan_count is not None:
+                recovered_scan_counts.append(recovered_scan_count)
+            recovery_pending = _optional_bool(raw_frontend.get("recovery_pending"))
+            if recovery_pending is not None:
+                recovery_pending_values.append(recovery_pending)
+            failure_class = raw_frontend.get("failure_class")
+            if isinstance(failure_class, str) and failure_class:
+                failure_class_counts[failure_class] = failure_class_counts.get(failure_class, 0) + 1
+            recovery_reason = raw_frontend.get("recovery_reason")
+            if isinstance(recovery_reason, str) and recovery_reason:
+                recovery_reason_counts[recovery_reason] = recovery_reason_counts.get(recovery_reason, 0) + 1
+        if trial.get("action_success") is not True:
+            outcomes.append("action_failure")
+            attempts = _optional_int(_nested(trial, "raw_frontend", "recovery_attempts"))
+            if attempts is not None:
+                known_attempts.append(attempts)
+            continue
+        if trial.get("evaluation_valid") is not True:
+            outcomes.append("unscored_action_success")
+            attempts = _optional_int(_nested(trial, "raw_frontend", "recovery_attempts"))
+            if attempts is not None:
+                known_attempts.append(attempts)
+            continue
+        if trial.get("pose_evaluation_success") is not True:
+            outcomes.append("wrong_pose_accepted")
+            attempts = _optional_int(_nested(trial, "raw_frontend", "recovery_attempts"))
+            if attempts is not None:
+                known_attempts.append(attempts)
+            continue
+        attempts = _optional_int(_nested(trial, "raw_frontend", "recovery_attempts"))
+        if attempts is None:
+            outcomes.append("correct_with_unknown_recovery_history")
+        else:
+            known_attempts.append(attempts)
+            if attempts == 0:
+                outcomes.append("correct_without_recovery")
+            elif attempts == 1:
+                outcomes.append("correct_after_one_recovery")
+            else:
+                outcomes.append("correct_after_multiple_recoveries")
+
+    counts = {name: outcomes.count(name) for name in (
+        "correct_without_recovery", "correct_after_one_recovery", "wrong_pose_accepted",
+        "action_failure", "unscored_action_success", "correct_with_unknown_recovery_history",
+        "correct_after_multiple_recoveries",
+    )}
+    classified_correct = (counts["correct_without_recovery"] + counts["correct_after_one_recovery"]
+                          + counts["correct_after_multiple_recoveries"])
+    return {
+        "trial_count": len(scored_trials),
+        "recovery_history_available_trial_count": len(known_attempts),
+        "recovery_history_missing_trial_count": len(scored_trials) - len(known_attempts),
+        "action_success_count": sum(1 for trial in scored_trials if trial.get("action_success") is True),
+        "action_failure_count": counts["action_failure"],
+        # Legacy success records without this field are unknown; they cannot be
+        # counted as first-pass successes.
+        "correct_without_recovery_count": counts["correct_without_recovery"] if known_attempts else None,
+        "correct_after_one_recovery_count": counts["correct_after_one_recovery"] if known_attempts else None,
+        "wrong_pose_accepted_count": counts["wrong_pose_accepted"],
+        "unscored_action_success_count": counts["unscored_action_success"],
+        "correct_with_unknown_recovery_history_count": counts["correct_with_unknown_recovery_history"],
+        "correct_after_multiple_recoveries_count": counts["correct_after_multiple_recoveries"],
+        "known_correct_action_count": classified_correct if known_attempts else None,
+        "first_correct_rate_among_known_correct_pose_outputs": (
+            counts["correct_without_recovery"] / classified_correct if classified_correct else None
+        ),
+        "recovered_correct_rate_among_known_correct_pose_outputs": (
+            counts["correct_after_one_recovery"] / classified_correct if classified_correct else None
+        ),
+        "recovery_attempt_count": _distribution(known_attempts),
+        "recovered_scan_count": _distribution(recovered_scan_counts),
+        "recovery_pending": {
+            "available_trial_count": len(recovery_pending_values),
+            "true_count": sum(1 for value in recovery_pending_values if value),
+            "false_count": sum(1 for value in recovery_pending_values if not value),
+        },
+        "failure_class_counts": failure_class_counts,
+        "recovery_reason_counts": recovery_reason_counts,
+    }
+
+
+def _deadline_accuracy_summary(
+    scored_trials: list[dict[str, Any]], expected_trials: int,
+) -> dict[str, Any]:
+    observed = len(scored_trials)
+    action_successes = [trial for trial in scored_trials if trial.get("action_success") is True]
+    timed_actions = [trial for trial in scored_trials if trial.get("action_elapsed_sec") is not None]
+    timed_successes = [trial for trial in action_successes if trial.get("action_elapsed_sec") is not None]
+    confirmed = sum(1 for trial in scored_trials if trial.get("correct_within_15s") is True)
+    return {
+        "deadline_sec": CORRECT_LOCALIZATION_DEADLINE_SEC,
+        "expected_cohort_count": expected_trials,
+        "observed_trial_count": observed,
+        "cohort_complete": observed == expected_trials,
+        "unobserved_trial_count": max(0, expected_trials - observed),
+        "confirmed_correct_count": confirmed,
+        # Missing timing or pose data adds nothing to the numerator; expected_trials
+        # remains the denominator for the frozen cohort.
+        "confirmed_correct_rate_all_cohort": (
+            confirmed / expected_trials if expected_trials > 0 and timed_actions else None
+        ),
+        "action_elapsed_available_trial_count": len(timed_actions),
+        "action_elapsed_missing_trial_count": observed - len(timed_actions),
+        "action_success_count": len(action_successes),
+        "timed_action_success_count": len(timed_successes),
+        "confirmed_correct_success_count": confirmed,
+        "confirmed_correct_rate_among_successful_actions": (
+            confirmed / len(action_successes) if action_successes else None
+        ),
+        "valid_pose_score_count": sum(1 for trial in scored_trials if trial.get("evaluation_valid") is True),
+        "missing_or_invalid_pose_score_count": sum(
+            1 for trial in scored_trials if trial.get("evaluation_valid") is not True
+        ),
+    }
 
 
 def _summarize_scored_trials(scored_trials: list[dict[str, Any]], expected_trials: int) -> dict[str, Any]:
@@ -811,6 +1141,9 @@ def _summarize_scored_trials(scored_trials: list[dict[str, Any]], expected_trial
             "valid_pose_outputs_from_non_successful_trials": _accuracy_metrics(non_successful_valid_scores),
             "valid_pose_outputs_from_successful_trials": _accuracy_metrics(successful_valid_scores),
         },
+        "correct_localization_within_15s": _deadline_accuracy_summary(scored_trials, expected_trials),
+        "terminal_scan_registration_attempt_snapshot": _registration_attempt_summary(scored_trials),
+        "algorithm_recovery_outcomes": _algorithm_recovery_summary(scored_trials),
         "timing": {},
         "algorithm_process": {},
         "lio_pipeline": {},
@@ -864,6 +1197,7 @@ def _summarize_scored_trials(scored_trials: list[dict[str, Any]], expected_trial
         "measurement_valid_trial_count": len(raw_frontend_measured),
         "resource_group": "algorithm_process",
         "separate_cpu_rss_accounting": False,
+        "scan_metric_scope": "terminal status snapshot; registration metrics and rejected gates describe the latest processed scan",
         "counter_semantics": {
             "lidar_received": "raw cloud callbacks received during the action, including SEARCHING",
             "lidar_used": "raw scans accepted by the local frontend; SEARCHING callbacks are not processed",
@@ -919,10 +1253,40 @@ def _summarize_scored_trials(scored_trials: list[dict[str, Any]], expected_trial
         "translation_step_m", "rotation_prior_error_rad", "lidar_max_received_stamp_gap_sec",
         "lidar_max_callback_wall_gap_sec", "imu_max_received_stamp_gap_sec",
         "imu_max_callback_wall_gap_sec", "imu_latest_callback_ros_delay_sec",
+        "generation", "scan_queue_capacity", "max_scan_message_bytes", "scan_queue_depth",
+        "scan_result_depth", "scan_outstanding_count", "scan_queue_bytes",
+        "scan_queue_high_watermark", "scan_queue_max_bytes", "queue_overflow_count",
+        "oversized_scan_count", "stale_scan_count", "capture_ignored_count",
+        "canceled_scan_count", "lidar_latest_receipt_ros_delay_sec",
+        "lidar_max_receipt_ros_delay_sec", "processed_source_age_sec", "iterations",
+        "first_attempt_iterations", "retry_count",
     ):
         raw_frontend_summary["metrics"][field] = _distribution([
             raw_metric(trial, field) for trial in raw_frontend_measured
         ])
+    for field in ("converged", "transform_finite"):
+        available = [
+            _nested(trial, "raw_frontend", field)
+            for trial in raw_frontend_measured
+            if isinstance(_nested(trial, "raw_frontend", field), bool)
+        ]
+        raw_frontend_summary[field] = {
+            "available_trial_count": len(available),
+            "true_count": sum(1 for value in available if value is True),
+            "false_count": sum(1 for value in available if value is False),
+        }
+    gate_observations = [
+        _nested(trial, "raw_frontend", "rejected_gates")
+        for trial in raw_frontend_measured
+        if isinstance(_nested(trial, "raw_frontend", "rejected_gates"), list)
+    ]
+    raw_frontend_summary["rejected_gate_observation_trial_count"] = len(gate_observations)
+    raw_frontend_summary["rejected_gate_trial_counts"] = {
+        gate: sum(1 for observed in gate_observations if gate in observed)
+        for gate in sorted({gate for observed in gate_observations for gate in observed
+                            if isinstance(gate, str)})
+    }
+    worker_errors: dict[str, int] = {}
     for trial in raw_frontend_measured:
         reason = _nested(trial, "raw_frontend", "failure_reason")
         if reason is not None:
@@ -930,6 +1294,10 @@ def _summarize_scored_trials(scored_trials: list[dict[str, Any]], expected_trial
             raw_frontend_summary["failure_reason_counts"][key] = (
                 raw_frontend_summary["failure_reason_counts"].get(key, 0) + 1
             )
+        worker_error = _nested(trial, "raw_frontend", "worker_error")
+        if isinstance(worker_error, str) and worker_error:
+            worker_errors[worker_error] = worker_errors.get(worker_error, 0) + 1
+    raw_frontend_summary["worker_error_counts"] = worker_errors
     summary["raw_frontend"] = raw_frontend_summary
     stage_names: set[str] = set()
     for trial in scored_trials:
@@ -969,6 +1337,7 @@ def _summarize_scored_trials(scored_trials: list[dict[str, Any]], expected_trial
             len(requested_positions) == 30 and len(requested_yaws) == 4 and len(requested_cells) == 120
         ),
     }
+    summary["batch"]["reset_summary"] = _reset_attempt_summary(scored_trials, expected_trials)
     summary["failure_reason_counts"] = {}
     summary["action_reason_counts"] = {}
     summary["pose_evaluation_failure_reason_counts"] = {}
@@ -1070,32 +1439,75 @@ def _summarize_scored_trials(scored_trials: list[dict[str, Any]], expected_trial
 
 def aggregate_batch(trials_path: str, pose_errors_path: str, output_prefix: str,
                     expected_trials: int = 120) -> dict[str, Any]:
-    """Join the independent action ledger with topic-only pose scores by pose stamp."""
+    """Join action and pose ledgers without crossing cohort rounds or reusing scores."""
     if expected_trials <= 0:
         raise ValueError("expected_trials must be positive")
     trials = _read_jsonl(trials_path)
     evaluations = _read_jsonl(pose_errors_path)
+    trial_identity_modes = {_cohort_identity(trial, f"trial row {index + 1}") is not None
+                            for index, trial in enumerate(trials)}
+    if len(trial_identity_modes) > 1:
+        raise ValueError("trial ledger mixes tagged cohort rows with legacy rows")
+    tagged_cohort = trial_identity_modes == {True}
+    cohort_run_ids = {
+        identity[0] for trial in trials
+        if (identity := _cohort_identity(trial, "trial row")) is not None
+    }
+    if tagged_cohort and len(cohort_run_ids) > 1:
+        raise ValueError(f"trial ledger mixes run_id cohorts: {sorted(cohort_run_ids)}")
+
     score_by_stamp: dict[int, dict[str, Any]] = {}
+    score_by_cohort_stamp: dict[tuple[str, int, int], dict[str, Any]] = {}
     for evaluation in evaluations:
         try:
             stamp = int(evaluation["pose_stamp_ns"])
         except (KeyError, TypeError, ValueError):
             raise ValueError("pose error row is missing integer pose_stamp_ns")
-        if stamp in score_by_stamp:
-            raise ValueError(f"duplicate pose evaluation for stamp {stamp}")
-        score_by_stamp[stamp] = evaluation
+        identity = _cohort_identity(evaluation, f"pose evaluation for stamp {stamp}")
+        if tagged_cohort:
+            if identity is None:
+                raise ValueError(f"untagged pose evaluation for tagged cohort stamp {stamp}")
+            key = (identity[0], identity[1], stamp)
+            if key in score_by_cohort_stamp:
+                raise ValueError(f"duplicate pose evaluation for cohort identity/stamp {key}")
+            score_by_cohort_stamp[key] = evaluation
+        else:
+            if identity is not None:
+                raise ValueError("tagged pose evaluation cannot be joined to a legacy trial ledger")
+            if stamp in score_by_stamp:
+                raise ValueError(f"duplicate pose evaluation for stamp {stamp}")
+            score_by_stamp[stamp] = evaluation
 
-    trial_ids: set[str] = set()
-    trial_pose_stamps: set[int] = set()
+    trial_ids: set[tuple[Optional[str], Optional[int], str]] = set()
+    trial_pose_stamps: set[tuple[Optional[str], Optional[int], int]] = set()
+    source_indices_by_repetition: set[tuple[Optional[str], Optional[int], Any]] = set()
+    source_index_by_trial_id: dict[str, Any] = {}
+    joined_cohort_score_keys: set[tuple[str, int, int]] = set()
     scored_trials: list[dict[str, Any]] = []
     map_hashes: set[str] = set()
     status_map_hashes: set[str] = set()
     transforms: list[Pose] = []
     for index, trial in enumerate(trials):
         trial_id = str(trial.get("trial_id", trial.get("trial_index", index + 1)))
-        if trial_id in trial_ids:
-            raise ValueError(f"duplicate trial_id {trial_id!r}")
-        trial_ids.add(trial_id)
+        identity = _cohort_identity(trial, f"trial row {index + 1}")
+        run_id, repetition = identity if identity is not None else (None, None)
+        trial_key = (run_id, repetition, trial_id)
+        if trial_key in trial_ids:
+            raise ValueError(f"duplicate trial identity {trial_key!r}")
+        trial_ids.add(trial_key)
+        source_trial_index = trial.get("source_trial_index", trial.get("trial_index", index + 1))
+        if identity is not None:
+            if isinstance(source_trial_index, bool) or not isinstance(source_trial_index, int) or source_trial_index < 0:
+                raise ValueError(f"tagged trial {trial_id!r} is missing a non-negative source_trial_index")
+            source_key = (run_id, repetition, source_trial_index)
+            if source_key in source_indices_by_repetition:
+                raise ValueError(f"duplicate source_trial_index within cohort repetition {source_key}")
+            source_indices_by_repetition.add(source_key)
+            prior_source_index = source_index_by_trial_id.setdefault(trial_id, source_trial_index)
+            if prior_source_index != source_trial_index:
+                raise ValueError(
+                    f"trial_id {trial_id!r} maps to inconsistent source_trial_index values across repetitions"
+                )
         action = trial.get("action")
         if not isinstance(action, dict):
             action = {}
@@ -1103,10 +1515,32 @@ def aggregate_batch(trials_path: str, pose_errors_path: str, output_prefix: str,
         timeout = action.get("timeout") is True
         stamp = _trial_pose_stamp(trial)
         if stamp is not None:
-            if stamp in trial_pose_stamps:
-                raise ValueError(f"duplicate trial pose stamp {stamp}")
-            trial_pose_stamps.add(stamp)
-        evaluation = score_by_stamp.get(stamp) if stamp is not None else None
+            stamp_key = (run_id, repetition, stamp)
+            if stamp_key in trial_pose_stamps:
+                if identity is None:
+                    raise ValueError(f"duplicate trial pose stamp {stamp}")
+                raise ValueError(f"duplicate trial pose stamp within cohort {stamp_key}")
+            trial_pose_stamps.add(stamp_key)
+        if stamp is None:
+            evaluation = None
+        elif tagged_cohort:
+            score_key = (str(run_id), int(repetition), stamp)
+            evaluation = score_by_cohort_stamp.get(score_key)
+            if evaluation is not None:
+                evaluation_trial_id = evaluation.get("trial_id")
+                if evaluation_trial_id is not None and str(evaluation_trial_id) != trial_id:
+                    raise ValueError(
+                        f"pose score trial_id {evaluation_trial_id!r} does not match action trial_id {trial_id!r}"
+                    )
+                evaluation_source_index = evaluation.get("source_trial_index")
+                if evaluation_source_index is not None and evaluation_source_index != source_trial_index:
+                    raise ValueError(
+                        f"pose score source_trial_index {evaluation_source_index!r} does not match "
+                        f"action source_trial_index {source_trial_index!r}"
+                    )
+                joined_cohort_score_keys.add(score_key)
+        else:
+            evaluation = score_by_stamp.get(stamp)
         for event in trial.get("status_events", []) if isinstance(trial.get("status_events", []), list) else []:
             if isinstance(event, dict) and event.get("map_sha256"):
                 status_map_hashes.add(str(event["map_sha256"]))
@@ -1114,13 +1548,26 @@ def aggregate_batch(trials_path: str, pose_errors_path: str, output_prefix: str,
         evaluation_pass = bool(evaluation and evaluation.get("success") is True and evaluation_valid)
         accepted = action_success and evaluation_pass and not timeout
         terminal_status = _terminal_status_event(trial)
+        raw_frontend = _normalize_raw_frontend(terminal_status.get("raw_frontend"))
+        action_elapsed_sec = _action_elapsed_sec(trial, terminal_status)
         row: dict[str, Any] = {
+            "run_id": run_id,
+            "repetition": repetition,
             "trial_id": trial_id,
             "trial_index": trial.get("trial_index", index + 1),
+            "source_trial_index": source_trial_index,
+            "trial_identity": {"run_id": run_id, "repetition": repetition, "trial_id": trial_id},
             "requested_pose": trial.get("requested_pose"),
             "initial_stamp_ns": trial.get("initial_stamp_ns"),
             "final_stamp_ns": trial.get("final_stamp_ns"),
+            "action_goal_start_ros_ns": trial.get("action_goal_start_ros_ns"),
+            "action_goal_started_wall_monotonic_sec": trial.get("action_goal_started_wall_monotonic_sec"),
             "pose_stamp_ns": stamp,
+            "action_elapsed_sec": action_elapsed_sec,
+            "correct_within_15s": (
+                None if action_elapsed_sec is None
+                else bool(accepted and action_elapsed_sec <= CORRECT_LOCALIZATION_DEADLINE_SEC)
+            ),
             "action_success": action_success,
             "action_reason": action.get("reason"),
             "timeout": timeout,
@@ -1135,6 +1582,7 @@ def aggregate_batch(trials_path: str, pose_errors_path: str, output_prefix: str,
             "action_window_exists": trial.get("action_window_exists"),
             "action_timeout_source": action.get("timeout_source"),
             "raw_input_observation": trial.get("raw_input_observation"),
+            "reset_attempts": trial.get("reset_attempts"),
             "algorithm_process": trial.get("algorithm_process", {}),
             "lio_pipeline": trial.get("lio_pipeline", trial.get("lio_pipeline_process")),
             "gazebo_process_load": trial.get("gazebo_process_load", {}),
@@ -1143,7 +1591,8 @@ def aggregate_batch(trials_path: str, pose_errors_path: str, output_prefix: str,
             "frontend_process": trial.get("frontend_process"),
             "status_events": trial.get("status_events", []),
             "terminal_status": terminal_status,
-            "raw_frontend": _normalize_raw_frontend(terminal_status.get("raw_frontend")),
+            "raw_frontend": raw_frontend,
+            "registration_attempt_outcome": _registration_attempt_outcome(raw_frontend),
             "stage_wall_sec": terminal_status.get("stage_wall_sec"),
             "stage_ros_sec": terminal_status.get("stage_ros_sec"),
             "rtf": trial.get("rtf"),
@@ -1172,11 +1621,22 @@ def aggregate_batch(trials_path: str, pose_errors_path: str, output_prefix: str,
         if map_hash:
             map_hashes.add(str(map_hash))
         if evaluation:
+            if evaluation.get("run_id") is not None:
+                row["pose_score_run_id"] = evaluation.get("run_id")
+                row["pose_score_repetition"] = evaluation.get("repetition")
+                row["pose_score_trial_id"] = evaluation.get("trial_id")
             translation = evaluation.get("T_map_world_translation_m")
             quaternion = evaluation.get("T_map_world_quaternion_xyzw")
             if translation is not None and quaternion is not None:
                 transforms.append(Pose.make(translation, quaternion))
         scored_trials.append(row)
+    if tagged_cohort:
+        orphaned_scores = set(score_by_cohort_stamp) - joined_cohort_score_keys
+        if orphaned_scores:
+            raise ValueError(
+                "pose evaluations do not match an action identity/stamp in this cohort: "
+                f"{sorted(orphaned_scores)[:5]}"
+            )
     if len(map_hashes) > 1:
         raise ValueError(f"cannot aggregate trials scored against different map hashes: {sorted(map_hashes)}")
     if len(status_map_hashes) > 1:
@@ -1189,6 +1649,25 @@ def aggregate_batch(trials_path: str, pose_errors_path: str, output_prefix: str,
         raise ValueError("cannot aggregate trials with inconsistent fixed T_map_world transforms")
 
     summary = _summarize_scored_trials(scored_trials, expected_trials)
+    summary["cohort_identity"] = {
+        "mode": "run_id_repetition_trial_id" if tagged_cohort else "legacy_trial_id",
+        "unique_trial_identity_count": len(trial_ids),
+        "run_ids": sorted({key[0] for key in trial_ids if key[0] is not None}),
+        "repetition_counts": {},
+    }
+    if tagged_cohort:
+        for run_id, repetition in sorted({(key[0], key[1]) for key in trial_ids if key[0] is not None}):
+            group = [trial for trial in scored_trials
+                     if trial.get("run_id") == run_id and trial.get("repetition") == repetition]
+            summary["cohort_identity"]["repetition_counts"][str(repetition)] = {
+                "run_id": run_id,
+                "observed_trial_count": len(group),
+                "action_success_count": sum(1 for trial in group if trial.get("action_success") is True),
+                "scored_success_count": sum(1 for trial in group if trial.get("success") is True),
+                "confirmed_correct_within_15s_count": sum(
+                    1 for trial in group if trial.get("correct_within_15s") is True
+                ),
+            }
     summary["map_sha256"] = next(iter(map_hashes or status_map_hashes)) if (map_hashes or status_map_hashes) else None
     summary["T_map_world"] = (
         {"translation_m": list(transforms[0].position), "quaternion_xyzw": list(transforms[0].orientation)}
@@ -1209,13 +1688,16 @@ def aggregate_batch(trials_path: str, pose_errors_path: str, output_prefix: str,
         json.dump(report, stream, indent=2, sort_keys=True, allow_nan=False)
         stream.write("\n")
     csv_fields = [
-        "trial_id", "trial_index", "requested_pose", "initial_stamp_ns", "final_stamp_ns",
-        "pose_stamp_ns", "action_success", "action_reason", "timeout", "evaluation_valid",
+        "run_id", "repetition", "trial_id", "trial_index", "source_trial_index",
+        "requested_pose", "initial_stamp_ns", "final_stamp_ns", "action_goal_start_ros_ns",
+        "action_goal_started_wall_monotonic_sec", "pose_stamp_ns",
+        "action_elapsed_sec", "correct_within_15s", "action_success", "action_reason", "timeout", "evaluation_valid",
         "pose_evaluation_success", "pose_evaluation_failure_reason",
+        "registration_attempt_outcome", "pose_score_run_id", "pose_score_repetition", "pose_score_trial_id",
         "success", "outcome", "failure_reason", "pose_interpolation_validity",
         *_ERROR_FIELDS, "position_threshold_m", "orientation_threshold_deg",
         "timing_sec", "input_mode", "action_window_exists", "action_timeout_source",
-        "raw_input_observation", "algorithm_process", "lio_pipeline", "gazebo_process_load",
+        "raw_input_observation", "reset_attempts", "algorithm_process", "lio_pipeline", "gazebo_process_load",
         "trial_evaluator_process", "diagnostic_recorder_process", "frontend_process",
         "status_events", "terminal_status", "raw_frontend", "stage_wall_sec", "stage_ros_sec",
         "rtf", "environment",
@@ -1356,6 +1838,8 @@ if rclpy is not None:
             self.declare_parameter("pose_topic", "/global_relocalization/pose")
             self.declare_parameter("ground_truth_topic", "/ground_truth/odometry")
             self.declare_parameter("output_prefix", "global_relocalization_evaluation")
+            self.declare_parameter("run_id", "")
+            self.declare_parameter("repetition", 0)
             self.declare_parameter("map_manifest_path", "")
             self.declare_parameter("world_frame", "world")
             self.declare_parameter("map_frame", "map")
@@ -1370,6 +1854,16 @@ if rclpy is not None:
             self.declare_parameter("max_gt_samples", 10000)
 
             self.map_frame = str(self.get_parameter("map_frame").value)
+            self.cohort_run_id = str(self.get_parameter("run_id").value)
+            repetition_value = self.get_parameter("repetition").value
+            if self.cohort_run_id or repetition_value:
+                if not self.cohort_run_id.strip():
+                    raise ValueError("repetition requires a non-empty run_id parameter")
+                if isinstance(repetition_value, bool) or not isinstance(repetition_value, int) or repetition_value <= 0:
+                    raise ValueError("run_id requires a positive integer repetition parameter")
+                self.cohort_repetition: Optional[int] = repetition_value
+            else:
+                self.cohort_repetition = None
             self.world_frame = str(self.get_parameter("world_frame").value)
             self.base_frame = str(self.get_parameter("base_frame").value)
             manifest_path = str(self.get_parameter("map_manifest_path").value)
@@ -1545,6 +2039,8 @@ if rclpy is not None:
                 base_frame=self.base_frame,
                 failure_reason=failure_reason,
                 alignment_metadata=self.alignment_metadata,
+                run_id=self.cohort_run_id or None,
+                repetition=self.cohort_repetition,
             )
             self.writer.write(record)
             if record["outcome"] == "success":
