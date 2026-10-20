@@ -2,6 +2,7 @@
 // Scan Context descriptor implemented here from the published polar max-height
 // definition (Kim and Kim, IROS 2018); no upstream Scan Context code is copied.
 #include "global_relocalization/core.hpp"
+#include "global_relocalization/bounded_kdtree.hpp"
 #include "global_relocalization/raw_preprocessing.hpp"
 #include <pcl/common/common.h>
 #include <pcl/common/transforms.h>
@@ -142,9 +143,31 @@ std::vector<Candidate> selectRetrievalCandidates(std::vector<Candidate> candidat
   return selected;
 }
 
+namespace {
+struct SearchProvenance { size_t revision{0}; };
+}
+struct PreparedSearch::State {
+  explicit State(SearchResult result):diagnostics(std::move(result)) {}
+  std::weak_ptr<SearchProvenance> owner;
+  size_t revision{0};
+  bool prepared{false}, consumed{false};
+  const SearchResult diagnostics;
+  std::string diagnostic_directory;
+};
+bool PreparedSearch::ready() const {
+  if(!state_||!state_->prepared||state_->consumed)return false;
+  const auto owner=state_->owner.lock();
+  return owner&&owner->revision==state_->revision;
+}
+const SearchResult & PreparedSearch::diagnostics() const {
+  static const SearchResult empty;
+  return state_?state_->diagnostics:empty;
+}
+
 struct Core::Impl {
   explicit Impl(const Params & p):params(p) {}
   Params params;Cloud::Ptr map;
+  std::shared_ptr<SearchProvenance> provenance=std::make_shared<SearchProvenance>();
   std::string hash;size_t diagnostic_search_count{0};
   struct View { Eigen::Vector3d base;Descriptor descriptor; };
   std::vector<View> database;
@@ -208,7 +231,8 @@ struct Core::Impl {
     return prepared;
   }
   Candidate refine(const PreparedSource & prepared,const Eigen::Isometry3d & guess,
-    const std::function<bool()> & canceled,size_t worker=0,bool coarse=false) {
+    const std::function<bool()> & canceled,size_t worker=0,bool coarse=false,
+    const std::function<void(const Candidate &)> & coarse_observer={}) {
     const auto began=Clock::now();
     Candidate candidate;candidate.map_from_reference=guess;
     const auto & source=prepared.fine;
@@ -224,21 +248,31 @@ struct Core::Impl {
     registration.optimizer.max_iterations=params.gicp_max_iterations;
     Eigen::Isometry3d seed=guess;
     if(coarse) {
+      Candidate coarse_result=candidate;
       const auto & coarse_source=prepared.coarse;
       if(coarse_source&&coarse_source->size()>=20) {
         registration.rejector.max_dist_sq=std::pow(std::max(1.5,params.gicp_max_correspondence),2);
         registration.optimizer.max_iterations=std::min(30,params.gicp_max_iterations);
         const auto coarse_start=Clock::now();
-        const auto initial=registration.align(*coarse_target,*coarse_source,*coarse_tree,guess);
+        const BoundedKdTree bounded_coarse(*coarse_tree,registration.rejector.max_dist_sq);
+        const auto initial=params.bounded_global_correspondences?
+          registration.align(*coarse_target,*coarse_source,bounded_coarse,guess):
+          registration.align(*coarse_target,*coarse_source,*coarse_tree,guess);
         candidate.coarse_sec=seconds(coarse_start);candidate.coarse_iterations=initial.iterations+1;
+        coarse_result.map_from_reference=initial.T_target_source;coarse_result.converged=initial.converged;
+        coarse_result.coarse_sec=candidate.coarse_sec;coarse_result.coarse_iterations=candidate.coarse_iterations;
         if(initial.T_target_source.matrix().allFinite())seed=initial.T_target_source;
         registration.rejector.max_dist_sq=params.gicp_max_correspondence*params.gicp_max_correspondence;
         registration.optimizer.max_iterations=params.gicp_max_iterations;
       }
+      if(coarse_observer)coarse_observer(coarse_result);
     }
     if(canceled())throw SearchCanceled{};
     const auto fine_start=Clock::now();
-    const auto result=registration.align(*target,*source,*tree,seed);
+    const BoundedKdTree bounded_fine(*tree,registration.rejector.max_dist_sq);
+    const auto result=params.bounded_global_correspondences?
+      registration.align(*target,*source,bounded_fine,seed):
+      registration.align(*target,*source,*tree,seed);
     candidate.fine_sec=seconds(fine_start);candidate.fine_iterations=result.iterations+1;
     candidate.converged=result.converged;
     candidate.map_from_reference=result.T_target_source;
@@ -270,7 +304,7 @@ struct Core::Impl {
 };
 
 Core::Core(const Params & params):impl_(std::make_unique<Impl>(params)) {
-  if(params.db_grid_resolution<=0||params.gicp_leaf_size<=0||params.top_k<1||params.ring_key_candidates<0||params.ring_key_candidates>64||params.candidate_workers<1||params.candidate_workers>2)
+  if(params.db_grid_resolution<=0||params.gicp_leaf_size<=0||params.top_k<1||params.ring_key_candidates<0||params.ring_key_candidates>64||params.candidate_workers<1||params.candidate_workers>2||params.minimum_confirmation_scans<1)
     throw std::invalid_argument("Invalid database/registration parameters");
   if((params.search_side!="all"&&params.search_side!="negative_x"&&params.search_side!="positive_x")||
     !std::isfinite(params.side_boundary_x))throw std::invalid_argument("Invalid half-field search prior");
@@ -278,6 +312,7 @@ Core::Core(const Params & params):impl_(std::make_unique<Impl>(params)) {
 }
 Core::~Core()=default;
 void Core::loadMap(const std::string & path) {
+  ++impl_->provenance->revision;
   Cloud input;if(pcl::io::loadPCDFile(path,input)<0||input.empty())throw std::runtime_error("Cannot load nonempty prior PCD: "+path);
   impl_->hash=sha256File(path);
   impl_->map=impl_->params.deterministic_preprocessing?deterministicVoxel(input,impl_->params.gicp_leaf_size):downsample(input,impl_->params.gicp_leaf_size);
@@ -295,6 +330,7 @@ void Core::loadMap(const std::string & path) {
 void Core::buildDatabase(const Eigen::Vector3d & offset) {
   if(!impl_->map)throw std::runtime_error("Map must be loaded before database construction");
   if(!impl_->database.empty()&&(impl_->database_offset-offset).norm()<1e-6)return;
+  ++impl_->provenance->revision;
   impl_->database.clear();impl_->database_offset=offset;
   pcl::PointXYZ lo,hi;pcl::getMinMax3D(*impl_->map,lo,hi);const auto & p=impl_->params;
   for(double x=lo.x;x<=hi.x;x+=p.db_grid_resolution)for(double y=lo.y;y<=hi.y;y+=p.db_grid_resolution) {
@@ -314,16 +350,47 @@ void Core::buildDatabase(const Eigen::Vector3d & offset) {
 const std::string & Core::mapHash()const{return impl_->hash;}
 size_t Core::databaseSize()const{return impl_->database.size();}
 SearchResult Core::search(const Cloud & query,const Cloud & independent,const Eigen::Vector3d & offset,
-  const std::function<bool()> & canceled) {
-  return search(query,std::vector<Cloud>{independent},offset,canceled);
+  const std::function<bool()> & canceled, const SearchObserver & observer) {
+  return search(query,std::vector<Cloud>{independent},offset,canceled,observer);
 }
 SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & independent,const Eigen::Vector3d & offset,
-  const std::function<bool()> & canceled) {
+  const std::function<bool()> & canceled, const SearchObserver & observer) {
+  // Preserve the legacy early count gate, even when no prior map is loaded.
+  if(independent.size()<impl_->params.minimum_confirmation_scans) {
+    ++impl_->provenance->revision;
+    SearchResult out;out.map_hash=impl_->hash;out.candidate_workers=impl_->params.candidate_workers;
+    out.reason=independent.empty()?"no independent stopped scan provided":"insufficient independent stopped scans";
+    return out;
+  }
+  const auto prepared=prepare(query,offset,canceled,observer);
+  if(!prepared.ready()) {
+    // Legacy offline diagnostics include the supplied stopped scans even when
+    // global retrieval/ambiguity fails before confirmation can begin.
+    if(!prepared.state_->diagnostic_directory.empty()) {
+      const auto directory=std::filesystem::path(prepared.state_->diagnostic_directory);
+      for(size_t i=0;i<independent.size();++i)
+        pcl::io::savePCDFileBinary((directory/("independent_"+std::to_string(i)+".pcd")).string(),independent[i]);
+    }
+    return prepared.diagnostics();
+  }
+  return confirm(prepared,independent,canceled,observer);
+}
+PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
+  const std::function<bool()> & canceled, const SearchObserver & observer) {
+  ++impl_->provenance->revision;
+  bool ready=false;
+  std::string diagnostic_directory;
+  const auto run=[&]() -> SearchResult {
+  std::mutex observer_mutex;
+  const auto notify=[&](const SearchEvent & event) {
+    if(!observer)return;
+    std::lock_guard<std::mutex> lock(observer_mutex);
+    try {observer(event);} catch(...) {} // Diagnostic failures never change search results.
+  };
   SearchResult out;out.map_hash=impl_->hash;out.candidate_workers=impl_->params.candidate_workers;auto start=Clock::now();
   // Serialize callbacks so even a stateful caller predicate is never raced.
   std::mutex cancel_mutex;
   const auto checkedCancel=[&]{std::lock_guard<std::mutex> lock(cancel_mutex);return canceled();};
-  if(independent.empty()){out.reason="no independent stopped scan provided";return out;}
   omp_set_num_threads(4);
   buildDatabase(offset);out.database_size=impl_->database.size();
   if(checkedCancel()){out.reason="canceled before retrieval";return out;}
@@ -338,8 +405,8 @@ SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & indepen
   if(!p.diagnostic_output_dir.empty()) {
     const auto directory=std::filesystem::path(p.diagnostic_output_dir)/("search_"+std::to_string(++impl_->diagnostic_search_count));
     std::filesystem::create_directories(directory);
+    diagnostic_directory=directory.string();
     pcl::io::savePCDFileBinary((directory/"query.pcd").string(),query);
-    for(size_t i=0;i<independent.size();++i)pcl::io::savePCDFileBinary((directory/("independent_"+std::to_string(i)+".pcd")).string(),independent[i]);
     nlohmann::json data={{"map_sha256",impl_->hash},{"query_points",query.size()},
       {"sensor_offset",{offset.x(),offset.y(),offset.z()}},{"shortlist_limit",shortlist_limit},{"top_k",p.top_k},{"ring_key_candidates",p.ring_key_candidates},{"retrieval_all_views",p.retrieval_all_views},{"views",nlohmann::json::array()}};
     for(size_t rank=0;rank<shortlist.size();++rank) {
@@ -363,8 +430,12 @@ SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & indepen
     c.seed_translation=c.map_from_reference.translation();c.seed_yaw=match.second;guesses.push_back(c);
   }
   out.retrieval_scored_views=shortlist.size();
-  guesses=selectRetrievalCandidates(std::move(guesses),p.top_k,p.ring_key_candidates);
+  std::sort(guesses.begin(),guesses.end(),[](const Candidate & a,const Candidate & b){return a.descriptor_distance<b.descriptor_distance;});
+  for(size_t i=0;i<guesses.size();++i)guesses[i].scan_context_rank=i+1;
+  const auto retrieval_pool=guesses;
+  guesses=selectRetrievalCandidates(guesses,p.top_k,p.ring_key_candidates);
   out.retrieval_candidate_count=guesses.size();
+  if(observer)notify({"RETRIEVAL_COMPLETE",0,guesses.size(),{},guesses,nullptr});
   out.retrieval_ring_added=std::count_if(guesses.begin(),guesses.end(),[](const Candidate & c){return c.from_ring_key&&!c.from_scan_context;});
   out.retrieval_sec=seconds(start);start=Clock::now();
   if(guesses.empty()){out.reason="no retrieved base-pose seed lies inside configured search side";return out;}
@@ -379,12 +450,19 @@ SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & indepen
       if(checkedCancel()){stop.store(true);break;}
       const size_t index=next.fetch_add(1);if(index>=guesses.size())break;
       const auto & guess=guesses[index];
-      auto c=impl_->refine(query_source,guess.map_from_reference,checkedCancel,worker,true);
+      if(observer)notify({"GICP_CANDIDATE_START",index,guesses.size(),guess,{},nullptr});
+      std::function<void(const Candidate &)> coarse_observer;
+      if(observer)coarse_observer=[&](const Candidate & result) {
+        auto observed=result;observed.scan_context_rank=guess.scan_context_rank;observed.ring_key_rank=guess.ring_key_rank;
+        notify({"GICP_COARSE_SEED_COMPLETE",index,guesses.size(),observed,{},nullptr});
+      };
+      auto c=impl_->refine(query_source,guess.map_from_reference,checkedCancel,worker,true,coarse_observer);
       c.descriptor_distance=guess.descriptor_distance;
       c.ring_key_rank=guess.ring_key_rank;c.scan_context_rank=guess.scan_context_rank;
       c.from_scan_context=guess.from_scan_context;c.from_ring_key=guess.from_ring_key;
       c.seed_translation=guess.seed_translation;c.seed_yaw=guess.seed_yaw;
       refined[index]=std::move(c);started[index]=1;
+      if(observer)notify({"GICP_FINE_QUALITY_COMPLETE",index,guesses.size(),refined[index],{},nullptr});
       if(refined[index].canceled)stop.store(true);
     }
   };
@@ -407,6 +485,35 @@ SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & indepen
   }
   out.gicp_sec=seconds(start);
   if(stop.load()||checkedCancel()){out.reason="canceled during GICP";return out;}
+  // The first page can miss a repetitive place. Search the next equal page
+  // only after every initial seed has failed the quality gates.
+  if(accepted.empty()) {
+    std::vector<size_t> tested;for(const auto & g:guesses)tested.push_back(g.scan_context_rank);
+    std::vector<Candidate> extra;
+    for(const auto & c:retrieval_pool) {
+      if(c.scan_context_rank<=size_t(p.top_k)||c.scan_context_rank>size_t(p.top_k*2))continue;
+      if(std::find(tested.begin(),tested.end(),c.scan_context_rank)!=tested.end())continue;
+      auto added=c;added.from_scan_context=true;added.from_ring_key=false;extra.push_back(added);
+    }
+    if(!extra.empty()) {
+      guesses=std::move(extra);out.retrieval_candidate_count+=guesses.size();
+      refined.assign(guesses.size(),{});started.assign(guesses.size(),0);next.store(0);stop.store(false);
+      if(p.candidate_workers==1)evaluate(0);
+      else {
+        std::vector<std::future<void>> tasks;
+        for(int worker=0;worker<p.candidate_workers;++worker)
+          tasks.push_back(std::async(std::launch::async,[&,worker]{evaluate(worker);}));
+        for(auto & task:tasks)task.get();
+      }
+      for(size_t index=0;index<guesses.size();++index)if(started[index]) {
+        const auto & c=refined[index];++out.candidates_tested;out.hypotheses.push_back(c);
+        if(!c.canceled&&c.fitness<out.candidate.fitness)out.candidate=c;
+        if(!c.canceled&&impl_->accepted(c))accepted.push_back(c);
+      }
+      out.gicp_sec=seconds(start);
+    }
+  }
+  if(stop.load()||checkedCancel()){out.reason="canceled during GICP";return out;}
   if(accepted.empty()){out.reason="no retrieved candidate passed GICP quality and search-side gates";return out;}
   std::sort(accepted.begin(),accepted.end(),[](const Candidate & a,const Candidate & b){return a.fitness<b.fitness;});
   const auto & best=accepted.front();out.candidate=best;
@@ -418,12 +525,55 @@ SearchResult Core::search(const Cloud & query,const std::vector<Cloud> & indepen
     }
   }
   if(checkedCancel()){out.reason="canceled before independent confirmation";return out;}
+  ready=true;out.reason="global registration prepared; independent stopped scans required";return out;
+  };
+  PreparedSearch prepared;prepared.state_=std::make_shared<PreparedSearch::State>(run());
+  prepared.state_->owner=impl_->provenance;prepared.state_->revision=impl_->provenance->revision;
+  prepared.state_->prepared=ready;prepared.state_->diagnostic_directory=std::move(diagnostic_directory);
+  return prepared;
+}
+SearchResult Core::confirm(const PreparedSearch & prepared,const std::vector<Cloud> & independent,
+  const std::function<bool()> & canceled, const SearchObserver & observer) {
+  SearchResult out=prepared.diagnostics();
+  if(!prepared.ready()||prepared.state_->owner.lock()!=impl_->provenance) {
+    out.success=false;out.reason="invalid, stale, consumed or foreign prepared search";return out;
+  }
+  // Consume before every gate, including cancellation and insufficient scans.
+  // Copies of this token can never restart a canceled or failed confirmation.
+  prepared.state_->consumed=true;
+  if(independent.empty()){out.reason="no independent stopped scan provided";return out;}
+  if(independent.size()<impl_->params.minimum_confirmation_scans){out.reason="insufficient independent stopped scans";return out;}
+  const auto checkedCancel=[&]{return canceled();};
+  const auto notify=[&](const SearchEvent & event) {
+    if(observer)try {observer(event);} catch(...) {}
+  };
+  const auto & p=impl_->params;
+  const Candidate best=out.candidate;
+  if(!prepared.state_->diagnostic_directory.empty()) {
+    const auto directory=std::filesystem::path(prepared.state_->diagnostic_directory);
+    for(size_t i=0;i<independent.size();++i)
+      pcl::io::savePCDFileBinary((directory/("independent_"+std::to_string(i)+".pcd")).string(),independent[i]);
+  }
+  auto start=Clock::now();
+  if(checkedCancel()){out.reason="canceled before independent confirmation";return out;}
   start=Clock::now();Candidate confirmation=best;std::vector<Candidate> confirmed;
-  for(const auto & scan:independent) {
+  for(size_t confirmation_index=0;confirmation_index<independent.size();++confirmation_index) {
+    const auto & scan=independent[confirmation_index];
+    if(observer)notify({"CONFIRMATION_START",confirmation_index,independent.size(),best,{},&scan});
     if(checkedCancel()){out.confirmation_sec=seconds(start);out.reason="canceled during independent confirmation";return out;}
     const auto stopped_source=impl_->prepareSource(scan,false);++out.independent_preparations;
     confirmation=impl_->refine(stopped_source,best.map_from_reference,checkedCancel);
     out.confirmations.push_back(confirmation);
+    if(observer) {
+      SearchEvent event{"CONFIRMATION_COMPLETE",confirmation_index,independent.size(),confirmation,{},&scan};
+      event.best_translation_delta=(confirmation.map_from_reference.translation()-best.map_from_reference.translation()).norm();
+      event.best_rotation_delta=rotationDistance(confirmation.map_from_reference,best.map_from_reference);
+      for(const auto & previous:confirmed) {
+        event.previous_translation_delta=std::max(event.previous_translation_delta,(confirmation.map_from_reference.translation()-previous.map_from_reference.translation()).norm());
+        event.previous_rotation_delta=std::max(event.previous_rotation_delta,rotationDistance(confirmation.map_from_reference,previous.map_from_reference));
+      }
+      notify(event);
+    }
     if(confirmation.canceled||checkedCancel()){out.confirmation_sec=seconds(start);out.reason="canceled during independent confirmation";return out;}
   if(!impl_->accepted(confirmation)){out.confirmation_sec=seconds(start);out.reason="independent stopped scan failed quality or search-side gates";return out;}
   if((confirmation.map_from_reference.translation()-best.map_from_reference.translation()).norm()>p.confirmation_max_translation||

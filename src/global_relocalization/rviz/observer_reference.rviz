@@ -1,0 +1,90 @@
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+Visualization Manager:
+  Class: ''
+  Global Options:
+    Fixed Frame: relocalization_reference
+    Background Color: 35; 35; 35
+  Displays:
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Prior map
+    Enabled: false
+    Topic:
+      Value: /global_relocalization/visual/map
+      Reliability Policy: Best Effort
+      Durability Policy: Transient Local
+      Depth: 1
+    Color Transformer: FlatColor
+    Color: 130; 130; 130
+    Size (m): 0.06
+    Style: Points
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Candidate aligned query
+    Enabled: false
+    Topic:
+      Value: /global_relocalization/visual/aligned_query
+      Reliability Policy: Best Effort
+      Durability Policy: Transient Local
+      Depth: 1
+    Color Transformer: FlatColor
+    Color: 0; 255; 255
+    Size (m): 0.06
+    Style: Points
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Accumulated query (reference frame)
+    Enabled: true
+    Topic:
+      Value: /global_relocalization/visual/query
+      Reliability Policy: Best Effort
+      Durability Policy: Transient Local
+      Depth: 1
+    Color Transformer: FlatColor
+    Color: 255; 180; 0
+    Size (m): 0.06
+    Style: Points
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Independent scan (reference frame)
+    Enabled: true
+    Topic:
+      Value: /global_relocalization/visual/independent
+      Reliability Policy: Best Effort
+      Durability Policy: Transient Local
+      Depth: 1
+    Color Transformer: FlatColor
+    Color: 255; 0; 255
+    Size (m): 0.06
+    Style: Points
+  - Class: rviz_default_plugins/MarkerArray
+    Name: Stages, ranked seeds and quality
+    Enabled: false
+    Topic:
+      Value: /global_relocalization/visual/markers
+      Reliability Policy: Best Effort
+      Durability Policy: Transient Local
+      Depth: 1
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Aligned independent confirmation scan
+    Enabled: false
+    Topic:
+      Value: /global_relocalization/visual/aligned_independent
+      Reliability Policy: Best Effort
+      Durability Policy: Transient Local
+      Depth: 1
+    Color Transformer: FlatColor
+    Color: 255; 0; 255
+    Size (m): 0.06
+    Style: Points
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 20
+      Pitch: 0.7
+      Yaw: 0.5
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+Window Geometry:
+  Width: 1280
+  Height: 800

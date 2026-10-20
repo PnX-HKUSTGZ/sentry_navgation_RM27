@@ -24,6 +24,8 @@ struct Params {
   int gicp_max_iterations{40};
   // At most two candidate tasks, each using four OpenMP registration threads.
   int candidate_workers{1};
+  size_t minimum_confirmation_scans{1};
+  bool bounded_global_correspondences{false};
   double max_fitness{0.20}, min_inlier_ratio{0.65}, ambiguity_margin{0.15};
   double confirmation_max_translation{0.15}, confirmation_max_rotation{0.0872664626};
 };
@@ -69,16 +71,48 @@ struct SearchResult {
   std::vector<Candidate> hypotheses;
   std::vector<Candidate> confirmations;
 };
+// Stage-boundary observation only: small_gicp exposes no per-iteration callback.
+// Calls are serialized, synchronous, and exceptions are isolated from the solver.
+struct SearchEvent {
+  std::string stage;
+  size_t index{0}, total{0};
+  Candidate candidate;
+  std::vector<Candidate> seeds;
+  const Cloud * scan{nullptr}; // Valid only for the duration of the callback.
+  double best_translation_delta{0.0},best_rotation_delta{0.0};
+  double previous_translation_delta{0.0},previous_rotation_delta{0.0};
+};
+using SearchObserver = std::function<void(const SearchEvent &)>;
+// An opaque, single-use continuation. Readiness never represents localization
+// success; only confirm() may produce a successful SearchResult. Copies share
+// consumption and provenance. A new preparation or map/database invalidates it.
+class PreparedSearch {
+public:
+  PreparedSearch() = default;
+  bool ready() const;
+  const SearchResult & diagnostics() const;
+private:
+  struct State;
+  std::shared_ptr<State> state_;
+  friend class Core;
+};
 class Core {
 public:
   explicit Core(const Params & params);
   ~Core();
   void loadMap(const std::string & path);
   void buildDatabase(const Eigen::Vector3d & base_to_lidar_translation);
+  // Calls on one Core must be serialized, including loadMap/buildDatabase.
+  PreparedSearch prepare(const Cloud & query_reference,
+    const Eigen::Vector3d & base_to_lidar_translation, const std::function<bool()> & canceled,
+    const SearchObserver & observer = {});
+  SearchResult confirm(const PreparedSearch & prepared,
+    const std::vector<Cloud> & independent_scans_reference, const std::function<bool()> & canceled,
+    const SearchObserver & observer = {});
   SearchResult search(const Cloud & query_reference, const Cloud & independent_scan_reference,
-    const Eigen::Vector3d & base_to_lidar_translation, const std::function<bool()> & canceled);
+    const Eigen::Vector3d & base_to_lidar_translation, const std::function<bool()> & canceled, const SearchObserver & observer = {});
   SearchResult search(const Cloud & query_reference, const std::vector<Cloud> & independent_scans_reference,
-    const Eigen::Vector3d & base_to_lidar_translation, const std::function<bool()> & canceled);
+    const Eigen::Vector3d & base_to_lidar_translation, const std::function<bool()> & canceled, const SearchObserver & observer = {});
   const std::string & mapHash() const;
   size_t databaseSize() const;
 private:

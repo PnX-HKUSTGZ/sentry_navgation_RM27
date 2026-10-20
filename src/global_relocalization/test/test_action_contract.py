@@ -455,17 +455,45 @@ def test_searching_uses_live_raw_sensor_health_after_freezing_scan(break_stream)
             if expected_core:
                 mappings = Path(f"/proc/{process.pid}/maps").read_text()
                 assert str(Path(expected_core).resolve()) in mappings, mappings
+            goal_state_index = len(states)
             sent = client.send_goal_async(Relocalize.Goal())
             deadline = time.monotonic()+5
             while not sent.done() and time.monotonic()<deadline:
                 executor.spin_once(timeout_sec=.01)
             assert sent.done() and sent.result().accepted
             result = sent.result().get_result_async()
+            # A client clock sample does not establish the server clock. Wait
+            # for this action's own status, sent from the server clock, before
+            # publishing epoch-stamped sensor data into the future-stamp gate.
+            deadline = time.monotonic()+5
+            active_run = None
+            server_ready = False
+            while time.monotonic()<deadline:
+                run_states = states[goal_state_index:]
+                if active_run is None and run_states:
+                    active_run = run_states[0]['run_id']
+                server_ready = (active_run is not None and
+                    any(s['run_id']==active_run and s['stage']=='SETTLING' and s['status_ros_ns']>0 for s in run_states) and
+                    imu_pub.get_subscription_count()>0 and cloud_pub.get_subscription_count()>0 and
+                    node.count_subscribers('/tf_static')>0)
+                if server_ready:
+                    break
+                executor.spin_once(timeout_sec=.005)
+            assert server_ready, json.dumps({'states':states[-3:], 'action_done':result.done(),
+                'action_reason':result.result().result.reason if result.done() else None})
             next_imu = next_cloud = previous = time.monotonic()
             deadline = time.monotonic()+5
             while not any(s["stage"]=="SEARCHING" for s in states) and time.monotonic()<deadline and not result.done():
                 step()
-            assert any(s["stage"]=="SEARCHING" for s in states), json.dumps(states[-1:])
+            if not any(s['run_id']==active_run and s['stage']=='SEARCHING' for s in states) and result.done():
+                # Preserve the actual terminal reason even if its status topic
+                # callback is scheduled after the action result callback.
+                deadline = time.monotonic()+1
+                while not any(s['run_id']==active_run and s['stage'] in ('FAILED','CANCELED') for s in states) and time.monotonic()<deadline:
+                    executor.spin_once(timeout_sec=.005)
+            assert any(s['run_id']==active_run and s['stage']=='SEARCHING' for s in states), json.dumps({
+                'states':states[-3:], 'action_done':result.done(),
+                'action_reason':result.result().result.reason if result.done() else None})
             search_start = time.monotonic()
             deadline = search_start+10
             while not result.done() and time.monotonic()<deadline:
@@ -564,3 +592,74 @@ def test_raw_ingress_limits_abort_and_publish_zero(fault):
                 os.killpg(process.pid, signal.SIGINT)
             output = process.communicate(timeout=5)[0]
             assert process.returncode == 0, output
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_visualization_is_opt_in_and_cloud_snapshots_are_bounded(enabled):
+    from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+    from visualization_msgs.msg import MarkerArray
+    binary = Path(os.environ['GLOBAL_RELOCALIZATION_NODE'])
+    with tempfile.TemporaryDirectory() as temporary:
+        path = Path(temporary) / 'map.pcd'
+        points = [(x * .2, y * .2, z * .2) for x in range(10) for y in range(10) for z in range(4)]
+        path.write_text('VERSION .7\nFIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\n'
+                        f'WIDTH {len(points)}\nHEIGHT 1\nPOINTS {len(points)}\nDATA ascii\n'
+                        + ''.join(f'{x} {y} {z}\n' for x, y, z in points))
+        arguments = [str(binary), '--ros-args', '-p', 'use_sim_time:=true', '-p', f'map_path:={path}',
+                     '-p', 'timeout_sec:=0.8', '-p', 'settle_sec:=0.1']
+        if enabled:
+            arguments += ['-p', 'visualization_enabled:=true', '-p', 'visualization_max_points:=100']
+        process = subprocess.Popen(arguments, env=os.environ.copy(), stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True, start_new_session=True)
+        context = rclpy.context.Context()
+        rclpy.init(context=context)
+        node = _test_node('observer_contract_test', context)
+        executor = SingleThreadedExecutor(context=context)
+        executor.add_node(node)
+        clouds, markers = [], []
+        qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT,
+                         durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        node.create_subscription(PointCloud2, '/global_relocalization/visual/map', clouds.append, qos)
+        node.create_subscription(MarkerArray, '/global_relocalization/visual/markers', markers.append, qos)
+        client = ActionClient(node, Relocalize, '/global_relocalization/run')
+        try:
+            assert client.wait_for_server(timeout_sec=5)
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and (enabled and not clouds):
+                executor.spin_once(timeout_sec=.02)
+            if enabled:
+                assert clouds and clouds[-1].width <= 100
+                assert clouds[-1].header.frame_id == 'map'
+            else:
+                assert not node.get_publishers_info_by_topic('/global_relocalization/visual/map')
+                assert not node.get_publishers_info_by_topic('/global_relocalization/visual/markers')
+            _wait_for_clock(node, executor)
+            future = client.send_goal_async(Relocalize.Goal())
+            deadline = time.monotonic() + 4
+            while not future.done() and time.monotonic() < deadline:
+                executor.spin_once(timeout_sec=.02)
+            handle = future.result()
+            assert handle.accepted
+            result = handle.get_result_async()
+            deadline = time.monotonic() + 4
+            while not result.done() and time.monotonic() < deadline:
+                executor.spin_once(timeout_sec=.02)
+            assert result.done() and not result.result().result.success
+            if enabled:
+                # Observer publication runs on its own timer after action completion.
+                deadline = time.monotonic() + 1
+                while time.monotonic() < deadline and not any(
+                        'FAILED' in marker.text for message in markers for marker in message.markers):
+                    executor.spin_once(timeout_sec=.02)
+                assert markers
+                assert any('FAILED' in marker.text for message in markers for marker in message.markers)
+            assert process.poll() is None
+        finally:
+            client.destroy()
+            executor.remove_node(node)
+            node.destroy_node()
+            executor.shutdown()
+            context.shutdown()
+            if process.poll() is None:
+                process.send_signal(signal.SIGINT)
+            process.wait(timeout=5)

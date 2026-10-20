@@ -42,7 +42,7 @@ struct StationaryRawFrontend::Impl {
   }
 };
 StationaryRawFrontend::StationaryRawFrontend(const RawFrontendParams & p,const Eigen::Isometry3d & si,const Eigen::Isometry3d & bs):impl_(std::make_unique<Impl>(p,si,bs)) {
-  if(p.stationary_duration<=0||p.stationary_min_samples<2||p.leaf_size<=0||p.max_imu_gap<=0||p.max_scan_gap<=0||p.max_iterations<1||p.retry_iterations<0||p.retry_iterations>15||p.submap_scans<1||p.submap_scans>5||p.min_range<0||p.max_range<=p.min_range||p.rotation_sigma_floor<=0||p.gyro_noise_density<=0||!validRigid(si)||!validRigid(bs))throw std::invalid_argument("invalid raw frontend parameters/extrinsics");
+  if(p.stationary_duration<=0||p.stationary_min_samples<2||p.leaf_size<=0||p.max_imu_gap<=0||p.max_scan_gap<=0||p.max_iterations<1||p.retry_iterations<0||p.retry_iterations>15||p.submap_scans<1||p.submap_scans>30||p.min_range<0||p.max_range<=p.min_range||p.rotation_sigma_floor<=0||p.gyro_noise_density<=0||!validRigid(si)||!validRigid(bs))throw std::invalid_argument("invalid raw frontend parameters/extrinsics");
 }
 StationaryRawFrontend::~StationaryRawFrontend()=default;
 void StationaryRawFrontend::reset(){auto & i=*impl_;std::lock_guard<std::mutex> lock(i.imu_mutex);i.imu.clear();i.imu_error.clear();i.last_input=i.previous_stamp=i.calibration_stamp=-1;i.initialized=false;i.bias.setZero();i.pose.setIdentity();i.previous.reset();i.cumulative_yaw=0;i.hard_fault=false;i.recovery_pending=false;i.recovery_attempts=i.recovered_count=i.sequence=0;i.submap.clear();i.recovery_after.store(-1);i.gyro_sample_variance=i.gyro_bias_variance=i.calibration_sample_dt=0;}

@@ -1,16 +1,8 @@
 # Raw LiDAR + IMU 全局重定位：完整复现与批测指南
 
-**当前已暂停以便关机。**冻结版本、验证证据、完整恢复顺序和仿真清理状态见[恢复检查点](global_relocalization_resume.md)。没有在这次暂停前启动新版本性能对照、p16×3 或 15×3 回归。
+**当前状态：55-key bounded 固定回归已完成 45/45。**2026-10-14 UTC 的冻结回归已完成，2026-10-19 只复核归档：run id `accuracy45_08792fbbe785`，三轮各 15/15，共 **45/45 严格正确**（3D ≤0.10 m、SO(3) ≤2°），40 项无恢复、5 项一次恢复后正确，失败 action / 错误接受均为 0，15 s 内正确 **0/45**。15 秒目标未达到。45/45 只描述固定理想仿真集合，含恢复的系统通过不代表局部配准 100% 成功。 进度和冻结身份见[恢复检查点](global_relocalization_resume.md)，完整分布见[仿真结果报告](global_relocalization_simulation.md)。
 
-## 当前修复周期（2026-10-14）
-
-第一个 53-key 鲁棒 profile 的 15×3 回归已在 round 2 超时后中止：planned 45、executed 30、严格正确 29、超时 1、未尝试 15，round 3 未启动。`passed_45_of_45=false`，该结果不是 45/45，也不代表普遍成功率。完整状态和 round links 见 [仿真结果报告顶部](global_relocalization_simulation.md)；原始记录见 [regression manifest](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/regression45/regression_manifest.json)、[round 1](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/regression45/round_01/results.summary.json)、[round 2](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/regression45/round_02/results.summary.json) 和 [p16 timeout](../tools/global_relocalization/data/robust_correctness_fresh_20261014T101242Z_87dd84d4/p16_timeout_diagnosis.json)。下文的旧 120 次和固定 15 次属于历史 profile/矩阵。
-
-冻结目标仍是相同 15 个 cell 连续三轮，且每个输出完整 3D ≤0.10 m、SO(3) ≤2°。这只评估该冻结回归集，不代表普遍 100%。15 秒内正确定位比例另行报告，计时取原 action goal 的 `elapsed_sec`，内部恢复不重置计时。candidate-workers=2 并行版本现已通过 36 个 build/test checks 并冻结；需在 fresh session 完成相同输入对照、p16 三次验证后，再以新的输出目录重新完成三轮。保持 server 60 秒超时。timed-scan、Point-LIO 地图/速度路线、60 分钟长稳及 120 次稳定性评估仍暂停。
-
-action-level recovery 结果要再经完整姿态评分分类：正确姿态且 `recovery_attempts=0` 为首次正确定位，正确姿态且 `recovery_attempts=1` 为一次内部恢复后正确定位；valid pose 超出完整门限、但 action 返回 success 时列为错误接受；缺姿态分数列为未评分 action 成功，action failure/timeout 独立计数。旧 ledger 没有恢复计数时保留 unknown，不推断首次正确定位。`registration_attempts` 只描述 terminal snapshot 的 latest processed scan，不能代替 action 全程累计的 `recovery_attempts`。`run_id`、`repetition`、冻结的 `trial_id` 和 `source_trial_index` 区分三轮；评分行必须带相同 `run_id`、`repetition`，只按唯一 action stamp 联接，混入旧轮、未标记或多余评分会被拒绝。诊断录制进程单列资源，不并入算法组；RSS 以 MiB 展示，CPU 100% 表示占满一个逻辑核。
-
-此次首轮的 29/30 已评分结果保留在链接所示目录；p16 一次额外诊断 action 54.153 秒严格评分通过（3D 3.151 mm、SO(3) 0.03831°），不并入回归分母。新并行搜索版本和后续完整 45 项回归须另建冻结快照与 session，不覆盖或拼接此首轮数据。
+当前 profile 有 55 个参数键、`candidate_workers=2`、server timeout 60 s；profile SHA-256 `1c1bba993a6aae1d9ab9854748839098a31863d1aa943e45e92c1497309db0c0`。冻结 manifest SHA-256 `6a12676661f03b7fdfe846f2d7ee67f3e46b3b185281ecef7971b9db7b2927b4`，installed core/node SHA-256 分别为 `5ac470d46553176b61928400a7672e6963cf2d722ae8aba8cc482e4f65dc592b` 和 `c662e64e61aa3eb3307100d4e20e8f7c8f9225fb255f18dedc068f5ea4674109`。具体使用的源快照与运行时 binary 以[冻结 manifest](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_frozen_manifest.json)、[live provenance](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_live_p16_20261014T154541Z/freeze_provenance.json)及每轮 source/binary snapshot 为准；共享 main 的其他 observer/visualization 功能不计入 headless 定位验收。
 
 更新：2026-10-14。本轮已按本指南完成物理预检、固定 5 次、拓展 10 次和正式 120 次。正式批测结果为 58/120（48.33%），未达到 ≥114/120 验收目标；成功姿态精度、耗时、CPU/RSS 与失败分析见 [正式批测报告](../tools/global_relocalization/data/session_20261013T160806Z_0f2b982a/formal_raw120_run01/analysis.md)。这是一项未通过验收的实测结果，不能用成功样本的高精度掩盖整体成功率。
 
@@ -301,9 +293,9 @@ reset helper记录每次开始/结束、returncode、stdout/stderr、CLI10秒与
 
 本轮未复现旧120后半程长时0.7–1.0s回调burst，受控FIFO/burst停车由测试覆盖，不能宣称长期输送问题已完全修复。停止probe、发布零Twist并完成owned group清理，remaining owned=0，详见[cleanup](../tools/global_relocalization/data/session_frontend_fix15_20261013T181313Z_64ccf218/cleanup.json)与[integrity](../tools/global_relocalization/data/session_frontend_fix15_20261013T181313Z_64ccf218/integrity_check.json)。没有执行新120、GUI、实车或导航。
 
-## 13. 当前前端恢复逻辑：诊断复现、20 次离线重放与 45 次正确率回归
+## 13. 历史 53-key 前端恢复逻辑：诊断复现、20 次离线重放与 45 次正确率回归
 
-以下命令记录首个 53-key 鲁棒 profile 的复现方式；该版的45项运行已经停止于round 2，不能据此声称45/45通过。后续候选并行版本须另建 frozen build/profile/session 和输出目录，不能覆盖此首轮 ledger。先按第 4 节创建全新的隔离仿真 session，并按第 12 节要求对固定15个cell重新做物理预检和simulation audit。本版参数文件固定为：
+以下命令记录首个 53-key 鲁棒 profile 的历史复现方式；该版的45项运行已经停止于round 2，不能据此声称45/45通过。这些旧命令和结果不代表当前55-key bounded candidate。旧 53-key ledger 与新版本须分开保存，不能覆盖或拼接。首版参数文件当时固定为：
 
 ```bash
 export RELOC_PARAMS="$RELOC_ROOT/src/global_relocalization/config/raw_imu_robust_left_half.yaml"
@@ -390,3 +382,37 @@ source "$RELOC_SESSION/environment.bash"
 审核 `$RELOC_SESSION/accuracy45_run01/regression_manifest.json` 的 `planned_cells`、`executed_cells`、`not_attempted_cells`、`passed_45_of_45` 和冻结输入末尾哈希；每轮查看 `round_NN/results.summary.json`、完整 `trials.jsonl`、`pose_errors.jsonl`、`results.trials.csv` 与 `results.summary.json`。三维误差或 SO(3) 超门限仍是失败，即使 action 返回成功；失败、timeout 和缺姿态分数保留在原计划 45 分母，缺失 pose/error 显示 null，不从上一轮补分或重复 join。报告 `correct_localization_within_15s` 时同时给出全 cohort 率和成功 action 条件率；它使用从原 goal 发起时累计的 action elapsed，恢复阶段不能重置计时，也不替代 45/45 完整姿态正确率目标。
 
 `45/45` 仅表示此冻结 15-cell 集合在三轮均通过 `3D≤0.10 m` 与 `SO(3)≤2°`，不外推到普遍 100%。本周期不做 timed-scan、Point-LIO 地图/速度比较、60 分钟稳定性或 120 次稳定性测试；只有冻结 45/45 达标后再进入那些后续阶段。CPU 百分比按一核为 100%，RSS 用 MiB；诊断 recorder 的资源单独列示，诊断文件写入期间的算法负荷不作为无诊断的性能基线。
+
+## 14. 当前 55-key bounded 候选：固定回归 45/45
+
+当前冻结参数文件为 `raw_imu_robust_left_half.yaml`，55 个参数键，SHA-256 `1c1bba993a6aae1d9ab9854748839098a31863d1aa943e45e92c1497309db0c0`；`candidate_workers=2`、OpenMP=4，server wall timeout 60 s。精确 source/build/installed binary 身份见[冻结 manifest](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_frozen_manifest.json)，活动 session 的 core/node 映射见[live freeze provenance](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_live_p16_20261014T154541Z/freeze_provenance.json)。当前 main 的 SearchObserver/visualization 属于另一项共享工作；验收依据每个 live run 的 source snapshot、binary snapshot、runtime audit 和地图校验，不将 observer 纳入本轮算法计时。
+
+查询路径变更针对远场开销：原逻辑做无界 KD 最近邻搜索后再以距离门限拒绝，新 adapter 在 KD 遍历中使用精确半径剪枝。树结构、tie 规则、距离门限、全量候选、歧义门限和三次独立确认保持一致。与此同时，STOPPING 中任何逐帧运动都会重启完整 2 s wall/ROS 静止窗口；freeze/drain 后再次核验 stage、帧数和稳态；raw Core 至少要求 3 个独立确认帧。
+
+安装候选前完成 44 个 checks，全部通过：raw frontend 13、raw scan worker 8、bounded KD tree 5、core 11、action contract 7。相同 p16 capture 的原查询和 bounded 查询都完成 13 个候选及 3 次确认；593 项数值比较在绝对误差 1e-12 内等价，最大差异 2.22e-15。单次同二进制离线结果 wall 18.79→5.87 s、CPU 74.56→31.46 core-s、峰值 RSS 115.60→115.45 MiB；微基准远区约 5.8–6.0×、近区基本持平。capture 无 GT，因此以上只用于确认搜索路径和离线成本变化，不构成 live 正确率或端到端时延结论。证据见[比较 JSON](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_validation/comparison.json)与[微基准日志](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_micro.log)。
+
+2026-10-14 UTC 的冻结回归已完成，2026-10-19 只复核归档：run id `accuracy45_08792fbbe785`，三轮各 15/15，共 **45/45 严格正确**（3D ≤0.10 m、SO(3) ≤2°），40 项无恢复、5 项一次恢复后正确，失败 action / 错误接受均为 0，15 s 内正确 **0/45**。15 秒目标未达到。45/45 只描述固定理想仿真集合，含恢复的系统通过不代表局部配准 100% 成功。
+
+45 项完整 3D 误差均值/RMSE/P95/最大为 **1.165732 / 1.301647 / 2.227641 / 2.846049 mm**；SO(3) 为 **0.029225 / 0.036750 / 0.060048 / 0.122663°**。action elapsed wall 均值/P95/最大为 **27.947963 / 32.315618 / 34.985493 s**（最短 24.840043 s）。P95 对全部 45 项线性插值，不平均每轮 P95。
+
+算法 45 个有效资源窗口总计 **1488.44 core-s**，按窗口 wall 加权 CPU **118.1981%**，trial 窗口平均 CPU 的均值/P95/最大 **114.9132 / 202.3304 / 216.6429%**，最大 RSS **219.984375 MiB**；Gazebo 仿真单列 **1642.36 core-s**、加权 CPU **130.3919%**、最大 RSS **2999.910156 MiB**。CPU 100% 为一个逻辑核，trial CPU 最大是窗口平均值的最大，不是瞬时峰值。外部 host 的独立 sim/RViz/algorithm 负载不计入算法；归档环境负载不能写成重启后的当前进程状态。
+
+5 次恢复发生于 round 1 `p13_yaw3`、`p16_yaw2`，round 2 `p13_yaw1`、`p01_yaw2`，round 3 `p13_yaw1`；原因均为局部数值不收敛，下一扫描仅恢复一次。45 个终态的 queue drop/overflow/stale/oversized/canceled 均为 0；不能据此宣称任意负荷下无丢帧。45 个 `(run_id,repetition,trial_id)` 唯一键及 exact pose-stamp 评分联接全部通过；实际冻结矩阵第 9 项是 `p10_yaw3`。
+
+原始[回归 manifest](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/accuracy45/regression_manifest.json)和三轮 [round 1](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/accuracy45/round_01/results.summary.json)、[round 2](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/accuracy45/round_02/results.summary.json)、[round 3](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/accuracy45/round_03/results.summary.json)保持不动；完整[结果分析](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/analysis.md)、[重算 summary](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/summary.json)和[恢复审计](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/resumption_audit_20261019.md)提供逐项证据。
+
+本 45 项批次的历史清理记录缺失：归档临时 driver 在读取 `/proc/18288/environ` 时抛出 `psutil.AccessDenied`，`cleanup.json` 未落盘；不能宣称历史 zero Twist 成功或完整清理。重启后无所属仿真/ROS 进程仅证明当前状态。正式 batch 已处理该读取异常，归档临时 `bounded_live_runner.py` 不得原样复用；详见[审计](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/resumption_audit_20261019.md)。
+
+地图由同一理想仿真场景的 GT 融合得到；在线估计器不订阅 GT，但参考地图和同源传感器限制了精度结论的外推。raw scan 为 instantaneous、无逐点时间，不能证明真实旋转扫描去畸变或实车可靠性。当前结果没有验证共享 main 中其他用户的 SearchObserver/visualization GUI 版本。timed-scan、Point-LIO 地图/速度、加速旋转、GUI、导航、长时稳定性及 120 项后续测试继续暂停。
+
+### 下一次 55-key 复测入口（本轮未执行）
+
+下一次若另行开展复测，应从正式 [regression_45.py](../tools/global_relocalization/regression_45.py) 的三轮流程进入；第 13 节的 53-key 命令仅属历史复现，不作为当前候选入口。归档临时 `bounded_live_runner.py` 有上述清理缺陷，不能原样复用。
+
+1. 创建全新 output 目录、未占用 ROS domain 和唯一 Gazebo partition；沿用第 3–5 节的隔离启动、simulation audit 和物理预检流程，使用本次冻结的原 15-cell 矩阵（第 9 项 `p10_yaw3`），不得复用旧预检来证明新 session 的实际物理状态。
+2. 明确选择冻结 `bounded_source_root` 与 `bounded_install`，核对 profile/map/core/node SHA-256；确认所有脚本启动时的 setup/LD_LIBRARY_PATH 实际指向该 install。每轮启动后保存 node/core `/proc/<pid>/maps`，不能仅凭工作树或 `ros2 pkg prefix` 推断实际加载 core。保留共享 main 的其他用户改动。
+3. 实际地图路径、manifest/hash、传感器单发布者和物理预检通过后，batch 的 [runtime 参数审计](../tools/global_relocalization/audit_runtime_parameters.py) 必须核对本 profile 全部 **55/55 keys**，并检查 estimator 不订阅 GT。workers=2、OMP=4、server timeout=60 s；不开 GUI、bag 或 point dump。第 6 节的旧 43-key 例子只是历史批次。
+4. 正式入口的必需参数为 `--map --manifest --params --trials --output --physical-precheck --simulation-audit`，三轮独立算法/evaluator 进程，始终保留 45 分母；任一轮失败停止，未执行项明确记 unattempted。内部一次恢复沿用同一 action 计时，不重置预算；按 `(run_id,repetition,action.pose_stamp_ns)` 精确联接唯一评分，按 `(run_id,repetition,trial_id)` 去重。
+5. 启动器只清理自己创建并保留句柄的 `Popen` / process group；先发送零速并持久记录返回结果，再有界等待和升级停止，最后记录 remaining owned PIDs。身份读取遇 AccessDenied 应标为未知并保留证据，不能误杀外部进程或因此中断 cleanup 记录落盘；第 11 节描述拥有进程的身份与清理边界。
+
+以上是下一次复测的准备和验收约束；2026-10-19 本次仅重算原始 45 项并更新文档，没有执行这些入口。

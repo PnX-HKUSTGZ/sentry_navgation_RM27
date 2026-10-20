@@ -29,6 +29,7 @@ int main(int argc,char** argv) {
     Params p;p.ring_key_candidates=5;p.retrieval_all_views=true;
     read(yaml,"raw_deterministic",p.deterministic_preprocessing);
     read(yaml,"candidate_workers",p.candidate_workers);
+    read(yaml,"bounded_global_correspondences",p.bounded_global_correspondences);
 #define READ(key) read(yaml,#key,p.key)
     READ(search_side);READ(side_boundary_x);READ(sc_rings);READ(sc_sectors);READ(top_k);READ(ring_key_candidates);READ(retrieval_all_views);
     READ(db_grid_resolution);READ(db_base_z);READ(db_max_radius);READ(db_min_points);READ(db_min_elevation_deg);READ(db_max_elevation_deg);
@@ -41,6 +42,7 @@ int main(int argc,char** argv) {
     int confirmation_count=3;read(yaml,"raw_confirmation_frames",confirmation_count);
     std::vector<Cloud> independent;
     for(int i=0;i<confirmation_count;++i){Cloud scan;if(pcl::io::loadPCDFile((directory/("independent_"+std::to_string(i)+".pcd")).string(),scan)<0)throw std::runtime_error("missing frozen independent scan");independent.push_back(std::move(scan));}
+    p.minimum_confirmation_scans=size_t(confirmation_count);
     Core core(p);core.loadMap(argv[1]);if(core.mapHash()!=metadata.at("map_sha256").get<std::string>())throw std::runtime_error("map hash differs from captured query metadata");
     const auto result=core.search(query,independent,offset,[]{return false;});
     nlohmann::json out={{"success",result.success},{"reason",result.reason},{"ground_truth_used",false},{"map_sha256",result.map_hash},{"top_k",p.top_k},{"ring_key_candidates",p.ring_key_candidates},{"retrieval_all_views",p.retrieval_all_views},
@@ -50,7 +52,7 @@ int main(int argc,char** argv) {
       {"total_wall_sec",std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count()},{"candidate",candidateJson(result.candidate)},{"hypotheses",nlohmann::json::array()},{"confirmations",nlohmann::json::array()}};
     for(const auto & c:result.hypotheses)out["hypotheses"].push_back(candidateJson(c));
     for(const auto & c:result.confirmations)out["confirmations"].push_back(candidateJson(c));
-    out["effective_params"]={{"deterministic_preprocessing",p.deterministic_preprocessing},{"candidate_workers",p.candidate_workers},{"registration_omp_threads",4},
+    out["effective_params"]={{"bounded_global_correspondences",p.bounded_global_correspondences},{"minimum_confirmation_scans",p.minimum_confirmation_scans},{"deterministic_preprocessing",p.deterministic_preprocessing},{"candidate_workers",p.candidate_workers},{"registration_omp_threads",4},
       {"gicp_leaf_size",p.gicp_leaf_size},{"gicp_max_correspondence",p.gicp_max_correspondence},{"gicp_max_iterations",p.gicp_max_iterations},
       {"max_fitness",p.max_fitness},{"min_inlier_ratio",p.min_inlier_ratio},{"ambiguity_margin",p.ambiguity_margin},
       {"confirmation_max_translation",p.confirmation_max_translation},{"confirmation_max_rotation",p.confirmation_max_rotation}};

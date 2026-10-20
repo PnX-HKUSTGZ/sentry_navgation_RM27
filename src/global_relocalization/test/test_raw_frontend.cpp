@@ -91,6 +91,13 @@ TEST(RawFrontend,SubmapContainsOnlyAcceptedScansAndHardFaultCannotRecover) {
   auto bad=f.processScan(moved,2.7);EXPECT_FALSE(bad.accepted);EXPECT_EQ(bad.failure_class,"hard_fault");EXPECT_EQ(bad.submap_size,5u);EXPECT_EQ(bad.recovery_attempts,0u);
   f.authorizeRecoveryAfterStop(2.7);auto after=f.processScan(cloud,2.8);EXPECT_FALSE(after.accepted);EXPECT_NE(after.reason.find("latched hard fault"),std::string::npos);
 }
+TEST(RawFrontend,SubmapWindowAllowsOneFastRevolutionAndRejectsLonger) {
+  RawFrontendParams p;p.deterministic=true;p.submap_scans=20;
+  StationaryRawFrontend f(p,Eigen::Isometry3d::Identity(),Eigen::Isometry3d::Identity());stationary(f,4.3);
+  auto cloud=scene();
+  for(int j=0;j<22;++j){auto r=f.processScan(cloud,2.+j*.1);ASSERT_TRUE(r.accepted)<<r.reason;EXPECT_EQ(r.submap_size,std::min(j+1,20));}
+  p.submap_scans=31;EXPECT_THROW(StationaryRawFrontend(p,Eigen::Isometry3d::Identity(),Eigen::Isometry3d::Identity()),std::invalid_argument);
+}
 TEST(RawFrontend,RecoveryRequiresPublishedStopThenOneNewScanAndPreservesTrustedPose) {
   RawFrontendParams p;p.deterministic=true;p.numerical_recovery=true;p.max_iterations=1;p.retry_iterations=0;
   StationaryRawFrontend f(p,Eigen::Isometry3d::Identity(),Eigen::Isometry3d::Identity());stationary(f,2.5);auto cloud=scene();auto first=f.processScan(cloud,2.);ASSERT_TRUE(first.accepted);

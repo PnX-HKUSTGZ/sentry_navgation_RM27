@@ -1,5 +1,8 @@
 // Copyright 2026 RM27 contributors. SPDX-License-Identifier: Apache-2.0
 #include "global_relocalization/core.hpp"
+#include "global_relocalization/competition_state.hpp"
+#include "global_relocalization/stopped_confirmation.hpp"
+#include "global_relocalization/visualization.hpp"
 #include "global_relocalization/stationary_raw_frontend.hpp"
 #include "global_relocalization/raw_scan_worker.hpp"
 #include <global_relocalization_interfaces/action/relocalize.hpp>
@@ -8,6 +11,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <tf2_ros/buffer.h>
@@ -33,9 +37,11 @@ class Node : public rclcpp::Node {
 public:
   Node():rclcpp::Node("global_relocalization") {
     auto str=[this](const std::string & n,const std::string & v){return declare_parameter<std::string>(n,v);};
-    auto number=[this](const std::string & n,double v){return declare_parameter<double>(n,v);};
+    auto number=[this](const std::string & n,double v){const auto value=declare_parameter<double>(n,v);if(!std::isfinite(value))throw std::invalid_argument(n+" must be finite");return value;};
     input_mode_=str("input_mode","registered");
     if(input_mode_!="registered"&&input_mode_!="raw_imu")throw std::invalid_argument("input_mode must be registered or raw_imu");
+    competition_mode_=declare_parameter<bool>("competition_mode",false);
+    if(competition_mode_&&input_mode_!="raw_imu")throw std::invalid_argument("competition_mode requires raw_imu input");
     raw_scan_model_=str("raw_scan_model","instantaneous");
     if(raw_scan_model_!="instantaneous")throw std::invalid_argument("timed raw scans require explicit measured per-point timing; unsupported in this profile");
     raw_params_.range_filter=declare_parameter<bool>("raw_range_filter",false);
@@ -56,16 +62,20 @@ public:
     raw_params_.diagnostic_budget_sec=number("raw_local_budget_ms",100.)/1000.;
     raw_params_.stationary_duration=raw_calibration_sec_;
     raw_confirmation_frames_=declare_parameter<int>("raw_confirmation_frames",3);
-    if(raw_params_.submap_scans<1||raw_params_.submap_scans>5||raw_params_.min_range<0||raw_params_.max_range<=raw_params_.min_range||raw_params_.gyro_noise_density<=0||raw_params_.rotation_sigma_floor<=0||raw_params_.retry_iterations<0||raw_params_.retry_iterations>15||raw_confirmation_frames_<3||raw_confirmation_frames_>10||raw_calibration_sec_<=0||raw_params_.leaf_size<=0||raw_params_.max_correspondence<=0||raw_params_.max_iterations<1||raw_params_.max_fitness<=0||raw_params_.min_inlier_ratio<=0||raw_params_.min_inlier_ratio>1||raw_params_.diagnostic_budget_sec<=0)
+    if(raw_params_.submap_scans<1||raw_params_.submap_scans>30||raw_params_.min_range<0||raw_params_.max_range<=raw_params_.min_range||raw_params_.gyro_noise_density<=0||raw_params_.rotation_sigma_floor<=0||raw_params_.retry_iterations<0||raw_params_.retry_iterations>15||raw_confirmation_frames_<3||raw_confirmation_frames_>10||raw_calibration_sec_<=0||raw_params_.leaf_size<=0||raw_params_.max_correspondence<=0||raw_params_.max_iterations<1||raw_params_.max_fitness<=0||raw_params_.min_inlier_ratio<=0||raw_params_.min_inlier_ratio>1||raw_params_.diagnostic_budget_sec<=0)
       throw std::invalid_argument("invalid raw calibration/registration/confirmation parameters");
     map_frame_=str("map_frame","map");odom_frame_=str("odom_frame","odom");
     base_frame_=str("base_frame","base_footprint");lidar_frame_=str("lidar_frame","left_mid360");
-    settle_sec_=number("settle_sec",2.0);spin_speed_=number("spin_speed",0.5);
+    settle_sec_=number("settle_sec",2.0);spin_speed_=number("spin_speed",competition_mode_?2.0943951023931953:0.5);
+    stop_settle_sec_=number("stop_settle_sec",competition_mode_?0.2:settle_sec_);
+    prestart_timeout_sec_=number("prestart_timeout_sec",120.0);post_start_timeout_sec_=number("post_start_timeout_sec",5.0);
     spin_angle_=number("spin_angle",6.283185307179586);timeout_sec_=number("timeout_sec",60.0);
     data_timeout_=number("data_timeout_sec",0.7);
     accumulation_leaf_=number("accumulation_leaf_size",0.05);
     max_translation_=number("max_spin_translation",0.30);
     Params p;
+    p.minimum_confirmation_scans=input_mode_=="raw_imu"?size_t(raw_confirmation_frames_):1;
+    if(competition_mode_&&raw_confirmation_frames_!=3)throw std::invalid_argument("competition_mode requires exactly 3 raw_confirmation_frames");
     p.deterministic_preprocessing=raw_params_.deterministic;
     p.diagnostic_output_dir=str("diagnostic_output_dir","");
     p.search_side=str("search_side","all");p.side_boundary_x=number("side_boundary_x",0.0);search_prior_=p;
@@ -80,11 +90,12 @@ public:
     p.gicp_leaf_size=number("gicp_leaf_size",0.15);p.gicp_max_correspondence=number("gicp_max_correspondence",1.0);
     p.gicp_max_iterations=declare_parameter<int>("gicp_max_iterations",40);
     p.candidate_workers=declare_parameter<int>("candidate_workers",1);
+    p.bounded_global_correspondences=declare_parameter<bool>("bounded_global_correspondences",false);
     p.max_fitness=number("max_fitness",0.20);p.min_inlier_ratio=number("min_inlier_ratio",0.65);
     p.ambiguity_margin=number("ambiguity_margin",0.15);
     p.confirmation_max_translation=number("confirmation_max_translation",0.15);
     p.confirmation_max_rotation=number("confirmation_max_rotation",0.0872664626);
-    if(settle_sec_<=0||std::abs(spin_speed_)<0.01||std::abs(spin_speed_)>1.5||spin_angle_<=0||timeout_sec_<=0||data_timeout_<=0)
+    if(settle_sec_<=0||std::abs(spin_speed_)<0.01||std::abs(spin_speed_)>(competition_mode_?3.5:1.5)||stop_settle_sec_<=0||prestart_timeout_sec_<=0||post_start_timeout_sec_<=0||spin_angle_<=0||timeout_sec_<=0||data_timeout_<=0)
       throw std::invalid_argument("Invalid experiment motion/timing parameters");
     const auto map_path=str("map_path","");const auto manifest_path=str("manifest_path","");
     core_=std::make_unique<Core>(p);core_->loadMap(map_path);
@@ -97,6 +108,7 @@ public:
       if(manifest.contains("map_sha256")&&manifest["map_sha256"]!=core_->mapHash())
         throw std::runtime_error("Map manifest SHA256 disagrees with PCD");
     }
+    if(declare_parameter<bool>("visualization_enabled",false))visualization_=std::make_unique<Visualization>(*this,map_path,map_frame_,p);
     tf_buffer_=std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_=std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
     cmd_pub_=create_publisher<geometry_msgs::msg::Twist>(str("cmd_vel_topic","/cmd_vel"),10);
@@ -116,6 +128,12 @@ public:
       rclcpp::SubscriptionOptions imu_options;imu_options.callback_group=imu_group_;
       imu_sub_=create_subscription<sensor_msgs::msg::Imu>(imu_topic,rclcpp::QoS(rclcpp::KeepLast(200)).reliable(),[this](sensor_msgs::msg::Imu::ConstSharedPtr msg){rawImu(msg);},imu_options);
     }
+    if(competition_mode_) {
+      match_group_=create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+      match_service_=create_service<std_srvs::srv::Trigger>("/global_relocalization/start_match",
+        [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,std::shared_ptr<std_srvs::srv::Trigger::Response> response){startMatch(*response);},
+        rmw_qos_profile_services_default,match_group_);
+    }
     server_=rclcpp_action::create_server<Action>(this,"/global_relocalization/run",
       [this](const rclcpp_action::GoalUUID &,std::shared_ptr<const Action::Goal>){
         std::lock_guard<std::mutex> lock(mutex_);
@@ -125,18 +143,31 @@ public:
       [this](std::shared_ptr<Handle> h){
         std::lock_guard<std::mutex> lock(mutex_);handle_=h;cancel_.store(false);start_=Clock::now();
         stage_start_=start_;stable_start_=start_;sim_start_=now();accumulated_.clear();yaw_=0;have_yaw_=false;
-        have_reference_=false;failure_.clear();input_error_.clear();run_id_=std::to_string(++run_count_);
+        have_reference_=false;failure_.clear();input_error_.clear();run_id_=std::to_string(std::chrono::system_clock::now().time_since_epoch().count())+"_"+std::to_string(++run_count_);
+        if(input_mode_=="raw_imu"){raw_capture_mode_.store(0);raw_pipeline_->cancel();raw_pipeline_->waitIdle();}
+        if(visualization_)visual_generation_.store(visualization_->reset(run_id_));
         if(input_mode_=="raw_imu"){
-          raw_capture_mode_.store(0);raw_pipeline_->cancel();raw_pipeline_->waitIdle();
           {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_=RawImuIngress{};}
           raw_ingress_fault_.store(false);raw_capture_=std::make_shared<RawCapture>();raw_capture_mode_.store(1);
           raw_generation_=raw_pipeline_->begin();
           {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_.active=true;}
-          raw_frontend_.reset();raw_recovery_stage_.clear();raw_recovery_stop_tick_=false;confirmations_.clear();have_cloud_=have_odom_=false;raw_status_=rawInitialStatus();latest_imu_stamp_=-1;raw_yaw_at_spin_=raw_latest_yaw_=0;raw_bias_.setZero();
+          raw_frontend_.reset();raw_recovery_stage_.clear();raw_recovery_stop_tick_=false;confirmations_.clear();confirmation_stamps_.clear();have_cloud_=have_odom_=false;raw_status_=rawInitialStatus();latest_imu_stamp_=-1;raw_yaw_at_spin_=raw_latest_yaw_=0;raw_bias_.setZero();
+        }
+        if(competition_mode_) {
+          competition_generation_.store(competition_.begin());competition_query_points_=0;confirmation_stamps_.clear();
+          competition_prepare_sec_=trigger_to_stable_scan_sec_=trigger_to_first_stopped_scan_sec_=trigger_to_pose_sec_=-1;match_ros_sec_=-1;
+          competition_capture_started_.store(false);competition_spin_origin_.store(0);competition_ready_.store(false);prepared_search_=PreparedSearch{};
+          {std::lock_guard<std::mutex> command_lock(command_mutex_);match_latched_.store(false);competition_active_.store(true);}
         }
         result_=SearchResult{};stage_ros_times_=nlohmann::json::object();stage_times_=nlohmann::json::object();stage_="IDLE";changeStage("SETTLING");
       });
     timer_=create_wall_timer(std::chrono::milliseconds(50),[this]{tick();});
+    if(visualization_) {
+      visual_group_=create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+      visual_timer_=create_wall_timer(std::chrono::milliseconds(50),[this]{
+        try{visualization_->drain();}catch(const std::exception & e){RCLCPP_WARN_THROTTLE(get_logger(),*get_clock(),5000,"Observer publication: %s",e.what());}
+      },visual_group_);
+    }
     shutdown_callback_=get_node_base_interface()->get_context()->add_pre_shutdown_callback([this] {
       // A stop published after rmw_shutdown is too late to reach the bridge.
       // Serialize with tick while DDS is still alive, then wait briefly for
@@ -144,7 +175,7 @@ public:
       shutting_down_.store(true);cancel_.store(true);if(raw_pipeline_)raw_pipeline_->cancel();
       std::lock_guard<std::mutex> lock(mutex_);
       try {
-        cmd_pub_->publish(geometry_msgs::msg::Twist{});
+        publishCommand(geometry_msgs::msg::Twist{});
         cmd_pub_->wait_for_all_acked(std::chrono::milliseconds(100));
       }catch(const std::exception & e){std::cerr<<"global_relocalization pre-shutdown stop: "<<e.what()<<std::endl;}
     });
@@ -153,9 +184,10 @@ public:
   ~Node()override {
     get_node_base_interface()->get_context()->remove_pre_shutdown_callback(shutdown_callback_);
     cancel_.store(true);
-    try{cmd_pub_->publish(geometry_msgs::msg::Twist{});}
+    try{publishCommand(geometry_msgs::msg::Twist{});}
     catch(const std::exception & e){std::cerr<<"global_relocalization shutdown stop publication: "<<e.what()<<std::endl;}
     if(worker_.valid())worker_.wait();
+    if(prepare_worker_.valid())prepare_worker_.wait();
     if(raw_pipeline_)raw_pipeline_->close();
     // ServerGoalHandle's destructor auto-cancels active goals and invokes its
     // weak Server terminal callback. Release Server first so shutdown cannot
@@ -163,6 +195,73 @@ public:
     server_.reset();handle_.reset();
   }
 private:
+  // The service takes this small mutex before latching start and publishing
+  // zero. Every later command observes the latch, including an in-flight tick.
+  void publishCommand(geometry_msgs::msg::Twist command) {
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    if(competition_mode_&&match_latched_.load())command=geometry_msgs::msg::Twist{};
+    cmd_pub_->publish(command);
+  }
+  void startMatch(std_srvs::srv::Trigger::Response & response) {
+    uint64_t generation;bool prepared_at_event;Clock::time_point event_wall;double event_ros;
+    {
+      std::lock_guard<std::mutex> lock(command_mutex_);
+      if(!competition_active_.load()){response.success=false;response.message="no active competition run";return;}
+      if(match_latched_.exchange(true)){response.success=false;response.message="match start already latched for this run";return;}
+      generation=competition_generation_.load();prepared_at_event=competition_ready_.load();event_wall=Clock::now();event_ros=now().seconds();
+      cmd_pub_->publish(geometry_msgs::msg::Twist{});
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if(!handle_||generation!=competition_.generation()){response.success=false;response.message="competition run ended before start event";return;}
+    match_wall_=event_wall;match_ros_sec_=event_ros;
+    const auto outcome=competition_.start();
+    if(!prepared_at_event||outcome!=CompetitionState::Start::Accepted||stage_!="ARMED") {
+      failure_="match started before preparation was ready; rotation remains stopped";cancel_.store(true);
+      response.success=false;response.message=failure_;publishStatus(failure_);return;
+    }
+    stable_start_=match_wall_;raw_stable_ros_stamp_=match_ros_sec_;confirmations_.clear();confirmation_stamps_.clear();
+    raw_capture_mode_.store(2);changeStage("STOPPING");
+    response.success=true;response.message="match start latched; stopping for three independent confirmation scans";
+  }
+  SearchObserver searchObserver() {
+    const auto generation=visual_generation_.load();
+    if(!visualization_)return {};
+    return [this,generation](const SearchEvent & event){visualization_->observe(event,generation);};
+  }
+  void startPreparation(std::shared_ptr<const Cloud> snapshot) {
+    if(!snapshot||snapshot->size()<100){failure_="insufficient first-turn accumulated points";cancel_.store(true);return;}
+    competition_query_points_=snapshot->size();prepare_start_=Clock::now();
+    const auto generation=competition_.generation();const auto offset=raw_reference_sensor_offset_;
+    const auto observer=searchObserver();const auto visual_generation=visual_generation_.load();
+    changeStage("PREPARING");
+    prepare_generation_=generation;
+    prepare_worker_=std::async(std::launch::async,[this,snapshot=std::move(snapshot),offset,observer,visual_generation]{
+      if(visualization_)visualization_->query(*snapshot,visual_generation,true);
+      return core_->prepare(*snapshot,offset,[this]{return cancel_.load()||match_latched_.load();},observer);
+    });
+  }
+  void pollPreparation() {
+    if(stage_!="PREPARING"||!prepare_worker_.valid()||prepare_worker_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
+    try{prepared_search_=prepare_worker_.get();}catch(const std::exception & e){failure_=e.what();cancel_.store(true);return;}
+    competition_prepare_sec_=std::chrono::duration<double>(Clock::now()-prepare_start_).count();result_=prepared_search_.diagnostics();
+    if(match_latched_.load())return;
+    if(!prepared_search_.ready()){failure_="prestart preparation failed: "+result_.reason;cancel_.store(true);return;}
+    if(!competition_.prepared(prepare_generation_)){failure_="stale prestart preparation result";cancel_.store(true);return;}
+    {std::lock_guard<std::mutex> command_lock(command_mutex_);if(match_latched_.load())return;competition_ready_.store(true);}
+    changeStage("ARMED");
+  }
+  void startConfirmation() {
+    if(!competition_.started()||!competition_.isPrepared()||!prepared_search_.ready()){
+      failure_="match confirmation requires a prepared current run and explicit start";cancel_.store(true);return;
+    }
+    final_odom_=latest_base_;final_stamp_=cloud_stamp_;auto scans=std::move(confirmations_);
+    const auto prepared=prepared_search_;const auto observer=searchObserver();changeStage("CONFIRMING");
+    worker_=std::async(std::launch::async,[this,prepared,scans=std::move(scans),observer]{
+      return core_->confirm(prepared,scans,[this]{return cancel_.load();},observer);
+    });
+  }
+  double stopSettle()const{return competition_mode_?stop_settle_sec_:settle_sec_;}
+  bool competitionSpinning()const{return stage_=="SPINNING"||stage_=="PREPARING"||stage_=="ARMED";}
   double elapsed()const{return std::chrono::duration<double>(Clock::now()-start_).count();}
   double stageElapsed()const{return std::chrono::duration<double>(Clock::now()-stage_start_).count();}
   static double yaw(const Eigen::Isometry3d & t){return std::atan2(t.linear()(1,0),t.linear()(0,0));}
@@ -202,6 +301,7 @@ private:
       if(handle_&&have_reference_&&(stage_=="SPINNING"||stage_=="SETTLING")) {
         Cloud local;pcl::transformPointCloud(latest_cloud_,local,odom_reference_.inverse().matrix().cast<float>());
         accumulated_+=local;
+        if(visualization_)visualization_->query(accumulated_,visual_generation_.load());
         // Bound accumulation memory and density without changing its reference frame.
         if(accumulated_.size()>250000) {
           pcl::VoxelGrid<pcl::PointXYZ> voxel;auto input=std::make_shared<Cloud>(accumulated_);
@@ -211,7 +311,7 @@ private:
     }catch(const std::exception & e){input_error_=e.what();}
   }
   struct RawJob {sensor_msgs::msg::PointCloud2::ConstSharedPtr message;};
-  struct RawProcessed {RawFrontendResult frontend;Cloud local_cloud;builtin_interfaces::msg::Time stamp;};
+  struct RawProcessed {RawFrontendResult frontend;Cloud local_cloud;builtin_interfaces::msg::Time stamp;std::shared_ptr<const Cloud> query_snapshot;};
   using RawPipeline=RawScanWorker<RawJob,RawProcessed>;
   struct RawCapture {Cloud accumulated;Eigen::Isometry3d origin{Eigen::Isometry3d::Identity()};bool have_origin{false};};
   struct RawImuIngress {
@@ -229,12 +329,12 @@ private:
     // Independent ingress group: no action-state or registration mutex.
     if(cancel_.load()||shutting_down_.load())return;
     if(msg->header.frame_id!=lidar_frame_) {
-      if(raw_pipeline_->stats().generation==raw_generation_.load()){raw_ingress_fault_.store(true);cmd_pub_->publish(geometry_msgs::msg::Twist{});}
+      if(raw_pipeline_->stats().generation==raw_generation_.load()){raw_ingress_fault_.store(true);publishCommand(geometry_msgs::msg::Twist{});}
       return;
     }
     const auto received=Clock::now();const auto receipt_ros=now().seconds();
     if(!raw_pipeline_->enqueue({msg},msg->data.size(),rclcpp::Time(msg->header.stamp).seconds(),receipt_ros,received))
-      cmd_pub_->publish(geometry_msgs::msg::Twist{});
+      publishCommand(geometry_msgs::msg::Twist{});
   }
   void rawImu(sensor_msgs::msg::Imu::ConstSharedPtr msg) {
     // This callback never takes mutex_: cloud processing and action state cannot
@@ -278,6 +378,7 @@ private:
     if(ingress.accepted_count){angular_speed_=(ingress.gyro-ingress.bias).norm();odom_stamp_=ingress.stamp;odom_received_=ingress.received;}
   }
   RawProcessed processRawItem(const RawPipeline::Item & item) {
+    const auto visual_generation=visual_generation_.load();
     RawProcessed processed;processed.stamp=item.payload.message->header.stamp;std::shared_ptr<StationaryRawFrontend> frontend;
     {std::lock_guard<std::mutex> lock(raw_imu_mutex_);frontend=raw_ingress_.frontend;}
     if(!frontend)throw std::runtime_error("raw worker has no initialized IMU ingress");
@@ -289,8 +390,16 @@ private:
       if(!capture.have_origin){capture.origin.setIdentity();capture.origin.translation()=processed.frontend.reference_from_base.translation();capture.have_origin=true;}
       pcl::transformPointCloud(reference_cloud,processed.local_cloud,capture.origin.inverse().matrix().cast<float>());
       if(raw_capture_mode_.load()==1) {
+        // Only this ordered worker owns the accumulator. The snapshot travels
+        // in its generation-tagged result; the timer never reads it while busy.
+        if(competition_mode_&&!competition_capture_started_.load())return processed;
         capture.accumulated+=processed.local_cloud;
+        if(visualization_)visualization_->query(capture.accumulated,visual_generation);
         if(capture.accumulated.size()>250000){pcl::VoxelGrid<pcl::PointXYZ> voxel;voxel.setInputCloud(capture.accumulated.makeShared());voxel.setLeafSize(accumulation_leaf_,accumulation_leaf_,accumulation_leaf_);Cloud filtered;voxel.filter(filtered);capture.accumulated=std::move(filtered);}
+        if(competition_mode_&&(processed.frontend.cumulative_yaw-competition_spin_origin_.load())*(spin_speed_>0?1:-1)>=6.283185307179586) {
+          processed.query_snapshot=std::make_shared<const Cloud>(std::move(capture.accumulated));
+          raw_capture_mode_.store(4); // Track every new scan without growing query.
+        }
       }
     }
     return processed;
@@ -315,25 +424,41 @@ private:
       raw_status_["registration_attempts"]=nlohmann::json::array();
       for(const auto & a:update.registration_attempts)raw_status_["registration_attempts"].push_back({{"attempt",a.attempt},{"iterations",a.iterations},{"converged",a.converged},{"transform_finite",a.transform_finite},{"fitness",a.fitness},{"inlier_ratio",a.inlier_ratio},{"information_eigen_ratio",a.information_eigen_ratio},{"rotation_prior_error",a.rotation_prior_error},{"translation_step",a.translation_step},{"linear_speed",a.linear_speed},{"rejected_gates",a.rejected_gates}});
       if(update.accepted) {
-        if(stage_=="RECOVERING"){changeStage(raw_recovery_stage_);raw_recovery_stage_.clear();}
+        if(stage_=="RECOVERING"){changeStage(competition_mode_&&match_latched_.load()?"STOPPING":raw_recovery_stage_);raw_recovery_stage_.clear();}
         raw_status_["lidar_used"]=raw_status_.value("lidar_used",0)+1;
         {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_.bias=update.gyro_bias;}
         raw_bias_=update.gyro_bias;latest_base_=update.reference_from_base;
         if(!have_reference_){odom_reference_.setIdentity();odom_reference_.translation()=latest_base_.translation();raw_reference_sensor_offset_=-latest_base_.translation();have_reference_=true;}
         cloud_stamp_=processed.stamp;cloud_received_=done.item.received;
         have_cloud_=have_odom_=true;linear_speed_=update.linear_speed;input_error_.clear();
-        if(stage_=="SPINNING")yaw_=(update.cumulative_yaw-raw_yaw_at_spin_)*(spin_speed_>0?1:-1);
+        if(stage_=="SPINNING"||(competition_mode_&&competitionSpinning()))yaw_=(update.cumulative_yaw-raw_yaw_at_spin_)*(spin_speed_>0?1:-1);
         raw_latest_yaw_=update.cumulative_yaw;
+        if(competition_mode_&&competitionSpinning()&&(latest_base_.translation()-odom_reference_.translation()).norm()>max_translation_) {
+          failure_="local odometry shows excessive translation during competition rotation";cancel_.store(true);raw_pipeline_->cancel();break;
+        }
+        if(competition_mode_&&processed.query_snapshot&&!match_latched_.load()&&stage_=="SPINNING")startPreparation(std::move(processed.query_snapshot));
         if(stage_=="STOPPING") {
-          if(linear_speed_>.04||update.angular_speed>.06)confirmations_.clear();
-          else if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_&&done.item.stamp>=raw_stable_ros_stamp_+settle_sec_){confirmations_.push_back(std::move(processed.local_cloud));while(confirmations_.size()>size_t(raw_confirmation_frames_))confirmations_.erase(confirmations_.begin());}
+          // Scans acquired before the stop command are still spinning. Processing
+          // them late must not restart the stopped-scan window.
+          if(competition_mode_&&done.item.stamp<match_ros_sec_)continue;
+          if(competition_mode_&&trigger_to_first_stopped_scan_sec_<0&&done.item.stamp>=match_ros_sec_&&
+            std::isfinite(update.linear_speed)&&std::isfinite(update.angular_speed)&&update.linear_speed<=.04&&update.angular_speed<=.06)
+            trigger_to_first_stopped_scan_sec_=done.item.stamp-match_ros_sec_;
+          const auto stopped=observeStoppedScan(linear_speed_,update.angular_speed,Clock::now(),
+            now().seconds(),done.item.stamp,stopSettle(),stable_start_,raw_stable_ros_stamp_);
+          if(stopped==StoppedScanState::Moving){confirmations_.clear();confirmation_stamps_.clear();}
+          else if(stopped==StoppedScanState::Ready){
+            confirmations_.push_back(std::move(processed.local_cloud));confirmation_stamps_.push_back(done.item.stamp);
+            while(confirmations_.size()>size_t(raw_confirmation_frames_)){confirmations_.erase(confirmations_.begin());confirmation_stamps_.erase(confirmation_stamps_.begin());}
+            if(competition_mode_&&trigger_to_stable_scan_sec_<0)trigger_to_stable_scan_sec_=std::chrono::duration<double>(Clock::now()-match_wall_).count();
+          }
         }
       }else {
         input_error_=update.reason;
         if(update.failure_class=="numerical_recoverable") {
-          cmd_pub_->publish(geometry_msgs::msg::Twist{});
+          publishCommand(geometry_msgs::msg::Twist{});
           if(raw_frontend_)raw_frontend_->authorizeRecoveryAfterStop(now().seconds());
-          stable_start_=Clock::now();raw_stable_ros_stamp_=now().seconds();confirmations_.clear();
+          stable_start_=Clock::now();raw_stable_ros_stamp_=now().seconds();confirmations_.clear();confirmation_stamps_.clear();
           raw_recovery_stage_=stage_;raw_status_["recovery_reason"]=update.reason;changeStage("RECOVERING");
           // Stop remains visible for this tick. Do not consume a queued recovery result here.
           raw_recovery_stop_tick_=true;break;
@@ -386,8 +511,8 @@ private:
     input_health_={{"have_cloud",have_cloud_},{"have_odom",have_odom_}};
     if(!have_cloud_||!have_odom_)return false;
     const auto now=Clock::now();
-    const auto sensor_received=input_mode_=="raw_imu"&&stage_=="SEARCHING"?raw_input_received_:cloud_received_;
-    const auto sensor_stamp=input_mode_=="raw_imu"&&stage_=="SEARCHING"?raw_input_stamp_:cloud_stamp_;
+    const auto sensor_received=input_mode_=="raw_imu"&&(stage_=="SEARCHING"||stage_=="CONFIRMING")?raw_input_received_:cloud_received_;
+    const auto sensor_stamp=input_mode_=="raw_imu"&&(stage_=="SEARCHING"||stage_=="CONFIRMING")?raw_input_stamp_:cloud_stamp_;
     const double cr=std::chrono::duration<double>(now-sensor_received).count();
     const double od=std::chrono::duration<double>(now-odom_received_).count();
     const double ca=(this->now()-rclcpp::Time(sensor_stamp)).seconds();
@@ -399,6 +524,7 @@ private:
   void changeStage(const std::string & stage) {
     if(stage_!="IDLE"){stage_times_[stage_]=stage_times_.value(stage_,0.0)+stageElapsed();stage_ros_times_[stage_]=stage_ros_times_.value(stage_,0.0)+(now()-stage_ros_start_).seconds();}
     stage_ros_start_=now();stage_=stage;stage_start_=Clock::now();publishStatus("");
+    if(visualization_)visualization_->stage(stage);
   }
   void publishStatus(const std::string & reason) {
     std_msgs::msg::String msg;
@@ -414,6 +540,11 @@ private:
       {"database_size",result_.database_size},{"candidates_tested",result_.candidates_tested},
       {"candidate_workers",result_.candidate_workers},{"retrieval_scored_views",result_.retrieval_scored_views},{"retrieval_candidate_count",result_.retrieval_candidate_count},{"retrieval_ring_added",result_.retrieval_ring_added}}}};
     if(input_mode_=="raw_imu")data["raw_frontend"]=raw_status_;
+    data["competition"]={{"enabled",competition_mode_},{"generation",competition_.generation()},
+      {"start_latched",match_latched_.load()},{"prepared",competition_.isPrepared()},{"release_control",competition_.releaseControl()},
+      {"query_points",competition_query_points_},{"confirmation_scan_count",competition_mode_?confirmation_stamps_.size():confirmations_.size()},
+      {"trigger_ros_sec",match_ros_sec_},{"stop_stable_ros_sec",raw_stable_ros_stamp_},{"confirmation_scan_stamps",confirmation_stamps_},
+      {"prestart_prepare_sec",competition_prepare_sec_},{"trigger_to_stable_scan_sec",trigger_to_stable_scan_sec_},{"trigger_to_first_stopped_scan_sec",trigger_to_first_stopped_scan_sec_},{"trigger_to_pose_sec",trigger_to_pose_sec_}};
     data["metrics"]["hypotheses"]=nlohmann::json::array();
     for(const auto & h:result_.hypotheses)data["metrics"]["hypotheses"].push_back(
       {{"fitness",h.fitness},{"inlier_ratio",h.inlier_ratio},{"converged",h.converged},
@@ -430,14 +561,20 @@ private:
   }
   void finish(bool success,const std::string & reason,
     const geometry_msgs::msg::PoseStamped & pose=geometry_msgs::msg::PoseStamped()) {
-    cmd_pub_->publish(geometry_msgs::msg::Twist{});
+    publishCommand(geometry_msgs::msg::Twist{});
     if(!rclcpp::ok(get_node_base_interface()->get_context())) {
       cancel_.store(true);return;
+    }
+    if(competition_mode_) {
+      if(success&&(!competition_.isPrepared()||!competition_.started())){success=false;failure_="competition success requires preparation and explicit start";}
+      competition_.finish(success);competition_active_.store(false);competition_ready_.store(false);
+      if(success)trigger_to_pose_sec_=std::chrono::duration<double>(Clock::now()-match_wall_).count();
     }
     auto message=std::make_shared<Action::Result>();message->success=success;message->reason=reason;message->pose=pose;
     message->fitness=result_.candidate.fitness;message->inlier_ratio=result_.candidate.inlier_ratio;message->elapsed_sec=elapsed();last_elapsed_=message->elapsed_sec;last_sim_elapsed_=(now()-sim_start_).seconds();
     stage_times_[stage_]=stage_times_.value(stage_,0.0)+stageElapsed();stage_ros_times_[stage_]=stage_ros_times_.value(stage_,0.0)+(now()-stage_ros_start_).seconds();stage_=success?"SUCCEEDED":(handle_->is_canceling()?"CANCELED":"FAILED");publishStatus(reason);
     try {
+      if(visualization_)visualization_->finish(stage_+": "+reason,success?&pose:nullptr);
       if(success){handle_->succeed(message);pose_pub_->publish(pose);}
       else if(handle_->is_canceling())handle_->canceled(message);else handle_->abort(message);
     }catch(const std::runtime_error & e) {
@@ -456,57 +593,74 @@ private:
     std::lock_guard<std::mutex> lock(mutex_);geometry_msgs::msg::Twist cmd;
     if(shutting_down_.load())return;
     if(input_mode_=="raw_imu")processRaw();else processClouds();
-    if(!handle_){cmd_pub_->publish(cmd);return;}
-    if(elapsed()>timeout_sec_){failure_="wall-clock experiment timeout";
+    if(!handle_){if(!competition_mode_||!competition_.releaseControl())publishCommand(cmd);return;}
+    // A start callback has already published zero and is waiting for this
+    // state mutex. Yield without changing preparation/readiness at that event.
+    if(competition_mode_&&match_latched_.load()&&!competition_.started()){publishCommand(cmd);return;}
+    const bool timed_out=competition_mode_?(match_latched_.load()?std::chrono::duration<double>(Clock::now()-match_wall_).count()>post_start_timeout_sec_:elapsed()>prestart_timeout_sec_):elapsed()>timeout_sec_;
+    if(timed_out){failure_=competition_mode_?(match_latched_.load()?"post-start confirmation timeout":"prestart preparation/wait timeout"):"wall-clock experiment timeout";
       if(!input_error_.empty())failure_+=": "+input_error_;
       cancel_.store(true);}
     if(cancel_.load()) {
       if(raw_pipeline_&&raw_capture_mode_.exchange(0)!=0)raw_pipeline_->cancel();
-      cmd_pub_->publish(cmd);
+      publishCommand(cmd);
+      if(prepare_worker_.valid()&&prepare_worker_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
+      if(prepare_worker_.valid())try{prepare_worker_.get();}catch(...){}
       if(worker_.valid()&&worker_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
       if(worker_.valid())try{result_=worker_.get();}catch(...){}
       finish(false,failure_.empty()?"requested cancellation":failure_);return;
     }
     if(!fresh()) {
-      cmd_pub_->publish(cmd);
+      publishCommand(cmd);
       if(stage_=="SETTLING"){stable_start_=Clock::now();publishStatus(input_error_.empty()?"waiting for fresh scan/odometry/TF":input_error_);return;}
       failure_="scan/odometry/TF became stale";
       if(!input_error_.empty())failure_+=": "+input_error_;
       failure_+=" "+input_health_.dump();
       cancel_.store(true);return;
     }
-    if(raw_recovery_stop_tick_){raw_recovery_stop_tick_=false;cmd_pub_->publish(cmd);publishStatus("numerical recovery stop published");return;}
-    if(stage_=="RECOVERING"){cmd_pub_->publish(cmd);publishStatus("waiting for one post-stop scan against last trusted submap");return;}
+    if(raw_recovery_stop_tick_){raw_recovery_stop_tick_=false;publishCommand(cmd);publishStatus("numerical recovery stop published");return;}
+    if(stage_=="RECOVERING"){publishCommand(cmd);publishStatus("waiting for one post-stop scan against last trusted submap");return;}
     if(stage_=="SETTLING") {
       if(!have_reference_) {
         try {base_lidar_=transform(base_frame_,lidar_frame_,cloud_stamp_);odom_reference_=latest_base_;have_reference_=true;}
-        catch(const std::exception & e){stable_start_=Clock::now();publishStatus(e.what());cmd_pub_->publish(cmd);return;}
+        catch(const std::exception & e){stable_start_=Clock::now();publishStatus(e.what());publishCommand(cmd);return;}
       }
       if(linear_speed_>0.04||angular_speed_>0.06)stable_start_=Clock::now();
-      if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_){yaw_=0;raw_yaw_at_spin_=raw_latest_yaw_;changeStage("SPINNING");}
-    }else if(stage_=="SPINNING") {
+      if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_){yaw_=0;raw_yaw_at_spin_=raw_latest_yaw_;competition_spin_origin_.store(raw_latest_yaw_);competition_capture_started_.store(true);changeStage("SPINNING");}
+    }else if(stage_=="SPINNING"||(competition_mode_&&competitionSpinning())) {
       if((latest_base_.translation()-odom_reference_.translation()).norm()>max_translation_) {
         failure_="local odometry shows excessive translation during rotation";cancel_.store(true);
-      }else if(yaw_>=spin_angle_){stable_start_=Clock::now();raw_stable_ros_stamp_=now().seconds();raw_capture_mode_.store(2);confirmations_.clear();changeStage("STOPPING");}
+      }else if(competition_mode_){pollPreparation();if(!cancel_.load())cmd.angular.z=spin_speed_;}
+      else if(yaw_>=spin_angle_){stable_start_=Clock::now();raw_stable_ros_stamp_=now().seconds();raw_capture_mode_.store(2);confirmations_.clear();confirmation_stamps_.clear();changeStage("STOPPING");}
       else cmd.angular.z=spin_speed_;
     }else if(stage_=="STOPPING") {
       if(linear_speed_>0.04||angular_speed_>0.06){stable_start_=Clock::now();raw_stable_ros_stamp_=now().seconds();}
-      if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_) {
+      if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=stopSettle()) {
         if(input_mode_=="raw_imu") {
-          if(confirmations_.size()<size_t(raw_confirmation_frames_)){cmd_pub_->publish(cmd);return;}
+          if(confirmations_.size()<size_t(raw_confirmation_frames_)){publishCommand(cmd);return;}
           raw_pipeline_->freeze();consumeRawResults();snapshotRawScans();
-          if(cancel_.load()){cmd_pub_->publish(cmd);return;}
-          accumulated_=std::move(raw_capture_->accumulated);raw_capture_mode_.store(3);
+          if(cancel_.load()){publishCommand(cmd);return;}
+          const auto stopped=observeStoppedScan(linear_speed_,angular_speed_,Clock::now(),
+            now().seconds(),rclcpp::Time(cloud_stamp_).seconds(),stopSettle(),stable_start_,raw_stable_ros_stamp_);
+          if(!stoppedConfirmationSnapshotReady(cancel_.load(),stage_=="STOPPING",confirmations_.size(),
+            size_t(raw_confirmation_frames_),stopped)) {
+            finish(false,"stopped confirmation invalidated while freezing raw scans");return;
+          }
+          if(!competition_mode_)accumulated_=std::move(raw_capture_->accumulated);raw_capture_mode_.store(3);
+          if(competition_mode_){startConfirmation();publishCommand(cmd);return;}
         }
         if(accumulated_.size()<100){finish(false,"insufficient accumulated points");return;}
         Cloud independent;if(input_mode_=="registered")pcl::transformPointCloud(latest_cloud_,independent,odom_reference_.inverse().matrix().cast<float>());
         final_odom_=latest_base_;final_stamp_=cloud_stamp_;
         auto query=std::move(accumulated_);Eigen::Vector3d offset=input_mode_=="raw_imu"?raw_reference_sensor_offset_:base_lidar_.translation();auto confirmations=std::move(confirmations_);if(input_mode_=="registered")confirmations={independent};changeStage("SEARCHING");
-        worker_=std::async(std::launch::async,[this,query=std::move(query),confirmations=std::move(confirmations),offset]{
-          return core_->search(query,confirmations,offset,[this]{return cancel_.load();});
+        const auto visual_generation=visual_generation_.load();
+        worker_=std::async(std::launch::async,[this,query=std::move(query),confirmations=std::move(confirmations),offset,visual_generation]{
+          if(visualization_)visualization_->query(query,visual_generation,true);
+          SearchObserver observer;if(visualization_)observer=[this,visual_generation](const SearchEvent & event){visualization_->observe(event,visual_generation);};
+          return core_->search(query,confirmations,offset,[this]{return cancel_.load();},observer);
         });
       }
-    }else if(stage_=="SEARCHING") {
+    }else if(stage_=="SEARCHING"||stage_=="CONFIRMING") {
       if(worker_.valid()&&worker_.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
         try{result_=worker_.get();}catch(const std::exception & e){finish(false,e.what());return;}
         if(!result_.success){finish(false,result_.reason);return;}
@@ -518,11 +672,21 @@ private:
         finish(true,result_.reason,message);return;
       }
     }
-    cmd_pub_->publish(cmd);
+    publishCommand(cmd);
     auto feedback=std::make_shared<Action::Feedback>();feedback->stage=stage_;
     feedback->progress=stage_=="SPINNING"?float(std::clamp(yaw_/spin_angle_,0.,1.)*.6+.1):stage_=="SETTLING"?0.:.8;
     feedback->accumulated_yaw=yaw_;handle_->publish_feedback(feedback);
   }
+  bool competition_mode_{false};CompetitionState competition_;
+  std::atomic_bool match_latched_{false},competition_active_{false},competition_capture_started_{false},competition_ready_{false};
+  std::atomic<uint64_t> competition_generation_{0};std::atomic<double> competition_spin_origin_{0};
+  std::mutex command_mutex_;Clock::time_point match_wall_,prepare_start_;
+  double stop_settle_sec_,prestart_timeout_sec_,post_start_timeout_sec_;
+  double match_ros_sec_{-1},competition_prepare_sec_{-1},trigger_to_stable_scan_sec_{-1},trigger_to_first_stopped_scan_sec_{-1},trigger_to_pose_sec_{-1};
+  std::future<PreparedSearch> prepare_worker_;PreparedSearch prepared_search_;uint64_t prepare_generation_{0};
+  size_t competition_query_points_{0};std::vector<double> confirmation_stamps_;
+  rclcpp::CallbackGroup::SharedPtr match_group_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr match_service_;
   Eigen::Vector3d raw_bias_{Eigen::Vector3d::Zero()},raw_reference_sensor_offset_{Eigen::Vector3d::Zero()};
   builtin_interfaces::msg::Time raw_input_stamp_;
   Clock::time_point raw_input_received_;
@@ -540,6 +704,10 @@ private:
   rclcpp::Time stage_ros_start_{0,0,RCL_ROS_TIME};
   std::mutex mutex_;std::atomic_bool cancel_{false},shutting_down_{false};
   rclcpp::PreShutdownCallbackHandle shutdown_callback_;
+  std::unique_ptr<Visualization> visualization_;
+  std::atomic<uint64_t> visual_generation_{0};
+  rclcpp::CallbackGroup::SharedPtr visual_group_;
+  rclcpp::TimerBase::SharedPtr visual_timer_;
   std::unique_ptr<Core> core_;std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   Params search_prior_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;

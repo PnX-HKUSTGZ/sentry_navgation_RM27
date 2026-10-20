@@ -61,3 +61,34 @@ TEST(RawScanWorker,FreezeWaitsForInFlightAndKeepsFinalOrderedResult) {
   auto result=worker.takeResult();ASSERT_TRUE(result);EXPECT_EQ(result->result,7);EXPECT_FALSE(worker.takeResult());EXPECT_EQ(worker.stats().ignored_count,1u);
   ASSERT_TRUE(worker.enqueue(9,1,20.1,20.1));EXPECT_EQ(calls,1);EXPECT_EQ(worker.stats().ignored_count,2u);
 }
+
+#include "global_relocalization/stopped_confirmation.hpp"
+TEST(StoppedConfirmation,MotionFollowedByStableResultInSameBatchRestartsBothClocks) {
+  using Clock=std::chrono::steady_clock;
+  const auto origin=Clock::time_point{};
+  auto wall_start=origin;double ros_start=10.;size_t confirmations=3;
+  auto consume=[&](double linear,double angular,double wall,double ros,double stamp) {
+    const auto state=observeStoppedScan(linear,angular,origin+std::chrono::milliseconds(int(wall*1000)),ros,stamp,2.,wall_start,ros_start);
+    if(state==StoppedScanState::Moving)confirmations=0;
+    else if(state==StoppedScanState::Ready)++confirmations;
+    return state;
+  };
+  EXPECT_EQ(consume(.05,0,5.,15.,14.9),StoppedScanState::Moving);
+  EXPECT_EQ(confirmations,0u);EXPECT_DOUBLE_EQ(ros_start,15.);
+  EXPECT_EQ(consume(0,0,5.,15.,15.),StoppedScanState::Settling);
+  EXPECT_EQ(confirmations,0u);
+  EXPECT_EQ(consume(0,0,7.,17.,16.99),StoppedScanState::Settling);
+  EXPECT_EQ(consume(0,0,6.99,17.,17.),StoppedScanState::Settling);
+  EXPECT_EQ(consume(0,0,7.,17.,17.),StoppedScanState::Ready);
+  EXPECT_EQ(confirmations,1u);
+  EXPECT_EQ(consume(0,.07,7.1,17.1,17.1),StoppedScanState::Moving);
+  EXPECT_EQ(confirmations,0u);EXPECT_DOUBLE_EQ(ros_start,17.1);
+}
+TEST(StoppedConfirmation,FrozenSnapshotRequiresCompleteStoppedUncanceledStage) {
+  EXPECT_TRUE(stoppedConfirmationSnapshotReady(false,true,3,3,StoppedScanState::Ready));
+  for(size_t count:{0u,1u,2u})EXPECT_FALSE(stoppedConfirmationSnapshotReady(false,true,count,3,StoppedScanState::Ready));
+  EXPECT_FALSE(stoppedConfirmationSnapshotReady(true,true,3,3,StoppedScanState::Ready));
+  EXPECT_FALSE(stoppedConfirmationSnapshotReady(false,false,3,3,StoppedScanState::Ready));
+  EXPECT_FALSE(stoppedConfirmationSnapshotReady(false,true,3,3,StoppedScanState::Moving));
+  EXPECT_FALSE(stoppedConfirmationSnapshotReady(false,true,3,3,StoppedScanState::Settling));
+}

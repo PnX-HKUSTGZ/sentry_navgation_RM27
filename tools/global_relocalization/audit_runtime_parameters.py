@@ -34,8 +34,20 @@ def main():
                 raise RuntimeError('parameter response timeout or failure')
             return future.result()
         report['declared_names'] = sorted(result(client.list_parameters()).result.names)
-        report['actual_subscriptions'] = [{'topic': topic, 'types': types}
-            for topic,types in node.get_subscriber_names_and_types_by_node('global_relocalization','/')]
+        subscriptions = None
+        graph_error = None
+        while time.monotonic() < deadline:
+            try:
+                subscriptions = node.get_subscriber_names_and_types_by_node('global_relocalization', '/')
+                break
+            except Exception as error:
+                graph_error = error
+                if 'nonexistent' not in str(error):
+                    raise
+                rclpy.spin_once(node, timeout_sec=0.05)
+        if subscriptions is None:
+            raise RuntimeError(f'global_relocalization node not visible: {graph_error}')
+        report['actual_subscriptions'] = [{'topic': topic, 'types': types} for topic, types in subscriptions]
         if expected.get('input_mode') == 'raw_imu':
             forbidden = [item['topic'] for item in report['actual_subscriptions']
                 if item['topic'] in ['/ground_truth/odometry', expected.get('odom_topic','/odometry')]]

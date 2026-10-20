@@ -102,7 +102,8 @@ TEST(Registration,GlobalRetrievalAndIndependentScanWithNonzeroExtrinsics) {
   Params params;params.db_grid_resolution=.5;params.db_min_points=20;params.db_max_radius=10;
   params.gicp_leaf_size=.06;params.gicp_max_iterations=60;params.top_k=8;params.max_fitness=.04;
   params.min_inlier_ratio=.9;
-  for(bool deterministic:{false,true}) {
+  for(bool bounded:{false,true}) for(bool deterministic:{false,true}) {
+  params.bounded_global_correspondences=bounded;
   params.deterministic_preprocessing=deterministic;
   Core core(params);core.loadMap(path);
   auto result=core.search(query,independent,Eigen::Vector3d(.1,.126,.21),[]{return false;});
@@ -138,7 +139,8 @@ TEST(Registration,SymmetricMapRequiresCoarseSidePrior) {
   Cloud independent;for(size_t i=0;i<query.size();i+=3)independent.push_back(query[i]);
   Params p;p.db_grid_resolution=.5;p.db_min_points=20;p.db_max_radius=12;
   p.gicp_leaf_size=.06;p.gicp_max_iterations=60;p.top_k=20;p.max_fitness=.04;p.min_inlier_ratio=.9;
-  for(bool deterministic:{false,true}) for(int workers:{1,2}) {
+  for(bool bounded:{false,true}) for(bool deterministic:{false,true}) for(int workers:{1,2}) {
+  p.bounded_global_correspondences=bounded;
   p.candidate_workers=workers;
   p.deterministic_preprocessing=deterministic;p.search_side="all";p.side_boundary_x=0;
   pcl::io::savePCDFileBinary(path,map);
@@ -201,6 +203,15 @@ TEST(Retrieval,RetainsContextHypothesesAndIndependentRingKeyCoverage) {
   EXPECT_EQ(std::count_if(covered.begin(),covered.end(),[](const Candidate&c){return c.from_ring_key;}),5);
 }
 
+TEST(Registration,MinimumIndependentConfirmationsRejectsIncompleteInputsBeforeSearch) {
+  Params p;p.minimum_confirmation_scans=3;Core core(p);
+  for(size_t count:{1u,2u}) {
+    const auto result=core.search(Cloud{},std::vector<Cloud>(count),Eigen::Vector3d::Zero(),[]{return false;});
+    EXPECT_FALSE(result.success);EXPECT_EQ(result.reason,"insufficient independent stopped scans");
+    EXPECT_EQ(result.candidates_tested,0u);EXPECT_EQ(result.independent_preparations,0u);
+  }
+  p.minimum_confirmation_scans=0;EXPECT_THROW(Core invalid(p),std::invalid_argument);
+}
 TEST(Registration,ParallelCandidatesPreserveAllSeedsQualityOrderAndConfirmations) {
   const std::string path="/tmp/global_relocalization_parallel_test.pcd";
   Cloud map;std::mt19937 generator(27);
@@ -213,11 +224,27 @@ TEST(Registration,ParallelCandidatesPreserveAllSeedsQualityOrderAndConfirmations
   Cloud independent;for(size_t i=0;i<query.size();i+=3)independent.push_back(query[i]);
   Params p;p.db_grid_resolution=.5;p.db_min_points=20;p.db_max_radius=10;
   p.gicp_leaf_size=.06;p.gicp_max_iterations=60;p.top_k=8;p.ring_key_candidates=3;
-  p.max_fitness=.04;p.min_inlier_ratio=.9;p.deterministic_preprocessing=true;
+  p.max_fitness=.04;p.min_inlier_ratio=.9;p.deterministic_preprocessing=true;p.minimum_confirmation_scans=3;p.bounded_global_correspondences=true;
   Core serial(p);serial.loadMap(path);
   const auto one=serial.search(query,std::vector<Cloud>{independent,independent,independent},Eigen::Vector3d::Zero(),[]{return false;});
   p.candidate_workers=2;Core parallel(p);parallel.loadMap(path);
-  const auto two=parallel.search(query,std::vector<Cloud>{independent,independent,independent},Eigen::Vector3d::Zero(),[]{return false;});
+  std::vector<SearchEvent> observed;
+  const auto two=parallel.search(query,std::vector<Cloud>{independent,independent,independent},Eigen::Vector3d::Zero(),[]{return false;},[&](const SearchEvent & event) {
+    observed.push_back(event);
+    // A broken diagnostic consumer cannot abort a candidate or confirmation.
+    if(event.stage=="GICP_CANDIDATE_START")throw std::runtime_error("observer failure");
+  });
+  ASSERT_FALSE(observed.empty());EXPECT_EQ(observed.front().stage,"RETRIEVAL_COMPLETE");
+  EXPECT_EQ(observed.front().seeds.size(),two.retrieval_candidate_count);
+  EXPECT_EQ(std::count_if(observed.begin(),observed.end(),[](const SearchEvent & e){return e.stage=="GICP_FINE_QUALITY_COMPLETE";}),two.candidates_tested);
+  EXPECT_EQ(std::count_if(observed.begin(),observed.end(),[](const SearchEvent & e){return e.stage=="CONFIRMATION_COMPLETE";}),3);
+  EXPECT_EQ(std::count_if(observed.begin(),observed.end(),[](const SearchEvent & e){return e.stage=="GICP_COARSE_SEED_COMPLETE";}),two.candidates_tested);
+  for(size_t i=0;i<two.retrieval_candidate_count;++i) {
+    auto begin=std::find_if(observed.begin(),observed.end(),[&](const SearchEvent&e){return e.stage=="GICP_CANDIDATE_START"&&e.index==i;});
+    auto end=std::find_if(observed.begin(),observed.end(),[&](const SearchEvent&e){return e.stage=="GICP_FINE_QUALITY_COMPLETE"&&e.index==i;});
+    ASSERT_NE(begin,observed.end());ASSERT_NE(end,observed.end());EXPECT_LT(begin,end);
+    EXPECT_EQ(end->candidate.scan_context_rank,two.hypotheses[i].scan_context_rank);
+  }
   ASSERT_TRUE(one.success)<<one.reason;ASSERT_TRUE(two.success)<<two.reason;
   ASSERT_GT(one.hypotheses.size(),2u);ASSERT_EQ(one.hypotheses.size(),two.hypotheses.size());
   EXPECT_EQ(two.candidates_tested,two.retrieval_candidate_count);
@@ -242,7 +269,7 @@ TEST(Registration,ParallelCandidatesPreserveAllSeedsQualityOrderAndConfirmations
   // Cancel from inside optimizer-stage checks after retrieval has selected >2
   // candidates. Joining must return diagnostics without accepting any result.
   int checks=0;std::chrono::steady_clock::time_point requested;
-  const auto interrupted=parallel.search(query,independent,Eigen::Vector3d::Zero(),[&]{
+  const auto interrupted=parallel.search(query,std::vector<Cloud>{independent,independent,independent},Eigen::Vector3d::Zero(),[&]{
     if(++checks<30)return false;if(checks==30)requested=std::chrono::steady_clock::now();return true;
   });
   const double join_sec=std::chrono::duration<double>(std::chrono::steady_clock::now()-requested).count();
@@ -251,9 +278,124 @@ TEST(Registration,ParallelCandidatesPreserveAllSeedsQualityOrderAndConfirmations
   EXPECT_TRUE(std::any_of(interrupted.hypotheses.begin(),interrupted.hypotheses.end(),[](const Candidate & c){return c.canceled&&c.total_sec>0.;}));
   RecordProperty("cancel_join_sec",join_sec);
   // A subsequent complete search proves all canceled worker tasks were joined.
-  const auto retry=parallel.search(query,independent,Eigen::Vector3d::Zero(),[]{return false;});
+  const auto retry=parallel.search(query,std::vector<Cloud>{independent,independent,independent},Eigen::Vector3d::Zero(),[]{return false;});
   EXPECT_TRUE(retry.success)<<retry.reason;
   p.candidate_workers=3;EXPECT_THROW(Core invalid(p),std::invalid_argument);
   p.candidate_workers=0;EXPECT_THROW(Core invalid(p),std::invalid_argument);
   std::remove(path.c_str());
+}
+
+namespace {
+class StagedRegistration : public ::testing::Test {
+protected:
+  void SetUp() override {
+    path="/tmp/global_relocalization_staged_test.pcd";
+    std::mt19937 generator(27);
+    std::uniform_real_distribution<float> x(-4,4),y(-3,3),z(-.2,2.);
+    for(int i=0;i<1200;++i)map.emplace_back(x(generator),y(generator),z(generator));
+    ASSERT_EQ(pcl::io::savePCDFileBinary(path,map),0);
+    truth.translation()<<1,1,0;
+    truth.linear()=Eigen::AngleAxisd(-M_PI/2,Eigen::Vector3d::UnitZ()).toRotationMatrix();
+    pcl::transformPointCloud(map,query,truth.inverse().matrix().cast<float>());
+    for(size_t i=0;i<query.size();i+=3)independent.push_back(query[i]);
+    p.db_grid_resolution=.5;p.db_min_points=20;p.db_max_radius=10;
+    p.gicp_leaf_size=.06;p.gicp_max_iterations=60;p.top_k=8;
+    p.max_fitness=.04;p.min_inlier_ratio=.9;p.minimum_confirmation_scans=3;
+    p.deterministic_preprocessing=true;p.bounded_global_correspondences=true;
+  }
+  void TearDown() override {std::remove(path.c_str());}
+  std::vector<Cloud> stopped() const {return {independent,independent,independent};}
+  PreparedSearch prepare(Core & core) {return core.prepare(query,offset,[]{return false;});}
+  std::string path;
+  Params p;
+  Cloud map,query,independent;
+  Eigen::Isometry3d truth{Eigen::Isometry3d::Identity()};
+  Eigen::Vector3d offset{.1,.126,.21};
+};
+}
+TEST_F(StagedRegistration,MatchesLegacyNumericsAndDefersAllConfirmationEvents) {
+  Core core(p);core.loadMap(path);
+  const auto legacy=core.search(query,stopped(),offset,[]{return false;});
+  ASSERT_TRUE(legacy.success)<<legacy.reason;
+  std::vector<std::string> stages;
+  const auto observer=[&](const SearchEvent & event){stages.push_back(event.stage);};
+  const auto prepared=core.prepare(query,offset,[]{return false;},observer);
+  ASSERT_TRUE(prepared.ready())<<prepared.diagnostics().reason;
+  EXPECT_FALSE(prepared.diagnostics().success);
+  EXPECT_EQ(prepared.diagnostics().independent_preparations,0u);
+  EXPECT_TRUE(prepared.diagnostics().confirmations.empty());
+  EXPECT_EQ(std::count(stages.begin(),stages.end(),"CONFIRMATION_START"),0);
+  EXPECT_EQ(prepared.diagnostics().candidates_tested,legacy.candidates_tested);
+  ASSERT_EQ(prepared.diagnostics().hypotheses.size(),legacy.hypotheses.size());
+  for(size_t i=0;i<legacy.hypotheses.size();++i) {
+    const auto & a=legacy.hypotheses[i];const auto & b=prepared.diagnostics().hypotheses[i];
+    EXPECT_EQ(a.scan_context_rank,b.scan_context_rank);EXPECT_EQ(a.ring_key_rank,b.ring_key_rank);
+    EXPECT_EQ(a.from_scan_context,b.from_scan_context);EXPECT_EQ(a.from_ring_key,b.from_ring_key);
+    EXPECT_EQ(a.converged,b.converged);EXPECT_EQ(a.within_search_side,b.within_search_side);
+    EXPECT_NEAR(a.fitness,b.fitness,1e-6);EXPECT_NEAR(a.inlier_ratio,b.inlier_ratio,1e-6);
+    EXPECT_TRUE(a.map_from_reference.matrix().isApprox(b.map_from_reference.matrix(),1e-6));
+  }
+  const auto result=core.confirm(prepared,stopped(),[]{return false;},observer);
+  ASSERT_TRUE(result.success)<<result.reason;
+  EXPECT_FALSE(prepared.ready());EXPECT_FALSE(prepared.diagnostics().success);
+  EXPECT_EQ(result.reason,legacy.reason);EXPECT_EQ(result.query_preparations,1u);
+  EXPECT_EQ(result.independent_preparations,3u);ASSERT_EQ(result.confirmations.size(),3u);
+  EXPECT_EQ(std::count(stages.begin(),stages.end(),"CONFIRMATION_COMPLETE"),3);
+  EXPECT_TRUE(result.candidate.map_from_reference.matrix().isApprox(legacy.candidate.map_from_reference.matrix(),1e-6));
+  for(size_t i=0;i<3;++i) {
+    EXPECT_NEAR(result.confirmations[i].fitness,legacy.confirmations[i].fitness,1e-6);
+    EXPECT_TRUE(result.confirmations[i].map_from_reference.matrix().isApprox(legacy.confirmations[i].map_from_reference.matrix(),1e-6));
+  }
+  EXPECT_FALSE(core.confirm(prepared,stopped(),[]{return false;}).success);
+}
+TEST_F(StagedRegistration,RejectsForeignStaleCanceledAndFabricatedContinuations) {
+  Core core(p),other(p);core.loadMap(path);
+  PreparedSearch fabricated;
+  EXPECT_FALSE(fabricated.ready());EXPECT_FALSE(fabricated.diagnostics().success);
+  auto fake_diagnostics=fabricated.diagnostics();fake_diagnostics.success=true;
+  fake_diagnostics.candidate.fitness=0.;fake_diagnostics.candidate.converged=true;
+  EXPECT_FALSE(core.confirm(fabricated,stopped(),[]{return false;}).success);
+  auto prepared=prepare(core);ASSERT_TRUE(prepared.ready())<<prepared.diagnostics().reason;
+  EXPECT_FALSE(other.confirm(prepared,stopped(),[]{return false;}).success);
+  EXPECT_TRUE(prepared.ready()); // A foreign Core cannot consume the original owner's token.
+  core.loadMap(path); // Same hash still invalidates old target preprocessing/provenance.
+  EXPECT_FALSE(prepared.ready());
+  EXPECT_FALSE(core.confirm(prepared,stopped(),[]{return false;}).success);
+  auto canceled=prepare(core);ASSERT_TRUE(canceled.ready())<<canceled.diagnostics().reason;
+  auto copied=canceled;
+  const auto stopped_early=core.confirm(canceled,stopped(),[]{return true;});
+  EXPECT_FALSE(stopped_early.success);EXPECT_EQ(stopped_early.reason,"canceled before independent confirmation");
+  EXPECT_FALSE(copied.ready());EXPECT_FALSE(core.confirm(copied,stopped(),[]{return false;}).success);
+  auto superseded=prepare(core);ASSERT_TRUE(superseded.ready());
+  const auto aborted=core.prepare(query,offset,[]{return true;});
+  EXPECT_FALSE(aborted.ready());EXPECT_FALSE(aborted.diagnostics().success);
+  EXPECT_FALSE(superseded.ready());
+  EXPECT_FALSE(core.confirm(aborted,stopped(),[]{return false;}).success);
+  EXPECT_FALSE(core.confirm(superseded,stopped(),[]{return false;}).success);
+}
+TEST_F(StagedRegistration,RequiresThreeGoodMutuallyConsistentStoppedScans) {
+  Core core(p);core.loadMap(path);
+  auto incomplete=prepare(core);ASSERT_TRUE(incomplete.ready());
+  const auto too_few=core.confirm(incomplete,{independent,independent},[]{return false;});
+  EXPECT_FALSE(too_few.success);EXPECT_EQ(too_few.reason,"insufficient independent stopped scans");
+  EXPECT_EQ(too_few.independent_preparations,0u);EXPECT_FALSE(incomplete.ready());
+  EXPECT_FALSE(core.confirm(incomplete,{},[]{return false;}).success);
+  auto prepared=prepare(core);ASSERT_TRUE(prepared.ready());
+  const auto bad_third=core.confirm(prepared,{independent,independent,Cloud{}},[]{return false;});
+  EXPECT_FALSE(bad_third.success);EXPECT_EQ(bad_third.independent_preparations,3u);
+  EXPECT_EQ(bad_third.reason,"independent stopped scan failed quality or search-side gates");
+  // Each registration can agree with the accumulated cloud within 15 cm, yet
+  // disagree with the other stopped scan by 20 cm. Preserve the pairwise gate.
+  Cloud plus=independent,minus=independent;
+  for(auto & point:plus)point.x+=.1F;
+  for(auto & point:minus)point.x-=.1F;
+  prepared=prepare(core);ASSERT_TRUE(prepared.ready());
+  const auto inconsistent=core.confirm(prepared,{plus,minus,independent},[]{return false;});
+  EXPECT_FALSE(inconsistent.success);
+  EXPECT_EQ(inconsistent.reason,"independent stopped scans disagree with each other");
+  ASSERT_EQ(inconsistent.confirmations.size(),2u);
+  for(const auto & c:inconsistent.confirmations) {
+    EXPECT_TRUE(c.converged);EXPECT_LE(c.fitness,p.max_fitness);EXPECT_GE(c.inlier_ratio,p.min_inlier_ratio);
+    EXPECT_LT((c.map_from_reference.translation()-prepared.diagnostics().candidate.map_from_reference.translation()).norm(),p.confirmation_max_translation);
+  }
 }

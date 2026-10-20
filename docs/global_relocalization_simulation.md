@@ -1,14 +1,40 @@
 # 全局重定位仿真评估报告
 
-**关机检查点：**本轮已按用户要求暂停，下一步顺序和冻结版本 hash 见[恢复检查点](global_relocalization_resume.md)。
+**当前阶段：**55-key bounded 固定 45 项已完成；2026-10-19 复核已有产物，未启动新测试或构建。结果和停止边界见[恢复检查点](global_relocalization_resume.md)。
 
-## 最新鲁棒恢复回归状态（2026-10-14；首轮中止）
+## 当前 bounded 候选（55 keys；固定回归 45/45）
+
+当前冻结 profile SHA-256 为 `1c1bba993a6aae1d9ab9854748839098a31863d1aa943e45e92c1497309db0c0`，55 个参数键，`candidate_workers=2`，server timeout 60 s。冻结 manifest SHA-256 为 `6a12676661f03b7fdfe846f2d7ee67f3e46b3b185281ecef7971b9db7b2927b4`；对应 core/node SHA-256 分别为 `5ac470d46553176b61928400a7672e6963cf2d722ae8aba8cc482e4f65dc592b` / `c662e64e61aa3eb3307100d4e20e8f7c8f9225fb255f18dedc068f5ea4674109`。live binary、source snapshot、输入地图与配置来源见[冻结 manifest](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_frozen_manifest.json)、[live freeze provenance](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_live_p16_20261014T154541Z/freeze_provenance.json)和[run manifest](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_live_p16_20261014T154541Z/run_01/batch_manifest.json)。共享 main 目前还含其他任务的 SearchObserver/visualization 修改；headless 定位验收以归档 source snapshot 和实际加载 binary 为准，observer GUI 不计入验收。
+
+### 已证实的实现与离线结果
+
+审计定位到旧查询会先做无界 KD 最近邻搜索，再按距离拒绝远点。新 adapter 在 KD 查询阶段做精确半径剪枝，同时保留原树结构、tie 处理、距离门限、全部候选、歧义检查和三次独立确认；并行配置仍为 2 candidate workers × 4 OpenMP threads，60 s 服务端 timeout 不变。STOPPING 修复也已合入：逐帧运动会重启完整 2 s wall/ROS 静止窗口；freeze/drain 输入后复核 stage、帧数和稳态；raw Core 至少要求 3 个独立确认帧。
+
+bounded build 的 44 个检查全通过。对相同冻结 p16 capture，原版与 bounded 版完成相同 13 候选和 3 次确认，593 项比较均在绝对误差 1e-12 内，最大差异 2.22e-15。单次同二进制离线查询 wall 为 18.79→5.87 s，CPU 为 74.56→31.46 core-s，峰值 RSS 为 115.60→115.45 MiB。独立微基准的远区查询快约 5.8–6.0 倍，近区基本持平。该 capture 无 GT，这些单样本数据只证明查询行为与耗时变化，不代表 live 正确率、全场景性能或 action P95。原始证据见[bounded comparison](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_validation/comparison.json)、[build/test manifest](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_frozen_manifest.json)和[微基准日志](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_micro.log)。
+
+### 完整 45 项结果与验收口径
+
+2026-10-14 UTC 的冻结回归已完成，2026-10-19 只复核归档：run id `accuracy45_08792fbbe785`，三轮各 15/15，共 **45/45 严格正确**（3D ≤0.10 m、SO(3) ≤2°），40 项无恢复、5 项一次恢复后正确，失败 action / 错误接受均为 0，15 s 内正确 **0/45**。15 秒目标未达到。45/45 只描述固定理想仿真集合，含恢复的系统通过不代表局部配准 100% 成功。
+
+45 项完整 3D 误差均值/RMSE/P95/最大为 **1.165732 / 1.301647 / 2.227641 / 2.846049 mm**；SO(3) 为 **0.029225 / 0.036750 / 0.060048 / 0.122663°**。action elapsed wall 均值/P95/最大为 **27.947963 / 32.315618 / 34.985493 s**（最短 24.840043 s）。P95 对全部 45 项线性插值，不平均每轮 P95。
+
+算法 45 个有效资源窗口总计 **1488.44 core-s**，按窗口 wall 加权 CPU **118.1981%**，trial 窗口平均 CPU 的均值/P95/最大 **114.9132 / 202.3304 / 216.6429%**，最大 RSS **219.984375 MiB**；Gazebo 仿真单列 **1642.36 core-s**、加权 CPU **130.3919%**、最大 RSS **2999.910156 MiB**。CPU 100% 为一个逻辑核，trial CPU 最大是窗口平均值的最大，不是瞬时峰值。外部 host 的独立 sim/RViz/algorithm 负载不计入算法；归档环境负载不能写成重启后的当前进程状态。
+
+5 次恢复发生于 round 1 `p13_yaw3`、`p16_yaw2`，round 2 `p13_yaw1`、`p01_yaw2`，round 3 `p13_yaw1`；原因均为局部数值不收敛，下一扫描仅恢复一次。45 个终态的 queue drop/overflow/stale/oversized/canceled 均为 0；不能据此宣称任意负荷下无丢帧。45 个 `(run_id,repetition,trial_id)` 唯一键及 exact pose-stamp 评分联接全部通过；实际冻结矩阵第 9 项是 `p10_yaw3`。
+
+原始[回归 manifest](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/accuracy45/regression_manifest.json)和三轮 [round 1](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/accuracy45/round_01/results.summary.json)、[round 2](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/accuracy45/round_02/results.summary.json)、[round 3](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/accuracy45/round_03/results.summary.json)保持不动；完整[结果分析](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/analysis.md)、[重算 summary](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/summary.json)和[恢复审计](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/resumption_audit_20261019.md)提供逐项证据。
+
+本 45 项批次的历史清理记录缺失：归档临时 driver 在读取 `/proc/18288/environ` 时抛出 `psutil.AccessDenied`，`cleanup.json` 未落盘；不能宣称历史 zero Twist 成功或完整清理。重启后无所属仿真/ROS 进程仅证明当前状态。正式 batch 已处理该读取异常，归档临时 `bounded_live_runner.py` 不得原样复用；详见[审计](../tools/global_relocalization/data/resume_parallel_validation_20261014T123937Z/bounded_fresh45_20261014T154902Z/resumption_audit_20261019.md)。
+
+地图由同一理想仿真场景的 GT 融合得到；在线估计器不订阅 GT，但参考地图和同源传感器限制了精度结论的外推。raw scan 为 instantaneous、无逐点时间，不能证明真实旋转扫描去畸变或实车可靠性。当前结果没有验证共享 main 中其他用户的 SearchObserver/visualization GUI 版本。timed-scan、Point-LIO 地图/速度、加速旋转、GUI、导航、长时稳定性及 120 项后续测试继续暂停。 GPU headless domain 142 的独立 p16 三次诊断全正确且无恢复（15 秒内 0/3），不计入本批分母；domain 140 的原 15-cell 物理预检为 15/15。旧 53-key 29/30、15 项未试和 54-key p16 60.227 s timeout 均为独立历史记录。
+
+## 历史鲁棒恢复回归（2026-10-14；53-key 首轮中止）
 
 首个鲁棒 profile [`raw_imu_robust_left_half.yaml`](../src/global_relocalization/config/raw_imu_robust_left_half.yaml)（53 个参数键；本次冻结 SHA-256 `7b257f9cccf437a59d9bca777bb874ca2ce917edf0640671f7db261c3470de26`）的固定 15-cell × 3 轮回归，在 fresh session `robust_correctness_fresh_20261014T101242Z_87dd84d4`、ROS domain 139 中第 2 轮发生全局搜索超时并停止：计划 45 项、执行 30 项，其中 29 项 action 成功且严格全姿态评分通过；1 项 action 超时，第三轮 15 项未尝试。session 实际 15/15 物理预检有效。分轮为 round 1：15/15 正确，round 2：14/15 正确并有 1 次超时，round 3：未启动。该 run 的 `passed_45_of_45=false`，29/30 只是已执行部分的条件结果，不能写成 45/45 或完整成功率。旧正式 120 次和旧固定 15 次结果仍是其他配置/矩阵的历史数据。
 
 超时发生在 `p16_yaw2`：server 60 秒预算结束时，14 个检索候选已测试 12 个；与目标区域接近的候选 fitness 为 0.08648、inlier ratio 为 1.0，但还没有完成独立停稳确认，因此没有输出 pose 或评分。raw 前端 queue drop/overflow 为 0、队列深度为 0，单扫描 worker 最大时间约 20.4 ms；本次证据定位到全局候选搜索尚未完成，不支持把它归因于 raw 前端接收积压。该 60 秒门限未放宽。
 
-同一位置的一次独立单 cell 诊断 action 在 54.153 秒内得到严格评分通过，完整 3D 误差为 3.151 mm，SO(3) 误差为 0.03831°。这条诊断记录不属于 45-cell 回归分母。后续 candidate-workers=2 版本现已冻结：54 个参数键，profile SHA-256 `c45f008347edc394dc1b2a0cb09ec05550f222a2ef1408e2a4ea967ae2de238b`，installed core `f3d8063527e4dad6ed815c08e049e4f7fb54acb3a84a3be4a806d7fcb1d355ea`，node `5255eb8295d35ff7935a2b3666ad42dfe79b9221f665a0ea8e13a309f4da88e2`；Release build/install 与 36 个 checks 通过，证据见[关机恢复检查点](global_relocalization_resume.md)。同输入 serial/parallel 对照、取消成本、p16 三次验证和新版本 15×3 回归尚未完成，故不报告速度收益或新版本正确率。
+同一位置的一次独立单 cell 诊断 action 在 54.153 秒内得到严格评分通过，完整 3D 误差为 3.151 mm，SO(3) 误差为 0.03831°。这条诊断记录不属于 45-cell 回归分母。随后曾冻结 54-key、`candidate_workers=2` 版本（profile SHA-256 `c45f008347edc394dc1b2a0cb09ec05550f222a2ef1408e2a4ea967ae2de238b`；core `f3d8063527e4dad6ed815c08e049e4f7fb54acb3a84a3be4a806d7fcb1d355ea`；node `5255eb8295d35ff7935a2b3666ad42dfe79b9221f665a0ea8e13a309f4da88e2`）。该版本的独立 live p16 在 60.227 s 服务端 timeout，未输出 pose，且未进入三次确认；这是历史诊断，不属于当前 55-key bounded build。当前 build 的离线 bounded 对照和 live 状态见本报告顶部。
 
 | 已执行轮次 | 严格正确 | 3D 位置误差 RMSE / 最大 | SO(3) 误差 RMSE / 最大 | action wall 均值 / P95 / 最大 | 15 秒内正确 | 恢复分类 |
 |---|---:|---:|---:|---:|---:|---|
