@@ -101,6 +101,8 @@ if(BUILD_TESTING)
         target_link_libraries(test_projection_clearance ${library_name})
         ament_add_gtest(test_prob_map_raycast test/test_prob_map_raycast.cpp)
         target_link_libraries(test_prob_map_raycast ${library_name})
+        ament_add_gtest(test_articulated_cloud_filter test/test_articulated_cloud_filter.cpp)
+        target_link_libraries(test_articulated_cloud_filter ${library_name})
 endif()
 
 install(TARGETS ${library_name}

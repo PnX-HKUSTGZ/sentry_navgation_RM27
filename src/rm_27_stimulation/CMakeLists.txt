@@ -52,6 +52,9 @@ ament_target_dependencies(rm27_ground_truth_localizer
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME test_gimbal_state
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_gimbal_state.py)
 
   ament_add_gtest(test_ground_truth_odometry test/test_ground_truth_odometry.cpp)
   if(TARGET test_ground_truth_odometry)
@@ -115,6 +118,10 @@ install(DIRECTORY
 install(DIRECTORY include/rm_27_stimulation
   DESTINATION include
 )
+
+install(PROGRAMS scripts/gimbal_control.py scripts/gimbal_panel.py
+  DESTINATION lib/${PROJECT_NAME})
+install(FILES scripts/gimbal_state.py DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY meshes
   DESTINATION share/${PROJECT_NAME}

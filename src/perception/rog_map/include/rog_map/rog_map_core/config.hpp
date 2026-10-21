@@ -225,6 +225,7 @@ public:
     load("cloud_filter.position_frame", cloud_filter_position_frame);
     load("cloud_filter.filter_mode", cloud_filter_mode);
     load("cloud_filter.pose_child_frame", cloud_filter_pose_child_frame);
+    load("cloud_filter.box_frames", cloud_filter_box_frames);
     load("cloud_filter.transform_timeout", cloud_filter_transform_timeout);
     load("cloud_filter.remove_inside", cloud_filter_remove_inside);
     load("cloud_filter.log_stats", cloud_filter_log_stats);
@@ -362,6 +363,7 @@ public:
     layer_denoise_occ_max = 0;
     clearance_check_en = false;
     observed_empty_as_free = false;
+    prior_free_uncertain_obstacle_confirmations = 1;
     bridge_observed_empty_for_ground_connectivity = false;
     ground_connectivity_bridge_max_length = 0.10;
     ground_connectivity_bridge_max_height_delta = 0.06;
@@ -427,6 +429,8 @@ public:
     load("projection.denoise_occ_max", layer_denoise_occ_max);
     load("projection.clearance_check_enable", clearance_check_en);
     load("projection.observed_empty_as_free", observed_empty_as_free);
+    load("projection.prior_free_uncertain_obstacle_confirmations",
+         prior_free_uncertain_obstacle_confirmations);
     load("projection.bridge_observed_empty_for_ground_connectivity",
          bridge_observed_empty_for_ground_connectivity);
     load("projection.ground_connectivity_bridge_max_length",
@@ -463,6 +467,7 @@ public:
     load("projection.robot_footprint_clear_offset_y",
          robot_footprint_clear_offset_y);
     sensor_mount_rpy = loadVec3("projection.sensor_mount_rpy", {0.0, 0.0, 0.0});
+    load("projection.robot_pose_frame", projection_robot_pose_frame);
     load("projection.near_field_prior_fill_enable", near_field_prior_fill_en);
     load("projection.near_field_prior_fill_length",
          near_field_prior_fill_length);
@@ -670,6 +675,8 @@ public:
             max_ground_height_delta ||
         observed_ground_support_bridge_hysteresis_count < 1 ||
         observed_ground_support_bridge_hysteresis_count > 10 ||
+        prior_free_uncertain_obstacle_confirmations < 1 ||
+        prior_free_uncertain_obstacle_confirmations > 20 ||
         !std::isfinite(max_ground_slope_deg) || max_ground_slope_deg < 0.0 ||
         max_ground_slope_deg >= 90.0 || !std::isfinite(ground_seed_radius) ||
         ground_seed_radius <= 0.0 || !std::isfinite(min_headroom_known_ratio) ||
@@ -887,6 +894,7 @@ public:
   int layer_denoise_occ_max{0};
   bool clearance_check_en{false};
   bool observed_empty_as_free{false};
+  int prior_free_uncertain_obstacle_confirmations{1};
   bool bridge_observed_empty_for_ground_connectivity{false};
   double ground_connectivity_bridge_max_length{0.10};
   double ground_connectivity_bridge_max_height_delta{0.06};
@@ -906,6 +914,7 @@ public:
   double robot_footprint_clear_offset_x{0.0};
   double robot_footprint_clear_offset_y{0.0};
   Vec3f sensor_mount_rpy{Vec3f::Zero()};
+  string projection_robot_pose_frame{};
   bool near_field_prior_fill_en{false};
   double near_field_prior_fill_length{0.80};
   double near_field_prior_fill_width{0.50};
@@ -944,6 +953,7 @@ public:
   string cloud_filter_position_frame{"map"};
   string cloud_filter_mode{"transform_center"};
   string cloud_filter_pose_child_frame{};
+  std::vector<std::string> cloud_filter_box_frames{};
   double cloud_filter_transform_timeout{0.05};
   bool cloud_filter_remove_inside{true};
   bool cloud_filter_log_stats{false};

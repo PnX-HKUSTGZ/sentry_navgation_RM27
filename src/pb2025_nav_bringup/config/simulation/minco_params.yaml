@@ -300,9 +300,10 @@ planner_server:
       # been observed yet. Static PGM collisions and measured obstacles remain
       # hard blockers; set false to stop at the observation frontier.
       allow_unknown_motion: true
-      odom_topic: /lidar_odometry
+      # Chassis feedback stays independent of articulated sensor motion.
+      odom_topic: /odometry
       lidar_offset_x: 0.0
-      lidar_offset_y: 0.126
+      lidar_offset_y: 0.0
       safety:
         # Original PGM only: both area and boundary-depth limits must pass.
         # Measured ROG obstacles, unknown policy and headroom stay independent.
@@ -390,6 +391,8 @@ planner_server:
           enable: true
           z_offset: -0.45
           position_frame: base_link
+          # Simulated lidar and IMU share their rigid mounting pose.
+          pose_child_frame: imu_link
           # Transform points into base_link so the self-filter rotates with
           # the vehicle; translating an axis-aligned box is wrong after yaw.
           filter_mode: transform_cloud
@@ -408,13 +411,14 @@ planner_server:
           # Cover the new 0.592 x 0.594 m body without erasing valid near-field
           # returns in the 8 cm strip removed with the old protruding wires.
           positions:
-            x: [0.0]
-            y: [0.0]
-            z: [0.040]
+            x: [0.0, 0.151083]
+            y: [0.0, -0.064732]
+            z: [0.040, -0.000066]
+          box_frames: [base_link, gimbal_roll]
           box_sizes:
-            x: [0.62]
-            y: [0.62]
-            z: [0.24]
+            x: [0.62, 0.246119]
+            y: [0.62, 0.297858]
+            z: [0.24, 0.125430]
         raycasting:
           enable: true
           batch_update_size: 1
@@ -453,6 +457,11 @@ planner_server:
           # In no-elevation mode, empty columns still need observed body-volume
           # clearance. UNKNOWN and occupied returns remain fail-closed.
           observed_empty_as_free: true
+          # A white prior-map cell with an unsupported downward/ramp return is
+          # uncertain, not an immediate global obstacle. Require four
+          # consecutive projections of the same cell before a hard veto; a
+          # real low roof or wall remains blocked once it persists.
+          prior_free_uncertain_obstacle_confirmations: 4
           # Without surveyed ground support, bridge only clearance-verified
           # EMPTY columns in the MID360 near-field blind band. The bridge is
           # length/height bounded and needs a continuing measured ramp at its
@@ -494,9 +503,10 @@ planner_server:
           # /lidar_odometry is at base [0.0, 0.126]; shift the envelope
           # back to the physical base center.
           robot_footprint_clear_offset_x: 0.0
-          robot_footprint_clear_offset_y: -0.126
+          robot_footprint_clear_offset_y: 0.0
           # ROG receives the tilted sensor pose; terrain uses chassis attitude.
-          sensor_mount_rpy: [-0.523598775598, 0.0, 0.0]
+          robot_pose_frame: base_link
+          sensor_mount_rpy: [0.0, 0.0, 0.0]
           # Cover the short swept region between current odometry and MINCO's
           # first local seed. This removes the permanent zero-hit strip cast by
           # the chassis on a downhill exit. In required-support mode it cannot
@@ -511,9 +521,10 @@ planner_server:
           near_field_prior_fill_length: 1.40
           near_field_prior_fill_width: 1.00
           # Axle height 0.080 m + original sensor mount height 0.130 m.
-          robot_origin_to_ground: 0.210
+          # Reference is now the chassis axle, not the moving lidar centre.
+          robot_origin_to_ground: 0.080
           # Trial clearance height: 235 mm; physical collision envelope is 240 mm.
-          vehicle_height: 0.235
+          vehicle_height: 0.050
           headroom_margin: 0.0
           headroom_voxel_inset_fraction: 0.0
           body_bottom_clearance: 0.03
@@ -524,15 +535,15 @@ planner_server:
           ground_seed_tolerance: 0.18
           # Preserve recent connectivity only while the same ground and body
           # clearance are still observed. Never extends itself through a dropout.
-          ground_connectivity_hold_time: 0.8
+          ground_connectivity_hold_time: 1.2
           # Local floor evidence for roof returns; history uses hit timestamps.
-          overhead_ground_search_radius: 0.60
-          overhead_ground_history_time: 1.0
+          overhead_ground_search_radius: 0.80
+          overhead_ground_history_time: 1.5
           max_ground_height_delta: 0.35
           # The strict seed tolerance is capped by this value.  Six cm made
           # voxelized ramp returns disconnect an otherwise continuous ground
           # surface even with ground_seed_tolerance=0.18.
-          max_ground_step: 0.10
+          max_ground_step: 0.12
           max_ground_slope_deg: 28.0
           # MID360's -7.22 deg lower FOV first sees level ground near 1.55 m.
           # Cover the 1.5 m rolling horizon, full body and map processing lag
@@ -755,7 +766,7 @@ fake_vel_transform:
     output_cmd_vel_topic: cmd_vel
     use_sim_time: true
     odom_topic: "odometry"
-    robot_base_frame: "gimbal_yaw"
+    robot_base_frame: "base_link"
     fake_robot_base_frame: "gimbal_yaw_fake"
     cmd_spin_topic: "cmd_spin"
     init_spin_speed: 0.0
@@ -776,6 +787,7 @@ ign_sim_pointcloud_tool:
 rm27_ground_truth_localizer:
   ros__parameters:
     use_sim_time: true
+    dynamic_lidar_transform: true
     ground_truth_odom_topic: "ground_truth/odometry"
     lidar_cloud_topic: "livox/lidar"
     odometry_topic: "odometry"
@@ -939,7 +951,7 @@ sensor_scan_generation:
     use_sim_time: true
     lidar_frame: "left_mid360"
     base_frame: "base_footprint"
-    robot_base_frame: "gimbal_yaw"
+    robot_base_frame: "base_footprint"
 
 terrain_analysis:
   ros__parameters:
@@ -1179,9 +1191,9 @@ minco_input_profiles:
         min_headroom_known_ratio: 0.40
       frames:
         rog_frame: camera_init
-      odom_topic: /aft_mapped_to_init
+      odom_topic: /odometry
       lidar_offset_x: 0.0
-      lidar_offset_y: 0.126
+      lidar_offset_y: 0.0
       rog_map:
         frame_id: camera_init
         ros_callback:

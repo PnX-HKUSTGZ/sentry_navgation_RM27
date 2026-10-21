@@ -10,6 +10,7 @@ ign_sim_pointcloud_tool:
 rm27_ground_truth_localizer:
   ros__parameters:
     use_sim_time: True
+    dynamic_lidar_transform: true
     ground_truth_odom_topic: "ground_truth/odometry"
     lidar_cloud_topic: "livox/lidar"
     odometry_topic: "odometry"
@@ -175,7 +176,7 @@ sensor_scan_generation:
     use_sim_time: True
     lidar_frame: "left_mid360"
     base_frame: "base_footprint"
-    robot_base_frame: "gimbal_yaw"
+    robot_base_frame: "base_footprint"
 
 terrain_analysis:
   ros__parameters:
@@ -235,7 +236,7 @@ fake_vel_transform:
   ros__parameters:
     use_sim_time: True
     odom_topic: "odometry"
-    robot_base_frame: "gimbal_yaw"
+    robot_base_frame: "base_link"
     fake_robot_base_frame: "gimbal_yaw_fake"
     input_cmd_vel_topic: "cmd_vel_nav2_result"
     output_cmd_vel_topic: "cmd_vel"

@@ -1420,6 +1420,7 @@ TEST(ProjectionClearance, NavigationOverlayIsNeutralUnlessEvidenceIsStrong) {
   EXPECT_EQ(rog_map::navigationOverlayValue(neutral), -1);
 
   auto measured_low_obstacle = neutral;
+  measured_low_obstacle.type = rog_map::CellType::OCCUPIED;
   measured_low_obstacle.raw_reason =
       rog_map::ProjectionClassReason::HEADROOM_BLOCKED;
   EXPECT_EQ(rog_map::navigationOverlayValue(measured_low_obstacle), 100);
@@ -2679,6 +2680,74 @@ TEST(ProjectionClearance, ClearsOnlyZeroHitUnknownInsideCurrentRobotFootprint) {
   EXPECT_EQ(layer.cells().front().type, rog_map::CellType::UNKNOWN);
 }
 
+TEST(ProjectionClearance, NoPriorFootprintClearAccumulatesConsecutiveFrames) {
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.require_ground_support = false;
+  config.observed_empty_as_free = true;
+  config.unknown_as_occupied = false;
+  config.clear_robot_footprint_unknown = true;
+  config.robot_footprint_clear_length = .20;
+  config.robot_footprint_clear_width = .20;
+  config.hysteresis_en = true;
+  config.hysteresis_count = 2;
+  const auto blocked = [](int, int) { return column({1, 2, 3, 4, 5}); };
+  const auto blind = [](int, int) {
+    rog_map::ColumnStats stats;
+    stats.vertical_states.assign(11U, rog_map::VerticalVoxelState::UNKNOWN);
+    stats.vertical_states.front() = rog_map::VerticalVoxelState::KNOWN_FREE;
+    stats.observed_count = 1;
+    return stats;
+  };
+
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config, blocked);
+  ASSERT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.1, config, blind);
+  ASSERT_EQ(center(layer).raw_reason, rog_map::ProjectionClassReason::ROBOT_FOOTPRINT_CLEAR);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(center(layer).pending_count, 1U);
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.2, config, blind);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::FREE);
+  EXPECT_EQ(center(layer).mask, 1U);
+  EXPECT_EQ(center(layer).pending_count, 0U);
+
+  // A new measured return must still block immediately and restart clearing.
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.3, config, blocked);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.4, config, blind);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.5, config, blocked);
+  EXPECT_EQ(center(layer).pending_count, 0U);
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.6, config, blind);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(center(layer).pending_count, 1U);
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.7, config, blind);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::FREE);
+}
+
+TEST(ProjectionClearance, DisappearedObstacleCanReturnToAllowedUnknown) {
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.unknown_as_occupied = false;
+  config.clearance_unknown_as_occupied = false;
+  config.hysteresis_en = true;
+  config.hysteresis_count = 2;
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+               [](int, int) { return column({1, 2, 3, 4, 5}); });
+  ASSERT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+  const auto blind = [](int, int) {
+    rog_map::ColumnStats stats;
+    stats.vertical_states.assign(11U, rog_map::VerticalVoxelState::UNKNOWN);
+    return stats;
+  };
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.1, config, blind);
+  ASSERT_EQ(center(layer).raw_type, rog_map::CellType::UNKNOWN);
+  EXPECT_EQ(center(layer).pending_count, 1U);
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.2, config, blind);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::UNKNOWN);
+  EXPECT_EQ(center(layer).mask, 1U);
+}
+
 TEST(ProjectionClearance,
      ClearsZeroHitHeadroomUnverifiedInsideCurrentRobotFootprint) {
   rog_map::ProjectionLayer layer;
@@ -3602,6 +3671,38 @@ TEST(ProjectionClearance, PendingRoofIsLocallyBlockedButNotGlobalObstacle) {
   EXPECT_EQ(roof.value, 254U);
   EXPECT_EQ(roof.raw_reason, rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
   EXPECT_EQ(rog_map::navigationOverlayValue(roof), -1);
+}
+
+TEST(ProjectionClearance, UnsupportedPriorFreeReturnNeedsPersistence) {
+  rog_map::ProjectionLayer layer;
+  auto config = downhillTunnelConfig();
+  config.prior_free_uncertain_obstacle_confirmations = 3;
+  const auto scan = [](int x, int y) {
+    return preciseTunnelColumn(false, x == 6 && y == 6);
+  };
+
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, scan);
+  const auto &first = layer.cells().at(84);
+  EXPECT_EQ(first.type, rog_map::CellType::UNKNOWN);
+  EXPECT_EQ(first.raw_type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(first.raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+  EXPECT_EQ(rog_map::navigationOverlayValue(first), -1);
+
+  layer.update(13, 13, 0.05, kOrigin, 1.1, config, scan);
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::UNKNOWN);
+  EXPECT_EQ(layer.cells().at(84).pending_count, 2U);
+
+  layer.update(13, 13, 0.05, kOrigin, 1.2, config, scan);
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(layer.cells().at(84).raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+  // Once persistent evidence is confirmed it must not become UNKNOWN every
+  // time the generic hysteresis counter is reset by an OCCUPIED commit.
+  for (int frame = 3; frame < 12; ++frame) {
+    layer.update(13, 13, 0.05, kOrigin, 1.0 + .1 * frame, config, scan);
+    EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::OCCUPIED);
+  }
 }
 
 TEST(ProjectionClearance, MeasuredLowBeamStillBlocksAndMarksGlobalObstacle) {

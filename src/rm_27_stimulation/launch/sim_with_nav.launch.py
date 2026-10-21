@@ -115,6 +115,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "worlds_config": worlds_config_path,
                 "use_sim_time": LaunchConfiguration("use_sim_time").perform(context),
                 "spawn_delay": LaunchConfiguration("spawn_delay").perform(context),
+                "gimbal_panel": LaunchConfiguration("gimbal_panel").perform(context),
             }.items(),
         ),
         TimerAction(
@@ -188,6 +189,8 @@ def generate_launch_description():
                 default_value="false",
                 description="Start Gazebo GUI client when true",
             ),
+            DeclareLaunchArgument("gimbal_panel", default_value="true",
+                                  description="Open the two-button yaw/roll control window"),
             DeclareLaunchArgument(
                 "hardware_acceleration",
                 default_value="true",

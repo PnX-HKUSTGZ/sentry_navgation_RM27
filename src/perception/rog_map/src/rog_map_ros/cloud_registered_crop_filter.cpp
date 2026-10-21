@@ -85,6 +85,10 @@ CloudRegisteredCropFilter::CloudRegisteredCropFilter(const Config & config,
   for (auto & box : boxes_) {
     box.size.array() += 2.0F * padding;
   }
+  box_frames_ = config.cloud_filter_box_frames;
+  if (!box_frames_.empty() && box_frames_.size() != boxes_.size()) {
+    throw std::invalid_argument("cloud_filter.box_frames must match the box count");
+  }
 
   RCLCPP_INFO(logger_,
     "[ROGMap CloudFilter] enabled frame=%s mode=%s pose_child=%s tf_timeout=%.3fs "
@@ -169,6 +173,7 @@ bool CloudRegisteredCropFilter::transformFromMatchedPose(
   const super_utils::Pose & matched_pose,
   const std::string & pose_parent_frame,
   const std::string & pose_child_frame,
+  const rclcpp::Time & stamp,
   Eigen::Matrix4f & filter_from_cloud)
 {
   if (cloud_frame.empty() || filter_frame.empty() ||
@@ -187,26 +192,13 @@ bool CloudRegisteredCropFilter::transformFromMatchedPose(
 
   Eigen::Matrix4f filter_from_pose_child = Eigen::Matrix4f::Identity();
   if (filter_frame != resolved_child) {
-    if (has_cached_filter_from_pose_child_ &&
-      cached_pose_child_frame_ == resolved_child)
-    {
-      filter_from_pose_child = cached_filter_from_pose_child_;
-    } else {
-      const rclcpp::Time latest_time(0, 0, clock_->get_clock_type());
-      if (!lookupTransform(
-          filter_frame, resolved_child, latest_time,
-          filter_from_pose_child))
-      {
-        return false;
-      }
-      cached_pose_child_frame_ = resolved_child;
-      cached_filter_from_pose_child_ = filter_from_pose_child;
-      has_cached_filter_from_pose_child_ = true;
+    if (!lookupTransform(filter_frame, resolved_child, stamp, filter_from_pose_child)) {
+      return false;
     }
   }
 
   // Odometry pose is T_parent_child and the registered cloud is expressed in
-  // the parent frame. Compose it with the static T_filter_child extrinsic.
+  // the parent frame. The mounting transform can include articulated joints.
   const Eigen::Matrix4f parent_from_pose_child = poseToMatrix(matched_pose);
   filter_from_cloud = filter_from_pose_child * parent_from_pose_child.inverse();
   return filter_from_cloud.allFinite();
@@ -240,7 +232,7 @@ bool CloudRegisteredCropFilter::filter(
     Eigen::Matrix4f filter_from_cloud = Eigen::Matrix4f::Identity();
     if (transformFromMatchedPose(
         cloud_frame, filter_frame, matched_pose, pose_parent_frame,
-        pose_child_frame, filter_from_cloud))
+        pose_child_frame, rclcpp::Time(header.stamp), filter_from_cloud))
     {
       transform = transform_centers ? filter_from_cloud.inverse() :
         filter_from_cloud;
@@ -263,6 +255,17 @@ bool CloudRegisteredCropFilter::filter(
   const bool transform_centers = need_transform && filter_mode_ == "transform_center";
   prepareBoxesForCloudFrame(transform, transform_centers);
   const std::string crop_frame = filter_mode_ == "transform_cloud" ? filter_frame : cloud_frame;
+  for (size_t i = 0; i < box_frames_.size(); ++i) {
+    if (box_frames_[i].empty() || box_frames_[i] == filter_frame) {
+      continue;
+    }
+    Eigen::Matrix4f crop_from_box;
+    if (!lookupTransform(crop_frame, box_frames_[i], rclcpp::Time(header.stamp), crop_from_box)) {
+      return false;
+    }
+    working_boxes_[i].center = transformPoint(crop_from_box, boxes_[i].center);
+    working_boxes_[i].rotation = Eigen::Quaternionf(crop_from_box.block<3, 3>(0, 0)).normalized();
+  }
   const float min_z = static_cast<float>(matched_pose.first.z()) + z_offset_;
   const size_t raw_points = cloud.points.size();
   size_t after_z_points = 0;
@@ -284,8 +287,9 @@ bool CloudRegisteredCropFilter::filter(
     bool inside_any = false;
     for (size_t i = 0; i < working_boxes_.size(); ++i) {
       const Eigen::Vector3f half_size = 0.5F * working_boxes_[i].size;
-      const bool inside = (test_point.array() >= (working_boxes_[i].center - half_size).array()).all() &&
-                          (test_point.array() <= (working_boxes_[i].center + half_size).array()).all();
+      const Eigen::Vector3f local = working_boxes_[i].rotation.conjugate() *
+        (test_point - working_boxes_[i].center);
+      const bool inside = (local.array().abs() <= half_size.array()).all();
       if (inside) {
         inside_any = true;
         ++box_hit_counts_[i];
@@ -377,7 +381,10 @@ void CloudRegisteredCropFilter::publishVisualization(const std_msgs::msg::Header
     box.pose.position.x = boxes[i].center.x();
     box.pose.position.y = boxes[i].center.y();
     box.pose.position.z = boxes[i].center.z();
-    box.pose.orientation.w = 1.0;
+    box.pose.orientation.w = boxes[i].rotation.w();
+    box.pose.orientation.x = boxes[i].rotation.x();
+    box.pose.orientation.y = boxes[i].rotation.y();
+    box.pose.orientation.z = boxes[i].rotation.z();
     box.scale.x = boxes[i].size.x();
     box.scale.y = boxes[i].size.y();
     box.scale.z = boxes[i].size.z();

@@ -168,5 +168,6 @@ protected:
 
   mutable std::mutex robot_state_mutex_;
   RobotState robot_state_;
+  RobotState projection_robot_state_;
 };
 } // namespace rog_map

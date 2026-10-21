@@ -13,7 +13,7 @@
   <xacro:property name="cad_body_z_scale" value="${folded_top_z / 0.16638150811195374}" />
   <xacro:property name="cad_sensor_z_scale" value="${(folded_top_z - 0.130) / (0.168313 - 0.130)}" />
   <xacro:property name="omni_friction" value="0.05" />
-  <xacro:property name="body_mass" value="8.2" />
+  <xacro:property name="body_mass" value="5.0" />
   <xacro:property name="wheel_mass" value="0.5" />
   <xacro:property name="PI" value="3.1415926"/>
   <material name="cad_body"><color rgba="0.26 0.29 0.32 1" /></material>
@@ -69,11 +69,9 @@
 
   <link name="base_link">
     <xacro:if value="$(arg use_cad_visual)">
-      <xacro:cad_visual mesh="body" material="cad_body" z_scale="${cad_body_z_scale}" />
+      <xacro:cad_visual mesh="chassis_body" material="cad_body" />
       <xacro:cad_visual mesh="wheels" material="cad_wheels" />
-      <xacro:cad_visual mesh="armor" material="cad_armor" z_scale="${cad_body_z_scale}" />
-      <xacro:cad_visual mesh="sensors" material="cad_sensors" z_scale="${cad_sensor_z_scale}"
-                        z_origin="${0.130 * (1.0 - cad_sensor_z_scale)}" />
+      <xacro:cad_visual mesh="chassis_armor" material="cad_armor" />
     </xacro:if>
     <xacro:unless value="$(arg use_cad_visual)">
       <visual>
@@ -94,13 +92,6 @@
       </geometry>
       <origin rpy="0 0 0" xyz="0 0 0.06" />
     </collision>
-    <collision>
-      <geometry>
-        <!-- Keep the folded collision top 240 mm above the wheel contact plane. -->
-        <box size="0.362 0.354 0.040" />
-      </geometry>
-      <origin rpy="0 0 0" xyz="-0.043 -0.016 ${folded_top_z - 0.020}" />
-    </collision>
     <!-- STL has no material density. Preserve the validated 10.2 kg total
          mass, but derive the inertia from the CAD body envelope. -->
     <xacro:box_inertial mass="${body_mass}" x="0.54" y="0.54" z="${0.20 * cad_body_z_scale}"
@@ -114,11 +105,44 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <link name="gimbal_yaw"/>
-  <joint name="gimbal_yaw_joint" type="fixed">
+  <link name="gimbal_yaw">
+    <xacro:if value="$(arg use_cad_visual)">
+      <xacro:cad_visual mesh="yaw_body" material="cad_body" />
+      <xacro:cad_visual mesh="yaw_sensors" material="cad_sensors" />
+    </xacro:if>
+    <collision>
+      <origin xyz="-0.073114 -0.031 0.082082"/>
+      <geometry><box size="0.298 0.378 0.155837"/></geometry>
+    </collision>
+    <xacro:box_inertial mass="2.4" x="0.298" y="0.378" z="0.155837"
+                       ox="-0.073114" oy="-0.031" oz="0.082082"/>
+  </link>
+  <joint name="gimbal_yaw_joint" type="continuous">
     <parent link="base_link"/>
     <child link="gimbal_yaw"/>
-    <origin xyz="0 0 0.12" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="5.0" velocity="1.2"/>
+    <dynamics damping="0.05" friction="0.0"/>
+  </joint>
+
+  <link name="gimbal_roll">
+    <xacro:if value="$(arg use_cad_visual)">
+      <xacro:cad_visual mesh="roll_body" material="cad_body" />
+    </xacro:if>
+    <collision>
+      <origin xyz="0.151083 -0.064732 -0.000066"/>
+      <geometry><box size="0.246119 0.297858 0.125430"/></geometry>
+    </collision>
+    <xacro:box_inertial mass="0.8" x="0.246119" y="0.297858" z="0.125430"
+                       ox="0.151083" oy="-0.064732" oz="-0.000066"/>
+  </link>
+  <joint name="gimbal_roll_joint" type="revolute">
+    <parent link="gimbal_yaw"/><child link="gimbal_roll"/>
+    <origin xyz="0.005862518 0.015803345 0.087848857"/>
+    <axis xyz="-1 0 0"/>
+    <limit lower="0.0" upper="${PI/2}" effort="5.0" velocity="1.0"/>
+    <dynamics damping="0.05" friction="0.0"/>
   </joint>
 
   <link name="wheel_1">
@@ -202,7 +226,7 @@
   <joint name="imu_joint" type="fixed">
     <axis xyz="0 1 0" />
     <origin xyz="$(arg xyz)" rpy="$(arg rpy)"/>
-    <parent link="base_link"/>
+    <parent link="gimbal_yaw"/>
     <child link="imu_link"/>
   </joint>
 
@@ -271,6 +295,20 @@
 
   <!-- Drive controller plugin -->
   <gazebo>
+    <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+      <joint_name>gimbal_yaw_joint</joint_name><topic>/sim/gimbal/yaw_position</topic>
+      <p_gain>40</p_gain><i_gain>5</i_gain><d_gain>2</d_gain>
+      <i_max>2</i_max><i_min>-2</i_min><cmd_max>5</cmd_max><cmd_min>-5</cmd_min>
+    </plugin>
+    <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+      <joint_name>gimbal_roll_joint</joint_name><topic>/sim/gimbal/roll_position</topic>
+      <p_gain>40</p_gain><i_gain>5</i_gain><d_gain>2</d_gain>
+      <i_max>2</i_max><i_min>-2</i_min><cmd_max>5</cmd_max><cmd_min>-5</cmd_min>
+    </plugin>
+    <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+      <joint_name>gimbal_yaw_joint</joint_name><joint_name>gimbal_roll_joint</joint_name>
+      <topic>/sim/gimbal/joint_states</topic>
+    </plugin>
     <plugin name="rm_27_stimulation::CmdVelPoseControlSystem" filename="librm27_cmd_vel_pose_control_system.so">
       <topic>/cmd_vel</topic>
       <body_frame>true</body_frame>
@@ -313,7 +351,7 @@
 
   <!-- Livox-Mid360  -->
   <xacro:include filename="$(find rm_27_stimulation)/urdf/mid360.xacro" />
-  <xacro:mid360 name="left_mid360" parent="base_link" topic="/livox/lidar"
+  <xacro:mid360 name="left_mid360" parent="gimbal_yaw" topic="/livox/lidar"
                   hide_visual="$(arg use_cad_visual)">
     <origin xyz="$(arg xyz)" rpy="$(arg rpy)" />
   </xacro:mid360>

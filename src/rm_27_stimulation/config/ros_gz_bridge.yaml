@@ -6,6 +6,27 @@
   qos_profile: CLOCK
   lazy: false
 
+- ros_topic_name: "/joint_states"
+  gz_topic_name: "/sim/gimbal/joint_states"
+  ros_type_name: "sensor_msgs/msg/JointState"
+  gz_type_name: "gz.msgs.Model"
+  direction: GZ_TO_ROS
+  lazy: false
+
+- ros_topic_name: "/sim/gimbal/yaw_position"
+  gz_topic_name: "/sim/gimbal/yaw_position"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: ROS_TO_GZ
+  lazy: false
+
+- ros_topic_name: "/sim/gimbal/roll_position"
+  gz_topic_name: "/sim/gimbal/roll_position"
+  ros_type_name: "std_msgs/msg/Float64"
+  gz_type_name: "gz.msgs.Double"
+  direction: ROS_TO_GZ
+  lazy: false
+
 - ros_topic_name: "cmd_vel"
   gz_topic_name: "/cmd_vel"
   ros_type_name: "geometry_msgs/msg/Twist"

@@ -23,6 +23,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 #include "rm_27_stimulation/ground_truth_state_buffer.hpp"
 #include "rm_27_stimulation/organized_lidar_miss_rays.hpp"
@@ -142,6 +144,12 @@ public:
     base_to_lidar_.setOrigin(
         tf2::Vector3(lidar_xyz[0], lidar_xyz[1], lidar_xyz[2]));
     base_to_lidar_.setRotation(base_to_lidar_rotation);
+
+    dynamic_lidar_transform_ = this->declare_parameter<bool>("dynamic_lidar_transform", false);
+    if (dynamic_lidar_transform_) {
+      mount_tf_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+      mount_listener_ = std::make_unique<tf2_ros::TransformListener>(*mount_tf_);
+    }
 
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     static_tf_broadcaster_ =
@@ -500,8 +508,33 @@ private:
 
   void processReadyScan(const ReadyScan & ready)
   {
+    tf2::Transform mount = base_to_lidar_;
+    tf2::Vector3 relative_linear(0, 0, 0), relative_angular(0, 0, 0);
+    if (dynamic_lidar_transform_) {
+      const rclcpp::Time stamp(ready.message->header.stamp, get_clock()->get_clock_type());
+      try {
+        const auto current = mount_tf_->lookupTransform(
+          robot_base_frame_, lidar_frame_, stamp, rclcpp::Duration::from_seconds(.10));
+        const auto previous = mount_tf_->lookupTransform(
+          robot_base_frame_, lidar_frame_, stamp-rclcpp::Duration::from_seconds(.01));
+        tf2::Transform before;
+        tf2::fromMsg(current.transform, mount);
+        tf2::fromMsg(previous.transform, before);
+        relative_linear = (mount.getOrigin()-before.getOrigin()) / .01;
+        auto delta = mount.getRotation() * before.getRotation().inverse();
+        delta.normalize();
+        if (delta.w() < 0) {
+          delta = -delta;
+        }
+        relative_angular = delta.getAxis() * (delta.getAngleShortestPath() / .01);
+      } catch (const tf2::TransformException & error) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+          "Skipping scan without acquisition-time articulated mount TF: %s", error.what());
+        return;
+      }
+    }
     const tf2::Transform odom_to_lidar =
-      ready.state.odom_to_base * base_to_lidar_;
+      ready.state.odom_to_base * mount;
 
     sensor_msgs::msg::PointCloud2 source_scan;
     const sensor_msgs::msg::PointCloud2 * scan_to_transform = ready.message.get();
@@ -581,7 +614,17 @@ private:
     setPose(odom_to_lidar, lidar_odometry.pose.pose);
     lidar_odometry.pose.covariance = ready.state.pose_covariance;
     lidar_odometry.twist =
-      transformTwistFromBaseToChild(ready.state.base_twist, base_to_lidar_);
+      transformTwistFromBaseToChild(ready.state.base_twist, mount);
+    // Joint motion contributes velocity even when the chassis is stationary.
+    const auto inverse_basis = mount.getBasis().transpose();
+    const auto linear_joint = inverse_basis * relative_linear;
+    const auto angular_joint = inverse_basis * relative_angular;
+    lidar_odometry.twist.twist.linear.x += linear_joint.x();
+    lidar_odometry.twist.twist.linear.y += linear_joint.y();
+    lidar_odometry.twist.twist.linear.z += linear_joint.z();
+    lidar_odometry.twist.twist.angular.x += angular_joint.x();
+    lidar_odometry.twist.twist.angular.y += angular_joint.y();
+    lidar_odometry.twist.twist.angular.z += angular_joint.z();
     lidar_odometry_pub_->publish(lidar_odometry);
     registered_scan_pub_->publish(registered_scan);
   }
@@ -637,6 +680,9 @@ private:
   std::deque<PendingScan> pending_scans_;
   tf2::Transform initial_world_to_base_;
   tf2::Transform base_to_lidar_;
+  bool dynamic_lidar_transform_{false};
+  std::unique_ptr<tf2_ros::Buffer> mount_tf_;
+  std::unique_ptr<tf2_ros::TransformListener> mount_listener_;
   double odom_buffer_duration_{2.0};
   double max_interpolation_gap_{0.10};
   double scan_match_timeout_{0.20};

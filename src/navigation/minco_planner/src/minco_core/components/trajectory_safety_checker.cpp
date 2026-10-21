@@ -78,6 +78,27 @@ bool isLowClearanceProjection(
          matches(projection.raw_reason) && !blocks(projection.candidate_reason);
 }
 
+bool isUnsupportedPriorFreeClearance(
+    const rog_map::ProjectionDiagnostic &projection) {
+  if (!projection.valid || projection.cell_type ==
+                              static_cast<uint8_t>(rog_map::CellType::OCCUPIED) ||
+      !projection.prior_known_free || projection.ground_support_known ||
+      projection.ground_support_verified) {
+    return false;
+  }
+  const auto matches = [](uint8_t reason) {
+    return reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::GROUND_UNVERIFIED) ||
+           reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED) ||
+           reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::HEADROOM_BLOCKED) ||
+           reason == static_cast<uint8_t>(
+                         rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+  };
+  return matches(projection.raw_reason) || matches(projection.candidate_reason);
+}
+
 } // namespace
 
 const char *TrajectorySafetyChecker::failureReasonName(FailureReason reason) {
@@ -293,11 +314,15 @@ TrajectorySafetyChecker::evaluateQueryResult(
 
   check.diagnostic.cost = cost;
   check.diagnostic.cost_checked = true;
+  const bool allow_unsupported_prior_free_clearance =
+      allow_unknown_motion_ &&
+      isUnsupportedPriorFreeClearance(result.projection);
   if (result.projection.valid &&
       (result.projection.raw_reason == static_cast<uint8_t>(
            rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED) ||
        result.projection.candidate_reason == static_cast<uint8_t>(
-           rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED))) {
+           rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED)) &&
+      !allow_unsupported_prior_free_clearance) {
     check.diagnostic.reason = FailureReason::COSTMAP_LETHAL;
     return check;
   }
@@ -318,7 +343,8 @@ TrajectorySafetyChecker::evaluateQueryResult(
       return check;
     }
   }
-  if (cost == nav2_costmap_2d::LETHAL_OBSTACLE) {
+  if (cost == nav2_costmap_2d::LETHAL_OBSTACLE &&
+      !allow_unsupported_prior_free_clearance) {
     check.diagnostic.reason = FailureReason::COSTMAP_LETHAL;
     return check;
   }

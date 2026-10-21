@@ -230,6 +230,7 @@ class ROGMapROS : public ROGMap {
     Pose pose;
     double odom_age_ms{0.0};
     double sensor_stamp{0.0};
+    Pose projection_pose;
   };
 
   struct OdomPoseSample {
@@ -401,6 +402,27 @@ class ROGMapROS : public ROGMap {
       }
       return;
     }
+    Pose projection_pose = match.pose.pose;
+    if (!cfg_.projection_robot_pose_frame.empty()) {
+      // Compose with the paired sensor pose instead of waiting for a second
+      // odom->base TF stream to catch up with this already matched scan.
+      const std::string child = cfg_.cloud_filter_pose_child_frame.empty() ?
+          match.pose.child_frame : cfg_.cloud_filter_pose_child_frame;
+      try {
+        const auto transform = cloud_filter_tf_->lookupTransform(
+            child, cfg_.projection_robot_pose_frame, rclcpp::Time(match.payload->header.stamp),
+            rclcpp::Duration::from_seconds(cfg_.cloud_filter_transform_timeout));
+        const auto & p = transform.transform.translation;
+        const auto & q = transform.transform.rotation;
+        projection_pose.first = match.pose.pose.first +
+            match.pose.pose.second * Vec3f(p.x, p.y, p.z);
+        projection_pose.second = (match.pose.pose.second * Quatf(q.w, q.x, q.y, q.z)).normalized();
+      } catch (const tf2::TransformException & error) {
+        RCLCPP_WARN_THROTTLE(node_logging_->get_logger(), *node_clock_->get_clock(), 2000,
+            "[ROGMap] missing scan-time mounting TF: %s", error.what());
+        return;
+      }
+    }
     PointCloud temp_pc;
     const auto convert_start = std::chrono::steady_clock::now();
     pcl::fromROSMsg(*match.payload, temp_pc);
@@ -436,7 +458,7 @@ class ROGMapROS : public ROGMap {
       rc_.last_accepted_cloud_stamp = match.cloud_stamp;
       rc_.pending_frames.store(
           PendingCloudFrame{std::move(temp_pc), match.pose.pose,
-                            match.stamp_delta * 1000.0, match.cloud_stamp});
+                            match.stamp_delta * 1000.0, match.cloud_stamp, projection_pose});
       {
         std::lock_guard<std::mutex> map_lock(map_data_mutex_);
         map_empty_ = false;
@@ -532,6 +554,11 @@ class ROGMapROS : public ROGMap {
     map_update_waiting_.store(true, std::memory_order_release);
     std::unique_lock<std::mutex> map_lock(map_data_mutex_);
     map_update_waiting_.store(false, std::memory_order_release);
+    if (!cfg_.projection_robot_pose_frame.empty()) {
+      projection_robot_state_.p = pending_frame->value.projection_pose.first;
+      projection_robot_state_.q = pending_frame->value.projection_pose.second;
+      projection_robot_state_.rcv = true;
+    }
     updateMapInternal(pending_frame->value.pc, pending_frame->value.pose,
                       pending_frame->value.sensor_stamp);
     nav_msgs::msg::OccupancyGrid dynamic_obstacles;
@@ -1199,7 +1226,7 @@ class ROGMapROS : public ROGMap {
             "authorization remains fail-closed");
       }
     }
-    if (cfg_.cloud_filter_en) {
+    if (cfg_.cloud_filter_en || !cfg_.projection_robot_pose_frame.empty()) {
       cloud_filter_tf_ =
           std::make_shared<tf2_ros::Buffer>(node_clock_->get_clock());
       cloud_filter_tf_listener_ =
@@ -1211,9 +1238,11 @@ class ROGMapROS : public ROGMap {
                 cfg_.cloud_filter_visualization_topic,
                 rclcpp::QoS(rclcpp::KeepLast(1)).transient_local());
       }
-      cloud_filter_ = std::make_unique<CloudRegisteredCropFilter>(
-          cfg_, cloud_filter_tf_, node_clock_->get_clock(),
-          node_logging_->get_logger(), marker_publisher);
+      if (cfg_.cloud_filter_en) {
+        cloud_filter_ = std::make_unique<CloudRegisteredCropFilter>(
+            cfg_, cloud_filter_tf_, node_clock_->get_clock(),
+            node_logging_->get_logger(), marker_publisher);
+      }
     }
     init();
     /// Initialize visualization module

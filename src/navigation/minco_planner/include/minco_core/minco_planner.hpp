@@ -119,14 +119,16 @@ private:
 
   // === Utility & Helper Functions ===
   PlanningState determinePlanningState(
-    const geometry_msgs::msg::Pose & start_pose, const std::vector<Eigen::Vector3d> & new_path);
+    const geometry_msgs::msg::Pose & start_pose, const std::vector<Eigen::Vector3d> & new_path,
+    const Eigen::Vector3d & current_speed);
 
   void prepareColdStart(const geometry_msgs::msg::Pose & start_pose,
     Eigen::Matrix3d & start_state,
-    const std::vector<Eigen::Vector3d> & sparse_path);
+    const std::vector<Eigen::Vector3d> & sparse_path, const Eigen::Vector3d & current_speed);
 
   void prepareHotStart(
-    const geometry_msgs::msg::Pose & start_pose, Eigen::Matrix3d & start_state);
+    const geometry_msgs::msg::Pose & start_pose, Eigen::Matrix3d & start_state,
+    const Eigen::Vector3d & current_speed);
 
   void PTAllocation(const std::vector<Eigen::Vector3d> & sparse_path,
     const Eigen::Matrix3d & start_state,
