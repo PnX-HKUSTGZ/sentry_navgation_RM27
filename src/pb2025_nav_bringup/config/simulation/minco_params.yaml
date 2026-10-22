@@ -196,7 +196,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
-        inflation_radius: 0.56
+        inflation_radius: 0.60
       always_send_full_costmap: false
 
 global_costmap:
@@ -224,7 +224,7 @@ global_costmap:
       # measured chassis yaw, without refilling conservative ROG prior cells.
       inflation_layer:
         cost_scaling_factor: 4.0
-        inflation_radius: 0.56
+        inflation_radius: 0.60
 
         plugin: "nav2_costmap_2d::InflationLayer"
       use_sim_time: true
@@ -779,10 +779,11 @@ ign_sim_pointcloud_tool:
   ros__parameters:
     use_sim_time: true
     pcd_topic: livox/lidar
-    n_scan: 32
-    horizon_scan: 1875
+    instantaneous_scan: true  # Gazebo GPU lidar renders a single-time snapshot.
+    n_scan: 192
+    horizon_scan: 360
     ang_bottom: 7.22
-    ang_res_y: 2.01419  # (55.22 + 7.22) / (32 - 1)
+    ang_res_y: 0.326911  # (55.22 + 7.22) / (192 - 1)
 
 rm27_ground_truth_localizer:
   ros__parameters:
@@ -892,14 +893,14 @@ point_lio:
 
     preprocess:
       lidar_type: 2                                     # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR
-      scan_line: 32
+      scan_line: 192
       timestamp_unit: 0                                 # ign_sim_pointcloud_tool publishes per-point time in seconds.
       blind: 0.5
 
     mapping:
       imu_en: true
       extrinsic_est_en: false                           # for aggressive motion, set this variable False
-      imu_time_inte: 0.01                               # Gazebo IMU update_rate is 100 Hz
+      imu_time_inte: 0.005                              # PoseImuSystem update_rate is 200 Hz
       lidar_time_inte: 0.1
       satu_acc: 30.0                                    # the saturation value of IMU's acceleration. not related to the units
       satu_gyro: 35.0                                   # the saturation value of IMU's angular velocity. not related to the units
@@ -918,8 +919,8 @@ point_lio:
       ivox_grid_resolution: 0.5
       max_neighbor_distance: 1.4
       max_points_per_voxel: 64
-      gravity: [0.0, 0.0, -9.81]                        # Simulated logical MID360 frame has roll already compensated
-      gravity_init: [0.0, 0.0, -9.81]                   # preknown gravity in the first IMU body frame
+      gravity: [0.0, 0.0, -9.81]                        # World gravity; IMU retains its -30 degree mounting roll
+      gravity_init: [0.0, 0.0, -9.81]                   # Initialization uses the measured stationary acceleration
       extrinsic_T: [0.0, 0.0, 0.0]                      # Simulated IMU and LiDAR frames share the same mounting pose
       extrinsic_R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
@@ -1180,8 +1181,25 @@ velocity_smoother:
     deadband_velocity: [0.03, 0.03, 0.0]
     velocity_timeout: 1.0
 
-# Launch reads this node only when use_ground_truth_odom:=false and resolves
-# the Point-LIO planner inputs into the single generated MINCO parameter file.
+# Resolve world-specific localization values into the single launch parameter file.
+simulation_world_profiles:
+  ros__parameters:
+    RMUL2027:
+      relocalization_manager:
+        # PCD already uses the Gazebo world coordinates and metres.
+        init_pose: [-4.37, 3.03, 0.091, 0.0, 0.0, 0.0]
+        prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        transform_prior_map_with_lidar_offset: false
+        robot_base_frame: base_link
+        global_leaf_size: 0.05
+        registered_leaf_size: 0.05
+        max_iterations: 60
+        max_dist_sq: 0.25
+      point_lio:
+        filter_size_surf: 0.08
+        filter_size_map: 0.08
+
+# Point-LIO planner inputs are resolved when use_ground_truth_odom:=false.
 minco_input_profiles:
   ros__parameters:
     point_lio:

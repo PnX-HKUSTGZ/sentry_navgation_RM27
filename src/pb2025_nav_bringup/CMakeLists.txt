@@ -22,6 +22,7 @@ if(BUILD_TESTING)
     test/test_navigation_launch.py
     TIMEOUT 30
   )
+  ament_add_pytest_test(test_rmul2027_maps test/test_rmul2027_maps.py TIMEOUT 30)
 endif()
 
 ament_auto_package(

@@ -57,6 +57,7 @@ private:
   int horizon_scan_;
   float ang_bottom_;
   float ang_res_y_;
+  bool instantaneous_scan_{false};
   std::string pcd_topic_;
 };
 }  // namespace ign_sim_pointcloud_tool

@@ -57,6 +57,16 @@ def _world_file_and_name(context):
     return world_path, world_element.get("name")
 
 
+def _resolve_gui_config(context):
+    requested = LaunchConfiguration("gui_config").perform(context).strip()
+    if requested != "auto":
+        return requested
+    worlds = _load_yaml(LaunchConfiguration("worlds_config").perform(context)).get("worlds", {})
+    world = worlds.get(LaunchConfiguration("sim_world").perform(context), {})
+    return os.path.join(get_package_share_directory("rm_27_stimulation"),
+                        world.get("gui_config", "config/gazebo_gui.config"))
+
+
 def _launch_gz_sim(context, *args, **kwargs):
     del args, kwargs
 
@@ -80,7 +90,7 @@ def _launch_gz_sim(context, *args, **kwargs):
     if not gui:
         gz_args.append("-s")
     else:
-        gui_config = LaunchConfiguration("gui_config").perform(context).strip()
+        gui_config = _resolve_gui_config(context)
         if gui_config and os.path.isfile(gui_config):
             gz_args.extend(["--gui-config", gui_config])
         elif gui_config:
@@ -206,8 +216,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "gui_config",
-                default_value=os.path.join(package_share, "config", "gazebo_gui.config"),
-                description="Project-local Gazebo GUI configuration",
+                default_value="auto",
+                description="Gazebo GUI configuration; auto selects the world-specific view",
             ),
             DeclareLaunchArgument(
                 "verbose",
@@ -250,6 +260,7 @@ def generate_launch_description():
             ),
             AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", package_share),
             AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.path.join(package_share, "meshes")),
+            AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.path.join(package_share, "meshes", "RMUL2027")),
             AppendEnvironmentVariable("GZ_SIM_RESOURCE_PATH", os.path.join(package_share, "world")),
             AppendEnvironmentVariable("GZ_SIM_SYSTEM_PLUGIN_PATH", os.path.join(package_prefix, "lib")),
             OpaqueFunction(function=_launch_gz_sim),

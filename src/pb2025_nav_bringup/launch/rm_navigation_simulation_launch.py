@@ -14,6 +14,9 @@
 
 
 import os
+import tempfile
+
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -33,6 +36,33 @@ from nav2_common.launch import RewrittenYaml
 
 def _as_bool(value):
     return value.strip().lower() in {"true", "1", "yes", "on"}
+
+
+def _apply_world_profile(params_file, world):
+    """Resolve world-specific geometry/registration settings into one file."""
+    if not world:
+        return params_file
+    with open(params_file, encoding="utf-8") as stream:
+        configuration = yaml.safe_load(stream)
+    # The profile block is input metadata, not a runtime node. Removing it
+    # also avoids YAML aliases when its list values become node parameters;
+    # ROS's C parameter parser does not support aliases.
+    profile = configuration.pop("simulation_world_profiles", {}).get(
+        "ros__parameters", {}).get(world)
+    if not profile:
+        return params_file
+    def merge(target, overrides):
+        for key, value in overrides.items():
+            if isinstance(value, dict):
+                merge(target.setdefault(key, {}), value)
+            else:
+                target[key] = value
+    for node_name, parameters in profile.items():
+        merge(configuration.setdefault(node_name, {}).setdefault("ros__parameters", {}), parameters)
+    with tempfile.NamedTemporaryFile(mode="w", prefix="rm27_world_params_", suffix=".yaml",
+                                     encoding="utf-8", delete=False) as stream:
+        yaml.safe_dump(configuration, stream, sort_keys=False)
+        return stream.name
 
 
 def _validate_localization_inputs(context):
@@ -69,11 +99,12 @@ def _validate_localization_inputs(context):
         if os.path.realpath(params_file) == os.path.realpath(
             os.path.join(directory, "nav2_params.yaml")
         ):
-            actions.append(
-                SetLaunchConfiguration(
-                    "params_file", os.path.join(directory, "minco_params.yaml")
-                )
-            )
+            params_file = os.path.join(directory, "minco_params.yaml")
+            actions.append(SetLaunchConfiguration("params_file", params_file))
+    resolved = _apply_world_profile(
+        params_file, LaunchConfiguration("world", default="").perform(context))
+    if resolved != params_file:
+        actions.append(SetLaunchConfiguration("params_file", resolved))
     if use_ground_truth or use_slam:
         return actions
 

@@ -26,6 +26,17 @@ colcon build --packages-select rm_27_stimulation --symlink-install --cmake-args 
 source install/setup.bash
 ```
 
+## RMUL2027 场地资源
+
+```bash
+ros2 launch rm_27_stimulation rmul2027_simulation.launch.py
+```
+
+独立启动官方 STEP 场地、小车和云台窗口，不需要 PCD 或导航地图。原始配色的
+Blender 工程、渲染图和重新生成方法见 [RMUL2027 使用说明](../../docs/rmul2027_simulation_world.md)。
+已提供对应的 5 cm 降采样 PCD 和 PGM/YAML。启动该世界后，可在第二个终端运行
+`ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py world:=RMUL2027 navigation_mode:=minco use_ground_truth_odom:=false`。
+
 ## RMUC2026 场地资源
 
 Gazebo 使用 `RM27_Gazebo_Harmonic_part1.tar.xz` 和 `part2.tar.xz` 中的详细场地：
@@ -159,6 +170,7 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False
 - `rmuc_2024`
 - `rmuc_2025`
 - `RMUC2026`
+- `RMUL2027`
 - `rmul_2024`
 - `rmul_2024_dynamic`
 - `rmul_2026`
@@ -196,7 +208,7 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False
   四个 `base_to_wheel*` 固定关节设置 `preserveFixedJoint=true`：Bullet Featherstone
   对同一个 link 的复合碰撞体只采用第一个碰撞体的摩擦参数。保留独立轮链接才能让轮子的
   `0.05` 生效，避免 URDF 合并固定关节后用底盘默认摩擦覆盖轮地接触。
-- 仿真 Mid360 逻辑 frame 为 `base_link -> left_mid360`:
+- 仿真 Mid360 逻辑 frame 为 `base_link -> gimbal_yaw -> left_mid360`:
   `xyz="0.0 0.126 0.130"`、`rpy="-0.523598775598 0 0"`；`imu_link` 使用同一安装位姿，Point-LIO 仿真外参为
   `extrinsic_T=[0.0, 0.0, 0.0]`、`extrinsic_R=I`。
 - `meshes/mid360.stl` 仍是 Git LFS 指针文件；默认 CAD 外观已经包含真实 Mid360，只有
@@ -204,7 +216,10 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False
 - `RM27_battlefield_collision` 和 `RMUC2026_world/meshes/RMUC2026.stl` 是可直接使用的
   真实 mesh；其他旧 world 下的 `.stl` 多数还是 Git LFS 指针文件，不能作为当前定位
   问题的验证基准。
-- 仿真 Point-LIO 参数按当前 URDF 配置：Gazebo IMU 为 100Hz，雷达/IMU frame 均保留
+- 仿真 Point-LIO 参数按当前 URDF 配置：`PoseImuSystem` 从传感器实际运动生成 200 Hz IMU，
+  包含转云台角速度和偏心旋转加速度，避免 Bullet 子连杆速度为零的问题。
+  GPU 雷达每帧为瞬时快照，转换器启用 `instantaneous_scan`，不再伪造 100 ms 扫描时序。
+  雷达/IMU frame 均保留
   真实的 `-30 deg` 安装 roll，重力在世界坐标中为 `[0.0, 0.0, -9.81]`。如果后续改 IMU 与雷达之间的相对位姿，需要同步更新
   `pb2025_nav_bringup/config/simulation/minco_params.yaml` 和 legacy 的 `nav2_params.yaml`。
 - `rmul_2024_dynamic` 中的 Classic 动态障碍物插件已从 world 加载链路移除；障碍物模型

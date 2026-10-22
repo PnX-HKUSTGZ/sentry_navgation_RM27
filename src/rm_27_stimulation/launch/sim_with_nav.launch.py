@@ -7,12 +7,18 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    EmitEvent,
     IncludeLaunchDescription,
+    LogInfo,
     OpaqueFunction,
+    RegisterEventHandler,
     TimerAction,
 )
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def _load_yaml(path):
@@ -62,8 +68,8 @@ def _launch_sim_stack(context, *args, **kwargs):
     # Give ros_gz_sim create time to receive the robot description and finish insertion.
     nav_start_delay = max(requested_nav_start_delay, spawn_delay + 2.0)
 
+    worlds = _load_yaml(worlds_config_path).get("worlds", {})
     if nav_world == "auto":
-        worlds = _load_yaml(worlds_config_path).get("worlds", {})
         if world_name not in worlds:
             valid_worlds = ", ".join(sorted(worlds.keys()))
             raise RuntimeError(
@@ -83,7 +89,7 @@ def _launch_sim_stack(context, *args, **kwargs):
     sim_launch = os.path.join(sim_share, "launch", "rm_simulation.launch.py")
     spawn_launch = os.path.join(sim_share, "launch", "spawn_robot.launch.py")
 
-    return [
+    actions = [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(sim_launch),
             launch_arguments={
@@ -148,6 +154,25 @@ def _launch_sim_stack(context, *args, **kwargs):
             ],
         ),
     ]
+
+    if worlds.get(world_name, {}).get("wait_for_clock", False):
+        # The create service exists before expensive collision initialization
+        # finishes. Wait for a physics tick before inserting the robot.
+        clock_ready = Node(package="rm_27_stimulation", executable="wait_for_sim_clock.py",
+                           output="screen")
+
+        def start_after_clock(event, context):
+            if event.returncode != 0:
+                return [EmitEvent(event=Shutdown(reason="Gazebo physics clock unavailable"))]
+            return [LogInfo(msg="[rm_27_stimulation] World ready; starting robot and navigation"),
+                    TimerAction(period=1.0, actions=actions[1:])]
+
+        return [actions[0],
+                LogInfo(msg="[rm_27_stimulation] Loading field collisions; robot/navigation wait for physics"),
+                RegisterEventHandler(OnProcessExit(target_action=clock_ready,
+                                                   on_exit=start_after_clock)),
+                clock_ready]
+    return actions
 
 
 def generate_launch_description():
@@ -221,8 +246,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "gui_config",
-                default_value=os.path.join(sim_share, "config", "gazebo_gui.config"),
-                description="Project-local Gazebo GUI configuration",
+                default_value="auto",
+                description="Gazebo GUI configuration; auto selects the world-specific view",
             ),
             DeclareLaunchArgument(
                 "use_ros_gz_bridge",

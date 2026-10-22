@@ -339,14 +339,16 @@
     </plugin>
   </gazebo>
 
-  <!-- mid360_imu plugin -->
-  <gazebo reference="imu_link">
-    <sensor name="mid360_imu" type="imu">
-      <always_on>true</always_on>
-      <update_rate>100</update_rate>
+  <!-- Use actual articulated sensor motion; Bullet's non-base velocity cache
+       does not reliably supply gyro/acceleration to the native IMU sensor. -->
+  <gazebo>
+    <plugin filename="librm27_pose_imu_system.so" name="rm_27_stimulation::PoseImuSystem">
+      <parent_link>gimbal_yaw</parent_link>
+      <sensor_pose>$(arg xyz) $(arg rpy)</sensor_pose>
+      <update_rate>200</update_rate>
       <topic>/livox/imu</topic>
-      <gz_frame_id>imu_link</gz_frame_id>
-    </sensor>
+      <frame_id>imu_link</frame_id>
+    </plugin>
   </gazebo>
 
   <!-- Livox-Mid360  -->

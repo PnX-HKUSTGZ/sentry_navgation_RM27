@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <asset>
+    <contributor>
+      <author>Blender User</author>
+      <authoring_tool>Blender 4.5.14 LTS commit date:2026-09-14, commit time:14:54, hash:62c1db4208e8</authoring_tool>
+    </contributor>
+    <created>2026-10-21T17:53:32</created>
+    <modified>2026-10-21T17:53:32</modified>
+    <unit name="meter" meter="1"/>
+    <up_axis>Z_UP</up_axis>
+  </asset>
+  <library_effects>
+    <effect id="CAD_material_02-effect">
+      <profile_COMMON>
+        <technique sid="common">
+          <lambert>
+            <emission>
+              <color sid="emission">0 0 0 1</color>
+            </emission>
+            <diffuse>
+              <color sid="diffuse">1 0 0 1</color>
+            </diffuse>
+            <index_of_refraction>
+              <float sid="ior">1.5</float>
+            </index_of_refraction>
+          </lambert>
+        </technique>
+      </profile_COMMON>
+    </effect>
+  </library_effects>
+  <library_images/>
+  <library_materials>
+    <material id="CAD_material_02-material" name="CAD material_02">
+      <instance_effect url="#CAD_material_02-effect"/>
+    </material>
+  </library_materials>
+  <library_geometries>
+    <geometry id="material_02-mesh" name="material_02">
+      <mesh>
+        <source id="material_02-mesh-positions">
+          <float_array id="material_02-mesh-positions-array" count="81">4.537064 -2.653461 0.001999974 4.68737 -2.812128 0.001999974 4.71242 -2.703545 0.001999974 4.76253 -2.87057 0.001999974 5.079856 -3.1962 0.001999974 4.979606 -3.296451 0.001999974 4.65397 -2.97912 0.001999974 4.486969 -2.92067 0.001999974 4.436856 -2.745325 0.001999974 4.595514 -2.903984 0.001999974 4.929516 -3.112743 0.001999974 4.979614 -3.162841 0.001999974 4.896119 -3.146139 0.001999974 4.946218 -3.196238 0.001999974 5.038064 -2.711933 0.001999974 4.846014 -2.903984 0.001999974 5.063117 -2.736986 0.001999974 4.871067 -2.929036 0.001999974 4.71242 -3.137788 0.001999974 4.687367 -3.112735 0.001999974 4.52037 -3.329838 0.001999974 4.445241 -3.313142 0.001999974 4.436891 -3.23798 0.001999974 4.637261 -3.06263 0.001999974 4.662314 -3.087683 0.001999974 4.687367 -3.06263 0.001999974 4.71242 -3.087683 0.001999974</float_array>
+          <technique_common>
+            <accessor source="#material_02-mesh-positions-array" count="27" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <source id="material_02-mesh-normals">
+          <float_array id="material_02-mesh-normals-array" count="69">0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1</float_array>
+          <technique_common>
+            <accessor source="#material_02-mesh-normals-array" count="23" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="material_02-mesh-vertices">
+          <input semantic="POSITION" source="#material_02-mesh-positions"/>
+        </vertices>
+        <triangles material="CAD_material_02-material" count="23">
+          <input semantic="VERTEX" source="#material_02-mesh-vertices" offset="0"/>
+          <input semantic="NORMAL" source="#material_02-mesh-normals" offset="1"/>
+          <p>7 0 6 0 9 0 8 1 7 1 9 1 6 2 5 2 12 2 12 3 5 3 13 3 13 4 5 4 11 4 6 5 12 5 10 5 9 6 6 6 1 6 10 7 11 7 4 7 11 8 5 8 4 8 6 9 10 9 3 9 1 10 6 10 3 10 10 11 4 11 3 11 0 12 1 12 2 12 1 13 3 13 2 13 14 14 15 14 16 14 15 15 17 15 16 15 21 16 20 16 22 16 20 17 18 17 19 17 22 18 20 18 24 18 20 19 19 19 24 19 22 20 24 20 23 20 25 21 24 21 26 21 24 22 19 22 26 22</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="material_02" name="material_02" type="NODE">
+        <matrix sid="transform">1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1</matrix>
+        <instance_geometry url="#material_02-mesh" name="material_02">
+          <bind_material>
+            <technique_common>
+              <instance_material symbol="CAD_material_02-material" target="#CAD_material_02-material"/>
+            </technique_common>
+          </bind_material>
+        </instance_geometry>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene"/>
+  </scene>
+</COLLADA>

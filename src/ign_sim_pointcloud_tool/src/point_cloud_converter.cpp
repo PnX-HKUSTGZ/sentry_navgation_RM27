@@ -16,6 +16,7 @@
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/common/point_tests.h>
 #include <pcl_conversions/pcl_conversions.h>
 
 namespace ign_sim_pointcloud_tool
@@ -28,6 +29,7 @@ PointCloudConverter::PointCloudConverter(const rclcpp::NodeOptions & options)
   this->declare_parameter<int>("horizon_scan", 1875);
   this->declare_parameter<float>("ang_bottom", 7.0);
   this->declare_parameter<float>("ang_res_y", 1.0);
+  instantaneous_scan_ = this->declare_parameter<bool>("instantaneous_scan", false);
 
   pcd_topic_ = this->get_parameter("pcd_topic").as_string();
   n_scan_ = this->get_parameter("n_scan").as_int();
@@ -41,7 +43,8 @@ PointCloudConverter::PointCloudConverter(const rclcpp::NodeOptions & options)
   pcd_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
     "velodyne_points", rclcpp::SensorDataQoS());
 
-  RCLCPP_INFO(this->get_logger(), "Listening to lidar topic: %s", pcd_topic_.c_str());
+  RCLCPP_INFO(this->get_logger(), "Listening to lidar topic: %s, instantaneous_scan=%s",
+              pcd_topic_.c_str(), instantaneous_scan_ ? "true" : "false");
 }
 
 void PointCloudConverter::lidarHandle(const sensor_msgs::msg::PointCloud2::SharedPtr pc_msg)
@@ -54,6 +57,9 @@ void PointCloudConverter::lidarHandle(const sensor_msgs::msg::PointCloud2::Share
   for (size_t point_id = 0; point_id < original_pc->points.size(); ++point_id) {
     PointXYZIRT new_point;
     const auto & old_point = original_pc->points[point_id];
+    if (!pcl::isFinite(old_point)) {
+      continue;
+    }
 
     new_point.x = old_point.x;
     new_point.y = old_point.y;
@@ -64,6 +70,9 @@ void PointCloudConverter::lidarHandle(const sensor_msgs::msg::PointCloud2::Share
       std::atan2(new_point.z, std::sqrt(new_point.x * new_point.x + new_point.y * new_point.y)) *
       180 / M_PI;
     int row_id = static_cast<int>((vertical_angle + ang_bottom_) / ang_res_y_);
+    if (instantaneous_scan_ && pc_msg->height > 1 && pc_msg->width > 0) {
+      row_id = static_cast<int>(point_id / pc_msg->width);
+    }
 
     if (row_id >= 0 && row_id < n_scan_) {
       new_point.ring = row_id;
@@ -71,7 +80,11 @@ void PointCloudConverter::lidarHandle(const sensor_msgs::msg::PointCloud2::Share
       continue;
     }
 
-    new_point.time = (point_id % horizon_scan_) * 0.1f / horizon_scan_;
+    // GPU lidar renders one instantaneous frame. A fabricated rotating-scan
+    // timeline makes Point-LIO warp it while the gimbal turns. Keep a tiny
+    // positive offset: all-zero times trigger Point-LIO's yaw-based fallback.
+    new_point.time = instantaneous_scan_ ? 1.0e-9F :
+      (point_id % horizon_scan_) * 0.1f / horizon_scan_;
 
     converted_pc->points.push_back(new_point);
   }

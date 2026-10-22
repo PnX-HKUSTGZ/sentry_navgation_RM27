@@ -29,6 +29,12 @@ target_link_libraries(rm27_cmd_vel_pose_control_system
 add_library(rm27_ground_truth_odometry_system SHARED
   src/ground_truth_odometry_system.cpp
 )
+
+add_library(rm27_pose_imu_system SHARED src/pose_imu_system.cpp)
+target_include_directories(rm27_pose_imu_system PRIVATE include)
+target_link_libraries(rm27_pose_imu_system
+  gz-msgs10::gz-msgs10 gz-plugin2::gz-plugin2
+  gz-sim8::gz-sim8 gz-transport13::gz-transport13)
 target_include_directories(rm27_ground_truth_odometry_system PRIVATE include)
 target_link_libraries(rm27_ground_truth_odometry_system
   gz-msgs10::gz-msgs10 gz-plugin2::gz-plugin2
@@ -53,8 +59,15 @@ ament_target_dependencies(rm27_ground_truth_localizer
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  ament_add_gtest(test_pose_imu test/test_pose_imu.cpp)
+  if(TARGET test_pose_imu)
+    target_include_directories(test_pose_imu PRIVATE include)
+    target_link_libraries(test_pose_imu gz-msgs10::gz-msgs10 gz-sim8::gz-sim8)
+  endif()
   add_test(NAME test_gimbal_state
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_gimbal_state.py)
+  add_test(NAME test_simulation_startup
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_simulation_startup.py)
 
   ament_add_gtest(test_ground_truth_odometry test/test_ground_truth_odometry.cpp)
   if(TARGET test_ground_truth_odometry)
@@ -100,6 +113,7 @@ endif()
 install(TARGETS
   rm27_cmd_vel_pose_control_system
   rm27_ground_truth_odometry_system
+  rm27_pose_imu_system
   rm27_ground_truth_localizer
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -119,7 +133,7 @@ install(DIRECTORY include/rm_27_stimulation
   DESTINATION include
 )
 
-install(PROGRAMS scripts/gimbal_control.py scripts/gimbal_panel.py
+install(PROGRAMS scripts/gimbal_control.py scripts/gimbal_panel.py scripts/wait_for_sim_clock.py
   DESTINATION lib/${PROJECT_NAME})
 install(FILES scripts/gimbal_state.py DESTINATION lib/${PROJECT_NAME})
 
