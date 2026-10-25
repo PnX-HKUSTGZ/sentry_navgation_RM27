@@ -1,3 +1,5 @@
+独立全局重定位的最终实现、Gazebo/RViz 一键演示及验证方法见 [全局重定位说明](docs/global_relocalization.md)。
+
 
 ## 1. Overview
 

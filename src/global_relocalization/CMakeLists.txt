@@ -46,12 +46,10 @@ ament_target_dependencies(global_relocalization_node rclcpp rclcpp_action
 install(TARGETS global_relocalization_core global_relocalization_node global_relocalization_offline_query global_relocalization_raw_replay
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
+install(PROGRAMS scripts/display_helper.py DESTINATION lib/${PROJECT_NAME})
 install(FILES ${small_gicp_SOURCE_DIR}/LICENSE DESTINATION share/${PROJECT_NAME}/third_party RENAME small_gicp_LICENSE)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
   install(DIRECTORY launch config rviz DESTINATION share/${PROJECT_NAME} PATTERN "__pycache__" EXCLUDE)
-endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
-  install(DIRECTORY scripts/ DESTINATION lib/${PROJECT_NAME} USE_SOURCE_PERMISSIONS PATTERN "__pycache__" EXCLUDE)
 endif()
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)

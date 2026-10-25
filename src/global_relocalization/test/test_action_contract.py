@@ -80,6 +80,14 @@ def _wait_for_clock(node, executor):
     assert node.get_clock().now().nanoseconds > 0, 'controlled /clock was not received'
 
 
+def _wait_for_server_clock(states, executor):
+    # The client receiving /clock does not prove the server has received it.
+    deadline = time.monotonic() + 5
+    while not any(s.get('status_ros_ns', 0) > 0 for s in states) and time.monotonic() < deadline:
+        executor.spin_once(timeout_sec=.01)
+    assert any(s.get('status_ros_ns', 0) > 0 for s in states), 'server /clock was not received'
+
+
 def test_cancel_retry_timeout_keeps_motor_stopped():
     binary = Path(os.environ["GLOBAL_RELOCALIZATION_NODE"])
     # The test has its own DDS domain and never connects to a robot/simulation.
@@ -330,6 +338,7 @@ finally:
             first = wait(client.send_goal_async(Relocalize.Goal()))
             assert first.accepted
             active_result = first.get_result_async()
+            _wait_for_server_clock(states, executor)
             feed(2.2)
             assert burst_sent, json.dumps({"state": states[-1:] , "reason": active_result.result().result.reason if active_result.done() else None, "imu_source_exit": imu_process.poll()})
             assert any(m.angular.z != 0 for m in commands)
@@ -562,6 +571,8 @@ def test_raw_ingress_limits_abort_and_publish_zero(fault):
             assert cloud_pub.get_subscription_count()
             goal = wait(client.send_goal_async(Relocalize.Goal()))
             assert goal.accepted
+            result_future = goal.get_result_async()
+            _wait_for_server_clock(states, executor)
             for _ in range(1 if fault == 'oversize' else 33):
                 header = Odometry().header
                 header.stamp = node.get_clock().now().to_msg()
@@ -573,7 +584,7 @@ def test_raw_ingress_limits_abort_and_publish_zero(fault):
                 deadline = time.monotonic() + .01
                 while time.monotonic() < deadline:
                     executor.spin_once(timeout_sec=.001)
-            result = wait(goal.get_result_async())
+            result = wait(result_future)
             assert not result.result.success
             assert ('4 MiB' if fault == 'oversize' else 'FIFO overflow') in result.result.reason
             deadline = time.monotonic() + .1

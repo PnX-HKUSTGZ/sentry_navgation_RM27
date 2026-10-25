@@ -444,17 +444,18 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
   std::vector<Candidate> refined(guesses.size());
   std::vector<unsigned char> started(guesses.size(),0);
   std::atomic<size_t> next{0};std::atomic_bool stop{false};
+  size_t observer_offset=0;
   const auto evaluate=[&](size_t worker) {
     omp_set_num_threads(4);
     while(!stop.load()) {
       if(checkedCancel()){stop.store(true);break;}
       const size_t index=next.fetch_add(1);if(index>=guesses.size())break;
       const auto & guess=guesses[index];
-      if(observer)notify({"GICP_CANDIDATE_START",index,guesses.size(),guess,{},nullptr});
+      if(observer)notify({"GICP_CANDIDATE_START",observer_offset+index,observer_offset+guesses.size(),guess,{},nullptr});
       std::function<void(const Candidate &)> coarse_observer;
       if(observer)coarse_observer=[&](const Candidate & result) {
         auto observed=result;observed.scan_context_rank=guess.scan_context_rank;observed.ring_key_rank=guess.ring_key_rank;
-        notify({"GICP_COARSE_SEED_COMPLETE",index,guesses.size(),observed,{},nullptr});
+        notify({"GICP_COARSE_SEED_COMPLETE",observer_offset+index,observer_offset+guesses.size(),observed,{},nullptr});
       };
       auto c=impl_->refine(query_source,guess.map_from_reference,checkedCancel,worker,true,coarse_observer);
       c.descriptor_distance=guess.descriptor_distance;
@@ -462,7 +463,7 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
       c.from_scan_context=guess.from_scan_context;c.from_ring_key=guess.from_ring_key;
       c.seed_translation=guess.seed_translation;c.seed_yaw=guess.seed_yaw;
       refined[index]=std::move(c);started[index]=1;
-      if(observer)notify({"GICP_FINE_QUALITY_COMPLETE",index,guesses.size(),refined[index],{},nullptr});
+      if(observer)notify({"GICP_FINE_QUALITY_COMPLETE",observer_offset+index,observer_offset+guesses.size(),refined[index],{},nullptr});
       if(refined[index].canceled)stop.store(true);
     }
   };
@@ -496,6 +497,7 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
       auto added=c;added.from_scan_context=true;added.from_ring_key=false;extra.push_back(added);
     }
     if(!extra.empty()) {
+      observer_offset=out.hypotheses.size();
       guesses=std::move(extra);out.retrieval_candidate_count+=guesses.size();
       refined.assign(guesses.size(),{});started.assign(guesses.size(),0);next.store(0);stop.store(false);
       if(p.candidate_workers==1)evaluate(0);

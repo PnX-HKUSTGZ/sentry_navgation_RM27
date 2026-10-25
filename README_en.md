@@ -14,6 +14,8 @@ https://github.com/user-attachments/assets/d9e778e0-fa43-40c2-96c2-e71eaf7737d4
 
 https://github.com/user-attachments/assets/ae4c19a0-4c73-46a0-95bd-909734da2a42
 
+The final standalone global relocalization implementation, Gazebo/RViz launcher, and validation instructions are documented in [Global relocalization](docs/global_relocalization.md).
+
 ## 1. Overview
 
 This project is based on the [NAV2 Navigation Framework](https://github.com/ros-navigation/navigation2) and references the design of [autonomous_exploration_development_environment](https://github.com/HongbiaoZ/autonomous_exploration_development_environment/tree/humble).

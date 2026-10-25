@@ -399,3 +399,22 @@ TEST_F(StagedRegistration,RequiresThreeGoodMutuallyConsistentStoppedScans) {
     EXPECT_LT((c.map_from_reference.translation()-prepared.diagnostics().candidate.map_from_reference.translation()).norm(),p.confirmation_max_translation);
   }
 }
+
+TEST_F(StagedRegistration,SecondPageIsEvaluatedOnceAndKeepsDistinctObserverIndices) {
+  p.top_k=1;p.ring_key_candidates=0;p.retrieval_all_views=true;
+  p.max_fitness=0.;p.candidate_workers=2;
+  Core core(p);core.loadMap(path);
+  std::vector<size_t> started_indices;
+  auto prepared=core.prepare(query,offset,[]{return false;},[&](const SearchEvent & event){
+    if(event.stage=="GICP_CANDIDATE_START")started_indices.push_back(event.index);
+  });
+  EXPECT_FALSE(prepared.ready());
+  const auto & result=prepared.diagnostics();
+  ASSERT_EQ(result.hypotheses.size(),2u);
+  EXPECT_EQ(result.candidates_tested,2u);
+  EXPECT_EQ(result.retrieval_candidate_count,2u);
+  EXPECT_EQ(result.hypotheses[0].scan_context_rank,1u);
+  EXPECT_EQ(result.hypotheses[1].scan_context_rank,2u);
+  EXPECT_EQ(started_indices,(std::vector<size_t>{0,1}));
+  EXPECT_TRUE(result.confirmations.empty());
+}
