@@ -215,7 +215,7 @@ def generate_launch_description():
                 description="Start Gazebo GUI client when true",
             ),
             DeclareLaunchArgument("gimbal_panel", default_value="true",
-                                  description="Open the two-button yaw/roll control window"),
+                                  description="Open the two-button yaw/roll control window (disabled for headless runs)"),
             DeclareLaunchArgument(
                 "hardware_acceleration",
                 default_value="true",
@@ -313,12 +313,12 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "nav_start_delay",
-                default_value="8.0",
+                default_value="5.0",
                 description="Delay before starting navigation, in seconds",
             ),
             DeclareLaunchArgument(
                 "spawn_delay",
-                default_value="6.0",
+                default_value="3.0",
                 description="Delay before spawning the robot, in seconds",
             ),
             OpaqueFunction(function=_launch_sim_stack),

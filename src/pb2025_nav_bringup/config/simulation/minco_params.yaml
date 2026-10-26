@@ -739,8 +739,12 @@ planner_server:
         guide_lateral_tolerance: 0.003
         penalty_weight_time_barrier: 50.0
       recovery_server:
-        fail_threshold: 3
-        cooldown_sec: 1.0
+        # Cave entrances can produce a short observed-safe prefix for only a
+        # few planner cycles. Start the already fully checked escape after two
+        # consecutive failures so the robot does not wait for the 15 s Nav2
+        # progress watchdog before moving again.
+        fail_threshold: 2
+        cooldown_sec: 0.5
         recovery_window_sec: 3.0
         escape_speed: 0.20
         allow_start_overlap: true
