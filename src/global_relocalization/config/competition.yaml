@@ -20,11 +20,15 @@ global_relocalization:
     data_timeout_sec: 1.5
     db_grid_resolution: 1.0
     db_base_z: 0.08
+    # Generic 0.25 m vertical lattice; inferred pose remains a free SE(3) fit.
+    db_base_z_offsets: [0.0, 0.25, 0.5]
     db_max_radius: 25.0
     db_min_points: 80
     sc_rings: 20
     sc_sectors: 120
     top_k: 10
+    # Bounded supplement after all initial SC/ring-key candidates fail.
+    fallback_candidate_count: 30
     gicp_leaf_size: 0.05
     gicp_max_correspondence: 1.0
     gicp_max_iterations: 50
@@ -39,12 +43,19 @@ global_relocalization:
     raw_scan_model: instantaneous
     raw_calibration_sec: 2.0
     raw_local_leaf_size: 0.12
-    raw_local_max_correspondence: 0.5
+    # Local IMU prediction permits a tighter 2.5 x voxel correspondence window.
+    raw_local_max_correspondence: 0.3
     raw_local_max_iterations: 15
     raw_local_max_fitness: 0.18
     raw_local_min_inlier_ratio: 0.65
     raw_local_budget_ms: 100.0
     raw_confirmation_frames: 3
+    # Only confirmations: raw reference is IMU gravity aligned; map manifest
+    # must verify that world Z maps onto this declared direction. XYZ/yaw stay free.
+    # Same conservative 0.005 rad floor as local raw IMU orientation uncertainty.
+    confirmation_gravity_prior: true
+    confirmation_gravity_sigma: 0.005
+    confirmation_map_up: [0.0, 0.0, 1.0]
     diagnostic_output_dir: ''
     ring_key_candidates: 5
     candidate_workers: 2
@@ -57,6 +68,10 @@ global_relocalization:
     raw_deterministic: true
     raw_submap_scans: 20
     raw_imu_rotation_prior: true
+    # Soft base-motion model for the commanded in-place rotation protocol.
+    # Three sigma spans the existing allowed linear speed times scan interval.
+    raw_stationary_translation_prior: true
+    raw_stationary_translation_sigma_floor: 0.005
     raw_gyro_noise_density: 0.005
     raw_rotation_sigma_floor: 0.005
     raw_numerical_recovery: true

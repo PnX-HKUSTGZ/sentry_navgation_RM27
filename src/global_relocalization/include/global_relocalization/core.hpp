@@ -15,9 +15,15 @@ struct Params {
   std::string diagnostic_output_dir;
   double side_boundary_x{0.0};
   int sc_rings{20}, sc_sectors{60}, top_k{5}, ring_key_candidates{0};
+  // Additional SC ranks after the first page, evaluated only if it fails.
+  // Zero preserves the legacy one-page fallback (top_k additional ranks).
+  int fallback_candidate_count{0};
   bool retrieval_all_views{false};
   bool deterministic_preprocessing{false};
   double db_grid_resolution{2.0}, db_base_z{0.0}, db_max_radius{25.0};
+  // Generic vertical search lattice relative to the nominal base height.
+  // Retrieval budgets count XY locations; all layers of a selected XY are kept.
+  std::vector<double> db_base_z_offsets{0.0};
   int db_min_points{80};
   double db_min_elevation_deg{-40.0}, db_max_elevation_deg{85.0};
   double gicp_leaf_size{0.15}, gicp_max_correspondence{1.0};
@@ -28,6 +34,10 @@ struct Params {
   bool bounded_global_correspondences{false};
   double max_fitness{0.20}, min_inlier_ratio{0.65}, ambiguity_margin{0.15};
   double confirmation_max_translation{0.15}, confirmation_max_rotation{0.0872664626};
+  // Explicit opt-in: independent query coordinates must be gravity aligned.
+  bool confirmation_gravity_prior{false};
+  double confirmation_gravity_sigma{0.005};
+  Eigen::Vector3d confirmation_map_up{Eigen::Vector3d::UnitZ()};
 };
 // Coarse experiment prior only; tests the base pose, not the lidar origin.
 bool poseInSearchSide(const Eigen::Isometry3d & base_pose,const Params & params);
@@ -45,6 +55,8 @@ struct Candidate {
   Eigen::Isometry3d map_from_reference{Eigen::Isometry3d::Identity()};
   double descriptor_distance{1.0}, fitness{1e9}, inlier_ratio{0.0};
   size_t ring_key_rank{0}, scan_context_rank{0};
+  // Shared by height variants at one XY; sentinel means an independent view.
+  size_t database_location{size_t(-1)};
   bool from_scan_context{false}, from_ring_key{false};
   Eigen::Vector3d seed_translation{Eigen::Vector3d::Zero()};
   double seed_yaw{0.0};

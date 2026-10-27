@@ -162,10 +162,14 @@ SLAM mode：
 
 ```bash
 ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \
-slam:=True
+slam:=True \
+use_ground_truth_odom:=False
 ```
 
 Save map：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
+
+For scan matching, loop detection, 3D reconstruction from the final pose graph,
+and 120 relocalization trials, see [sensor-built-map evaluation](docs/sensor_map_relocalization.md).
 
 #### 2.3.2 Physical Robot
 

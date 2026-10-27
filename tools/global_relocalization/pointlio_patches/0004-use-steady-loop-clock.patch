@@ -1,0 +1,12 @@
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -409,7 +409,8 @@
+ 
+   //------------------------------------------------------------------------------------------------------
+   signal(SIGINT, SigHandle);
+-  rclcpp::Rate rate(500);
++  // Scheduling uses steady time; propagation continues to use sensor headers.
++  rclcpp::WallRate rate(500);
+   while (rclcpp::ok()) {
+     if (flg_exit) break;
+     executor.spin_some();

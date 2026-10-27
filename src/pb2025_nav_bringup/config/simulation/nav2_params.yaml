@@ -2,6 +2,7 @@ ign_sim_pointcloud_tool:
   ros__parameters:
     use_sim_time: True
     pcd_topic: livox/lidar
+    instantaneous_scan: True  # GPU lidar points share the message timestamp.
     n_scan: 32
     horizon_scan: 1875
     ang_bottom: 7.22
@@ -113,6 +114,7 @@ point_lio:
       init_pose: [ 0.0, 0.0, 0.0 ]
 
     preprocess:
+      instantaneous_scan: True  # Requires the reviewed isolated Point-LIO build.
       lidar_type: 2                                     # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR
       scan_line: 32
       timestamp_unit: 0                                 # ign_sim_pointcloud_tool publishes per-point time in seconds.

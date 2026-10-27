@@ -14,6 +14,7 @@ int main(int argc,char**argv){try{
   RawFrontendParams p;
 #define PARAM(name) if(config.contains(#name))config.at(#name).get_to(p.name)
   PARAM(retry_iterations);PARAM(stationary_duration);PARAM(stationary_min_samples);PARAM(stationary_max_gyro);PARAM(stationary_gyro_std);PARAM(gravity_magnitude);PARAM(gravity_tolerance);PARAM(stationary_accel_std);PARAM(max_imu_gap);PARAM(max_scan_gap);PARAM(imu_history_sec);PARAM(leaf_size);PARAM(max_correspondence);PARAM(max_iterations);PARAM(max_fitness);PARAM(min_inlier_ratio);PARAM(min_points);PARAM(max_rotation_prior_error);PARAM(max_base_translation_step);PARAM(max_base_linear_speed);PARAM(min_geometry_eigen_ratio);PARAM(min_information_eigen_ratio);PARAM(diagnostic_budget_sec);PARAM(range_filter);PARAM(min_range);PARAM(max_range);PARAM(deterministic);PARAM(submap_scans);PARAM(imu_rotation_prior);PARAM(gyro_noise_density);PARAM(rotation_sigma_floor);PARAM(numerical_recovery);
+  PARAM(stationary_translation_prior);PARAM(stationary_translation_sigma_floor);
 #undef PARAM
   p.record_iterations=true;
   auto matrix=[](const nlohmann::json&v){Eigen::Isometry3d t=Eigen::Isometry3d::Identity();for(int r=0;r<4;++r)for(int c=0;c<4;++c)t.matrix()(r,c)=v.at(r*4+c).get<double>();return t;};

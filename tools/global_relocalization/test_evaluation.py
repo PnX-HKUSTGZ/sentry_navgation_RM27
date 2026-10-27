@@ -2,7 +2,7 @@ import math
 from types import SimpleNamespace
 import numpy as np
 from scipy.spatial.transform import Rotation
-from evaluation import interpolate, matrix, score_pose
+from evaluation import interpolate, matrix, score_pose, meets_pose_criteria
 
 
 def pose(z=0, yaw=0, roll=0):
@@ -38,6 +38,18 @@ def test_nonfinite_or_nonrigid_pose_never_scores_as_correct():
         assert not score_pose(bad, pose())["valid"]
 
 
+def test_sensor_map_criteria_keep_strict_result_and_full_orientation():
+    score = score_pose(pose(z=0.14, roll=2.5), pose())
+    assert not score["strict_correct"]
+    assert score["sensor_map_correct"]
+    assert meets_pose_criteria(score, "sensor_map")
+    assert not meets_pose_criteria(score, "ideal")
+    assert not meets_pose_criteria(score_pose(pose(roll=3.1), pose()), "sensor_map")
+    assert not meets_pose_criteria({"valid": True}, "sensor_map")
+    assert not meets_pose_criteria({"valid": True, "translation_3d_m": float("nan"),
+                                    "orientation_so3_deg": 0}, "sensor_map")
+
+
 def test_geometry_message_conversion_retains_xyz_and_xyzw_rotation():
     value = SimpleNamespace(
         position=SimpleNamespace(x=1.0, y=2.0, z=3.0),
@@ -46,3 +58,12 @@ def test_geometry_message_conversion_retains_xyz_and_xyzw_rotation():
     result = matrix(value)
     np.testing.assert_allclose(result[:3, 3], [1, 2, 3])
     assert math.isclose(Rotation.from_matrix(result[:3, :3]).magnitude(), 0.6)
+
+
+def test_yaw_error_wraps_at_180_and_xyz_error_remains_signed():
+    estimate, truth = pose(yaw=-179), pose(yaw=179)
+    estimate[:3, 3] = [0.03, -0.04, 0.12]
+    score = score_pose(estimate, truth)
+    assert math.isclose(score["yaw_error_deg"], 2)
+    assert math.isclose(score["translation_xy_m"], 0.05)
+    np.testing.assert_allclose(score["translation_error_xyz_m"], [0.03, -0.04, 0.12])

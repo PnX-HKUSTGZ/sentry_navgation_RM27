@@ -48,6 +48,8 @@ def generate_launch_description():
     autostart = LaunchConfiguration("autostart")
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
+    scan_cloud_topic = LaunchConfiguration("slam_scan_cloud_topic")
+    mapping_executable = LaunchConfiguration("mapping_executable")
 
     # Variables
     lifecycle_nodes = ["slam_toolbox", "map_saver"]
@@ -102,6 +104,14 @@ def generate_launch_description():
     declare_log_level_cmd = DeclareLaunchArgument(
         "log_level", default_value="info", description="log level"
     )
+    declare_scan_cloud_cmd = DeclareLaunchArgument(
+        "slam_scan_cloud_topic", default_value="terrain_map_ext",
+        description="Cloud projected for SLAM; use registered_scan with height filtering for independent current scans",
+    )
+    declare_mapping_executable_cmd = DeclareLaunchArgument(
+        "mapping_executable", default_value="pointlio_mapping",
+        description="Mapping odometry executable; an absolute path can select an isolated sensor-only backend",
+    )
 
     start_map_saver_server_cmd = Node(
         package="nav2_map_server",
@@ -136,7 +146,7 @@ def generate_launch_description():
         parameters=[configured_params],
         arguments=["--ros-args", "--log-level", log_level],
         remappings=[
-            ("cloud_in", "terrain_map_ext"),
+            ("cloud_in", scan_cloud_topic),
             ("scan", "obstacle_scan"),
         ],
     )
@@ -162,7 +172,7 @@ def generate_launch_description():
 
     start_point_lio_node = Node(
         package="point_lio",
-        executable="pointlio_mapping",
+        executable=mapping_executable,
         name="point_lio",
         output="screen",
         respawn=use_respawn,
@@ -184,6 +194,8 @@ def generate_launch_description():
     ld.add_action(declare_autostart_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
+    ld.add_action(declare_scan_cloud_cmd)
+    ld.add_action(declare_mapping_executable_cmd)
 
     # Running Map Saver Server
     ld.add_action(start_map_saver_server_cmd)

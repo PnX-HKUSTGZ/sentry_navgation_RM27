@@ -12,6 +12,11 @@ struct RawImuSample {
 };
 struct RawFrontendParams {
   bool range_filter{false}, deterministic{false}, imu_rotation_prior{false}, numerical_recovery{false};
+  // Optional command-model prior for a base commanded to spin in place.
+  // It is soft, leaves all LiDAR observability/motion gates intact, and stays
+  // disabled for general moving-base mapping frontends.
+  bool stationary_translation_prior{false};
+  double stationary_translation_sigma_floor{0.005};
   size_t submap_scans{1};
   double min_range{0.5}, max_range{30.0};
   double gyro_noise_density{0.005}, rotation_sigma_floor{0.005};
@@ -72,6 +77,7 @@ struct RawFrontendResult {
   double rotation_prior_error{0.0}, geometry_eigen_ratio{0.0};
   double information_eigen_ratio{0.0}, processing_sec{0.0};
   double rotation_prior_sigma{0.0},rotation_prior_weight{0.0};
+  double translation_prior_sigma{0.0},translation_prior_weight{0.0};
   size_t inliers{0}, points{0};
 };
 // ROS-free. addImu may run concurrently with the single processScan worker;

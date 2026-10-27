@@ -5,6 +5,17 @@ import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
 
 
+POSE_CRITERIA = {"ideal": (0.10, 2.0), "sensor_map": (0.15, 3.0)}
+
+
+def meets_pose_criteria(score, profile="ideal"):
+    """Independent GT acceptance; never used by the localization estimator."""
+    distance, angle = POSE_CRITERIA[profile]
+    return bool(score.get("valid") and
+                0 <= score.get("translation_3d_m", float("inf")) <= distance and
+                0 <= score.get("orientation_so3_deg", float("inf")) <= angle)
+
+
 def matrix(p):
     m = np.eye(4)
     m[:3, 3] = [p.position.x, p.position.y, p.position.z]
@@ -48,15 +59,21 @@ def score_pose(estimate, truth):
             return {
                 "valid": False,
                 "strict_correct": False,
+                "sensor_map_correct": False,
                 "reason": "invalid rigid transform",
             }
     distance = float(np.linalg.norm(estimate[:3, 3] - truth[:3, 3]))
     angle = float(
         np.degrees(Rotation.from_matrix(truth[:3, :3].T @ estimate[:3, :3]).magnitude())
     )
+    yaw_delta = np.arctan2(estimate[1, 0], estimate[0, 0]) - np.arctan2(truth[1, 0], truth[0, 0])
     return {
         "valid": True,
         "translation_3d_m": distance,
+        "translation_xy_m": float(np.linalg.norm(estimate[:2, 3] - truth[:2, 3])),
+        "translation_error_xyz_m": (estimate[:3, 3] - truth[:3, 3]).tolist(),
         "orientation_so3_deg": angle,
+        "yaw_error_deg": float(np.degrees(np.arctan2(np.sin(yaw_delta), np.cos(yaw_delta)))),
         "strict_correct": distance <= 0.1 and angle <= 2,
+        "sensor_map_correct": distance <= 0.15 and angle <= 3,
     }

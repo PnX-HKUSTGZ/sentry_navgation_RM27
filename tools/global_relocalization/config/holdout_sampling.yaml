@@ -1,0 +1,25 @@
+# Independent simulation placement geometry, never an estimator input.
+image: ../../../src/pb2025_nav_bringup/map/simulation/RMUC2026.pgm
+mode: trinary
+resolution: 0.05
+origin: [-14.6, -5.86, 0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.35
+ground_elevation:
+  grid:
+    image: ../../../src/pb2025_nav_bringup/map/simulation/RMUC2026_elevation.pgm
+    scale: 0.001
+    offset: -1.0
+    no_data: 65535
+# Validate support and full-turn clearance against the actual scene collision
+# surfaces. The legacy 2.5D image alone can place wheels inside raised details.
+collision_support:
+  world_path: ../../../src/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world
+  robot_urdf_path: ../.build/robot_velocity.urdf
+  model_roots: [../../../src/rm_27_stimulation/meshes]
+  max_support_height: 0.6
+  support_tolerance: 0.005
+  sample_resolution: 0.025
+  radial_margin: 0.02
+  separation_margin: 0.002

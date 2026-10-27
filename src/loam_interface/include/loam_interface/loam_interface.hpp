@@ -54,6 +54,7 @@ private:
   std::string base_frame_;
 
   bool base_frame_to_lidar_initialized_;
+  bool anchor_initial_base_frame_;
   tf2::Transform tf_odom_to_lidar_odom_;
 };
 

@@ -55,6 +55,7 @@ private:
 
   int n_scan_;
   int horizon_scan_;
+  bool instantaneous_scan_;
   float ang_bottom_;
   float ang_res_y_;
   std::string pcd_topic_;

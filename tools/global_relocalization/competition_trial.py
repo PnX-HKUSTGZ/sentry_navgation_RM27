@@ -22,7 +22,7 @@ from sensor_msgs.msg import Imu
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from global_relocalization_interfaces.action import Relocalize
-from evaluation import matrix, interpolate, score_pose
+from evaluation import matrix, interpolate, score_pose, meets_pose_criteria, POSE_CRITERIA
 from reset_pose import reset_pose
 
 
@@ -30,15 +30,11 @@ class Observe(Node):
     def __init__(self):
         super().__init__("competition_trial_observer")
         self.gt, self.imu, self.states, self.commands = [], [], [], []
+        self.gt_error = None
         self.create_subscription(
             Odometry,
             "/ground_truth/odometry",
-            lambda m: self.gt.append(
-                (
-                    m.header.stamp.sec + m.header.stamp.nanosec * 1e-9,
-                    matrix(m.pose.pose),
-                )
-            ),
+            self.truth,
             qos_profile_sensor_data,
         )
         self.create_subscription(
@@ -77,6 +73,12 @@ class Observe(Node):
     def status(self, m):
         self.states.append({"received_wall": time.monotonic(), **json.loads(m.data)})
 
+    def truth(self, message):
+        stamp = message.header.stamp.sec + message.header.stamp.nanosec * 1e-9
+        if self.gt and stamp <= self.gt[-1][0]:
+            self.gt_error = "GT timestamps not strictly increasing"
+        self.gt.append((stamp, matrix(message.pose.pose)))
+
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -87,6 +89,10 @@ def main():
         default=str(Path(__file__).parent / "config/trials_left_physical_120.json"),
     )
     p.add_argument("--early", action="store_true")
+    p.add_argument("--evaluation-profile", choices=POSE_CRITERIA, default="ideal",
+                   help="GT scoring only: ideal 0.10m/2deg; sensor_map 0.15m/3deg; both require <=1s")
+    p.add_argument("--record-bag", action="store_true",
+                   help="retain independent raw sensors, GT, status, pose and control")
     a = p.parse_args()
     out = Path(a.output)
     out.mkdir(parents=True, exist_ok=False)
@@ -101,6 +107,14 @@ def main():
         if t["trial_id"] == a.trial
     )
     reset_pose(trial["requested_pose"], log_path=out / "reset_attempts.json")
+    bag_process = None
+    if a.record_bag:
+        with (out / "bag.log").open("w") as bag_log:
+            bag_process = subprocess.Popen(
+                ["ros2", "bag", "record", "--use-sim-time", "-o", str(out / "raw_bag"), "--topics",
+                 "/clock", "/livox/lidar", "/livox/imu", "/ground_truth/odometry",
+                 "/cmd_vel", "/global_relocalization/status", "/global_relocalization/pose"],
+                stdout=bag_log, stderr=subprocess.STDOUT, start_new_session=True)
     command = [
         a.node,
         "--ros-args",
@@ -151,6 +165,9 @@ def main():
         Path(a.manifest),
         Path(a.trials),
         Path(__file__),
+        Path(__file__).parent / "evaluation.py",
+        Path(__file__).parent / "reset_pose.py",
+        Path(__file__).parent / "audit_runtime_parameters.py",
     ]
     provenance = {
         str(path.resolve()): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -160,12 +177,21 @@ def main():
         "sha256": provenance,
         **trial,
         "early_trigger_test": a.early,
+        "evaluation_profile": a.evaluation_profile,
+        "pose_limits": dict(zip(("translation_3d_m", "orientation_so3_deg"), POSE_CRITERIA[a.evaluation_profile])),
+        "trigger_limit_sec": 1.0,
         "command": command,
         "environment": {
             k: os.environ.get(k) for k in ("ROS_DOMAIN_ID", "GZ_PARTITION")
         },
         "gt_used_by_estimator": False,
     }
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def terminate_trial(signum, frame):
+        raise InterruptedError("trial terminated; retaining partial evidence")
+
+    signal.signal(signal.SIGTERM, terminate_trial)
     try:
         if not node.action.wait_for_server(
             timeout_sec=15
@@ -254,16 +280,27 @@ def main():
             deadline = time.monotonic() + 1
             while node.gt and node.gt[-1][0] < stamp and time.monotonic() < deadline:
                 spin()
-            truth = interpolate(node.gt, stamp, 0.25)
+            truth = interpolate(node.gt, stamp, 0.25) if node.gt_error is None else None
             if truth is None:
-                result["score"] = {"valid": False, "reason": "missing GT bracket"}
+                result["score"] = {"valid": False, "reason": node.gt_error or "missing GT bracket"}
             else:
                 estimate = matrix(pose.pose)
                 map_world = np.array(
                     json.loads(Path(a.manifest).read_text())["T_map_world"]
                 )
                 truth = map_world @ truth
+                result["ground_truth_pose_matrix"] = truth.tolist()
+                result["ground_truth_interpolation"] = {
+                    "pose_stamp_sec": stamp, "max_bracket_gap_sec": 0.25,
+                    "method": "linear translation and quaternion SLERP; no extrapolation"}
+                for name, value in (("estimate", estimate), ("ground_truth", truth)):
+                    result[name + "_pose"] = {
+                        "xyz_m": value[:3, 3].tolist(),
+                        "quaternion_xyzw": Rotation.from_matrix(value[:3, :3]).as_quat().tolist(),
+                        "rpy_deg": Rotation.from_matrix(value[:3, :3]).as_euler("xyz", degrees=True).tolist()}
                 result["score"] = score_pose(estimate, truth)
+                result["evaluation_profile"] = a.evaluation_profile
+                result["pose_correct"] = meets_pose_criteria(result["score"], a.evaluation_profile)
         terminal_wall = time.monotonic()
         until = terminal_wall + 1
         while time.monotonic() < until:
@@ -338,7 +375,9 @@ def main():
     except Exception as e:
         result["exception"] = repr(e)
     finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
         result["status_events"] = node.states
+        result["gt_timestamps_valid"] = node.gt_error is None
         result["commands"] = node.commands
         result["imu"] = node.imu
         result["gt"] = [{"stamp": t, "matrix": m.tolist()} for t, m in node.gt]
@@ -350,8 +389,19 @@ def main():
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
+        if bag_process is not None:
+            if bag_process.poll() is None:
+                os.killpg(bag_process.pid, signal.SIGINT)
+            try:
+                bag_process.wait(timeout=12)
+            except subprocess.TimeoutExpired:
+                os.killpg(bag_process.pid, signal.SIGKILL)
+                bag_process.wait()
+            result["bag_returncode"] = bag_process.returncode
+            (out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
     print(
         json.dumps(
             {
@@ -369,7 +419,7 @@ def main():
     )
     passed = (
         result.get("action", {}).get("success")
-        and result.get("score", {}).get("strict_correct")
+        and meets_pose_criteria(result.get("score", {}), a.evaluation_profile)
         and 0 <= latency <= 1
     )
     early_passed = (

@@ -165,11 +165,16 @@ namespace:=
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
 world:=RMUC2026 \
 slam:=True \
+use_ground_truth_odom:=False \
 gui:=false \
 use_rviz:=true
 ```
 
 保存栅格地图：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
+
+包含扫描匹配、回环检测、最终位姿图三维地图重建及 120 组重定位评估的完整流程，见[传感器建图与重定位测试](docs/sensor_map_relocalization.md)。
+
+传感器时间模型、Point-LIO 修复、三维原始先验导出及每批全新位置的验收流程，见[自主建图先验与全局重定位优化](docs/mapping_relocalization_optimization_20261026.md)。
 
 当前 RM27 仿真和实车启动链均按单机器人维护，默认保持空 namespace；多机器人启动入口暂不作为当前稳定版本使用。
 

@@ -83,6 +83,34 @@ TEST(RawFrontend,RotationPriorHasRightIncrementJacobianAndCandidateCost) {
   for(int k=0;k<3;++k){auto plus=t,minus=t;plus.linear()=t.rotation()*Eigen::AngleAxisd(1e-7,Eigen::Vector3d::Unit(k)).toRotationMatrix();minus.linear()=t.rotation()*Eigen::AngleAxisd(-1e-7,Eigen::Vector3d::Unit(k)).toRotationMatrix();EXPECT_NEAR((prior.cost(plus)-prior.cost(minus))/2e-7,b(k),1e-6);}
   Eigen::Vector3d step=-h.topLeftCorner<3,3>().ldlt().solve(b.head<3>());auto improved=t;improved.linear()=t.rotation()*Eigen::AngleAxisd(step.norm(),step.normalized()).toRotationMatrix();EXPECT_LT(prior.cost(improved),e);EXPECT_TRUE((h.bottomRightCorner<3,3>().isZero()));
 }
+TEST(RawFrontend,BaseTranslationPriorUsesLeverArmAndRightSE3Jacobian) {
+  RawBaseTranslationPrior prior;prior.enabled=true;prior.inverse_variance=100.;
+  prior.sensor_base_translation<<-.1,-.126,-.21;
+  auto t=pose(.2,-.1,.05);t.translation()=prior.sensor_base_translation-t.rotation()*prior.sensor_base_translation;
+  EXPECT_LT(prior.residual(t).norm(),1e-12);EXPECT_LT(prior.cost(t),1e-20);
+  t.translation()+=Eigen::Vector3d(.01,-.02,.005);
+  const auto j=prior.jacobian(t);Eigen::Matrix<double,6,6> h=Eigen::Matrix<double,6,6>::Zero();Eigen::Matrix<double,6,1> b=Eigen::Matrix<double,6,1>::Zero();double e=0.;prior.linearize(t,h,b,e);
+  EXPECT_DOUBLE_EQ(e,prior.cost(t));
+  for(int k=0;k<6;++k) {
+    Eigen::Matrix<double,6,1> step=Eigen::Matrix<double,6,1>::Zero();step[k]=1e-7;
+    const auto plus=t*small_gicp::se3_exp(step),minus=t*small_gicp::se3_exp(-step);
+    EXPECT_LT(((prior.residual(plus)-prior.residual(minus))/(2e-7)-j.col(k)).norm(),1e-8);
+    EXPECT_NEAR((prior.cost(plus)-prior.cost(minus))/(2e-7),b[k],1e-7);
+  }
+  EXPECT_GT((h.bottomRightCorner<3,3>().trace()),0.);
+  prior.enabled=false;EXPECT_DOUBLE_EQ(prior.cost(t),0.);
+}
+TEST(RawFrontend,SoftBasePriorPreservesObservableTranslationAndRejectsExcessMotion) {
+  RawFrontendParams p;p.deterministic=true;p.imu_rotation_prior=true;p.stationary_translation_prior=true;p.max_iterations=30;
+  auto cloud=scene();
+  for(double dx:{.005,.1}) {
+    StationaryRawFrontend f(p,Eigen::Isometry3d::Identity(),Eigen::Isometry3d::Identity());stationary(f,2.2);ASSERT_TRUE(f.processScan(cloud,2.).accepted);
+    auto motion=pose(0);motion.translation().x()=dx;Cloud moved;pcl::transformPointCloud(cloud,moved,motion.inverse().matrix().cast<float>());
+    const auto result=f.processScan(moved,2.1);
+    if(dx<.01){ASSERT_TRUE(result.accepted)<<result.reason;EXPECT_GT(result.translation_step,.002);EXPECT_GT(result.reference_from_base.translation().x(),.002);}
+    else {EXPECT_FALSE(result.accepted);EXPECT_GT(result.translation_step,.035);EXPECT_NE(std::find(result.rejected_gates.begin(),result.rejected_gates.end(),"linear_speed"),result.rejected_gates.end());}
+  }
+}
 TEST(RawFrontend,SubmapContainsOnlyAcceptedScansAndHardFaultCannotRecover) {
   RawFrontendParams p;p.range_filter=true;p.deterministic=true;p.submap_scans=5;p.imu_rotation_prior=true;p.numerical_recovery=true;
   StationaryRawFrontend f(p,Eigen::Isometry3d::Identity(),Eigen::Isometry3d::Identity());stationary(f,3.);

@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Independent completion audit; never equates an incremented callback counter with coverage."""
+import argparse,json
+from pathlib import Path
+import numpy as np
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
+from evaluation import interpolate
+
+def main():
+ p=argparse.ArgumentParser();p.add_argument('--capture',type=Path,required=True);p.add_argument('--source-audit',type=Path,required=True);a=p.parse_args();r=json.loads(a.capture.read_text());source=json.loads(a.source_audit.read_text())['sensor_only_header_stamp_audit'];ns=lambda x:int(round(x*1e9));lidar=source['/livox/lidar'];imu=source['/livox/imu'];source_stamps=[ns(lidar['first_stamp'])+i*100000000 for i in range(lidar['count'])]
+ statuses=[s for s in r['status'] if 'stamp' in s];accepted=[s for s in statuses if s.get('accepted')];waiting=[s for s in statuses if not s.get('accepted') and s.get('failure_class')=='waiting'];rejected=[s for s in statuses if not s.get('accepted') and s.get('failure_class')!='waiting'];state_stamps=[ns(s['stamp'])for s in statuses];acc_stamps=[ns(s['stamp'])for s in accepted];odom=[ns(s['stamp'])for s in r['odom']];cloud=[ns(s['stamp'])for s in r['clouds']]
+ def order(x):return len(x)==len(set(x)) and all(y>x for x,y in zip(x,x[1:]))
+ files=sorted((a.capture.parent/'registered_scans').glob('*.npy'));expected=[a.capture.parent/'registered_scans'/f'{i:06d}.npy' for i in range(len(cloud))];file_errors=[]
+ for meta,path in zip(r['clouds'],expected):
+  if not path.exists():file_errors.append(str(path)+': missing');continue
+  arr=np.load(path,mmap_mode='r')
+  if arr.shape!=(meta['points'],3):file_errors.append(str(path)+': shape mismatch')
+ gt=[(x['stamp'],np.array(x['matrix'])) for x in r['gt']];unmatched=[x['stamp'] for x in r['odom'] if interpolate(gt,x['stamp'],.25) is None];last=statuses[-1] if statuses else {};last_imu=last.get('last_imu_stamp');imu_count=last.get('received_imu_count');imu_first_inferred=last_imu-(imu_count-1)*.01 if last_imu is not None and imu_count else None
+ result={'independent_source_audit':str(a.source_audit),'failure':r['failure'],'source_lidar':lidar,'source_imu':imu,'processed_status_count':len(statuses),'accepted_status_count':len(accepted),'calibration_wait_count':len(waiting),'rejected_status_count':len(rejected),'fault_events':[s for s in r['status'] if 'fault' in s], 'all_processed_stamps_equal_source':state_stamps==source_stamps,'missing_source_stamps_ns':sorted(set(source_stamps)-set(state_stamps)),'unexpected_processed_stamps_ns':sorted(set(state_stamps)-set(source_stamps)), 'accepted_odom_cloud_stamps_identical':acc_stamps==odom==cloud,'strict_unique_increasing':{k:order(v)for k,v in {'processed':state_stamps,'accepted':acc_stamps,'odom':odom,'cloud':cloud}.items()},'odom_count':len(odom),'saved_cloud_metadata_count':len(cloud),'actual_npy_file_count':len(files),'file_names_exact':files==expected,'file_shape_errors':file_errors,'last_published_received_scan_count':last.get('received_scan_count'),'last_published_received_imu_count':imu_count,'last_published_imu_stamp':last_imu,'inferred_first_received_imu_stamp_if_gapfree':imu_first_inferred,'observed_imu_max_gap':last.get('max_received_imu_gap'),'observed_lidar_max_gap':last.get('max_received_scan_gap'),'post_status_source_imu_tail_count':int(round((imu['last_stamp']-last_imu)/.01)) if last_imu is not None else None,'imu_covers_last_used_lidar':bool(last_imu is not None and statuses and last_imu>=statuses[-1]['stamp']-1e-9),'imu_tail_note':'Counters are from last processed LiDAR status. A later source IMU tail may be played/drained without a new published counter; do not assert its runtime receipt from these records.','gt_observed_count':len(gt),'gt_stamps_strict_unique_increasing':order([ns(t)for t,_ in gt]),'odom_gt_matched_count':len(odom)-len(unmatched),'odom_gt_unmatched_count':len(unmatched),'odom_gt_unmatched_stamps':unmatched,'estimator_used_GT':False,'map_exported':r.get('map_exported')}
+ result['imu_source_prefix_coverage_complete']=bool(last_imu is not None and imu_count and abs(imu_first_inferred-imu['first_stamp'])<1e-8 and last.get('max_received_imu_gap',1e9)<=imu['max_gap']+1e-9)
+ result['full_route_complete']=r['failure'] is None and not rejected and not result['fault_events'] and result['all_processed_stamps_equal_source'] and result['accepted_odom_cloud_stamps_identical'] and all(result['strict_unique_increasing'].values()) and result['file_names_exact'] and not file_errors and last.get('received_scan_count')==lidar['count'] and result['imu_covers_last_used_lidar'] and result['imu_source_prefix_coverage_complete']
+ result['post_evaluation_coverage_complete']=result['gt_stamps_strict_unique_increasing'] and not unmatched
+ out=a.capture.parent/'coverage_audit.json';out.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps({k:v for k,v in result.items() if k not in ('missing_source_stamps_ns','unexpected_processed_stamps_ns','odom_gt_unmatched_stamps')},indent=2));return int(not result['full_route_complete'] or not result['post_evaluation_coverage_complete'])
+if __name__=='__main__':raise SystemExit(main())

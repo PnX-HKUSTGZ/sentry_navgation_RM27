@@ -48,6 +48,8 @@ public:
     raw_params_.deterministic=declare_parameter<bool>("raw_deterministic",false);
     raw_params_.submap_scans=declare_parameter<int>("raw_submap_scans",1);
     raw_params_.imu_rotation_prior=declare_parameter<bool>("raw_imu_rotation_prior",false);
+    raw_params_.stationary_translation_prior=declare_parameter<bool>("raw_stationary_translation_prior",false);
+    raw_params_.stationary_translation_sigma_floor=number("raw_stationary_translation_sigma_floor",.005);
     raw_params_.numerical_recovery=declare_parameter<bool>("raw_numerical_recovery",false);
     raw_params_.min_range=number("raw_min_range",0.5);raw_params_.max_range=number("raw_max_range",30.0);
     raw_params_.gyro_noise_density=number("raw_gyro_noise_density",0.005);raw_params_.rotation_sigma_floor=number("raw_rotation_sigma_floor",0.005);
@@ -62,7 +64,7 @@ public:
     raw_params_.diagnostic_budget_sec=number("raw_local_budget_ms",100.)/1000.;
     raw_params_.stationary_duration=raw_calibration_sec_;
     raw_confirmation_frames_=declare_parameter<int>("raw_confirmation_frames",3);
-    if(raw_params_.submap_scans<1||raw_params_.submap_scans>30||raw_params_.min_range<0||raw_params_.max_range<=raw_params_.min_range||raw_params_.gyro_noise_density<=0||raw_params_.rotation_sigma_floor<=0||raw_params_.retry_iterations<0||raw_params_.retry_iterations>15||raw_confirmation_frames_<3||raw_confirmation_frames_>10||raw_calibration_sec_<=0||raw_params_.leaf_size<=0||raw_params_.max_correspondence<=0||raw_params_.max_iterations<1||raw_params_.max_fitness<=0||raw_params_.min_inlier_ratio<=0||raw_params_.min_inlier_ratio>1||raw_params_.diagnostic_budget_sec<=0)
+    if(raw_params_.submap_scans<1||raw_params_.submap_scans>30||raw_params_.min_range<0||raw_params_.max_range<=raw_params_.min_range||raw_params_.gyro_noise_density<=0||raw_params_.rotation_sigma_floor<=0||raw_params_.stationary_translation_sigma_floor<=0||raw_params_.retry_iterations<0||raw_params_.retry_iterations>15||raw_confirmation_frames_<3||raw_confirmation_frames_>10||raw_calibration_sec_<=0||raw_params_.leaf_size<=0||raw_params_.max_correspondence<=0||raw_params_.max_iterations<1||raw_params_.max_fitness<=0||raw_params_.min_inlier_ratio<=0||raw_params_.min_inlier_ratio>1||raw_params_.diagnostic_budget_sec<=0)
       throw std::invalid_argument("invalid raw calibration/registration/confirmation parameters");
     map_frame_=str("map_frame","map");odom_frame_=str("odom_frame","odom");
     base_frame_=str("base_frame","base_footprint");lidar_frame_=str("lidar_frame","left_mid360");
@@ -81,9 +83,11 @@ public:
     p.search_side=str("search_side","all");p.side_boundary_x=number("side_boundary_x",0.0);search_prior_=p;
     p.sc_rings=declare_parameter<int>("sc_rings",20);p.sc_sectors=declare_parameter<int>("sc_sectors",60);
     p.top_k=declare_parameter<int>("top_k",5);
+    p.fallback_candidate_count=declare_parameter<int>("fallback_candidate_count",0);
     p.ring_key_candidates=declare_parameter<int>("ring_key_candidates",input_mode_=="raw_imu"?5:0);
     p.retrieval_all_views=declare_parameter<bool>("retrieval_all_views",input_mode_=="raw_imu");
     p.db_grid_resolution=number("db_grid_resolution",2.0);p.db_base_z=number("db_base_z",0.0);
+    p.db_base_z_offsets=declare_parameter<std::vector<double>>("db_base_z_offsets",p.db_base_z_offsets);
     p.db_max_radius=number("db_max_radius",25.0);p.db_min_points=declare_parameter<int>("db_min_points",80);
     p.db_min_elevation_deg=number("db_min_elevation_deg",-40.0);
     p.db_max_elevation_deg=number("db_max_elevation_deg",85.0);
@@ -95,6 +99,16 @@ public:
     p.ambiguity_margin=number("ambiguity_margin",0.15);
     p.confirmation_max_translation=number("confirmation_max_translation",0.15);
     p.confirmation_max_rotation=number("confirmation_max_rotation",0.0872664626);
+    p.confirmation_gravity_prior=declare_parameter<bool>("confirmation_gravity_prior",false);
+    p.confirmation_gravity_sigma=number("confirmation_gravity_sigma",.005);
+    const auto map_up=declare_parameter<std::vector<double>>("confirmation_map_up",{0.,0.,1.});
+    if(map_up.size()!=3)throw std::invalid_argument("confirmation_map_up must contain three coordinates");
+    p.confirmation_map_up=Eigen::Vector3d(map_up[0],map_up[1],map_up[2]);
+    if(p.confirmation_gravity_prior&&input_mode_!="raw_imu")throw std::invalid_argument("confirmation gravity prior requires a raw_imu gravity-aligned reference");
+    confirmation_gravity_status_={{"enabled",p.confirmation_gravity_prior},{"reference_gravity_source",p.confirmation_gravity_prior?"raw_imu_initial_stationary_gravity":"disabled"},
+      {"map_gravity_source",p.confirmation_gravity_prior?"manifest_T_map_world_world_z":"disabled"},{"sigma_rad",p.confirmation_gravity_sigma},
+      {"inverse_variance",1./(p.confirmation_gravity_sigma*p.confirmation_gravity_sigma)},
+      {"map_up",{p.confirmation_map_up.x(),p.confirmation_map_up.y(),p.confirmation_map_up.z()}}};
     if(settle_sec_<=0||std::abs(spin_speed_)<0.01||std::abs(spin_speed_)>(competition_mode_?3.5:1.5)||stop_settle_sec_<=0||prestart_timeout_sec_<=0||post_start_timeout_sec_<=0||spin_angle_<=0||timeout_sec_<=0||data_timeout_<=0)
       throw std::invalid_argument("Invalid experiment motion/timing parameters");
     const auto map_path=str("map_path","");const auto manifest_path=str("manifest_path","");
@@ -107,7 +121,15 @@ public:
         throw std::runtime_error("Map manifest frame disagrees with configured map_frame");
       if(manifest.contains("map_sha256")&&manifest["map_sha256"]!=core_->mapHash())
         throw std::runtime_error("Map manifest SHA256 disagrees with PCD");
+      if(p.confirmation_gravity_prior) {
+        if(!manifest.contains("T_map_world"))throw std::runtime_error("confirmation gravity prior requires manifest T_map_world for world-up verification");
+        const auto & transform=manifest.at("T_map_world");
+        Eigen::Vector3d declared_up(transform.at(0).at(2).get<double>(),transform.at(1).at(2).get<double>(),transform.at(2).at(2).get<double>());
+        if(!declared_up.allFinite()||declared_up.norm()<1e-6||!declared_up.normalized().isApprox(p.confirmation_map_up.normalized(),1e-6))
+          throw std::runtime_error("confirmation_map_up disagrees with manifest world-up direction");
+      }
     }
+    else if(p.confirmation_gravity_prior)throw std::runtime_error("confirmation gravity prior requires a map manifest");
     if(declare_parameter<bool>("visualization_enabled",false))visualization_=std::make_unique<Visualization>(*this,map_path,map_frame_,p);
     tf_buffer_=std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_=std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
@@ -418,6 +440,7 @@ private:
         {"fitness",update.fitness},{"inlier_ratio",update.inlier_ratio},{"processing_sec",update.processing_sec},{"over_budget",update.over_budget},
         {"geometry_eigen_ratio",update.geometry_eigen_ratio},{"information_eigen_ratio",update.information_eigen_ratio},{"rotation_prior_error",update.rotation_prior_error},
         {"translation_step",update.translation_step},{"linear_speed",update.linear_speed},{"cumulative_yaw",update.cumulative_yaw},
+        {"translation_prior_sigma",update.translation_prior_sigma},{"translation_prior_weight",update.translation_prior_weight},
         {"gyro_bias",{update.gyro_bias.x(),update.gyro_bias.y(),update.gyro_bias.z()}},
         {"converged",update.converged},{"transform_finite",update.transform_finite},{"iterations",update.iterations},
         {"first_attempt_iterations",update.first_attempt_iterations},{"retry_count",update.retry_count},{"rejected_gates",update.rejected_gates}});
@@ -539,6 +562,7 @@ private:
       {"retrieval_sec",result_.retrieval_sec},{"gicp_sec",result_.gicp_sec},{"confirmation_sec",result_.confirmation_sec},
       {"database_size",result_.database_size},{"candidates_tested",result_.candidates_tested},
       {"candidate_workers",result_.candidate_workers},{"retrieval_scored_views",result_.retrieval_scored_views},{"retrieval_candidate_count",result_.retrieval_candidate_count},{"retrieval_ring_added",result_.retrieval_ring_added}}}};
+    data["confirmation_gravity_prior"]=confirmation_gravity_status_;
     if(input_mode_=="raw_imu")data["raw_frontend"]=raw_status_;
     data["competition"]={{"enabled",competition_mode_},{"generation",competition_.generation()},
       {"start_latched",match_latched_.load()},{"prepared",competition_.isPrepared()},{"release_control",competition_.releaseControl()},
@@ -551,7 +575,7 @@ private:
       {"source_points",h.source_points},{"coarse_source_points",h.coarse_source_points},{"coarse_iterations",h.coarse_iterations},{"fine_iterations",h.fine_iterations},
       {"coarse_sec",h.coarse_sec},{"fine_sec",h.fine_sec},{"quality_sec",h.quality_sec},{"total_sec",h.total_sec},{"canceled",h.canceled},
       {"within_search_side",h.within_search_side},
-      {"descriptor_distance",h.descriptor_distance},{"ring_key_rank",h.ring_key_rank},{"scan_context_rank",h.scan_context_rank},
+      {"descriptor_distance",h.descriptor_distance},{"ring_key_rank",h.ring_key_rank},{"scan_context_rank",h.scan_context_rank},{"database_location",h.database_location},
       {"from_scan_context",h.from_scan_context},{"from_ring_key",h.from_ring_key},{"seed_xyz",{h.seed_translation.x(),h.seed_translation.y(),h.seed_translation.z()}},{"seed_yaw",h.seed_yaw},{"xyz",{h.map_from_reference.translation().x(),h.map_from_reference.translation().y(),h.map_from_reference.translation().z()}},
       {"yaw",yaw(h.map_from_reference)}});
     data["metrics"]["confirmations"]=nlohmann::json::array();
@@ -700,6 +724,7 @@ private:
   rclcpp::CallbackGroup::SharedPtr imu_group_,cloud_group_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   std::vector<Cloud> confirmations_;
+  nlohmann::json confirmation_gravity_status_;
   nlohmann::json raw_status_;nlohmann::json stage_ros_times_=nlohmann::json::object();
   rclcpp::Time stage_ros_start_{0,0,RCL_ROS_TIME};
   std::mutex mutex_;std::atomic_bool cancel_{false},shutting_down_{false};

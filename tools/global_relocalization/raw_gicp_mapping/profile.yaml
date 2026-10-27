@@ -1,0 +1,31 @@
+raw_mapping:
+  ros__parameters:
+    use_sim_time: true
+    cloud_topic: /livox/lidar
+    imu_topic: /livox/imu
+    instantaneous_scan: true
+    source_timeout_sec: 5.0
+    shutdown_on_fault: true
+    sensor_from_imu: [1.0, 0.0, 0.0, 0.0,
+                      0.0, 1.0, 0.0, 0.0,
+                      0.0, 0.0, 1.0, 0.0,
+                      0.0, 0.0, 0.0, 1.0]
+    base_from_sensor: [1.0, 0.0, 0.0, 0.0,
+                       0.0, 0.8660254037844387, 0.5, 0.126,
+                       0.0, -0.5, 0.8660254037844387, 0.13,
+                       0.0, 0.0, 0.0, 1.0]
+    frontend:
+      stationary_duration: 2.0
+      submap_scans: 20
+      max_base_linear_speed: 0.6
+      max_base_translation_step: 0.2
+      max_imu_gap: 0.035
+      # Preserve actual acquisition times; gaps are reported, never filled.
+      max_scan_gap: 0.35
+      max_fitness: 0.18
+      min_inlier_ratio: 0.65
+      max_iterations: 15
+      retry_iterations: 15
+      leaf_size: 0.12
+      max_correspondence: 0.5
+      diagnostic_directory: ''

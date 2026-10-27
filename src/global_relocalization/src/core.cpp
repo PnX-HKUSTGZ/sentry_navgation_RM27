@@ -4,6 +4,7 @@
 #include "global_relocalization/core.hpp"
 #include "global_relocalization/bounded_kdtree.hpp"
 #include "global_relocalization/raw_preprocessing.hpp"
+#include "global_relocalization/gravity_registration.hpp"
 #include <pcl/common/common.h>
 #include <pcl/common/transforms.h>
 #include <pcl/filters/voxel_grid.h>
@@ -23,6 +24,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 #include <filesystem>
 #include <atomic>
 #include <future>
@@ -91,14 +93,37 @@ std::pair<double,double> descriptorMatch(const Descriptor & q,const Descriptor &
   if(q.cells.rows()!=target.cells.rows()||q.cells.cols()!=target.cells.cols())
     throw std::invalid_argument("Scan Context shape mismatch");
   const int sectors=q.cells.cols(); double best=1.0;int best_shift=0;
-  for(int shift=0;shift<sectors;++shift) {
+  // Reuse column norms across all circular shifts. For the normal SC sizes,
+  // Eigen computes all column dot products in one matrix multiplication.
+  // Keep the original scalar reduction for near ties so symmetric scenes
+  // retain the same deterministic yaw choice and distance as before.
+  const Eigen::VectorXd query_norm=q.cells.colwise().norm();
+  const Eigen::VectorXd target_norm=target.cells.colwise().norm();
+  const bool batch=sectors>=16&&sectors<=512;
+  Eigen::MatrixXd dots;
+  if(batch)dots.noalias()=q.cells.transpose()*target.cells;
+  const auto distanceAt=[&](int shift,bool exact) {
     double distance=0;int used=0;
     for(int s=0;s<sectors;++s) {
-      const auto a=q.cells.col(s);const auto b=target.cells.col((s+shift)%sectors);
-      const double an=a.norm(),bn=b.norm(); if(an==0&&bn==0)continue;
-      ++used;distance+=(an==0||bn==0)?1.0:1.0-std::clamp(a.dot(b)/(an*bn),-1.0,1.0);
+      const int t=(s+shift)%sectors;
+      const double an=query_norm[s],bn=target_norm[t];
+      if(an==0&&bn==0)continue;
+      const double dot=(an==0||bn==0)?0.0:
+        (exact?q.cells.col(s).dot(target.cells.col(t)):dots(s,t));
+      ++used;distance+=(an==0||bn==0)?1.0:1.0-std::clamp(dot/(an*bn),-1.0,1.0);
     }
-    distance=used?distance/used:1.0;
+    return used?distance/used:1.0;
+  };
+  std::vector<double> approximate;
+  double approximate_best=1.0;
+  if(batch)for(int shift=0;shift<sectors;++shift) {
+    approximate.push_back(distanceAt(shift,false));
+    approximate_best=std::min(approximate_best,approximate.back());
+  }
+  const double tie_bound=64*std::numeric_limits<double>::epsilon()*(q.cells.rows()+sectors);
+  for(int shift=0;shift<sectors;++shift) {
+    if(batch&&approximate[shift]>approximate_best+tie_bound)continue;
+    const double distance=distanceAt(shift,true);
     if(distance<best){best=distance;best_shift=shift;}
   }
   double yaw=best_shift*(2*pi/sectors);if(yaw>pi)yaw-=2*pi;
@@ -130,13 +155,24 @@ std::string sha256File(const std::string & path) {
 
 std::vector<Candidate> selectRetrievalCandidates(std::vector<Candidate> candidates,int context_count,int ring_count) {
   if(context_count<1||ring_count<0)throw std::invalid_argument("invalid retrieval candidate counts");
+  const auto location=[](const Candidate & c){return c.database_location==size_t(-1)?c.ring_key_rank:c.database_location;};
+  for(auto & c:candidates){c.from_scan_context=false;c.from_ring_key=false;}
   std::sort(candidates.begin(),candidates.end(),[](const Candidate&a,const Candidate&b){return a.descriptor_distance<b.descriptor_distance;});
-  for(size_t i=0;i<candidates.size();++i)candidates[i].scan_context_rank=i+1;
+  std::unordered_map<size_t,size_t> context_ranks;
+  for(auto & c:candidates) {
+    const auto id=location(c);
+    const auto insertion=context_ranks.emplace(id,context_ranks.size()+1);
+    c.scan_context_rank=insertion.first->second;
+  }
   std::vector<Candidate> selected;
-  for(size_t i=0;i<std::min(candidates.size(),size_t(context_count));++i){auto c=candidates[i];c.from_scan_context=true;selected.push_back(c);}
+  for(auto c:candidates)if(c.scan_context_rank<=size_t(context_count)){c.from_scan_context=true;selected.push_back(c);}
   std::sort(candidates.begin(),candidates.end(),[](const Candidate&a,const Candidate&b){return a.ring_key_rank<b.ring_key_rank;});
-  for(size_t i=0;i<std::min(candidates.size(),size_t(ring_count));++i) {
-    const auto&c=candidates[i];auto duplicate=std::find_if(selected.begin(),selected.end(),[&](const Candidate&other){return other.ring_key_rank==c.ring_key_rank;});
+  std::unordered_set<size_t> ring_locations;
+  for(const auto & c:candidates) {
+    const auto id=location(c);
+    if(ring_locations.size()<size_t(ring_count))ring_locations.insert(id);
+    if(!ring_locations.count(id))continue;
+    auto duplicate=std::find_if(selected.begin(),selected.end(),[&](const Candidate&other){return other.ring_key_rank==c.ring_key_rank;});
     if(duplicate!=selected.end())duplicate->from_ring_key=true;
     else{auto added=c;added.from_ring_key=true;selected.push_back(added);}
   }
@@ -169,7 +205,7 @@ struct Core::Impl {
   Params params;Cloud::Ptr map;
   std::shared_ptr<SearchProvenance> provenance=std::make_shared<SearchProvenance>();
   std::string hash;size_t diagnostic_search_count{0};
-  struct View { Eigen::Vector3d base;Descriptor descriptor; };
+  struct View { Eigen::Vector3d base;Descriptor descriptor;size_t location; };
   std::vector<View> database;
   Eigen::Vector3d database_offset=Eigen::Vector3d::Constant(1e9);
   pcl::PointCloud<pcl::PointCovariance>::Ptr target,coarse_target;
@@ -241,7 +277,10 @@ struct Core::Impl {
     if(!source||source->size()<20)return candidate;
     try {
     if(canceled())throw SearchCanceled{};
-    small_gicp::Registration<small_gicp::GICPFactor,CancelableReduction> registration;
+    small_gicp::Registration<small_gicp::GICPFactor,CancelableReduction,small_gicp::NullFactor,small_gicp::DistanceRejector,GravityConstrainedOptimizer> registration;
+    registration.optimizer.gravity.enabled=params.confirmation_gravity_prior&&!coarse;
+    registration.optimizer.gravity.inverse_variance=1./(params.confirmation_gravity_sigma*params.confirmation_gravity_sigma);
+    registration.optimizer.gravity.map_up=params.confirmation_map_up;
     registration.reduction.canceled=canceled;
     registration.reduction.num_threads=4;
     registration.rejector.max_dist_sq=params.gicp_max_correspondence*params.gicp_max_correspondence;
@@ -304,10 +343,18 @@ struct Core::Impl {
 };
 
 Core::Core(const Params & params):impl_(std::make_unique<Impl>(params)) {
-  if(params.db_grid_resolution<=0||params.gicp_leaf_size<=0||params.top_k<1||params.ring_key_candidates<0||params.ring_key_candidates>64||params.candidate_workers<1||params.candidate_workers>2||params.minimum_confirmation_scans<1)
+  if(!std::isfinite(params.confirmation_gravity_sigma)||params.confirmation_gravity_sigma<=0||!params.confirmation_map_up.allFinite()||params.confirmation_map_up.norm()<1e-6)
+    throw std::invalid_argument("Invalid confirmation gravity prior");
+  impl_->params.confirmation_map_up.normalize();
+  if(params.db_grid_resolution<=0||params.gicp_leaf_size<=0||params.top_k<1||params.ring_key_candidates<0||params.ring_key_candidates>64||params.fallback_candidate_count<0||params.fallback_candidate_count>256||params.candidate_workers<1||params.candidate_workers>2||params.minimum_confirmation_scans<1)
     throw std::invalid_argument("Invalid database/registration parameters");
   if((params.search_side!="all"&&params.search_side!="negative_x"&&params.search_side!="positive_x")||
     !std::isfinite(params.side_boundary_x))throw std::invalid_argument("Invalid half-field search prior");
+  if(!std::isfinite(params.db_base_z)||params.db_base_z_offsets.empty()||params.db_base_z_offsets.size()>16||
+    std::any_of(params.db_base_z_offsets.begin(),params.db_base_z_offsets.end(),[](double z){return !std::isfinite(z);}))
+    throw std::invalid_argument("Invalid virtual-view height lattice");
+  auto & heights=impl_->params.db_base_z_offsets;
+  std::sort(heights.begin(),heights.end());heights.erase(std::unique(heights.begin(),heights.end()),heights.end());
   omp_set_num_threads(4);
 }
 Core::~Core()=default;
@@ -333,8 +380,10 @@ void Core::buildDatabase(const Eigen::Vector3d & offset) {
   ++impl_->provenance->revision;
   impl_->database.clear();impl_->database_offset=offset;
   pcl::PointXYZ lo,hi;pcl::getMinMax3D(*impl_->map,lo,hi);const auto & p=impl_->params;
-  for(double x=lo.x;x<=hi.x;x+=p.db_grid_resolution)for(double y=lo.y;y<=hi.y;y+=p.db_grid_resolution) {
-    const Eigen::Vector3d base(x,y,p.db_base_z);
+  size_t location=0;
+  for(double x=lo.x;x<=hi.x;x+=p.db_grid_resolution)for(double y=lo.y;y<=hi.y;y+=p.db_grid_resolution,++location) {
+    for(const double height:p.db_base_z_offsets) {
+    const Eigen::Vector3d base(x,y,p.db_base_z+height);
     // A view is sensor-centered. Keep a mount-sized boundary halo in the
     // database, then check the actual yaw-dependent base seed below. This
     // removes the opposite half without confusing sensor x with base x.
@@ -343,7 +392,8 @@ void Core::buildDatabase(const Eigen::Vector3d & offset) {
     if(p.search_side=="positive_x"&&sensor_x+mount_radius<=p.side_boundary_x)continue;
     Cloud visible=impl_->visible(base+offset);
     if(int(visible.size())<p.db_min_points)continue;
-    impl_->database.push_back({base,scanContext(visible,p.sc_rings,p.sc_sectors,p.db_max_radius)});
+    impl_->database.push_back({base,scanContext(visible,p.sc_rings,p.sc_sectors,p.db_max_radius),location});
+    }
   }
   if(impl_->database.empty())throw std::runtime_error("No usable virtual views in prior PCD");
 }
@@ -400,7 +450,8 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
   for(size_t i=0;i<impl_->database.size();++i)
     shortlist.emplace_back((descriptor.ring_key-impl_->database[i].descriptor.ring_key).squaredNorm(),i);
   std::sort(shortlist.begin(),shortlist.end());
-  const size_t shortlist_limit=p.retrieval_all_views?shortlist.size():std::min(shortlist.size(),size_t(std::max({40,p.top_k*10,p.ring_key_candidates})));
+  const int fallback_count=p.fallback_candidate_count?p.fallback_candidate_count:p.top_k;
+  const size_t shortlist_limit=p.retrieval_all_views?shortlist.size():std::min(shortlist.size(),p.db_base_z_offsets.size()*size_t(std::max({40,p.top_k*10,p.ring_key_candidates,p.top_k+fallback_count})));
   // Optional offline diagnostics never consume a pose or influence retrieval.
   if(!p.diagnostic_output_dir.empty()) {
     const auto directory=std::filesystem::path(p.diagnostic_output_dir)/("search_"+std::to_string(++impl_->diagnostic_search_count));
@@ -408,12 +459,12 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
     diagnostic_directory=directory.string();
     pcl::io::savePCDFileBinary((directory/"query.pcd").string(),query);
     nlohmann::json data={{"map_sha256",impl_->hash},{"query_points",query.size()},
-      {"sensor_offset",{offset.x(),offset.y(),offset.z()}},{"shortlist_limit",shortlist_limit},{"top_k",p.top_k},{"ring_key_candidates",p.ring_key_candidates},{"retrieval_all_views",p.retrieval_all_views},{"views",nlohmann::json::array()}};
+      {"sensor_offset",{offset.x(),offset.y(),offset.z()}},{"shortlist_limit",shortlist_limit},{"top_k",p.top_k},{"fallback_candidate_count",fallback_count},{"ring_key_candidates",p.ring_key_candidates},{"retrieval_all_views",p.retrieval_all_views},{"db_base_z_offsets",p.db_base_z_offsets},{"candidate_budget_unit","independent XY locations; all height layers retained"},{"views",nlohmann::json::array()}};
     for(size_t rank=0;rank<shortlist.size();++rank) {
       const auto & item=shortlist[rank];const auto & view=impl_->database[item.second];
       const auto match=descriptorMatch(descriptor,view.descriptor);
       const auto seed=basePoseFromSensorView(view.base+offset,offset,match.second);
-      data["views"].push_back({{"database_index",item.second},{"ring_rank",rank+1},{"in_shortlist",rank<shortlist_limit},{"ring_distance",item.first},
+      data["views"].push_back({{"database_index",item.second},{"database_location",view.location},{"ring_rank",rank+1},{"in_shortlist",rank<shortlist_limit},{"ring_distance",item.first},
         {"descriptor_distance",match.first},{"yaw",match.second},{"view_base",{view.base.x(),view.base.y(),view.base.z()}},
         {"seed_xyz",{seed.translation().x(),seed.translation().y(),seed.translation().z()}},{"seed_in_search_side",poseInSearchSide(seed,p)}});
     }
@@ -425,13 +476,15 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
   for(const auto & item:shortlist) {
     ++ring_rank;const auto match=descriptorMatch(descriptor,impl_->database[item.second].descriptor);
     Candidate c;c.descriptor_distance=match.first;c.ring_key_rank=ring_rank;
+    c.database_location=impl_->database[item.second].location;
     c.map_from_reference=basePoseFromSensorView(impl_->database[item.second].base+offset,offset,match.second);
     if(!poseInSearchSide(c.map_from_reference,p))continue;
     c.seed_translation=c.map_from_reference.translation();c.seed_yaw=match.second;guesses.push_back(c);
   }
   out.retrieval_scored_views=shortlist.size();
   std::sort(guesses.begin(),guesses.end(),[](const Candidate & a,const Candidate & b){return a.descriptor_distance<b.descriptor_distance;});
-  for(size_t i=0;i<guesses.size();++i)guesses[i].scan_context_rank=i+1;
+  const int scored_view_count=std::max(1,int(guesses.size()));
+  guesses=selectRetrievalCandidates(std::move(guesses),scored_view_count,0);
   const auto retrieval_pool=guesses;
   guesses=selectRetrievalCandidates(guesses,p.top_k,p.ring_key_candidates);
   out.retrieval_candidate_count=guesses.size();
@@ -460,6 +513,7 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
       auto c=impl_->refine(query_source,guess.map_from_reference,checkedCancel,worker,true,coarse_observer);
       c.descriptor_distance=guess.descriptor_distance;
       c.ring_key_rank=guess.ring_key_rank;c.scan_context_rank=guess.scan_context_rank;
+      c.database_location=guess.database_location;
       c.from_scan_context=guess.from_scan_context;c.from_ring_key=guess.from_ring_key;
       c.seed_translation=guess.seed_translation;c.seed_yaw=guess.seed_yaw;
       refined[index]=std::move(c);started[index]=1;
@@ -486,13 +540,15 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
   }
   out.gicp_sec=seconds(start);
   if(stop.load()||checkedCancel()){out.reason="canceled during GICP";return out;}
-  // The first page can miss a repetitive place. Search the next equal page
-  // only after every initial seed has failed the quality gates.
+  // The first page can miss a repetitive place. Search a bounded supplement
+  // only after every initial seed has failed the quality gates. Complete the
+  // whole supplement before ranking: a first passing candidate is insufficient
+  // to rule out a distinct, equally good localization.
   if(accepted.empty()) {
     std::vector<size_t> tested;for(const auto & g:guesses)tested.push_back(g.scan_context_rank);
     std::vector<Candidate> extra;
     for(const auto & c:retrieval_pool) {
-      if(c.scan_context_rank<=size_t(p.top_k)||c.scan_context_rank>size_t(p.top_k*2))continue;
+      if(c.scan_context_rank<=size_t(p.top_k)||c.scan_context_rank>size_t(p.top_k+fallback_count))continue;
       if(std::find(tested.begin(),tested.end(),c.scan_context_rank)!=tested.end())continue;
       auto added=c;added.from_scan_context=true;added.from_ring_key=false;extra.push_back(added);
     }
@@ -589,6 +645,10 @@ SearchResult Core::confirm(const PreparedSearch & prepared,const std::vector<Clo
   }
   out.confirmation_sec=seconds(start);
   if(checkedCancel()){out.reason="canceled after independent confirmation";return out;}
-  out.candidate=confirmation;out.success=true;out.reason="retrieval and independent stopped-scan registration accepted";return out;
+  // Stopped scans validate the globally observed map-from-reference anchor.
+  // Replacing it with the last narrow-view fit makes the output depend on
+  // confirmation order and can transfer local map distortion into the pose.
+  // The caller still composes current local motion at the output timestamp.
+  out.candidate=best;out.success=true;out.reason="retrieval and independent stopped-scan registration accepted";return out;
 }
 }

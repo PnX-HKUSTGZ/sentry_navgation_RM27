@@ -42,6 +42,7 @@ struct StationaryRawFrontend::Impl {
   }
 };
 StationaryRawFrontend::StationaryRawFrontend(const RawFrontendParams & p,const Eigen::Isometry3d & si,const Eigen::Isometry3d & bs):impl_(std::make_unique<Impl>(p,si,bs)) {
+  if(!std::isfinite(p.stationary_translation_sigma_floor)||p.stationary_translation_sigma_floor<=0)throw std::invalid_argument("invalid stationary translation prior uncertainty");
   if(p.stationary_duration<=0||p.stationary_min_samples<2||p.leaf_size<=0||p.max_imu_gap<=0||p.max_scan_gap<=0||p.max_iterations<1||p.retry_iterations<0||p.retry_iterations>15||p.submap_scans<1||p.submap_scans>30||p.min_range<0||p.max_range<=p.min_range||p.rotation_sigma_floor<=0||p.gyro_noise_density<=0||!validRigid(si)||!validRigid(bs))throw std::invalid_argument("invalid raw frontend parameters/extrinsics");
 }
 StationaryRawFrontend::~StationaryRawFrontend()=default;
@@ -77,6 +78,9 @@ RawFrontendResult StationaryRawFrontend::processScan(const Cloud & input,double 
       auto matrix=[](const Eigen::Isometry3d&t){std::vector<double> v;for(int r=0;r<4;++r)for(int c=0;c<4;++c)v.push_back(t.matrix()(r,c));return v;};
       nlohmann::json j={{"schema",1},{"recovery_after",i.recovery_after.load()},{"stamp",stamp},{"instantaneous",instantaneous},{"sensor_from_imu",matrix(i.sensor_imu)},{"base_from_sensor",matrix(i.base_sensor)},{"initial_guess",matrix(diagnostic_guess)},{"output_pose",matrix(i.pose)},{"accepted",out.accepted},{"reason",reason},{"failure_class",out.failure_class},{"input_points",out.input_points},{"finite_points",out.finite_points},{"range_points",out.range_points},{"points",out.points},{"rotation_prior_sigma",out.rotation_prior_sigma},{"rotation_prior_weight",out.rotation_prior_weight},{"calibration_gyro_sample_variance",i.gyro_sample_variance},{"calibration_gyro_bias_variance",i.gyro_bias_variance},{"gyro_bias",{i.bias.x(),i.bias.y(),i.bias.z()}}};
       j["params"]={{"stationary_duration",i.p.stationary_duration},{"stationary_min_samples",i.p.stationary_min_samples},{"leaf_size",i.p.leaf_size},{"max_correspondence",i.p.max_correspondence},{"max_iterations",i.p.max_iterations},{"max_fitness",i.p.max_fitness},{"min_inlier_ratio",i.p.min_inlier_ratio},{"range_filter",i.p.range_filter},{"min_range",i.p.min_range},{"max_range",i.p.max_range},{"deterministic",i.p.deterministic},{"submap_scans",i.p.submap_scans},{"imu_rotation_prior",i.p.imu_rotation_prior},{"gyro_noise_density",i.p.gyro_noise_density},{"rotation_sigma_floor",i.p.rotation_sigma_floor},{"numerical_recovery",i.p.numerical_recovery}};
+      j["params"]["stationary_translation_prior"]=i.p.stationary_translation_prior;
+      j["params"]["stationary_translation_sigma_floor"]=i.p.stationary_translation_sigma_floor;
+      j["translation_prior_sigma"]=out.translation_prior_sigma;j["translation_prior_weight"]=out.translation_prior_weight;
 #define SAVE_PARAM(name) j["params"][#name]=i.p.name
       SAVE_PARAM(retry_iterations);SAVE_PARAM(stationary_max_gyro);SAVE_PARAM(stationary_gyro_std);SAVE_PARAM(gravity_magnitude);SAVE_PARAM(gravity_tolerance);SAVE_PARAM(stationary_accel_std);SAVE_PARAM(max_imu_gap);SAVE_PARAM(max_scan_gap);SAVE_PARAM(imu_history_sec);SAVE_PARAM(min_points);SAVE_PARAM(max_rotation_prior_error);SAVE_PARAM(max_base_translation_step);SAVE_PARAM(max_base_linear_speed);SAVE_PARAM(min_geometry_eigen_ratio);SAVE_PARAM(min_information_eigen_ratio);SAVE_PARAM(diagnostic_budget_sec);
 #undef SAVE_PARAM
@@ -126,6 +130,11 @@ RawFrontendResult StationaryRawFrontend::processScan(const Cloud & input,double 
   auto source=small_gicp::voxelgrid_sampling_omp<Cloud,pcl::PointCloud<pcl::PointCovariance>>(*cloud,i.p.leaf_size,threads);small_gicp::estimate_covariances_omp(*target,20,threads);small_gicp::estimate_covariances_omp(*source,20,threads);
   small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>> tree(target,small_gicp::KdTreeBuilderOMP(threads));small_gicp::Registration<small_gicp::GICPFactor,small_gicp::ParallelReductionOMP,small_gicp::NullFactor,small_gicp::DistanceRejector,RawOptimizer> reg;reg.reduction.num_threads=threads;reg.optimizer.trace=(i.p.record_iterations||!i.p.diagnostic_directory.empty())?&out.iteration_trace:nullptr;reg.optimizer.prior.enabled=i.p.imu_rotation_prior;reg.optimizer.prior.rotation=delta;reg.optimizer.prior.inverse_variance=1./std::max(i.p.rotation_sigma_floor*i.p.rotation_sigma_floor,std::max(i.p.gyro_noise_density*i.p.gyro_noise_density,i.gyro_sample_variance*i.calibration_sample_dt)*(stamp-start)+i.gyro_bias_variance*(stamp-start)*(stamp-start));reg.rejector.max_dist_sq=i.p.max_correspondence*i.p.max_correspondence;const int first_budget=std::min(30,i.p.max_iterations);reg.optimizer.max_iterations=first_budget;
   out.rotation_prior_sigma=std::sqrt(1./reg.optimizer.prior.inverse_variance);out.rotation_prior_weight=i.p.imu_rotation_prior?reg.optimizer.prior.inverse_variance:0.;
+  reg.optimizer.base_translation_prior.enabled=i.p.stationary_translation_prior;
+  reg.optimizer.base_translation_prior.sensor_base_translation=sensor_base.translation();
+  out.translation_prior_sigma=std::max(i.p.stationary_translation_sigma_floor,i.p.max_base_linear_speed*(stamp-start)/3.);
+  reg.optimizer.base_translation_prior.inverse_variance=1./(out.translation_prior_sigma*out.translation_prior_sigma);
+  out.translation_prior_weight=i.p.stationary_translation_prior?reg.optimizer.base_translation_prior.inverse_variance:0.;
   pcl::KdTreeFLANN<pcl::PointXYZ> quality;quality.setInputCloud(target_cloud);
   auto evaluate=[&](const auto & fit,int attempt_number) {
     RawRegistrationAttempt a;a.attempt=attempt_number;

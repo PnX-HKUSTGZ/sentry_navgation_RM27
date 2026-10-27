@@ -28,12 +28,17 @@ PointCloudConverter::PointCloudConverter(const rclcpp::NodeOptions & options)
   this->declare_parameter<int>("horizon_scan", 1875);
   this->declare_parameter<float>("ang_bottom", 7.0);
   this->declare_parameter<float>("ang_res_y", 1.0);
+  this->declare_parameter<bool>("instantaneous_scan", true);
 
   pcd_topic_ = this->get_parameter("pcd_topic").as_string();
   n_scan_ = this->get_parameter("n_scan").as_int();
   horizon_scan_ = this->get_parameter("horizon_scan").as_int();
   ang_bottom_ = this->get_parameter("ang_bottom").as_double();
   ang_res_y_ = this->get_parameter("ang_res_y").as_double();
+  instantaneous_scan_ = this->get_parameter("instantaneous_scan").as_bool();
+  if (horizon_scan_ <= 0 || n_scan_ <= 0 || ang_res_y_ <= 0.0f) {
+    throw std::invalid_argument("scan dimensions and vertical resolution must be positive");
+  }
 
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
     pcd_topic_, 10, std::bind(&PointCloudConverter::lidarHandle, this, std::placeholders::_1));
@@ -54,6 +59,11 @@ void PointCloudConverter::lidarHandle(const sensor_msgs::msg::PointCloud2::Share
   for (size_t point_id = 0; point_id < original_pc->points.size(); ++point_id) {
     PointXYZIRT new_point;
     const auto & old_point = original_pc->points[point_id];
+    if (!std::isfinite(old_point.x) || !std::isfinite(old_point.y) ||
+      !std::isfinite(old_point.z))
+    {
+      continue;
+    }
 
     new_point.x = old_point.x;
     new_point.y = old_point.y;
@@ -71,7 +81,10 @@ void PointCloudConverter::lidarHandle(const sensor_msgs::msg::PointCloud2::Share
       continue;
     }
 
-    new_point.time = (point_id % horizon_scan_) * 0.1f / horizon_scan_;
+    // Gazebo GPU lidar renders the entire cloud at the header timestamp.
+    // Retain the legacy model only for explicit comparison with old recordings.
+    new_point.time = instantaneous_scan_ ? 0.0f :
+      (point_id % horizon_scan_) * 0.1f / horizon_scan_;
 
     converted_pc->points.push_back(new_point);
   }

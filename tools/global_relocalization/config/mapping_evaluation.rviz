@@ -1,0 +1,71 @@
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+Visualization Manager:
+  Class: ''
+  Global Options:
+    Fixed Frame: mapping_eval_world
+    Background Color: 24; 29; 38
+  Displays:
+  - Class: rviz_default_plugins/Grid
+    Name: Metric grid
+    Enabled: true
+    Cell Size: 1
+    Plane Cell Count: 50
+    Reference Frame: <Fixed Frame>
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Point-LIO accumulated map
+    Enabled: true
+    Topic:
+      Value: /mapping_eval/map
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      Depth: 1
+    Color Transformer: AxisColor
+    Axis: Z
+    Size (m): 0.06
+    Style: Points
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Current registered scan
+    Enabled: true
+    Topic:
+      Value: /mapping_eval/current_scan
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      Depth: 1
+    Color Transformer: FlatColor
+    Color: 255; 210; 40
+    Size (m): 0.045
+    Style: Points
+  - Class: rviz_default_plugins/PointCloud2
+    Name: SLAM Toolbox occupancy grid
+    Enabled: true
+    Topic:
+      Value: /mapping_eval/occupancy_cloud
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      Depth: 1
+    Color Transformer: RGB8
+    Size (m): 0.05
+    Style: Squares
+  - Class: rviz_default_plugins/MarkerArray
+    Name: Route, truth, estimate, errors and metrics
+    Enabled: true
+    Topic:
+      Value: /mapping_eval/markers
+      Reliability Policy: Reliable
+      Durability Policy: Transient Local
+      Depth: 1
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 35
+      Pitch: 1.15
+      Yaw: 1.57079632679
+      Focal Point:
+        X: 0
+        Y: 1.6
+        Z: 0
+Window Geometry:
+  Width: 1280
+  Height: 800

@@ -8,7 +8,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from nav_msgs.msg import Odometry
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Imu, PointCloud2
@@ -43,7 +43,10 @@ def main():
             message_type,
             topic,
             lambda message, name=topic: observe(name, message),
-            qos_profile_sensor_data,
+            # The bridge publishes reliable data. A reliable audit observes
+            # every large cloud, rather than silently losing UDP fragments.
+            QoSProfile(depth=30, reliability=(ReliabilityPolicy.BEST_EFFORT if topic == "/clock"
+                                            else ReliabilityPolicy.RELIABLE)),
         )
     start = time.monotonic()
     deadline = start + args.duration
@@ -51,6 +54,7 @@ def main():
         rclpy.spin_once(node, timeout_sec=0.1)
     report = {
         "ground_truth_used_for_estimation_or_control": False,
+        "scope": "this audit observer only; the separate survey controller is described by its mapping manifest",
         "topics": {},
         "observation_wall_sec": time.monotonic() - start,
         "environment": {
@@ -71,6 +75,10 @@ def main():
                 for item in publishers
             ],
             "samples": len(values),
+            "header_rate_hz": ((len(values) - 1) * 1e9 / (values[-1] - values[0])
+                               if len(values) >= 2 and values[-1] > values[0] else 0),
+            "max_header_gap_sec": (max(b - a for a, b in zip(values, values[1:])) * 1e-9
+                                   if len(values) >= 2 else None),
             "first_stamp_ns": values[0] if values else None,
             "last_stamp_ns": values[-1] if values else None,
             "advancing": len(values) >= 2 and values[-1] > values[0],
@@ -82,6 +90,8 @@ def main():
                 else None
             ),
         }
+    minimum_rates = {"/clock": 200, "/ground_truth/odometry": 40, "/livox/lidar": 8, "/livox/imu": 80}
+    report["minimum_header_rate_hz"] = minimum_rates
     report["passed"] = all(
         item["publisher_count"] == 1
         and item["samples"] >= 2
@@ -89,7 +99,8 @@ def main():
         and item["nondecreasing"]
         and item["last_callback_wall_age_sec"] is not None
         and item["last_callback_wall_age_sec"] < 1.5
-        for item in report["topics"].values()
+        and item["header_rate_hz"] >= minimum_rates[topic]
+        for topic, item in report["topics"].items()
     )
     Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report), flush=True)

@@ -1,5 +1,6 @@
 // Copyright 2026 RM27 contributors. SPDX-License-Identifier: Apache-2.0
 #include "global_relocalization/core.hpp"
+#include "global_relocalization/gravity_registration.hpp"
 #include <gtest/gtest.h>
 #include <pcl/common/transforms.h>
 #include <pcl/io/pcd_io.h>
@@ -7,6 +8,7 @@
 #include <random>
 #include <chrono>
 #include <atomic>
+#include <limits>
 using namespace global_relocalization;
 TEST(ScanContext,AnalyticPolarMaxHeightCells) {
   Cloud cloud;cloud.emplace_back(1,0,-1);cloud.emplace_back(1,0,2);
@@ -29,6 +31,40 @@ TEST(ScanContext,YawSignBothQuarterTurns) {
     Cloud query;pcl::transformPointCloud(target,query,query_to_map.inverse().matrix().cast<float>());
     auto matched=descriptorMatch(scanContext(query,20,60,15),td);
     EXPECT_NEAR(matched.second,yaw,1e-6);EXPECT_NEAR(matched.first,0.,1e-5);
+  }
+}
+TEST(ScanContext,BatchedMatchingPreservesExhaustiveScoresAndSymmetricTieOrder) {
+  // Independent exhaustive reference includes singly empty columns: treating
+  // those as missing rather than mismatched would change retrieval semantics.
+  const auto exhaustive=[](const Descriptor & q,const Descriptor & t) {
+    double best=1.;int shift_best=0;const int sectors=q.cells.cols();
+    for(int shift=0;shift<sectors;++shift) {
+      double score=0;int used=0;
+      for(int s=0;s<sectors;++s) {
+        const auto a=q.cells.col(s),b=t.cells.col((s+shift)%sectors);
+        const double an=a.norm(),bn=b.norm();if(an==0&&bn==0)continue;
+        ++used;score+=(an==0||bn==0)?1.:1.-std::clamp(a.dot(b)/(an*bn),-1.,1.);
+      }
+      score=used?score/used:1.;if(score<best){best=score;shift_best=shift;}
+    }
+    double yaw=shift_best*2*M_PI/sectors;if(yaw>M_PI)yaw-=2*M_PI;
+    return std::make_pair(best,yaw);
+  };
+  std::mt19937 random(719);std::uniform_real_distribution<double> value(0.,8.);
+  for(int sectors:{4,16,60,120,513})for(int fixture=0;fixture<12;++fixture) {
+    Descriptor q,t;q.cells.resize(20,sectors);t.cells.resize(20,sectors);
+    for(int s=0;s<sectors;++s)for(int r=0;r<20;++r) {
+      q.cells(r,s)=(random()%5==0)?0.:value(random);
+      t.cells(r,s)=(random()%5==0)?0.:value(random);
+    }
+    if(fixture==0){q.cells.setZero();t.cells.setZero();}
+    if(fixture==1){q.cells.setOnes();t.cells.setOnes();}
+    if(fixture==2)for(int s=0;s<sectors;s+=3)q.cells.col(s).setZero();
+    if(fixture==3)for(int s=0;s<sectors;s+=3)t.cells.col(s).setZero();
+    if(fixture==4){q.cells.setOnes();t.cells.setOnes();t.cells(0,0)+=1e-9;}
+    const auto expected=exhaustive(q,t),actual=descriptorMatch(q,t);
+    EXPECT_NEAR(actual.first,expected.first,1e-15);
+    EXPECT_DOUBLE_EQ(actual.second,expected.second)<<"sectors="<<sectors<<" fixture="<<fixture;
   }
 }
 TEST(ReferenceFrame,FullExtrinsicsAndCurrentPose) {
@@ -201,6 +237,46 @@ TEST(Retrieval,RetainsContextHypothesesAndIndependentRingKeyCoverage) {
   EXPECT_TRUE(nearby->from_ring_key);EXPECT_FALSE(nearby->from_scan_context);
   EXPECT_EQ(std::count_if(covered.begin(),covered.end(),[](const Candidate&c){return c.from_scan_context;}),10);
   EXPECT_EQ(std::count_if(covered.begin(),covered.end(),[](const Candidate&c){return c.from_ring_key;}),5);
+}
+
+TEST(Retrieval,HeightLayersDoNotConsumeIndependentLocationBudget) {
+  std::vector<Candidate> candidates;
+  for(size_t xy=0;xy<6;++xy)for(size_t layer=0;layer<3;++layer) {
+    Candidate c;c.database_location=xy;c.ring_key_rank=xy*3+layer+1;
+    c.descriptor_distance=.1*xy+.001*layer;c.seed_translation<<double(xy),0.,.25*layer;
+    candidates.push_back(c);
+  }
+  // SC chooses XY 0 and 1, including their three layers each. Ring-key's
+  // independent best location is XY 5, again retaining all three layers.
+  for(auto & c:candidates)c.ring_key_rank=c.database_location==5?c.ring_key_rank-15:c.ring_key_rank+3;
+  const auto ranked_pool=selectRetrievalCandidates(candidates,candidates.size(),0);
+  const auto selected=selectRetrievalCandidates(ranked_pool,2,1);
+  ASSERT_EQ(selected.size(),9u);
+  for(size_t xy:{0u,1u,5u}) {
+    EXPECT_EQ(std::count_if(selected.begin(),selected.end(),[&](const Candidate & c){return c.database_location==xy;}),3);
+  }
+  for(const auto & c:selected) {
+    EXPECT_EQ(c.scan_context_rank,c.database_location+1);
+    EXPECT_EQ(c.from_scan_context,c.database_location<2);
+    EXPECT_EQ(c.from_ring_key,c.database_location==5);
+  }
+}
+
+TEST(Database,HeightLatticeRetainsAllViewsDeduplicatesLayersAndValidatesInputs) {
+  const std::string path="/tmp/global_relocalization_height_lattice_test.pcd";
+  Cloud map;std::mt19937 generator(919);
+  std::uniform_real_distribution<float> x(-2,2),y(-2,2),z(-.1,2.);
+  for(int i=0;i<1000;++i)map.emplace_back(x(generator),y(generator),z(generator));
+  ASSERT_EQ(pcl::io::savePCDFileBinary(path,map),0);
+  Params p;p.db_min_points=20;p.db_grid_resolution=1.;p.db_max_radius=10;
+  Core single(p);single.loadMap(path);single.buildDatabase(Eigen::Vector3d::Zero());
+  p.db_base_z_offsets={.5,0.,.25,.25};
+  Core layered(p);layered.loadMap(path);layered.buildDatabase(Eigen::Vector3d::Zero());
+  EXPECT_EQ(layered.databaseSize(),3*single.databaseSize());
+  p.db_base_z_offsets={};EXPECT_THROW(Core invalid(p),std::invalid_argument);
+  p.db_base_z_offsets={std::numeric_limits<double>::quiet_NaN()};EXPECT_THROW(Core invalid(p),std::invalid_argument);
+  p.db_base_z_offsets=std::vector<double>(17,0.);EXPECT_THROW(Core invalid(p),std::invalid_argument);
+  std::remove(path.c_str());
 }
 
 TEST(Registration,MinimumIndependentConfirmationsRejectsIncompleteInputsBeforeSearch) {
@@ -400,6 +476,33 @@ TEST_F(StagedRegistration,RequiresThreeGoodMutuallyConsistentStoppedScans) {
   }
 }
 
+TEST_F(StagedRegistration,ConfirmationsValidateGlobalAnchorWithoutLastFrameOrderBias) {
+  Cloud plus=independent,minus=independent;
+  for(auto & point:plus)point.x+=.04F;
+  for(auto & point:minus)point.x-=.04F;
+  Core core(p);core.loadMap(path);
+  const auto first=prepare(core);ASSERT_TRUE(first.ready());
+  const auto anchor=first.diagnostics().candidate;
+  const auto forward=core.confirm(first,{plus,independent,minus},[]{return false;});
+  ASSERT_TRUE(forward.success)<<forward.reason;ASSERT_EQ(forward.confirmations.size(),3u);
+  // The last scan has a distinct but admissible view-specific refinement.
+  EXPECT_GT((forward.confirmations.back().map_from_reference.translation()-anchor.map_from_reference.translation()).norm(),.025);
+  EXPECT_TRUE(forward.candidate.map_from_reference.matrix().isApprox(anchor.map_from_reference.matrix(),1e-12));
+  EXPECT_DOUBLE_EQ(forward.candidate.fitness,anchor.fitness);
+  const auto second=prepare(core);ASSERT_TRUE(second.ready());
+  const auto reverse=core.confirm(second,{minus,independent,plus},[]{return false;});
+  ASSERT_TRUE(reverse.success)<<reverse.reason;
+  EXPECT_TRUE(reverse.candidate.map_from_reference.matrix().isApprox(second.diagnostics().candidate.map_from_reference.matrix(),1e-12));
+  EXPECT_TRUE(reverse.candidate.map_from_reference.matrix().isApprox(forward.candidate.map_from_reference.matrix(),1e-6));
+  // Keeping the reference anchor does not freeze the robot at the old query
+  // timestamp: translations and all three current rotation axes still compose.
+  Eigen::Isometry3d current=Eigen::Isometry3d::Identity();current.translation()<<.07,-.03,.02;
+  current.linear()=(Eigen::AngleAxisd(.12,Eigen::Vector3d::UnitZ())*Eigen::AngleAxisd(.04,Eigen::Vector3d::UnitY())*Eigen::AngleAxisd(-.03,Eigen::Vector3d::UnitX())).toRotationMatrix();
+  const auto output=composeCurrentBasePose(forward.candidate.map_from_reference,Eigen::Isometry3d::Identity(),current);
+  EXPECT_TRUE(output.matrix().isApprox((anchor.map_from_reference*current).matrix(),1e-12));
+  EXPECT_GT((output.translation()-anchor.map_from_reference.translation()).norm(),.05);
+}
+
 TEST_F(StagedRegistration,SecondPageIsEvaluatedOnceAndKeepsDistinctObserverIndices) {
   p.top_k=1;p.ring_key_candidates=0;p.retrieval_all_views=true;
   p.max_fitness=0.;p.candidate_workers=2;
@@ -417,4 +520,92 @@ TEST_F(StagedRegistration,SecondPageIsEvaluatedOnceAndKeepsDistinctObserverIndic
   EXPECT_EQ(result.hypotheses[1].scan_context_rank,2u);
   EXPECT_EQ(started_indices,(std::vector<size_t>{0,1}));
   EXPECT_TRUE(result.confirmations.empty());
+}
+
+TEST_F(StagedRegistration,ConfiguredSupplementIsBoundedAndDeduplicatesRingSeeds) {
+  p.top_k=1;p.ring_key_candidates=5;p.retrieval_all_views=true;
+  p.fallback_candidate_count=7;p.max_fitness=0.;p.candidate_workers=2;
+  Core core(p);core.loadMap(path);
+  std::vector<size_t> indices;
+  auto prepared=core.prepare(query,offset,[]{return false;},[&](const SearchEvent & event){
+    if(event.stage=="GICP_CANDIDATE_START")indices.push_back(event.index);
+  });
+  EXPECT_FALSE(prepared.ready());const auto & result=prepared.diagnostics();
+  std::vector<size_t> ranks;
+  for(const auto & c:result.hypotheses)ranks.push_back(c.scan_context_rank);
+  std::sort(ranks.begin(),ranks.end());
+  EXPECT_EQ(std::unique(ranks.begin(),ranks.end()),ranks.end());
+  for(size_t rank=1;rank<=8;++rank)EXPECT_TRUE(std::binary_search(ranks.begin(),ranks.end(),rank));
+  for(const auto & c:result.hypotheses)EXPECT_TRUE(c.scan_context_rank<=8||c.from_ring_key);
+  EXPECT_EQ(result.candidates_tested,result.retrieval_candidate_count);
+  std::sort(indices.begin(),indices.end());
+  ASSERT_EQ(indices.size(),ranks.size());
+  for(size_t i=0;i<indices.size();++i)EXPECT_EQ(indices[i],i);
+  EXPECT_TRUE(result.confirmations.empty());
+  p.fallback_candidate_count=-1;EXPECT_THROW(Core invalid(p),std::invalid_argument);
+  p.fallback_candidate_count=257;EXPECT_THROW(Core invalid(p),std::invalid_argument);
+}
+
+TEST_F(StagedRegistration,HeightLayersPreserveSupplementLocationBudgetAndObserverIndices) {
+  p.top_k=1;p.ring_key_candidates=0;p.fallback_candidate_count=2;
+  p.retrieval_all_views=true;p.db_base_z_offsets={0.,.25,.5};p.max_fitness=0.;
+  Core core(p);core.loadMap(path);
+  std::vector<size_t> indices;
+  const auto prepared=core.prepare(query,offset,[]{return false;},[&](const SearchEvent & event){
+    if(event.stage=="GICP_CANDIDATE_START")indices.push_back(event.index);
+  });
+  EXPECT_FALSE(prepared.ready());const auto & result=prepared.diagnostics();
+  ASSERT_EQ(result.hypotheses.size(),9u);
+  for(size_t rank=1;rank<=3;++rank) {
+    EXPECT_EQ(std::count_if(result.hypotheses.begin(),result.hypotheses.end(),[&](const Candidate & c){return c.scan_context_rank==rank;}),3);
+  }
+  std::sort(indices.begin(),indices.end());ASSERT_EQ(indices.size(),9u);
+  for(size_t i=0;i<indices.size();++i)EXPECT_EQ(indices[i],i);
+}
+
+TEST_F(StagedRegistration,GenericHeightLatticeRegistersElevatedQueryWithFullSE3) {
+  p.db_base_z=.08;p.db_base_z_offsets={0.,.25,.5};
+  truth.translation().z()=.38;
+  pcl::transformPointCloud(map,query,truth.inverse().matrix().cast<float>());
+  independent.clear();for(size_t i=0;i<query.size();i+=3)independent.push_back(query[i]);
+  Core core(p);core.loadMap(path);const auto result=core.search(query,stopped(),offset,[]{return false;});
+  ASSERT_TRUE(result.success)<<result.reason;
+  EXPECT_LT((result.candidate.map_from_reference.translation()-truth.translation()).norm(),.025);
+  EXPECT_LT(Eigen::AngleAxisd(result.candidate.map_from_reference.rotation().transpose()*truth.rotation()).angle(),.01);
+  EXPECT_TRUE(std::any_of(result.hypotheses.begin(),result.hypotheses.end(),[](const Candidate & c){return std::abs(c.seed_translation.z()-.33)<1e-6;}));
+}
+
+TEST(GravityDirectionPrior,RightJacobianAndYawTranslationNullspace) {
+  GravityDirectionPrior prior;prior.enabled=true;prior.inverse_variance=40000.;
+  Eigen::Isometry3d t=Eigen::Isometry3d::Identity();
+  t.linear()=(Eigen::AngleAxisd(.7,Eigen::Vector3d::UnitZ())*Eigen::AngleAxisd(.13,Eigen::Vector3d::UnitY())*Eigen::AngleAxisd(-.09,Eigen::Vector3d::UnitX())).toRotationMatrix();
+  prior.map_up=Eigen::Vector3d(.1,-.2,1.).normalized();const auto j=prior.jacobian(t);
+  for(int i=0;i<6;++i) {
+    Eigen::Matrix<double,6,1> d=Eigen::Matrix<double,6,1>::Zero();d[i]=1e-7;
+    const Eigen::Vector3d numeric=(prior.residual(t*small_gicp::se3_exp(d))-prior.residual(t*small_gicp::se3_exp(-d)))/(2e-7);
+    EXPECT_TRUE(numeric.isApprox(j.col(i),1e-7))<<i;
+  }
+  EXPECT_LT(j.col(2).norm(),1e-15);EXPECT_LT(j.rightCols<3>().norm(),1e-15);
+  Eigen::Isometry3d delta=Eigen::Isometry3d::Identity();delta.linear()=Eigen::AngleAxisd(.6,Eigen::Vector3d::UnitZ()).toRotationMatrix();delta.translation()<<2.,-3.,1.;
+  EXPECT_NEAR(prior.cost(t),prior.cost(t*delta),1e-10);
+}
+TEST(GravityDirectionPrior,RejectsInvalidConfiguration) {
+  Params p;p.confirmation_gravity_sigma=0.;EXPECT_THROW(Core invalid(p),std::invalid_argument);
+  p.confirmation_gravity_sigma=.005;p.confirmation_map_up.setZero();EXPECT_THROW(Core invalid(p),std::invalid_argument);
+}
+TEST_F(StagedRegistration,GravityIsConfirmationOnlyAndPreservesCurrentBaseAttitude) {
+  Core baseline(p);baseline.loadMap(path);const auto old=prepare(baseline);ASSERT_TRUE(old.ready());
+  p.confirmation_gravity_prior=true;Core core(p);core.loadMap(path);const auto prepared=prepare(core);ASSERT_TRUE(prepared.ready());
+  EXPECT_TRUE(prepared.diagnostics().candidate.map_from_reference.matrix().isApprox(old.diagnostics().candidate.map_from_reference.matrix(),1e-12));
+  EXPECT_DOUBLE_EQ(prepared.diagnostics().candidate.fitness,old.diagnostics().candidate.fitness);
+  const auto result=core.confirm(prepared,stopped(),[]{return false;});ASSERT_TRUE(result.success)<<result.reason;
+  Eigen::Isometry3d current=Eigen::Isometry3d::Identity();current.translation()<<.07,-.03,.02;
+  current.linear()=(Eigen::AngleAxisd(.12,Eigen::Vector3d::UnitZ())*Eigen::AngleAxisd(.04,Eigen::Vector3d::UnitY())*Eigen::AngleAxisd(-.03,Eigen::Vector3d::UnitX())).toRotationMatrix();
+  const auto output=composeCurrentBasePose(result.candidate.map_from_reference,Eigen::Isometry3d::Identity(),current);
+  EXPECT_TRUE(output.matrix().isApprox((result.candidate.map_from_reference*current).matrix(),1e-12));
+  EXPECT_GT((output.rotation()*Eigen::Vector3d::UnitZ()-Eigen::Vector3d::UnitZ()).norm(),.04);
+  const auto bad=prepare(core);ASSERT_TRUE(bad.ready());
+  auto wrong=independent;for(auto & point:wrong)point.x+=10.F;
+  const auto rejected=core.confirm(bad,{wrong,wrong,wrong},[]{return false;});EXPECT_FALSE(rejected.success);
+  EXPECT_EQ(rejected.reason,"independent stopped scan failed quality or search-side gates");
 }
