@@ -59,10 +59,11 @@
               <max_angle>${2*M_PI}</max_angle>
             </horizontal>
             <vertical>
-              <!-- More than 128 rings selects a 256 px Ogre2 depth cubemap.
-                   The 128 px cubemap biases a 250 mm opening below the
-                   240 mm chassis height. Keep the localizer layout in sync. -->
-              <samples>192</samples>
+              <!-- 288 vertical rays select a 512 px Ogre2 depth cubemap instead
+                   of 256 px, resolving the narrow 250/240 mm roof gap.
+                   360 x 288 x 32 bytes stays below the raw worker 4 MiB cap.
+                   Keep converter and both scan adapters in sync. -->
+              <samples>288</samples>
               <resolution>1</resolution>
               <min_angle>${-7.22/180*M_PI}</min_angle>
               <max_angle>${55.22/180*M_PI}</max_angle>

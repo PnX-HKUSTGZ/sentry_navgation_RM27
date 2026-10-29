@@ -1,6 +1,13 @@
 #include <gtest/gtest.h>
 
 #include "minco_core/components/map_query_adapters.hpp"
+#include "minco_core/components/static_map_readiness.hpp"
+#include "minco_core/components/planner_mode_context.hpp"
+
+#include "nav2_costmap_2d/costmap_layer.hpp"
+#include "nav2_util/node_thread.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -16,6 +23,82 @@ namespace
 {
 
 using namespace std::chrono_literals;
+
+TEST(StaticMapReadinessTest, WaitsUntilMapIsReadyAndTimesOutWhenItIsNot)
+{
+  std::promise<void> map_ready;
+  auto ready = map_ready.get_future();
+  auto waiter = std::async(std::launch::async, [&ready]() {
+      return waitForStaticMap([&ready]() {return ready.wait_for(0ms) == std::future_status::ready;}, 1s);
+    });
+  EXPECT_EQ(waiter.wait_for(50ms), std::future_status::timeout);
+  map_ready.set_value();
+  EXPECT_TRUE(waiter.get());
+  EXPECT_FALSE(waitForStaticMap([]() {return false;}, 20ms));
+}
+
+TEST(StaticMapReadinessTest, RealStaticLayerWaitsForMapAndFailsClosedWithoutIt)
+{
+  rclcpp::init(0, nullptr);
+  {
+    rclcpp::NodeOptions options;
+    options.parameter_overrides({
+      rclcpp::Parameter("plugins", std::vector<std::string>{"static_layer"}),
+      rclcpp::Parameter("static_layer.plugin", "nav2_costmap_2d::StaticLayer"),
+      rclcpp::Parameter("static_layer.map_topic", "/minco_static_readiness_test_map"),
+    });
+    auto costmap = std::make_shared<nav2_costmap_2d::Costmap2DROS>(options);
+    ASSERT_EQ(costmap->configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
+    nav2_util::NodeThread costmap_thread(costmap);
+    auto layer = std::dynamic_pointer_cast<nav2_costmap_2d::CostmapLayer>(
+      costmap->getLayeredCostmap()->getPlugins()->at(0));
+    ASSERT_TRUE(layer);
+    auto is_ready = [&layer]() {
+        std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> lock(*layer->getMutex());
+        return layer->isCurrent();
+      };
+    EXPECT_FALSE(waitForStaticMap(is_ready, 50ms));
+
+    PlannerModeParams params;
+    params.priormap_static_obstacle_clearance_radius = 0.5;
+    auto clock = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
+    PlannerModeContext missing_context;
+    EXPECT_THROW(missing_context.configure(params, nullptr, costmap.get(), nullptr,
+      rclcpp::get_logger("static_readiness_test"), clock), std::runtime_error);
+    EXPECT_EQ(missing_context.staticQuery(), nullptr);
+
+    auto publisher_node = std::make_shared<rclcpp::Node>("static_readiness_publisher");
+    auto publisher = publisher_node->create_publisher<nav_msgs::msg::OccupancyGrid>(
+      "/minco_static_readiness_test_map", rclcpp::QoS(1).transient_local().reliable());
+    PlannerModeContext context;
+    auto configure = std::async(std::launch::async, [&]() {
+        context.configure(params, nullptr, costmap.get(), nullptr,
+          rclcpp::get_logger("static_readiness_test"), clock);
+      });
+    EXPECT_EQ(configure.wait_for(50ms), std::future_status::timeout);
+    nav_msgs::msg::OccupancyGrid map;
+    map.header.frame_id = "map";
+    map.info.resolution = 0.5;
+    map.info.width = 4;
+    map.info.height = 3;
+    map.info.origin.position.x = -1.0;
+    map.info.origin.position.y = -2.0;
+    map.info.origin.orientation.w = 1.0;
+    map.data.assign(12, 0);
+    map.data[5] = 100;
+    publisher->publish(map);
+    ASSERT_EQ(configure.wait_for(3s), std::future_status::ready);
+    EXPECT_NO_THROW(configure.get());
+    ASSERT_TRUE(context.staticQuery());
+    EXPECT_EQ(context.staticQuery()->sizeX(), 4U);
+    EXPECT_EQ(context.staticQuery()->value(1U, 1U), nav2_costmap_2d::LETHAL_OBSTACLE);
+    ASSERT_TRUE(context.globalQuery());
+    EXPECT_EQ(context.globalQuery()->value(2U, 1U), nav2_costmap_2d::LETHAL_OBSTACLE);
+    layer.reset();
+    EXPECT_EQ(costmap->cleanup().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
+  }
+  rclcpp::shutdown();
+}
 
 class RecordingMapQuery : public rog_map::MapQueryInterface
 {
@@ -228,6 +311,22 @@ TEST(StaticObstacleClearanceQueryTest, DoesNotBakeMergedDynamicObstacleIntoStati
   merged.setCost(1U, 1U, nav2_costmap_2d::FREE_SPACE);
   EXPECT_EQ(query.value(1U, 1U), nav2_costmap_2d::FREE_SPACE);
   EXPECT_EQ(query.value(2U, 1U), nav2_costmap_2d::FREE_SPACE);
+}
+
+TEST(StaticObstacleClearanceQueryTest, RejectsMismatchedGeometryWithBothMapsInError)
+{
+  nav2_costmap_2d::Costmap2D master(3U, 2U, 0.5, -1.0, -2.0, 0U);
+  nav2_costmap_2d::Costmap2D static_layer(1U, 1U, 0.5, 0.0, 0.0, 0U);
+  auto base = std::make_shared<Nav2CostmapQuery>(&master);
+  auto source = std::make_shared<Nav2CostmapQuery>(&static_layer);
+  try {
+    StaticObstacleClearanceQuery query(base, source, 0.5);
+    FAIL() << "Geometry mismatch must reject the overlay";
+  } catch (const std::invalid_argument & error) {
+    const std::string message(error.what());
+    EXPECT_NE(message.find("base=3x2 resolution=0.5 origin=(-1,-2)"), std::string::npos);
+    EXPECT_NE(message.find("static=1x1 resolution=0.5 origin=(0,0)"), std::string::npos);
+  }
 }
 
 TEST(StaticObstacleClearanceQueryTest, RejectsInvalidRadius)

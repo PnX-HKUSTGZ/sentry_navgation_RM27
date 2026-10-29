@@ -7,9 +7,20 @@
 由于 NAV2 humble 发行版出于避免破坏原有接口的原因，依然使用 Twist 类型（不含时间戳），humble 往后的版本才使用 TwistStamped，导致无法直接实现 cmd_vel 与 odometry 的时间戳对齐。因此，本功能包暂时订阅 local_plan 话题（由局部路径规划器发布），以获取时间戳，将它的时间戳视为 cmd_vel 的时间戳，以间接实现时间戳对齐。
 Related issue: [Switch from Twist to TwistStamped for cmd_vel #1594](https://github.com/ros-navigation/navigation2/issues/1594)
 
+在 `use_latest_odom_for_cmd: true` 的 MINCO 配置下，不订阅 `local_plan`，也不创建上述同步器。
+TF 和速度转换使用最新有效里程计，重复或乱序的里程计不能覆盖尚有效的新姿态；里程计过期仍停止输出运动命令。
+
+## 真实云台与虚拟坐标系
+
+本节点只发布 `robot_base_frame -> fake_robot_base_frame` 的零平移、负 yaw 变换，
+不发布 `base_link -> gimbal_yaw`，不订阅云台编码器，也不估计底盘位置。
+旋转雷达的里程计不等于底盘里程计；真实云台关节 TF 必须由带时间戳的机械角度反馈提供。
+输入里程计所描述的朝向必须与 `robot_base_frame` 一致，输入速度则必须与里程计父坐标系的平面轴一致。
+仅将参数命名为 `base_link` 不会把雷达 yaw 转换成底盘 yaw。
+
 ## Published Topics
 
-* `tf` (`tf2_msgs/msg/TFMessage`) - 与机器人可移动关节相对应的变换
+* `tf` (`tf2_msgs/msg/TFMessage`) - 虚拟速度参考坐标系的变换，不是机械关节反馈
 * `output_cmd_vel_topic` (`geometry_msgs/msg/Twist`) - 转换后的速度指令
 
 ## Subscribed Topics
@@ -21,7 +32,8 @@ Related issue: [Switch from Twist to TwistStamped for cmd_vel #1594](https://git
 
 ## Parameters
 
-* `odom_topic` (`string`, default: "odom") - 里程计话题。里程计的 frame_id 与 `robot_base_frame` 参数保持一致
+* `odom_topic` (`string`, default: "odom") - 里程计话题，其被跟踪坐标系的朝向应与 `robot_base_frame` 一致；`header.frame_id` 是世界参考系，不是机器人坐标系
+* `use_latest_odom_for_cmd` (`bool`, default: `false`) - 为 true 时直接使用最新有效里程计，不等待或消费 `local_plan` 同步结果
 * `robot_base_frame` (`string`, default: "gimbal_link") - 速度参考坐标系
 * `fake_robot_base_frame` (`string`, default: "gimbal_link_fake") - 伪速度参考坐标系
 * `local_plan_topic` (`string`, default: "local_plan") - 局部路径规划器的路径话题

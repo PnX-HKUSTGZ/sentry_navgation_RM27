@@ -13,6 +13,26 @@ TEST(ReferenceProgress, NewTrajectoryStartsAtSpatialPickup) {
   EXPECT_DOUBLE_EQ(index, 2.5);
 }
 
+TEST(ReferenceProgress, RollingReplacementCarriesOnlyBoundedLead) {
+  double spatial = -1.0, index = -1.0;
+  ASSERT_TRUE(minco_controller::computeReferenceIndex(
+      2.5, false, 90.0, 93.0, 0.0, 0.05, 100.0, 0.15, spatial, index, true));
+  EXPECT_DOUBLE_EQ(spatial, 2.5);
+  EXPECT_NEAR(index, 5.5, 1e-12);
+  // A previous startup boost cannot push the new reference beyond normal lead.
+  ASSERT_TRUE(minco_controller::computeReferenceIndex(
+      2.5, false, 90.0, 107.0, 0.0, 0.05, 100.0, 0.15, spatial, index, true));
+  EXPECT_NEAR(index, 5.5, 1e-12);
+  // Short braking/frontier replacements still clamp to their own endpoint.
+  ASSERT_TRUE(minco_controller::computeReferenceIndex(
+      2.5, false, 90.0, 93.0, 0.0, 0.05, 4.0, 0.15, spatial, index, true));
+  EXPECT_DOUBLE_EQ(index, 4.0);
+  // No previous tracking (e.g. a new mission) starts at measured pickup.
+  ASSERT_TRUE(minco_controller::computeReferenceIndex(
+      2.5, false, 90.0, 93.0, 0.0, 0.05, 100.0, 0.15, spatial, index, false));
+  EXPECT_DOUBLE_EQ(index, 2.5);
+}
+
 TEST(ReferenceProgress, SameTrajectoryAdvancesAndNeverMovesBackward) {
   double spatial = -1.0;
   double index = -1.0;

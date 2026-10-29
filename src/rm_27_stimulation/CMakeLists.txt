@@ -8,6 +8,7 @@ find_package(gz-plugin2 REQUIRED)
 find_package(gz-sim8 REQUIRED)
 find_package(gz-transport13 REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(message_filters REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -50,8 +51,25 @@ ament_target_dependencies(rm27_ground_truth_localizer
   tf2_ros
 )
 
+add_executable(pointlio_scan_registrar src/pointlio_scan_registrar.cpp)
+target_include_directories(pointlio_scan_registrar PRIVATE include)
+ament_target_dependencies(pointlio_scan_registrar
+  message_filters nav_msgs pcl_ros rclcpp sensor_msgs tf2 tf2_geometry_msgs tf2_ros)
+
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_gtest(test_pointlio_scan_registration test/test_pointlio_scan_registration.cpp)
+  if(TARGET test_pointlio_scan_registration)
+    target_include_directories(test_pointlio_scan_registration PRIVATE include)
+    ament_target_dependencies(test_pointlio_scan_registration
+      nav_msgs pcl_ros sensor_msgs tf2 tf2_geometry_msgs)
+  endif()
+  ament_add_pytest_test(test_dds_transport test/test_dds_transport.py TIMEOUT 30)
+  ament_add_pytest_test(test_simulation_pose_handoff
+    test/test_simulation_pose_handoff.py
+    TIMEOUT 30
+  )
 
   ament_add_gtest(test_ground_truth_odometry test/test_ground_truth_odometry.cpp)
   if(TARGET test_ground_truth_odometry)
@@ -94,10 +112,15 @@ if(BUILD_TESTING)
   endif()
 endif()
 
+install(PROGRAMS scripts/spawn_from_rviz.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(TARGETS
   rm27_cmd_vel_pose_control_system
   rm27_ground_truth_odometry_system
   rm27_ground_truth_localizer
+  pointlio_scan_registrar
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )

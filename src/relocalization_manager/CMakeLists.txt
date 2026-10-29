@@ -62,6 +62,13 @@ rclcpp_components_register_node(${PROJECT_NAME}
 #############
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_stationary_gate test/test_stationary_gate.cpp)
+  target_include_directories(test_stationary_gate PRIVATE include)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_stationary_relocalization test/test_stationary_relocalization.py
+    TIMEOUT 90
+    ENV RELOCALIZATION_TEST_EXECUTABLE=$<TARGET_FILE:relocalization_manager_node>)
   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
   set(ament_cmake_clang_tidy_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-tidy")
   find_package(ament_lint_auto REQUIRED)

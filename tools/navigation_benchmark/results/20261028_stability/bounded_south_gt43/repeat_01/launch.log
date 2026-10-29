@@ -1,0 +1,310 @@
+[INFO] [launch]: All log files can be found below /home/zhang/.ros/log/2026-10-28-14-48-50-112301-powercenter-1097567
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: Simulation DDS transport profile: /home/zhang/navi/sentry_navgation_RM27/src/rm_27_stimulation/config/fastdds_large_clouds.xml
+[INFO] [launch.user]: [rm_27_stimulation] Gazebo rendering: requested=auto, selected=gpu, backend=glx, renderer=D3D12 (NVIDIA GeForce RTX 5070 Ti Laptop GPU)
+[INFO] [gazebo-1]: process started with pid [1097613]
+[INFO] [parameter_bridge-2]: process started with pid [1097614]
+[INFO] [joint_state_publisher-3]: process started with pid [1097616]
+[INFO] [robot_state_publisher-4]: process started with pid [1097617]
+[robot_state_publisher-4] [INFO] [1793170130.981824186] [robot_state_publisher]: Robot initialized
+[joint_state_publisher-3] [INFO] [1793170131.244260289] [joint_state_publisher]: Waiting for robot_description to be published on the robot_description topic...
+[joint_state_publisher-3] [INFO] [1793170131.397535836] [joint_state_publisher]: Got description, configuring robot
+[parameter_bridge-2] [INFO] [1793170132.031371949] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/clock (gz.msgs.Clock) -> /clock (rosgraph_msgs/msg/Clock)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793170132.032744274] [rm_27_ros_gz_bridge]: Creating ROS->GZ Bridge: [cmd_vel (geometry_msgs/msg/Twist) -> /cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793170132.034286256] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/livox/lidar/points (gz.msgs.PointCloudPacked) -> livox/lidar (sensor_msgs/msg/PointCloud2)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793170132.035391842] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/livox/imu (gz.msgs.IMU) -> livox/imu (sensor_msgs/msg/Imu)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793170132.035967741] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/ground_truth/odometry (gz.msgs.Odometry) -> ground_truth/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[INFO] [create-5]: process started with pid [1097741]
+[create-5] [INFO] [1793170134.310348578] [spawn_rm27_sentry]: Entity creation successful.
+[gazebo-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="robot"]/link[@name="base_footprint"]/sensor[@name="mid360_imu"]/gz_frame_id:<urdf-string>:L0]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[gazebo-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="robot"]/link[@name="base_footprint"]/sensor[@name="left_mid360"]/gz_frame_id:<urdf-string>:L0]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[INFO] [create-5]: process has finished cleanly [pid 1097741]
+[INFO] [rm27_ground_truth_localizer-6]: process started with pid [1097832]
+[INFO] [map_server-7]: process started with pid [1097833]
+[INFO] [lifecycle_manager-8]: process started with pid [1097834]
+[INFO] [fake_vel_transform_node-9]: process started with pid [1097835]
+[INFO] [controller_server-10]: process started with pid [1097836]
+[INFO] [smoother_server-11]: process started with pid [1097837]
+[INFO] [planner_server_mt-12]: process started with pid [1097838]
+[INFO] [behavior_server-13]: process started with pid [1097839]
+[INFO] [bt_navigator-14]: process started with pid [1097840]
+[INFO] [waypoint_follower-15]: process started with pid [1097841]
+[INFO] [velocity_smoother-16]: process started with pid [1097842]
+[INFO] [lifecycle_manager-17]: process started with pid [1097843]
+[fake_vel_transform_node-9] [0m[INFO] [1793170136.512720387] [fake_vel_transform]: Start FakeVelTransform![0m
+[lifecycle_manager-17] [0m[INFO] [1793170136.525270092] [lifecycle_manager_navigation]: Creating[0m
+[lifecycle_manager-17] [0m[INFO] [1793170136.531272473] [lifecycle_manager_navigation]: [34m[1mCreating and initializing lifecycle service clients[0m[0m[0m
+[controller_server-10] [0m[INFO] [1793170136.532476471] [controller_server]: 
+[controller_server-10] 	controller_server lifecycle node launched. 
+[controller_server-10] 	Waiting on external lifecycle transitions to activate
+[controller_server-10] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793170136.534908185] [rm27_ground_truth_localizer]: Using Gazebo ground truth from [ground_truth/odometry] with 0.100s interpolation gap and 0.200s scan timeout; organized no-return rays=enabled
+[bt_navigator-14] [0m[INFO] [1793170136.538679234] [bt_navigator]: 
+[bt_navigator-14] 	bt_navigator lifecycle node launched. 
+[bt_navigator-14] 	Waiting on external lifecycle transitions to activate
+[bt_navigator-14] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[bt_navigator-14] [0m[INFO] [1793170136.540574334] [bt_navigator]: Creating[0m
+[controller_server-10] [0m[INFO] [1793170136.542984937] [controller_server]: Creating controller server[0m
+[velocity_smoother-16] [0m[INFO] [1793170136.544725038] [velocity_smoother]: 
+[velocity_smoother-16] 	velocity_smoother lifecycle node launched. 
+[velocity_smoother-16] 	Waiting on external lifecycle transitions to activate
+[velocity_smoother-16] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[lifecycle_manager-8] [0m[INFO] [1793170136.553429165] [lifecycle_manager_localization]: Creating[0m
+[lifecycle_manager-8] [0m[INFO] [1793170136.557959699] [lifecycle_manager_localization]: [34m[1mCreating and initializing lifecycle service clients[0m[0m[0m
+[lifecycle_manager-8] [0m[INFO] [1793170136.561223597] [lifecycle_manager_localization]: [34m[1mStarting managed nodes bringup...[0m[0m[0m
+[lifecycle_manager-8] [0m[INFO] [1793170136.561295833] [lifecycle_manager_localization]: [34m[1mConfiguring map_server[0m[0m[0m
+[controller_server-10] [0m[INFO] [1793170136.562993107] [local_costmap.local_costmap]: 
+[controller_server-10] 	local_costmap lifecycle node launched. 
+[controller_server-10] 	Waiting on external lifecycle transitions to activate
+[controller_server-10] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[controller_server-10] [0m[INFO] [1793170136.563681470] [local_costmap.local_costmap]: Creating Costmap[0m
+[map_server-7] [0m[INFO] [1793170136.564078073] [map_server]: 
+[map_server-7] 	map_server lifecycle node launched. 
+[map_server-7] 	Waiting on external lifecycle transitions to activate
+[map_server-7] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[map_server-7] [0m[INFO] [1793170136.564167571] [map_server]: Creating[0m
+[planner_server_mt-12] [0m[INFO] [1793170136.570859260] [planner_server]: 
+[planner_server_mt-12] 	planner_server lifecycle node launched. 
+[planner_server_mt-12] 	Waiting on external lifecycle transitions to activate
+[planner_server_mt-12] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[behavior_server-13] [0m[INFO] [1793170136.571918848] [behavior_server]: 
+[behavior_server-13] 	behavior_server lifecycle node launched. 
+[behavior_server-13] 	Waiting on external lifecycle transitions to activate
+[behavior_server-13] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[planner_server_mt-12] [0m[INFO] [1793170136.572922327] [planner_server]: Creating[0m
+[waypoint_follower-15] [0m[INFO] [1793170136.573671000] [waypoint_follower]: 
+[waypoint_follower-15] 	waypoint_follower lifecycle node launched. 
+[waypoint_follower-15] 	Waiting on external lifecycle transitions to activate
+[waypoint_follower-15] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[waypoint_follower-15] [0m[INFO] [1793170136.574134272] [waypoint_follower]: Creating[0m
+[planner_server_mt-12] [0m[INFO] [1793170136.579176904] [global_costmap.global_costmap]: 
+[planner_server_mt-12] 	global_costmap lifecycle node launched. 
+[planner_server_mt-12] 	Waiting on external lifecycle transitions to activate
+[planner_server_mt-12] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[planner_server_mt-12] [0m[INFO] [1793170136.579724871] [global_costmap.global_costmap]: Creating Costmap[0m
+[smoother_server-11] [0m[INFO] [1793170136.583368905] [smoother_server]: 
+[smoother_server-11] 	smoother_server lifecycle node launched. 
+[smoother_server-11] 	Waiting on external lifecycle transitions to activate
+[smoother_server-11] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[smoother_server-11] [0m[INFO] [1793170136.585190656] [smoother_server]: Creating smoother server[0m
+[map_server-7] [0m[INFO] [1793170137.363964292] [map_server]: Configuring[0m
+[map_server-7] [0m[INFO] [1793170137.364070429] [map_io]: Loading yaml file: /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.yaml[0m
+[map_server-7] [0m[INFO] [1793170137.364264634] [map_io]: resolution: 0.05[0m
+[map_server-7] [0m[INFO] [1793170137.364268577] [map_io]: origin[0]: -14.6[0m
+[map_server-7] [0m[INFO] [1793170137.364270558] [map_io]: origin[1]: -5.86[0m
+[map_server-7] [0m[INFO] [1793170137.364272007] [map_io]: origin[2]: 0[0m
+[map_server-7] [0m[INFO] [1793170137.364273559] [map_io]: free_thresh: 0.35[0m
+[map_server-7] [0m[INFO] [1793170137.364274954] [map_io]: occupied_thresh: 0.65[0m
+[map_server-7] [0m[INFO] [1793170137.364276831] [map_io]: mode: trinary[0m
+[map_server-7] [0m[INFO] [1793170137.364278802] [map_io]: negate: 0[0m
+[map_server-7] [0m[INFO] [1793170137.364499618] [map_io]: Loading image_file: /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.pgm[0m
+[map_server-7] [0m[INFO] [1793170137.366790500] [map_io]: Read map /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.pgm: 583 X 300 map @ 0.05 m/cell[0m
+[map_server-7] [33m[WARN] [1793170137.471960535] [map_server.rclcpp]: failed to send response to /map_server/change_state (timeout): client will not receive response, at ./src/rmw_response.cpp:153, at ./src/rcl/service.c:400[0m
+[lifecycle_manager-17] [0m[INFO] [1793170137.590409648] [lifecycle_manager_navigation]: [34m[1mStarting managed nodes bringup...[0m[0m[0m
+[lifecycle_manager-17] [0m[INFO] [1793170137.590484066] [lifecycle_manager_navigation]: [34m[1mConfiguring controller_server[0m[0m[0m
+[controller_server-10] [0m[INFO] [1793170137.590728252] [controller_server]: Configuring controller interface[0m
+[controller_server-10] [0m[INFO] [1793170137.590781889] [controller_server]: getting progress checker plugins..[0m
+[controller_server-10] [0m[INFO] [1793170137.591048801] [controller_server]: getting goal checker plugins..[0m
+[controller_server-10] [0m[INFO] [1793170137.591071357] [controller_server]: Controller frequency set to 20.0000Hz[0m
+[controller_server-10] [0m[INFO] [1793170137.591093434] [local_costmap.local_costmap]: Configuring[0m
+[controller_server-10] [0m[INFO] [1793170137.598437852] [local_costmap.local_costmap]: Using plugin "static_layer"[0m
+[controller_server-10] [0m[INFO] [1793170137.601609449] [local_costmap.local_costmap]: Subscribing to the map topic (/map) with transient local durability[0m
+[controller_server-10] [0m[INFO] [1793170137.603976588] [local_costmap.local_costmap]: Initialized plugin "static_layer"[0m
+[controller_server-10] [0m[INFO] [1793170137.604049758] [local_costmap.local_costmap]: Using plugin "rog_dynamic_obstacle_layer"[0m
+[controller_server-10] [0m[INFO] [1793170137.607178343] [local_costmap.local_costmap]: ROG dynamic obstacle layer enabled=true topic=/rog_map/dynamic_obstacles threshold=65 stale_timeout=2.75s obstacle_marking_max_range=0.00m (0=unlimited) footprint_clearing=true[0m
+[controller_server-10] [0m[INFO] [1793170137.607236571] [local_costmap.local_costmap]: Initialized plugin "rog_dynamic_obstacle_layer"[0m
+[controller_server-10] [0m[INFO] [1793170137.607268807] [local_costmap.local_costmap]: Using plugin "inflation_layer"[0m
+[controller_server-10] [0m[INFO] [1793170137.608149994] [local_costmap.local_costmap]: Initialized plugin "inflation_layer"[0m
+[controller_server-10] [0m[INFO] [1793170137.632545262] [controller_server]: Created progress_checker : progress_checker of type nav2_controller::SimpleProgressChecker[0m
+[controller_server-10] [0m[INFO] [1793170137.633113441] [controller_server]: Controller Server has progress_checker  progress checkers available.[0m
+[controller_server-10] [0m[INFO] [1793170137.633837281] [controller_server]: Created goal checker : general_goal_checker of type nav2_controller::SimpleGoalChecker[0m
+[controller_server-10] [0m[INFO] [1793170137.634565978] [controller_server]: Controller Server has general_goal_checker  goal checkers available.[0m
+[controller_server-10] [0m[INFO] [1793170137.636026823] [controller_server]: Created controller : MincoMpc of type minco_controller::MincoMpcController[0m
+[controller_server-10] [0m[INFO] [1793170137.650047773] [controller_server]: MincoMpc: MincoMpcController configured (dt=0.050, lookahead_time=1.000, deadzone=0.050, delay_comp=0.120, reference_max_lead=0.150, startup_lead=0.850, startup_target_speed=0.080, startup_min_command=0.600, uphill_assist=[grade=0.030..0.180,ref>=0.250,max_command=1.000], slope_slowdown=[0.060,0.180]rad, slope_speed_limit=1.150, small_gyro=false, fixed_wz=0.000, odom_timeout=0.250, trajectory_timeout=1.500, future_tolerance=0.050, q_along=3.000, q_cross=60.000, lidar_offset_x=0.000, lidar_offset_y=0.000, lidar_roll_offset=0.000, opt_path_topic=minco/opt_path, odom_topic=/odometry, cmd_vel_mpc_topic=minco/cmd_vel_mpc)[0m
+[controller_server-10] [0m[INFO] [1793170137.650122652] [controller_server]: Controller Server has MincoMpc  controllers available.[0m
+[lifecycle_manager-17] [0m[INFO] [1793170137.658892750] [lifecycle_manager_navigation]: [34m[1mConfiguring smoother_server[0m[0m[0m
+[smoother_server-11] [0m[INFO] [1793170137.659159324] [smoother_server]: Configuring smoother server[0m
+[smoother_server-11] [0m[INFO] [1793170137.669903002] [smoother_server]: Created smoother : simple_smoother of type nav2_smoother::SimpleSmoother[0m
+[smoother_server-11] [0m[INFO] [1793170137.670976067] [smoother_server]: Smoother Server has simple_smoother  smoothers available.[0m
+[lifecycle_manager-17] [0m[INFO] [1793170137.677444289] [lifecycle_manager_navigation]: [34m[1mConfiguring planner_server[0m[0m[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.677696181] [planner_server]: Configuring[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.677792078] [global_costmap.global_costmap]: Configuring[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.685270222] [global_costmap.global_costmap]: Using plugin "static_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.688358073] [global_costmap.global_costmap]: Subscribing to the map topic (/map) with transient local durability[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.689975508] [global_costmap.global_costmap]: Initialized plugin "static_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.690031634] [global_costmap.global_costmap]: Using plugin "rog_dynamic_obstacle_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.693189635] [global_costmap.global_costmap]: ROG dynamic obstacle layer enabled=true topic=/rog_map/dynamic_obstacles threshold=65 stale_timeout=2.75s obstacle_marking_max_range=2.00m (0=unlimited) footprint_clearing=true[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.693255993] [global_costmap.global_costmap]: Initialized plugin "rog_dynamic_obstacle_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.693290557] [global_costmap.global_costmap]: Using plugin "inflation_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.694199175] [global_costmap.global_costmap]: Initialized plugin "inflation_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793170137.741840979] [planner_server]: Created global planner plugin MincoPlanner of type minco_planner/MincoPlanner[0m
+[planner_server_mt-12] [32m -- [RM-Config] inflation_resolution: 0.05[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793170137.960690593] [rm27_ground_truth_localizer]: Initialized map->odom from Gazebo pose: x=-11.700 y=3.100 z=0.080
+[planner_server_mt-12] [0m[INFO] [1793170138.035960099] [planner_server]: [ROGMap Config] loaded prefix='MincoPlanner.rog_map', frame_id='odom', cloud='/registered_scan', odom='/lidar_odometry', resolution=0.050, map_size=[6.05 6.05 2.05], projection=on, field=on/quadratic, performance=on, visualization=on[0m
+[planner_server_mt-12] [0m[INFO] [1793170138.061455842] [planner_server]: [ROGMap] loaded prior map 583x300 at 0.050 m/cell in frame 'map': occupied=59349 known_free=114875 unknown=676[0m
+[planner_server_mt-12] [0m[INFO] [1793170138.061564710] [planner_server]: [ROGMap] loaded ground-elevation support: default=0.000 m, grid=enabled (113792 supported cells), patches=0[0m
+[planner_server_mt-12] [0m[INFO] [1793170138.068329408] [planner_server]: [ROGMap CloudFilter] enabled frame=base_link mode=transform_cloud pose_child=imu_link tf_timeout=0.200s remove_inside=true boxes=1 visualization=true[0m
+[planner_server_mt-12]  -- [ROG-Map] Init, resetMapSize: ORIGIN_AT_CORNER.
+[planner_server_mt-12]  -- [ROG-Map] Init, resetMapSize: virtual_ceil_height: 1.725, virtual_ground_height: -0.725.
+[planner_server_mt-12] [33m -- [Inf-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [CounterMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 125 125  45[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.25 6.25 2.25[0m
+[planner_server_mt-12] [33m -- [Inf-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [InfMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 125 125  45[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.25 6.25 2.25[0m
+[planner_server_mt-12] [ProbMap] virtual_ceil_height: 1.7
+[planner_server_mt-12] [ProbMap] virtual_ground_height: -0.75
+[planner_server_mt-12] [33m -- [Prob-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [ProbMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 121 121  41[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.05 6.05 2.05[0m
+[planner_server_mt-12] [0m[INFO] [1793170138.141961760] [planner_server]: [MincoPlanner] ROGMap is created inside MincoPlanner plugin and shared by pointer.[0m
+[planner_server_mt-12] [0m[INFO] [1793170138.145735246] [planner_server]: [MincoPlanner] hot_start thresholds: tracking_base=0.400 m velocity=0.450 m/s direction_cosine=0.350[0m
+[planner_server_mt-12] [0m[INFO] [1793170138.151342547] [planner_server]: [MincoPlanner] Cached trajectory reuse limits: 2.00 s for collision/safety rejection, 2.00 s for optimizer failure.[0m
+[planner_server_mt-12] [PriorMap] updated local projection cache 121x121 at 0.05 m/cell, occupied=7208, known_free=7006
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=87, projection free_count=2904, projection passable_count=1360, projection unknown_count=10290, classification: thin=1360, wall=0, tunnel=0, ambiguous=1347, empty=2727, dropout_hold=0, bounded_fill=0, insufficient=9207, mask0_count=7091, mask1_count=7550
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=170, projection free_count=3117, projection passable_count=1406, projection unknown_count=9948, classification: thin=1406, wall=0, tunnel=0, ambiguous=1546, empty=2943, dropout_hold=0, bounded_fill=0, insufficient=8746, mask0_count=7174, mask1_count=7467
+[planner_server_mt-12] [ROGMapPerf] win=1.02s cloud_cb_hz=11.76 map_update_hz=11.76Hz field_update=11.76Hz
+[planner_server_mt-12]   time_ms: total=28.51 raycast=6.71 (parallel=1.62 merge=1.73 endpoint_dedup=2.36) prob=1.10 projection=15.30 field=3.91 snapshot=0.32
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=36.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60677.00 unique_endpoints=4820.00 duplicate_endpoints=55857.00
+[planner_server_mt-12]   cells: free=3117.00 passable=1406.00 occupied=170.00 unknown=9948.00
+[planner_server_mt-12]   classification: thin=1406.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1546.00 empty=2943.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=8746.00
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=10.00 map_update_hz=10.00Hz field_update=10.00Hz
+[planner_server_mt-12]   time_ms: total=28.02 raycast=6.69 (parallel=1.45 merge=1.73 endpoint_dedup=2.38) prob=1.07 projection=13.97 field=4.79 snapshot=0.29
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=36.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60677.00 unique_endpoints=4830.00 duplicate_endpoints=55847.00
+[planner_server_mt-12]   cells: free=3120.00 passable=1409.00 occupied=169.00 unknown=9943.00
+[planner_server_mt-12]   classification: thin=1409.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1562.00 empty=2945.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=8725.00
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=169, projection free_count=3120, projection passable_count=1410, projection unknown_count=9942, classification: thin=1410, wall=0, tunnel=0, ambiguous=1561, empty=2945, dropout_hold=0, bounded_fill=0, insufficient=8725, mask0_count=7173, mask1_count=7468
+[planner_server_mt-12] [31m[FATAL] [1793170141.187934951] [planner_server]: Failed to create global planner. Exception: PRIORMAP static_layer did not receive its initial map within 3 seconds[0m
+[planner_server_mt-12] [0m[INFO] [1793170141.188061114] [planner_server]: Cleaning up[0m
+[planner_server_mt-12] [0m[INFO] [1793170141.188111026] [global_costmap.global_costmap]: Cleaning up[0m
+[lifecycle_manager-17] [31m[ERROR] [1793170141.210044322] [lifecycle_manager_navigation]: Failed to change state for node: planner_server[0m
+[lifecycle_manager-17] [31m[ERROR] [1793170141.210323194] [lifecycle_manager_navigation]: Failed to bring up all requested nodes. Aborting bringup.[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793170141.845054756] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170141.845490656] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170148.698214030] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170148.698669421] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170153.799239753] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170153.799618895] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170158.897268800] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170158.897723205] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170163.899424688] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170163.900104311] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170168.984245728] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170168.984619022] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170173.999828275] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170174.000233485] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170180.854461211] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170180.854828253] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170185.855279126] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170185.954824181] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170190.859517608] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170190.959112183] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170195.956573514] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170196.060472552] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170200.957618411] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170201.162091028] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170205.959307791] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170206.164141100] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170211.060567036] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170211.259651381] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170217.925095739] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170218.124885580] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170222.925172566] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170223.125156264] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793170227.929624705] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[rm27_ground_truth_localizer-6] [INFO] [1793170228.128317070] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[waypoint_follower-15] [0m[INFO] [1793170231.014562684] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[waypoint_follower-15] [0m[INFO] [1793170231.014630426] [waypoint_follower]: Running Nav2 LifecycleNode rcl preshutdown (waypoint_follower)[0m
+[waypoint_follower-15] [0m[INFO] [1793170231.014664934] [waypoint_follower]: Destroying bond (waypoint_follower) to lifecycle manager.[0m
+[velocity_smoother-16] [0m[INFO] [1793170231.014573318] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[velocity_smoother-16] [0m[INFO] [1793170231.014630552] [velocity_smoother]: Running Nav2 LifecycleNode rcl preshutdown (velocity_smoother)[0m
+[velocity_smoother-16] [0m[INFO] [1793170231.014664880] [velocity_smoother]: Destroying bond (velocity_smoother) to lifecycle manager.[0m
+[bt_navigator-14] [0m[INFO] [1793170231.014577720] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[bt_navigator-14] [0m[INFO] [1793170231.014630502] [bt_navigator]: Running Nav2 LifecycleNode rcl preshutdown (bt_navigator)[0m
+[bt_navigator-14] [0m[INFO] [1793170231.014665000] [bt_navigator]: Destroying bond (bt_navigator) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793170231.014551986] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-17] [0m[INFO] [1793170231.014629311] [lifecycle_manager_navigation]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_navigation)[0m
+[planner_server_mt-12] [0m[INFO] [1793170231.014599517] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[planner_server_mt-12] [0m[INFO] [1793170231.014652229] [planner_server]: Running Nav2 LifecycleNode rcl preshutdown (planner_server)[0m
+[planner_server_mt-12] [0m[INFO] [1793170231.014684003] [planner_server]: Destroying bond (planner_server) to lifecycle manager.[0m
+[controller_server-10] [0m[INFO] [1793170231.014626324] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[controller_server-10] [0m[INFO] [1793170231.014694675] [controller_server]: Running Nav2 LifecycleNode rcl preshutdown (controller_server)[0m
+[controller_server-10] [0m[INFO] [1793170231.014805782] [controller_server]: Cleaning up[0m
+[fake_vel_transform_node-9] [0m[INFO] [1793170231.014628822] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[map_server-7] [0m[INFO] [1793170231.014649504] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[map_server-7] [0m[INFO] [1793170231.014706930] [map_server]: Running Nav2 LifecycleNode rcl preshutdown (map_server)[0m
+[map_server-7] [0m[INFO] [1793170231.014806030] [map_server]: Cleaning up[0m
+[map_server-7] [0m[INFO] [1793170231.014841615] [map_server]: Destroying bond (map_server) to lifecycle manager.[0m
+[behavior_server-13] [0m[INFO] [1793170231.014647657] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[behavior_server-13] [0m[INFO] [1793170231.014723372] [behavior_server]: Running Nav2 LifecycleNode rcl preshutdown (behavior_server)[0m
+[behavior_server-13] [0m[INFO] [1793170231.014760651] [behavior_server]: Destroying bond (behavior_server) to lifecycle manager.[0m
+[smoother_server-11] [0m[INFO] [1793170231.014652951] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[smoother_server-11] [0m[INFO] [1793170231.014723670] [smoother_server]: Running Nav2 LifecycleNode rcl preshutdown (smoother_server)[0m
+[smoother_server-11] [0m[INFO] [1793170231.014826986] [smoother_server]: Cleaning up[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793170231.014651224] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [lifecycle_manager-17]: sending signal 'SIGINT' to process[lifecycle_manager-17]
+[INFO] [velocity_smoother-16]: sending signal 'SIGINT' to process[velocity_smoother-16]
+[INFO] [waypoint_follower-15]: sending signal 'SIGINT' to process[waypoint_follower-15]
+[INFO] [bt_navigator-14]: sending signal 'SIGINT' to process[bt_navigator-14]
+[INFO] [behavior_server-13]: sending signal 'SIGINT' to process[behavior_server-13]
+[INFO] [planner_server_mt-12]: sending signal 'SIGINT' to process[planner_server_mt-12]
+[INFO] [smoother_server-11]: sending signal 'SIGINT' to process[smoother_server-11]
+[ERROR] [waypoint_follower-15]: process has died [pid 1097841, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_waypoint_follower/waypoint_follower --ros-args --log-level info --ros-args -r __node:=waypoint_follower -r __ns:=/ --params-file /tmp/launch_params_a49hyggs -r /tf:=tf -r /tf_static:=tf_static'].
+[ERROR] [behavior_server-13]: process has died [pid 1097839, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_behaviors/behavior_server --ros-args --log-level info --ros-args -r __node:=behavior_server -r __ns:=/ --params-file /tmp/launch_params_a49hyggs -r /tf:=tf -r /tf_static:=tf_static -r cmd_vel:=cmd_vel_nav2_result'].
+[ERROR] [bt_navigator-14]: process has died [pid 1097840, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_bt_navigator/bt_navigator --ros-args --log-level info --ros-args -r __node:=bt_navigator -r __ns:=/ --params-file /tmp/launch_params_a49hyggs -r /tf:=tf -r /tf_static:=tf_static -r cmd_vel:=cmd_vel_nav2_result'].
+[ERROR] [velocity_smoother-16]: process has died [pid 1097842, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_velocity_smoother/velocity_smoother --ros-args --log-level info --ros-args -r __node:=velocity_smoother -r __ns:=/ --params-file /tmp/launch_params_a49hyggs -r /tf:=tf -r /tf_static:=tf_static -r cmd_vel:=cmd_vel_controller -r cmd_vel_smoothed:=cmd_vel_nav2_result'].
+[INFO] [controller_server-10]: sending signal 'SIGINT' to process[controller_server-10]
+[INFO] [fake_vel_transform_node-9]: sending signal 'SIGINT' to process[fake_vel_transform_node-9]
+[INFO] [lifecycle_manager-8]: sending signal 'SIGINT' to process[lifecycle_manager-8]
+[ERROR] [smoother_server-11]: process has died [pid 1097837, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_smoother/smoother_server --ros-args --log-level info --ros-args -r __node:=smoother_server -r __ns:=/ --params-file /tmp/launch_params_a49hyggs -r /tf:=tf -r /tf_static:=tf_static'].
+[INFO] [map_server-7]: sending signal 'SIGINT' to process[map_server-7]
+[ERROR] [fake_vel_transform_node-9]: process has died [pid 1097835, exit code -2, cmd '/home/zhang/navi/sentry_navgation_RM27/install/fake_vel_transform/lib/fake_vel_transform/fake_vel_transform_node --ros-args --log-level info --ros-args -r __node:=fake_vel_transform -r __ns:=/ --params-file /tmp/launch_params_a49hyggs -r /tf:=tf -r /tf_static:=tf_static'].
+[INFO] [rm27_ground_truth_localizer-6]: sending signal 'SIGINT' to process[rm27_ground_truth_localizer-6]
+[INFO] [robot_state_publisher-4]: sending signal 'SIGINT' to process[robot_state_publisher-4]
+[ERROR] [planner_server_mt-12]: process has died [pid 1097838, exit code -2, cmd '/home/zhang/navi/sentry_navgation_RM27/install/minco_planner/lib/minco_planner/planner_server_mt --ros-args --log-level info --ros-args -r __node:=planner_server -r __ns:=/ --params-file /tmp/launch_params_a49hyggs -r /tf:=tf -r /tf_static:=tf_static'].
+[ERROR] [map_server-7]: process has died [pid 1097833, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_map_server/map_server --ros-args --log-level info --ros-args -r __node:=map_server -r __ns:=/ --params-file /tmp/launch_params_9jvdyrh5 -r /tf:=tf -r /tf_static:=tf_static'].
+[INFO] [joint_state_publisher-3]: sending signal 'SIGINT' to process[joint_state_publisher-3]
+[ERROR] [rm27_ground_truth_localizer-6]: process has died [pid 1097832, exit code -2, cmd '/home/zhang/navi/sentry_navgation_RM27/install/rm_27_stimulation/lib/rm_27_stimulation/rm27_ground_truth_localizer --ros-args -r __node:=rm27_ground_truth_localizer -r __ns:=/ --params-file /tmp/launch_params_s67zvirh'].
+[INFO] [parameter_bridge-2]: sending signal 'SIGINT' to process[parameter_bridge-2]
+[ERROR] [robot_state_publisher-4]: process has died [pid 1097617, exit code -2, cmd '/opt/ros/jazzy/lib/robot_state_publisher/robot_state_publisher --ros-args -r __node:=robot_state_publisher --params-file /tmp/launch_params_g2za5_r2 --params-file /tmp/launch_params_rte0u24n'].
+[INFO] [gazebo-1]: sending signal 'SIGINT' to process[gazebo-1]
+[lifecycle_manager-8] [0m[INFO] [1793170231.014705284] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-8] [0m[INFO] [1793170231.014822876] [lifecycle_manager_localization]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_localization)[0m
+[robot_state_publisher-4] [INFO] [1793170231.014725634] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[controller_server-10] [33m[WARN] [1793170231.014897332] [controller_server]: Minco MPC fail-closed: CLEANUP[0m
+[controller_server-10] [0m[INFO] [1793170231.014976920] [local_costmap.local_costmap]: Cleaning up[0m
+[parameter_bridge-2] [INFO] [1793170231.014749007] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[velocity_smoother-16] [0m[INFO] [1793170231.015522685] [velocity_smoother]: Destroying[0m
+[bt_navigator-14] [0m[INFO] [1793170231.015709626] [bt_navigator]: Destroying[0m
+[ERROR] [joint_state_publisher-3]: process has died [pid 1097616, exit code -2, cmd '/opt/ros/jazzy/lib/joint_state_publisher/joint_state_publisher --ros-args -r __node:=joint_state_publisher --params-file /tmp/launch_params_sb9ao81g --params-file /tmp/launch_params_bdjmcsmt'].
+[waypoint_follower-15] [0m[INFO] [1793170231.016200880] [waypoint_follower]: Destroying[0m
+[behavior_server-13] [0m[INFO] [1793170231.016625966] [behavior_server]: Destroying[0m
+[map_server-7] [0m[INFO] [1793170231.018650924] [map_server]: Destroying[0m
+[smoother_server-11] [0m[INFO] [1793170231.021529338] [smoother_server]: Destroying bond (smoother_server) to lifecycle manager.[0m
+[smoother_server-11] [0m[INFO] [1793170231.025726494] [smoother_server]: Destroying[0m
+[planner_server_mt-12] [0m[INFO] [1793170231.028674909] [global_costmap.global_costmap]: Destroying[0m
+[lifecycle_manager-17] [0m[INFO] [1793170231.039506037] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-17] [0m[INFO] [1793170231.039644680] [lifecycle_manager_navigation]: Destroying lifecycle_manager_navigation[0m
+[controller_server-10] [0m[INFO] [1793170231.043528040] [controller_server]: Destroying bond (controller_server) to lifecycle manager.[0m
+[controller_server-10] [0m[INFO] [1793170231.045185310] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[controller_server-10] [0m[INFO] [1793170231.047487289] [local_costmap.local_costmap]: Destroying[0m
+[controller_server-10] [0m[INFO] [1793170231.051508675] [controller_server]: Destroying[0m
+[parameter_bridge-2] [INFO] [1793170231.051881271] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [parameter_bridge-2]: process has finished cleanly [pid 1097614]
+[INFO] [lifecycle_manager-17]: process has finished cleanly [pid 1097843]
+[INFO] [controller_server-10]: process has finished cleanly [pid 1097836]
+[gazebo-1] Segmentation fault
+[ERROR] [gazebo-1]: process has died [pid 1097613, exit code -2, cmd 'ruby /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz sim -r -s --physics-engine gz-physics-bullet-featherstone-plugin --seed 43 /home/zhang/navi/sentry_navgation_RM27/install/rm_27_stimulation/share/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world --force-version 8'].
+[INFO] [launch]: process[gazebo-1] was required: shutting down launched system

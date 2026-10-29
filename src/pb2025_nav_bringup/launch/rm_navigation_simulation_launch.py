@@ -14,6 +14,9 @@
 
 
 import os
+import tempfile
+
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -33,6 +36,33 @@ from nav2_common.launch import RewrittenYaml
 
 def _as_bool(value):
     return value.strip().lower() in {"true", "1", "yes", "on"}
+
+
+def _apply_world_profile(params_file, world):
+    """Resolve world-specific geometry/registration settings into one file."""
+    if not world:
+        return params_file
+    with open(params_file, encoding="utf-8") as stream:
+        configuration = yaml.safe_load(stream)
+    # The profile block is input metadata, not a runtime node. Removing it
+    # also avoids YAML aliases when its list values become node parameters;
+    # ROS's C parameter parser does not support aliases.
+    profile = configuration.pop("simulation_world_profiles", {}).get(
+        "ros__parameters", {}).get(world)
+    if not profile:
+        return params_file
+    def merge(target, overrides):
+        for key, value in overrides.items():
+            if isinstance(value, dict):
+                merge(target.setdefault(key, {}), value)
+            else:
+                target[key] = value
+    for node_name, parameters in profile.items():
+        merge(configuration.setdefault(node_name, {}).setdefault("ros__parameters", {}), parameters)
+    with tempfile.NamedTemporaryFile(mode="w", prefix="rm27_world_params_", suffix=".yaml",
+                                     encoding="utf-8", delete=False) as stream:
+        yaml.safe_dump(configuration, stream, sort_keys=False)
+        return stream.name
 
 
 def _validate_localization_inputs(context):
@@ -69,11 +99,21 @@ def _validate_localization_inputs(context):
         if os.path.realpath(params_file) == os.path.realpath(
             os.path.join(directory, "nav2_params.yaml")
         ):
-            actions.append(
-                SetLaunchConfiguration(
-                    "params_file", os.path.join(directory, "minco_params.yaml")
-                )
-            )
+            params_file = os.path.join(directory, "minco_params.yaml")
+            actions.append(SetLaunchConfiguration("params_file", params_file))
+    resolved = _apply_world_profile(
+        params_file, LaunchConfiguration("world", default="").perform(context))
+    if resolved != params_file:
+        actions.append(SetLaunchConfiguration("params_file", resolved))
+    if navigation_mode == "minco" and not use_ground_truth and not use_slam:
+        actions.append(Node(
+            package="rm_27_stimulation",
+            executable="pointlio_scan_registrar",
+            name="pointlio_scan_registrar",
+            output="screen",
+            parameters=[resolved, {"use_sim_time": _as_bool(
+                LaunchConfiguration("use_sim_time").perform(context))}],
+        ))
     if use_ground_truth or use_slam:
         return actions
 
@@ -217,23 +257,18 @@ def generate_launch_description():
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
 
-    declare_render_mode_cmd = DeclareLaunchArgument(
-        "render_mode", default_value="",
-        description="auto (effective default), gpu (required), or cpu (llvmpipe) for simulation RViz",
-    )
-
     declare_rviz_hardware_acceleration_cmd = DeclareLaunchArgument(
         "rviz_hardware_acceleration",
         default_value="true",
-        description="Legacy RViz alias when render_mode is unset: true=auto, false=cpu",
+        description="Use VirtualGL / EGL to accelerate RViz when available",
     )
 
     declare_use_ground_truth_odom_cmd = DeclareLaunchArgument(
         "use_ground_truth_odom",
-        default_value="True",
+        default_value="False",
         description=(
-            "Use Gazebo ground truth for the simulation navigation feedback loop. "
-            "Set False only when testing Point-LIO localization."
+            "Use Gazebo ground truth only for explicit diagnostic comparisons. "
+            "Normal simulation uses Point-LIO."
         ),
     )
 
@@ -265,7 +300,9 @@ def generate_launch_description():
         name="rm27_ground_truth_localizer",
         output="screen",
         namespace=namespace,
-        parameters=[configured_params],
+        parameters=[configured_params, {"wait_for_initial_pose": LaunchConfiguration("global_relocalization")}],
+        remappings=[("/rm27_ground_truth_localizer/initialpose_accepted",
+                     "/relocalization/initialpose_accepted")],
         condition=IfCondition(use_ground_truth_odom),
     )
 
@@ -276,8 +313,6 @@ def generate_launch_description():
             "namespace": namespace,
             "use_sim_time": use_sim_time,
             "rviz_config": rviz_config_file,
-            "render_mode": LaunchConfiguration("render_mode"),
-            "simulation_rendering": "true",
             "rviz_hardware_acceleration": LaunchConfiguration(
                 "rviz_hardware_acceleration"
             ),
@@ -298,6 +333,8 @@ def generate_launch_description():
             "use_respawn": use_respawn,
             "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
             "use_ground_truth_odom": use_ground_truth_odom,
+            "global_relocalization": LaunchConfiguration("global_relocalization"),
+            "stationary_relocalization": LaunchConfiguration("stationary_relocalization"),
             "deployment": "simulation",
             "navigation_mode": navigation_mode,
             "enable_legacy_terrain": enable_legacy_terrain,
@@ -318,11 +355,12 @@ def generate_launch_description():
     ld.add_action(declare_use_composition_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_rviz_cmd)
-    ld.add_action(declare_render_mode_cmd)
     ld.add_action(declare_rviz_hardware_acceleration_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
+    ld.add_action(DeclareLaunchArgument("stationary_relocalization", default_value="true"))
+    ld.add_action(DeclareLaunchArgument("global_relocalization", default_value="false"))
     ld.add_action(declare_navigation_mode_cmd)
     ld.add_action(declare_enable_legacy_terrain_cmd)
     ld.add_action(OpaqueFunction(function=_validate_localization_inputs))

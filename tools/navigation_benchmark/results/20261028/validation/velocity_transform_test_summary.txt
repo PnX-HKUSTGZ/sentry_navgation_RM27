@@ -1,0 +1,69 @@
+build/fake_vel_transform/Testing/20261027-1808/Test.xml: 4 tests, 0 errors, 1 failure, 0 skipped
+- clang_format
+  <<< failure message
+    -- run_test.py: invoking following command in '/home/zhang/navi/sentry_navgation_RM27/src/fake_vel_transform':
+     - /opt/ros/jazzy/bin/ament_clang_format --xunit-file /home/zhang/navi/sentry_navgation_RM27/build/fake_vel_transform/test_results/fake_vel_transform/clang_format.xunit.xml --config /home/zhang/navi/sentry_navgation_RM27/src/fake_vel_transform/.clang-format
+    Code style divergence in file 'src/fake_vel_transform.cpp':
+    
+    [src/fake_vel_transform.cpp:119:28]: Replace [\n      ] with []
+    -     sync_->registerCallback(
+    -       std::bind(&FakeVelTransform::syncCallback, this, std::placeholders::_1, std::placeholders::_2));
+    +     sync_->registerCallback(std::bind(&FakeVelTransform::syncCallback, this, std::placeholders::_1, std::placeholders::_2));
+    [src/fake_vel_transform.cpp:120:16]: Replace [] with [\n      ]
+    -       std::bind(&FakeVelTransform::syncCallback, this, std::placeholders::_1, std::placeholders::_2));
+    +       std::bind(
+    +       &FakeVelTransform::syncCallback, this, std::placeholders::_1, std::placeholders::_2));
+    [src/fake_vel_transform.cpp:151:6]: Replace [] with [\n    ]
+    -   if (use_latest_odom_for_cmd_ && has_latest_odom_stamp_ &&
+    +   if (
+    +     use_latest_odom_for_cmd_ && has_latest_odom_stamp_ &&
+    [src/fake_vel_transform.cpp:151:59]: Replace [\n    ] with [ ]
+    -   if (use_latest_odom_for_cmd_ && has_latest_odom_stamp_ &&
+    -     stamp <= latest_odom_stamp_ && odometryFresh(now))
+    +   if (use_latest_odom_for_cmd_ && has_latest_odom_stamp_ && stamp <= latest_odom_stamp_ && odometryFresh(now))
+    [src/fake_vel_transform.cpp:152:34]: Replace [ ] with [\n    ]
+    -     stamp <= latest_odom_stamp_ && odometryFresh(now))
+    +     stamp <= latest_odom_stamp_ &&
+    +     odometryFresh(now))
+    [src/fake_vel_transform.cpp:152:54]: Replace [\n  ] with [ ]
+    -     stamp <= latest_odom_stamp_ && odometryFresh(now))
+    -   {
+    +     stamp <= latest_odom_stamp_ && odometryFresh(now)) {
+    
+    1 files with 6 code style divergences
+    No code style divergence in file 'include/fake_vel_transform/fake_vel_transform.hpp'
+    
+    No code style divergence in file 'include/fake_vel_transform/odom_validation.hpp'
+    
+    No code style divergence in file 'test/test_fake_vel_transform.cpp'
+    
+    -- run_test.py: return code 1
+    -- run_test.py: verify result file '/home/zhang/navi/sentry_navgation_RM27/build/fake_vel_transform/test_results/fake_vel_transform/clang_format.xunit.xml'
+  >>>
+build/fake_vel_transform/test_results/fake_vel_transform/clang_format.xunit.xml: 9 tests, 0 errors, 6 failures, 0 skipped
+- fake_vel_transform.clang_format src/fake_vel_transform.cpp:119:28
+  <<< failure message
+    Replace [\n      ] with []
+  >>>
+- fake_vel_transform.clang_format src/fake_vel_transform.cpp:120:16
+  <<< failure message
+    Replace [] with [\n      ]
+  >>>
+- fake_vel_transform.clang_format src/fake_vel_transform.cpp:151:6
+  <<< failure message
+    Replace [] with [\n    ]
+  >>>
+- fake_vel_transform.clang_format src/fake_vel_transform.cpp:151:59
+  <<< failure message
+    Replace [\n    ] with [ ]
+  >>>
+- fake_vel_transform.clang_format src/fake_vel_transform.cpp:152:34
+  <<< failure message
+    Replace [ ] with [\n    ]
+  >>>
+- fake_vel_transform.clang_format src/fake_vel_transform.cpp:152:54
+  <<< failure message
+    Replace [\n  ] with [ ]
+  >>>
+
+Summary: 27 tests, 0 errors, 7 failures, 0 skipped

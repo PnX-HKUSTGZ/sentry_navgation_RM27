@@ -1,0 +1,156 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d0b7eea..fe5cdbd 100755
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -99,6 +99,17 @@ ament_target_dependencies(pointlio_mapping
+ target_link_libraries(pointlio_mapping ${PCL_LIBRARIES} ${PYTHON_LIBRARIES})
+ target_include_directories(pointlio_mapping PRIVATE ${PYTHON_INCLUDE_DIRS})
+ 
++if(BUILD_TESTING)
++  enable_testing()
++  add_executable(test_instantaneous_scan test/test_instantaneous_scan.cpp src/preprocess.cpp)
++  target_include_directories(test_instantaneous_scan PRIVATE src)
++  ament_target_dependencies(test_instantaneous_scan rclcpp sensor_msgs pcl_ros pcl_conversions livox_ros_driver2)
++  target_link_libraries(test_instantaneous_scan ${PCL_LIBRARIES})
++  add_test(NAME instantaneous_scan COMMAND test_instantaneous_scan)
++  add_executable(test_ekf_measurement_noise test/test_ekf_measurement_noise.cpp)
++  add_test(NAME ekf_measurement_noise COMMAND test_ekf_measurement_noise)
++endif()
++
+ # Install the executable
+ install(TARGETS
+   pointlio_mapping
+diff --git a/include/IKFoM/IKFoM_toolkit/esekfom/esekfom.hpp b/include/IKFoM/IKFoM_toolkit/esekfom/esekfom.hpp
+index bc5c43e..9ccfea2 100755
+--- a/include/IKFoM/IKFoM_toolkit/esekfom/esekfom.hpp
++++ b/include/IKFoM/IKFoM_toolkit/esekfom/esekfom.hpp
+@@ -230,11 +230,11 @@ public:
+         }
+         K_ = PHT * HPHT.inverse();
+       } else {
+-        Matrix<scalar_type, 12, 12> HTH = m_noise * h_x.transpose() * h_x;
++        Matrix<scalar_type, 12, 12> HTH = h_x.transpose() * h_x / m_noise;
+         Matrix<scalar_type, n, n> P_inv = P_.inverse();
+         P_inv.template block<12, 12>(0, 0) += HTH;
+         P_inv = P_inv.inverse();
+-        K_ = P_inv.template block<n, 12>(0, 0) * h_x.transpose() * m_noise;
++        K_ = P_inv.template block<n, 12>(0, 0) * h_x.transpose() / m_noise;
+       }
+       Matrix<scalar_type, n, 1> dx_ =
+         K_ * z;  // - h) + (K_x - Matrix<scalar_type, n, n>::Identity()) * dx_new;
+diff --git a/src/laserMapping.cpp b/src/laserMapping.cpp
+index 2b654fa..1c30242 100755
+--- a/src/laserMapping.cpp
++++ b/src/laserMapping.cpp
+@@ -543,8 +543,8 @@ int main(int argc, char ** argv)
+       t2 = omp_get_wtime();
+ 
+       /*** iterated state estimation ***/
+-      crossmat_list.reserve(feats_down_size);
+-      pbody_list.reserve(feats_down_size);
++      crossmat_list.resize(feats_down_size);
++      pbody_list.resize(feats_down_size);
+       // pbody_ext_list.reserve(feats_down_size);
+ 
+       for (size_t i = 0; i < feats_down_body->size(); i++) {
+diff --git a/src/parameters.cpp b/src/parameters.cpp
+index c16f147..9ad2deb 100755
+--- a/src/parameters.cpp
++++ b/src/parameters.cpp
+@@ -177,6 +177,9 @@ void readParameters(std::shared_ptr<rclcpp::Node> & nh)
+     nh->declare_parameter<int>("preprocess.scan_rate", 10);
+     nh->get_parameter("preprocess.scan_rate", p_pre->SCAN_RATE);
+ 
++    nh->declare_parameter<bool>("preprocess.instantaneous_scan", false);
++    nh->get_parameter("preprocess.instantaneous_scan", p_pre->instantaneous_scan);
++
+     nh->declare_parameter<int>("preprocess.timestamp_unit", 1);
+     nh->get_parameter("preprocess.timestamp_unit", p_pre->time_unit);
+ 
+diff --git a/src/preprocess.cpp b/src/preprocess.cpp
+index 1335353..af54cd9 100755
+--- a/src/preprocess.cpp
++++ b/src/preprocess.cpp
+@@ -167,6 +167,7 @@ void Preprocess::process_cut_frame_pcl2(
+     pcl::PointCloud<velodyne_ros::Point> pl_orig;
+     pcl::fromROSMsg(*msg, pl_orig);
+     int plsize = pl_orig.points.size();
++    if (plsize == 0) return;
+     pl_surf.reserve(plsize);
+ 
+     bool is_first[MAX_LINE_NUM];
+@@ -175,7 +176,7 @@ void Preprocess::process_cut_frame_pcl2(
+     float yaw_last[MAX_LINE_NUM] = {0.0};   // yaw of last scan point
+     float time_last[MAX_LINE_NUM] = {0.0};  // last offset time
+ 
+-    if (pl_orig.points[plsize - 1].time > 0) {
++    if (instantaneous_scan || pl_orig.points[plsize - 1].time > 0) {
+       given_offset_time = true;
+     } else {
+       std::cout << "Compute offset time using constant rotation model." << '\n';
+@@ -192,7 +193,7 @@ void Preprocess::process_cut_frame_pcl2(
+       added_pt.y = pl_orig.points[i].y;
+       added_pt.z = pl_orig.points[i].z;
+       added_pt.intensity = pl_orig.points[i].intensity;
+-      added_pt.curvature = pl_orig.points[i].time * 1000.0;  //ms
++      added_pt.curvature = instantaneous_scan ? 0.0f : pl_orig.points[i].time * 1000.0f;  //ms
+ 
+       double dist = added_pt.x * added_pt.x + added_pt.y * added_pt.y + added_pt.z * added_pt.z;
+       if (
+@@ -202,6 +203,7 @@ void Preprocess::process_cut_frame_pcl2(
+ 
+       if (!given_offset_time) {
+         int layer = pl_orig.points[i].ring;
++        if (layer >= MAX_LINE_NUM) continue;
+         double yaw_angle = atan2(added_pt.y, added_pt.x) * 57.2957;
+ 
+         if (is_first[layer]) {
+@@ -286,6 +288,16 @@ void Preprocess::process_cut_frame_pcl2(
+     return;
+   }
+ 
++  // Simultaneous points cannot be split into time-ordered subframes.
++  // Preserve the whole filtered frame, including its first point.
++  if (lidar_type == VELO16 && instantaneous_scan) {
++    if (!pl_surf.empty()) {
++      pcl_out.push_back(PointCloudXYZI::Ptr(new PointCloudXYZI(pl_surf)));
++      time_lidar.push_back(rclcpp::Time(msg->header.stamp).seconds() * 1000);
++    }
++    return;
++  }
++
+   sort(pl_surf.points.begin(), pl_surf.points.end(), time_list_cut_frame);
+ 
+   //ms
+@@ -422,7 +434,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::msg::PointCloud2::SharedPtr
+   std::vector<float> time_last(N_SCANS, 0.0);  // last offset time
+   /*****************************************************************/
+ 
+-  if (pl_orig.points[plsize - 1].time > 0) {
++  if (instantaneous_scan || pl_orig.points[plsize - 1].time > 0) {
+     given_offset_time = true;
+   } else {
+     given_offset_time = false;
+@@ -451,8 +463,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::msg::PointCloud2::SharedPtr
+     added_pt.z = pl_orig.points[i].z;
+     added_pt.intensity = pl_orig.points[i].intensity;
+     added_pt.curvature =
+-      pl_orig.points[i].time *
+-      time_unit_scale;  // curvature unit: ms // std::cout<<added_pt.curvature<<'\n';
++      (instantaneous_scan ? 0.0f : pl_orig.points[i].time * time_unit_scale);  // curvature unit: ms // std::cout<<added_pt.curvature<<'\n';
+     if (
+       i % point_filter_num != 0 || std::isnan(added_pt.x) || std::isnan(added_pt.y) ||
+       std::isnan(added_pt.z))
+diff --git a/src/preprocess.h b/src/preprocess.h
+index cd68623..15769cd 100755
+--- a/src/preprocess.h
++++ b/src/preprocess.h
+@@ -121,6 +121,8 @@ class Preprocess
+   int lidar_type, point_filter_num, N_SCANS, SCAN_RATE, time_unit;
+   double blind, det_range;
+   bool given_offset_time;
++  // Velodyne points were acquired simultaneously at the message stamp.
++  bool instantaneous_scan = false;
+ 
+   private:
+   void avia_handler(const livox_ros_driver2::msg::CustomMsg::SharedPtr &msg);

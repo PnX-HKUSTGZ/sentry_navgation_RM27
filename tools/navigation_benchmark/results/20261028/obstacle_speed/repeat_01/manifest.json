@@ -1,0 +1,59 @@
+{
+  "repeat": 1,
+  "git_head": "1ca6364779e7a984933ea425f76654c7d82d6a0c",
+  "params_source": "/home/zhang/navi/sentry_navgation_RM27/tools/navigation_benchmark/profiles/obstacle_speed.yaml",
+  "params_snapshot": "/home/zhang/navi/sentry_navgation_RM27/tools/navigation_benchmark/results/20261028/obstacle_speed/repeat_01/params.yaml",
+  "params_sha256": "1550cc13d6ece49402baf3f0d774cfe655a8c421b8f34838c9da5d72d7b7bdb7",
+  "seed": 42,
+  "file_sha256": {
+    "install/minco_controller/lib/libminco_controller.so": "9ccf00c4aa006a938dba7d97954de54bfcf25c7f178d8ae75f59001545951c15",
+    "install/minco_planner/lib/libminco_planner.so": "885d9bb0e62a6c36e5356b8fb402025b286ffe421b5afb9fd370ed1fe1bad345",
+    "install/rog_map/lib/librog_map.a": "a84755a4ba86cad8be2092c338d3abbea89a3e62eaf93d884e4e8c403e0ecca3",
+    "src/navigation/minco_controller/src/minco_mpc_controller.cpp": "96f694c67484a78504c585f72ce83f0684e7a457460fe4c3e6d59fd6ee114709",
+    "src/navigation/minco_controller/src/mpc_solver.cpp": "18ca6a4056ab5b49e3cd0299ad567990b1aa81e62c238b23eb37707951c51e61",
+    "src/navigation/minco_planner/src/minco_core/minco_fsm.cpp": "ada0bf83afc1cad9f1fffa251390ceb7f73e81f0fa2383148d470743a58904d5",
+    "src/navigation/minco_planner/src/minco_core/minco_planner.cpp": "7aba5919a7930abad964d2a537509dede79800e3d7d2b9fe1a953cd9b30cb6e9",
+    "src/navigation/minco_planner/src/traj_opt/minco_optimizer.cpp": "65be5c05cdfb97ebc570a2f7b5789139b630b25893119961a37a8e98cf285c3d",
+    "src/pb2025_nav_bringup/config/simulation/minco_params.yaml": "a0bc5c262b11cc611a20a223b9ceeefd804f032df3bfe80690ce4cca19f8dff1"
+  },
+  "git_diff_sha256": "8ab32a9810e4c7b9ceb7c37548728bf115cf4f19d7dbbd8a2707e89a2df8306f",
+  "environment": {
+    "ROS_DOMAIN_ID": "92",
+    "GZ_PARTITION": "rm27_bench_626303_1_5016b64b4a"
+  },
+  "launch_command": [
+    "ros2",
+    "launch",
+    "rm_27_stimulation",
+    "sim_with_nav.launch.py",
+    "world:=RMUC2026",
+    "nav_world:=auto",
+    "navigation_mode:=minco",
+    "use_ground_truth_odom:=true",
+    "enable_legacy_terrain:=auto",
+    "gui:=false",
+    "use_rviz:=false",
+    "gimbal_panel:=false",
+    "params_file:=/home/zhang/navi/sentry_navgation_RM27/tools/navigation_benchmark/results/20261028/obstacle_speed/repeat_01/params.yaml",
+    "extra_gazebo_args:=--seed 42"
+  ],
+  "observer_command": [
+    "/usr/bin/python3",
+    "/home/zhang/navi/sentry_navgation_RM27/tools/navigation_benchmark/observe.py",
+    "--output",
+    "/home/zhang/navi/sentry_navgation_RM27/tools/navigation_benchmark/results/20261028/obstacle_speed/repeat_01",
+    "--goals",
+    "[[5.231,5.213],[-3.535,6.374],[-4.56,-2.03],[-3.94,-4.89],[-4.56,-2.03]]",
+    "--mode",
+    "gt",
+    "--timeout",
+    "90.0",
+    "--wall-timeout",
+    "240.0"
+  ],
+  "status": "failed",
+  "observer_exit_code": 1,
+  "launch_exit_code_before_cleanup": null,
+  "observer_exit_code_after_cleanup": 1,
+  "launch_exit_code_after_cleanup": -15
+}

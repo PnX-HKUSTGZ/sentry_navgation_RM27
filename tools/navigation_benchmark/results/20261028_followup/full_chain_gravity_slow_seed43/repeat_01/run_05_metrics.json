@@ -1,0 +1,122 @@
+{
+  "summary": {
+    "status": "succeeded",
+    "duration": 7.980000000000004,
+    "path_m": 3.849810773763414,
+    "max_speed": 1.0410668656431634,
+    "stop_count": 0,
+    "long_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "candidate_count": 0,
+    "raw_stop_count": 0,
+    "excluded_safety_count": 0,
+    "protective_stop_count": 0,
+    "unclassified_count": 0,
+    "run": "repeat_01/run_05.json"
+  },
+  "main": {
+    "total_episodes": 0,
+    "long_stop_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "excluded_start_count": 0,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 0,
+    "episodes": [],
+    "coverage": {
+      "sample_count": 134,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 4,
+      "missing_safety_reason": 134,
+      "missing_command_speed": 0
+    }
+  },
+  "short_stop_sensitivity": {
+    "total_episodes": 1,
+    "long_stop_count": 0,
+    "ramp_count": 1,
+    "tunnel_count": 0,
+    "excluded_start_count": 0,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 1,
+    "episodes": [
+      {
+        "start_time": 94.64,
+        "end_time": 95.06,
+        "duration": 0.4200000000000017,
+        "start_position": {
+          "x": -4.852583829346387,
+          "y": -4.074460889022714,
+          "z": 0.2799998688237816
+        },
+        "end_position": {
+          "x": -4.852147045133481,
+          "y": -4.074656866894688,
+          "z": 0.27999986881772904
+        },
+        "max_cmd_speed": 0.08999999999958543,
+        "excluded_start": false,
+        "excluded_goal": false,
+        "regions": [
+          "south_ramp"
+        ],
+        "safety_reasons": [],
+        "long_stop": false,
+        "safety_coverage": 0.0,
+        "safety_status": "unknown",
+        "unexpected_candidate": true,
+        "evidence": [
+          {
+            "stamp": 1793161958.984008,
+            "t": 94.48,
+            "receipt_wall": 1793161958.984881,
+            "name": "controller_server",
+            "msg": "Minco MPC fail-closed: BLOCK_COMMAND"
+          },
+          {
+            "stamp": 1793161959.098685,
+            "t": 94.594,
+            "receipt_wall": 1793161959.0988748,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Global static footprint yaw=0.017 rad (polygon clearance)."
+          },
+          {
+            "stamp": 1793161959.4001272,
+            "t": 94.895,
+            "receipt_wall": 1793161959.4004521,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Accepted shallow dynamic boundary cell: center=(-4.842,-4.064) offset=(-0.197,0.297) signed_distance=0.001 tolerance=0.030 raw_reason=HEADROOM_BLOCKED"
+          },
+          {
+            "stamp": 1793161959.7027783,
+            "t": 95.198,
+            "receipt_wall": 1793161959.7030108,
+            "name": "global_costmap.global_costmap",
+            "msg": "ROG master merge: layer_lethal=28 merged_lethal=14 cleared_static=38 master_lethal_after=28 window=583x300 bounds_ignored=true"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "sample_count": 134,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 4,
+      "missing_safety_reason": 134,
+      "missing_command_speed": 0
+    }
+  },
+  "notes": [
+    "Region labels are approximate snapshots from samples or supplied scenario rectangles.",
+    "Protective evidence is a log association for review, not proof that a stop was necessary.",
+    "Path excludes intervals longer than 0.3 simulation seconds."
+  ]
+}

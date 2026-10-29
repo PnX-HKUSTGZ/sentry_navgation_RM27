@@ -71,9 +71,12 @@ controller_server:
       # The 10.2 kg force-driven chassis has about 0.13 s planar response
       # time at an 80 N/(m/s) velocity gain. Predict the coast into gate turns.
       control_delay_compensation: 0.12
-      # Break cold-start zero velocity without allowing the time cursor to
-      # outrun the physical robot on a short observed-safe stopping prefix.
-      reference_progress_max_lead_time: 0.05
+      # Timestamped frontend poses arrive at 10 Hz; extrapolate to this control
+      # tick before spatial pickup, separately from the actuator delay above.
+      compensate_odometry_age: true
+      # Bound time progression from measured spatial pickup; delay is applied
+      # once, separately, to the reference and predicted state.
+      reference_progress_max_lead_time: 0.15
       # A rest-to-rest frontier trajectory ramps up slowly. While odometry is
       # inside the startup deadzone, search this bounded future interval for
       # the first reference sample above the command deadzone; normal tracking keeps the
@@ -105,9 +108,12 @@ controller_server:
       slope_speed_limit: 1.15
       Q: [3.0, 3.0, 2.0]
       q_along: 3.0
-      # The narrow gate has only centimetres of lateral tracking margin.
-      q_cross: 120.0
-      R: [1.5, 1.5, 1.0]
+      # With age-aligned feedback, prioritize the smooth velocity reference
+      # instead of amplifying centimetre cross-track noise at every 10 Hz scan.
+      q_cross: 12.0
+      R: [3.0, 3.0, 1.0]
+      # Damp alternating velocity corrections without reducing corridor accuracy.
+      control_delta_weight: [12.0, 12.0, 0.5]
       # At 1.5 m/s and 1.5 m/s^2, nominal braking needs 0.75 m before
       # latency/margin, within the 1.5 m local planning horizon below.
       vx_min: -1.5
@@ -196,7 +202,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
-        inflation_radius: 0.56
+        inflation_radius: 0.60
       always_send_full_costmap: false
 
 global_costmap:
@@ -224,7 +230,7 @@ global_costmap:
       # measured chassis yaw, without refilling conservative ROG prior cells.
       inflation_layer:
         cost_scaling_factor: 4.0
-        inflation_radius: 0.56
+        inflation_radius: 0.60
 
         plugin: "nav2_costmap_2d::InflationLayer"
       use_sim_time: true
@@ -300,9 +306,10 @@ planner_server:
       # been observed yet. Static PGM collisions and measured obstacles remain
       # hard blockers; set false to stop at the observation frontier.
       allow_unknown_motion: true
-      odom_topic: /lidar_odometry
+      # Chassis feedback stays independent of articulated sensor motion.
+      odom_topic: /odometry
       lidar_offset_x: 0.0
-      lidar_offset_y: 0.126
+      lidar_offset_y: 0.0
       safety:
         # Original PGM only: both area and boundary-depth limits must pass.
         # Measured ROG obstacles, unknown policy and headroom stay independent.
@@ -390,6 +397,8 @@ planner_server:
           enable: true
           z_offset: -0.45
           position_frame: base_link
+          # Simulated lidar and IMU share their rigid mounting pose.
+          pose_child_frame: imu_link
           # Transform points into base_link so the self-filter rotates with
           # the vehicle; translating an axis-aligned box is wrong after yaw.
           filter_mode: transform_cloud
@@ -405,12 +414,13 @@ planner_server:
           box_padding: 0.005
           position: {x: 0.0, y: 0.0, z: 0.040}
           box_size: {x: 0.62, y: 0.62, z: 0.24}
-          # Cover the new 0.592 x 0.594 m body without erasing valid near-field
-          # returns in the 8 cm strip removed with the old protruding wires.
+          # The folded simulation URDF has no gimbal_roll joint. Filter its
+          # fixed body envelope in base_link; do not request a nonexistent TF.
           positions:
             x: [0.0]
             y: [0.0]
             z: [0.040]
+          box_frames: [base_link]
           box_sizes:
             x: [0.62]
             y: [0.62]
@@ -427,7 +437,7 @@ planner_server:
           p_max: 0.97
           p_occ: 0.85
           p_free: 0.499
-          # Dense 360x192 scans otherwise age the safety snapshot while serial
+          # Dense 360x288 scans otherwise age the safety snapshot while serial
           # ray walks are still running. The parallel path preserves hit
           # precedence and deduplicates only identical free-space endpoints.
           parallel_enable: true
@@ -453,6 +463,11 @@ planner_server:
           # In no-elevation mode, empty columns still need observed body-volume
           # clearance. UNKNOWN and occupied returns remain fail-closed.
           observed_empty_as_free: true
+          # A white prior-map cell with an unsupported downward/ramp return is
+          # uncertain, not an immediate global obstacle. Require four
+          # consecutive projections of the same cell before a hard veto; a
+          # real low roof or wall remains blocked once it persists.
+          prior_free_uncertain_obstacle_confirmations: 4
           # Without surveyed ground support, bridge only clearance-verified
           # EMPTY columns in the MID360 near-field blind band. The bridge is
           # length/height bounded and needs a continuing measured ramp at its
@@ -494,9 +509,10 @@ planner_server:
           # /lidar_odometry is at base [0.0, 0.126]; shift the envelope
           # back to the physical base center.
           robot_footprint_clear_offset_x: 0.0
-          robot_footprint_clear_offset_y: -0.126
+          robot_footprint_clear_offset_y: 0.0
           # ROG receives the tilted sensor pose; terrain uses chassis attitude.
-          sensor_mount_rpy: [-0.523598775598, 0.0, 0.0]
+          robot_pose_frame: base_link
+          sensor_mount_rpy: [0.0, 0.0, 0.0]
           # Cover the short swept region between current odometry and MINCO's
           # first local seed. This removes the permanent zero-hit strip cast by
           # the chassis on a downhill exit. In required-support mode it cannot
@@ -511,9 +527,10 @@ planner_server:
           near_field_prior_fill_length: 1.40
           near_field_prior_fill_width: 1.00
           # Axle height 0.080 m + original sensor mount height 0.130 m.
-          robot_origin_to_ground: 0.210
-          # Trial clearance height: 235 mm; physical collision envelope is 240 mm.
-          vehicle_height: 0.235
+          # Reference is now the chassis axle, not the moving lidar centre.
+          robot_origin_to_ground: 0.080
+          # Match the 240 mm physical collision envelope in simulation_waking_robot.xacro.
+          vehicle_height: 0.240
           headroom_margin: 0.0
           headroom_voxel_inset_fraction: 0.0
           body_bottom_clearance: 0.03
@@ -524,21 +541,21 @@ planner_server:
           ground_seed_tolerance: 0.18
           # Preserve recent connectivity only while the same ground and body
           # clearance are still observed. Never extends itself through a dropout.
-          ground_connectivity_hold_time: 0.8
+          ground_connectivity_hold_time: 1.2
           # Local floor evidence for roof returns; history uses hit timestamps.
-          overhead_ground_search_radius: 0.60
-          overhead_ground_history_time: 1.0
+          overhead_ground_search_radius: 0.80
+          overhead_ground_history_time: 1.5
           max_ground_height_delta: 0.35
           # The strict seed tolerance is capped by this value.  Six cm made
           # voxelized ramp returns disconnect an otherwise continuous ground
           # surface even with ground_seed_tolerance=0.18.
-          max_ground_step: 0.10
+          max_ground_step: 0.12
           max_ground_slope_deg: 28.0
           # MID360's -7.22 deg lower FOV first sees level ground near 1.55 m.
           # Cover the 1.5 m rolling horizon, full body and map processing lag
           # at cruising speed. Height/step/slope gates remain unchanged.
           ground_seed_radius: 2.60
-          # The 360x192 Gazebo ray lattice reconstructs every vertical miss ray.
+          # The 360x288 Gazebo ray lattice reconstructs every vertical miss ray.
           # An observed empty column therefore does not need a second body-band
           # coverage gate: there is no finite occupied height to turn into a
           # downhill-hole obstacle. Unknown columns and every finite occupied
@@ -650,7 +667,24 @@ planner_server:
         esdf_weight: 8.0
         esdf_decay: 0.15
         esdf_max_cost: 8.0
+      path_smoothing:
+        enable_shortcuts: true
+        # Bounded smoothing of SMAC and the local MINCO guide. Restart planner
+        # after changes. Set enabled=false for an unsmoothed A/B comparison.
+        enabled: true
+        max_iterations: 60
+        data_weight: 0.05
+        smooth_weight: 0.3
+        max_deviation: 0.25
+        tolerance: 0.0001
+        max_time_ms: 10.0
+        # Compared against each ORIGINAL edge (no accumulated cost drift).
+        peak_cost_slack: 10.0
+        mean_cost_slack: 5.0
       local_path:
+        # Shift a clipped guide within this observed-safe lateral corridor before
+        # falling back to a stopped prefix. Full-body and swept checks still apply.
+        repair_max_offset: 0.20
         # Preserve SMAC's inflation-aware route during waypoint sparsification.
         # Relative comparison keeps a uniformly narrow tunnel traversable.
         shortcut_peak_cost_slack: 10.0
@@ -676,15 +710,21 @@ planner_server:
         # Refresh before a 1.5 m stop-at-end horizon enters its braking tail.
         # This uses a per-FSM steady clock, independent of Gazebo clock jumps.
         successful_replan_period: 0.35
+        # Keep the corridor through short visibility losses. A genuine block
+        # still stops locally and may reroute after 1.5 s without 0.20 m progress.
+        route_refresh_stall_time: 1.50
         # The internal FSM may revoke the trajectory at this distance. Keep it
         # strictly inside Nav2's 0.20 m SimpleGoalChecker tolerance so an early
         # BLOCK cannot strand FollowPath outside its success region.
         traj_goal_tolerance: 0.15
-        # The chassis is holonomic: optimize from measured yaw to the explicit
-        # navigation goal yaw, never to the path tangent. This rejects the old
-        # near-180 deg A<->B ramp turn without ratcheting contact-induced yaw
-        # drift into every rolling replan.
-        enable_yaw_opt: true
+        # Simulation uses position-only arrival (yaw_goal_tolerance=6.28).
+        # Turning toward the goal arrow would stop halfway when XY is reached,
+        # then latch that diagonal chassis heading for the next narrow gate.
+        # Keep the selected cruise heading through arrival as well as transit.
+        enable_yaw_opt: false
+        # Restore small ramp/contact yaw disturbances across rolling replans.
+        # All translation/heading corrections still pass swept-footprint checks.
+        hold_cruise_heading: true
         # The 0.45 m radial field used to reject the 0.65 m raster opening
         # before the exact 0.592 x 0.594 m polygon check could accept it.  The
         # polygon check is authoritative; the soft centerline cost covers its
@@ -698,9 +738,10 @@ planner_server:
         lookahead_dist: 1.5
         max_velocity: 1.5
         # Slow the approaching local horizon before entering a narrow gate.
-        # Distance is from the centerline to ROG ESDF obstacles, in metres.
+        # Blend from cruise at 0.50 m to tunnel speed at safe_dist (0.33 m);
+        # distance is from the centerline to ROG ESDF obstacles, in metres.
         obstacle_slowdown_distance: 0.50
-        obstacle_max_velocity: 1.0
+        obstacle_max_velocity: 0.8
         max_acceleration: 1.8
         terminal_velocity_ratio: 0.85
         terminal_tangent_lookahead: 0.30
@@ -728,8 +769,12 @@ planner_server:
         guide_lateral_tolerance: 0.003
         penalty_weight_time_barrier: 50.0
       recovery_server:
-        fail_threshold: 3
-        cooldown_sec: 1.0
+        # Cave entrances can produce a short observed-safe prefix for only a
+        # few planner cycles. Start the already fully checked escape after two
+        # consecutive failures so the robot does not wait for the 15 s Nav2
+        # progress watchdog before moving again.
+        fail_threshold: 2
+        cooldown_sec: 0.5
         recovery_window_sec: 3.0
         escape_speed: 0.20
         allow_start_overlap: true
@@ -755,7 +800,7 @@ fake_vel_transform:
     output_cmd_vel_topic: cmd_vel
     use_sim_time: true
     odom_topic: "odometry"
-    robot_base_frame: "gimbal_yaw"
+    robot_base_frame: "base_link"
     fake_robot_base_frame: "gimbal_yaw_fake"
     cmd_spin_topic: "cmd_spin"
     init_spin_speed: 0.0
@@ -768,14 +813,16 @@ ign_sim_pointcloud_tool:
   ros__parameters:
     use_sim_time: true
     pcd_topic: livox/lidar
-    n_scan: 32
-    horizon_scan: 1875
+    instantaneous_scan: true  # Gazebo GPU lidar renders a single-time snapshot.
+    n_scan: 288
+    horizon_scan: 360
     ang_bottom: 7.22
-    ang_res_y: 2.01419  # (55.22 + 7.22) / (32 - 1)
+    ang_res_y: 0.217561  # (55.22 + 7.22) / (288 - 1)
 
 rm27_ground_truth_localizer:
   ros__parameters:
     use_sim_time: true
+    dynamic_lidar_transform: true
     ground_truth_odom_topic: "ground_truth/odometry"
     lidar_cloud_topic: "livox/lidar"
     odometry_topic: "odometry"
@@ -792,7 +839,7 @@ rm27_ground_truth_localizer:
     # ROG ray range; ROG clips them to free rays without inserting a hit.
     reconstruct_no_return_rays: true
     lidar_horizontal_samples: 360
-    lidar_vertical_samples: 192
+    lidar_vertical_samples: 288
     lidar_horizontal_min_angle: 0.0
     lidar_horizontal_max_angle: 6.283185307179586
     lidar_vertical_min_angle: -0.1260127724939906
@@ -800,18 +847,41 @@ rm27_ground_truth_localizer:
     no_return_ray_length: 10.5
     rog_raycast_max_range: 10.0
     rog_map_resolution: 0.05
-    # Rebuild misses on every vertical ring. With the simulation sensor reduced
-    # to 96 rings this is still only 34560 rays, while it removes the regular
+    # Rebuild misses on every vertical ring. With the simulation sensor at
+    # 288 rings this is 103680 rays, removing the regular
     # body-band HEADROOM_UNVERIFIED blind strip. Every finite obstacle hit is
     # retained on every frame and therefore still has veto priority.
     no_return_horizontal_stride: 1
     no_return_vertical_stride: 1
     cycle_no_return_stride_phase: false
 
+pointlio_scan_registrar:
+  ros__parameters:
+    use_sim_time: true
+    cloud_topic: /livox/lidar
+    odom_topic: /aft_mapped_to_init
+    output_topic: /pointlio/registered_scan
+    world_frame: camera_init
+    body_frame: body
+    sensor_frame: imu_link
+    lidar_frame: left_mid360
+    max_scan_age: 0.5
+    # Same instantaneous organized scan and ray range as the GT adapter.
+    # This node uses only Point-LIO poses and publishes no localization TF.
+    lidar_horizontal_samples: 360
+    lidar_vertical_samples: 288
+    lidar_horizontal_min_angle: 0.0
+    lidar_horizontal_max_angle: 6.283185307179586
+    lidar_vertical_min_angle: -0.1260127724939906
+    lidar_vertical_max_angle: 0.9637708129512688
+    no_return_ray_length: 10.5
+    rog_raycast_max_range: 10.0
+    rog_map_resolution: 0.05
+
 point_lio:
   ros__parameters:
     use_sim_time: true
-    use_imu_as_input: false                             # Change to True to use IMU as input of Point-LIO
+    use_imu_as_input: false                             # IMU-as-observation model; IMU fusion remains enabled
     prop_at_freq_of_imu: true
     check_satu: true
     init_map_size: 10
@@ -822,46 +892,9 @@ point_lio:
     ivox_nearby_type: 18                                # Options: 0, 6, 18, 26
     runtime_pos_log_enable: false                       # Option: True
 
-    estimator:
-      max_iterations: 1
-
-    input_guard:
-      min_scan_points: 100
-      max_scan_duration: 0.12
-      max_imu_time_gap: 0.03
-      max_lidar_queue: 5
-      max_imu_queue: 500
-
-    map_quality:
-      insertion_delay: 0.30
-      impact_pause: 0.50
-      min_effective_points: 10
-
-    adaptive:
-      spatial:
-        enabled: true
-        neighbors: [5, 10, 20]
-        max_query_ranges: [0.35, 0.70, 1.40]
-        max_curvature: 0.03
-        max_plane_residual: 0.10
-        normalized_residual_gate: 3.0
-        outlier_probability: 0.05
-        student_t_dof: 5.0
-        min_responsibility: 0.05
-        degeneracy_eigen_ratio: 0.0001
-      temporal:
-        enabled: true
-        min_points: 8
-        initial_target_points: 32
-        max_points: 128
-        min_duration_ms: 1.0
-        max_duration_ms: 10.0
-        max_translation: 0.02
-        max_rotation_deg: 0.8
-        latency_penalty: 0.02
-        information_ema_alpha: 0.10
-        hysteresis_ratio: 0.15
-        max_pose_covariance_trace: 1.0
+    # This frontend implements fixed 5-neighbor plane matching and one EKF
+    # update iteration. Adaptive/input_guard/map_quality YAML blocks are not
+    # implemented in this Point-LIO build; do not treat them as active guards.
 
     common:
       lid_topic: "velodyne_points"
@@ -879,15 +912,16 @@ point_lio:
       init_pose: [0.0, 0.0, 0.0]
 
     preprocess:
+      instantaneous_scan: true  # Gazebo snapshot: all points share the header time.
       lidar_type: 2                                     # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR
-      scan_line: 32
+      scan_line: 288
       timestamp_unit: 0                                 # ign_sim_pointcloud_tool publishes per-point time in seconds.
       blind: 0.5
 
     mapping:
       imu_en: true
       extrinsic_est_en: false                           # for aggressive motion, set this variable False
-      imu_time_inte: 0.01                               # Gazebo IMU update_rate is 100 Hz
+      imu_time_inte: 0.01                               # Gazebo Imu sensor is 100 Hz; propagation uses message stamps
       lidar_time_inte: 0.1
       satu_acc: 30.0                                    # the saturation value of IMU's acceleration. not related to the units
       satu_gyro: 35.0                                   # the saturation value of IMU's angular velocity. not related to the units
@@ -903,16 +937,16 @@ point_lio:
       acc_cov_input: 0.1                                # for IMU as input model
       plane_thr: 0.1                                    # 0.05, the threshold for plane criteria, the smaller, the flatter a plane
       match_s: 81.0
+      deduplicate_map: true                            # Enforce filter_size_map inside IVox, including initial scans
       ivox_grid_resolution: 0.5
-      max_neighbor_distance: 1.4
-      max_points_per_voxel: 64
-      gravity: [0.0, 0.0, -9.81]                        # Simulated logical MID360 frame has roll already compensated
-      gravity_init: [0.0, 0.0, -9.81]                   # preknown gravity in the first IMU body frame
+      gravity: [0.0, 0.0, -9.81]                        # World gravity; IMU retains its -30 degree mounting roll
+      gravity_init: [0.0, 0.0, -9.81]                   # Initialization uses the measured stationary acceleration
       extrinsic_T: [0.0, 0.0, 0.0]                      # Simulated IMU and LiDAR frames share the same mounting pose
       extrinsic_R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
     odometry:
-      publish_odometry_without_downsample: true
+      # Publish the frame-end pose paired with the registered instantaneous cloud.
+      publish_odometry_without_downsample: false
 
     publish:
       path_en: false                                    # False: close the path output
@@ -928,6 +962,8 @@ point_lio:
 loam_interface:
   ros__parameters:
     use_sim_time: true
+    # Point-LIO camera_init already aligns gravity; do not apply mounting roll twice.
+    lidar_odom_is_gravity_aligned: true
     state_estimation_topic: "aft_mapped_to_init"
     registered_scan_topic: "cloud_registered"
     odom_frame: "odom"
@@ -939,7 +975,7 @@ sensor_scan_generation:
     use_sim_time: true
     lidar_frame: "left_mid360"
     base_frame: "base_footprint"
-    robot_base_frame: "gimbal_yaw"
+    robot_base_frame: "base_footprint"
 
 terrain_analysis:
   ros__parameters:
@@ -1021,6 +1057,17 @@ relocalization_manager:
     motion_command_topic: "cmd_vel"
     moving_linear_speed_threshold: 0.05
     motion_command_timeout: 0.5
+    # Require measured chassis standstill as well as a stop command.
+    odometry_topic: odometry
+    odometry_timeout: 0.5
+    moving_angular_speed_threshold: 0.08
+    stationary_settle_time: 0.75
+    candidate_translation_tolerance: 0.08
+    candidate_rotation_tolerance: 0.035
+    # ROG surveyed ground requires |map<-camera_init roll/pitch| <= 0.01 rad.
+    # Reject incompatible corrections instead of disabling ground support.
+    refinement_reference_frame: camera_init
+    max_reference_tilt: 0.009
     required_consecutive_gicp_acceptances: 3
     init_pose: [-11.7, 2.9, 0.26, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
     prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
@@ -1168,24 +1215,76 @@ velocity_smoother:
     deadband_velocity: [0.03, 0.03, 0.0]
     velocity_timeout: 1.0
 
-# Launch reads this node only when use_ground_truth_odom:=false and resolves
-# the Point-LIO planner inputs into the single generated MINCO parameter file.
+# Resolve world-specific localization values into the single launch parameter file.
+simulation_world_profiles:
+  ros__parameters:
+    RMUC2026:
+      planner_server:
+        MincoPlanner:
+          minco_optimizer:
+            # Cover the 3 s observed-map retention plus scan/confirmation lag.
+            # Local braking remains immediate; only global route replacement waits.
+            route_refresh_stall_time: 4.0
+          priormap:
+            # Keep the whole chassis away from surveyed ramp/drop edges;
+            # a thin 2D free corridor can still put its corners over a ledge.
+            ground_edge_avoidance:
+              enable: true
+              lethal_clearance_radius: 0.50
+              clearance_radius: 0.70
+          rog_map:
+            raycasting:
+              # Clear saturated old hits after six independent free-ray
+              # updates instead of eighteen. Positive hits still win within
+              # every scan; unseen cells and clearance gates are unchanged.
+              p_miss: 0.35
+      relocalization_manager:
+        # Offline GT-assisted capture is already in Gazebo world/map coordinates.
+        prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        transform_prior_map_with_lidar_offset: false
+      point_lio:
+        # Keep measured scan detail and match against a similarly fine map.
+        # The old 0.20 m map / 0.10 m plane residual mixed ramp and tunnel
+        # edge geometry; centimetre Z variation consumes the 10 mm headroom.
+        point_filter_num: 1
+        filter_size_surf: 0.1
+        filter_size_map: 0.1
+        mapping:
+          plane_thr: 0.03
+    RMUL2027:
+      relocalization_manager:
+        # PCD already uses the Gazebo world coordinates and metres.
+        init_pose: [-4.37, 3.03, 0.091, 0.0, 0.0, 0.0]
+        prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        transform_prior_map_with_lidar_offset: false
+        robot_base_frame: base_link
+        global_leaf_size: 0.05
+        registered_leaf_size: 0.05
+        max_iterations: 60
+        max_dist_sq: 0.25
+      point_lio:
+        filter_size_surf: 0.08
+        filter_size_map: 0.08
+
+# Point-LIO planner inputs are resolved when use_ground_truth_odom:=false.
 minco_input_profiles:
   ros__parameters:
     point_lio:
-      # Point-LIO does not preserve the organized 360 x 192 no-return lattice;
-      # its empty columns therefore keep the conservative body-band gate.
+      # Register the raw organized scan using the acquisition-time Point-LIO
+      # pose. Keep the conservative body-band gate; denser evidence, rather
+      # than a weaker clearance threshold, resolves sparse-column dropouts.
       projection:
         min_headroom_known_ratio: 0.40
+      # The estimator's sparse /cloud_registered remains unchanged for GICP.
       frames:
         rog_frame: camera_init
-      odom_topic: /aft_mapped_to_init
+      odom_topic: /odometry
       lidar_offset_x: 0.0
-      lidar_offset_y: 0.126
+      lidar_offset_y: 0.0
       rog_map:
         frame_id: camera_init
         ros_callback:
-          cloud_topic: /cloud_registered_full
+          cloud_topic: /pointlio/registered_scan
           odom_topic: /aft_mapped_to_init
         visualization:
           frame_id: camera_init

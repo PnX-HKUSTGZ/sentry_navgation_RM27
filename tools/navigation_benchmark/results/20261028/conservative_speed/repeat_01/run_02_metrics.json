@@ -1,0 +1,235 @@
+{
+  "summary": {
+    "status": "succeeded",
+    "duration": 37.5,
+    "path_m": 35.49346307393183,
+    "max_speed": 1.3151401748792977,
+    "stop_count": 1,
+    "long_count": 0,
+    "ramp_count": 1,
+    "tunnel_count": 0,
+    "candidate_count": 1,
+    "raw_stop_count": 1,
+    "excluded_safety_count": 0,
+    "protective_stop_count": 1,
+    "unclassified_count": 0,
+    "run": "repeat_01/run_02.json"
+  },
+  "main": {
+    "total_episodes": 1,
+    "long_stop_count": 0,
+    "ramp_count": 1,
+    "tunnel_count": 0,
+    "excluded_start_count": 0,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 1,
+    "episodes": [
+      {
+        "start_time": 52.401,
+        "end_time": 53.901,
+        "duration": 1.5,
+        "start_position": {
+          "x": -4.793327782583021,
+          "y": -4.023183748510528,
+          "z": 0.27999983900907555
+        },
+        "end_position": {
+          "x": -4.786266777953004,
+          "y": -4.007810518526213,
+          "z": 0.27999983900905945
+        },
+        "max_cmd_speed": 0.0,
+        "excluded_start": false,
+        "excluded_goal": false,
+        "regions": [
+          "south_ramp"
+        ],
+        "safety_reasons": [],
+        "long_stop": false,
+        "safety_coverage": 0.0,
+        "safety_status": "unknown",
+        "unexpected_candidate": true,
+        "evidence": [
+          {
+            "stamp": 1793125184.9051354,
+            "t": 52.23,
+            "receipt_wall": 1793125184.9055233,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Accepted shallow dynamic boundary cell: center=(-4.809,-4.027) offset=(-0.245,0.281) signed_distance=0.023 tolerance=0.030 raw_reason=HEADROOM_BLOCKED"
+          },
+          {
+            "stamp": 1793125184.9061334,
+            "t": 52.231,
+            "receipt_wall": 1793125184.907053,
+            "name": "controller_server",
+            "msg": "Minco MPC fail-closed: BLOCK_COMMAND"
+          },
+          {
+            "stamp": 1793125185.2748525,
+            "t": 52.599,
+            "receipt_wall": 1793125185.2751873,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=nan/nan sample=footprint center=(-4.794,-4.024,0.000) query_point=(-5.067,-3.778,0.000) footprint_offset=(-0.271,0.248) yaw=0.006 esdf_distance=-0.033 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.299 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.220 pipeline_age_ms=79.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=OCCUPIED base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=HEADROOM_BLOCKED candidate_reason=HEADROOM_BLOCKED prior_occupied=0 prior_free=1 occupied_z=[0.120,0.465] height_delta=0.350 vertical_ratio=0.235 ground_z=nan support_z=nan ceiling_z=0.120 headroom=-0.001 headroom_known=0.000 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=0 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=0.122 support_error=nan support_tolerance=nan confidence=1.000 planning_frame='map' rog_frame='odom'."
+          },
+          {
+            "stamp": 1793125185.3783593,
+            "t": 52.703,
+            "receipt_wall": 1793125185.3788028,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Escape trajectory rejected (TRAJECTORY_SAFETY_CHECK_FAILED); BLOCK published."
+          },
+          {
+            "stamp": 1793125185.4665809,
+            "t": 52.791,
+            "receipt_wall": 1793125185.466807,
+            "name": "local_costmap.local_costmap",
+            "msg": "ROG master merge: layer_lethal=26 merged_lethal=9 cleared_static=42 master_lethal_after=26 window=100x100 bounds_ignored=true"
+          },
+          {
+            "stamp": 1793125185.914196,
+            "t": 53.239,
+            "receipt_wall": 1793125185.9147325,
+            "name": "controller_server",
+            "msg": "Minco MPC fail-closed: BLOCKED"
+          },
+          {
+            "stamp": 1793125186.1925857,
+            "t": 53.517,
+            "receipt_wall": 1793125186.192814,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Global static footprint yaw=0.006 rad (polygon clearance)."
+          },
+          {
+            "stamp": 1793125186.2293737,
+            "t": 53.554,
+            "receipt_wall": 1793125186.2296102,
+            "name": "global_costmap.global_costmap",
+            "msg": "ROG master merge: layer_lethal=14 merged_lethal=9 cleared_static=35 master_lethal_after=14 window=583x300 bounds_ignored=true"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "sample_count": 626,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 354,
+      "missing_safety_reason": 626,
+      "missing_command_speed": 0
+    }
+  },
+  "short_stop_sensitivity": {
+    "total_episodes": 1,
+    "long_stop_count": 0,
+    "ramp_count": 1,
+    "tunnel_count": 0,
+    "excluded_start_count": 0,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 1,
+    "episodes": [
+      {
+        "start_time": 52.401,
+        "end_time": 53.901,
+        "duration": 1.5,
+        "start_position": {
+          "x": -4.793327782583021,
+          "y": -4.023183748510528,
+          "z": 0.27999983900907555
+        },
+        "end_position": {
+          "x": -4.786266777953004,
+          "y": -4.007810518526213,
+          "z": 0.27999983900905945
+        },
+        "max_cmd_speed": 0.0,
+        "excluded_start": false,
+        "excluded_goal": false,
+        "regions": [
+          "south_ramp"
+        ],
+        "safety_reasons": [],
+        "long_stop": false,
+        "safety_coverage": 0.0,
+        "safety_status": "unknown",
+        "unexpected_candidate": true,
+        "evidence": [
+          {
+            "stamp": 1793125184.9051354,
+            "t": 52.23,
+            "receipt_wall": 1793125184.9055233,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Accepted shallow dynamic boundary cell: center=(-4.809,-4.027) offset=(-0.245,0.281) signed_distance=0.023 tolerance=0.030 raw_reason=HEADROOM_BLOCKED"
+          },
+          {
+            "stamp": 1793125184.9061334,
+            "t": 52.231,
+            "receipt_wall": 1793125184.907053,
+            "name": "controller_server",
+            "msg": "Minco MPC fail-closed: BLOCK_COMMAND"
+          },
+          {
+            "stamp": 1793125185.2748525,
+            "t": 52.599,
+            "receipt_wall": 1793125185.2751873,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=nan/nan sample=footprint center=(-4.794,-4.024,0.000) query_point=(-5.067,-3.778,0.000) footprint_offset=(-0.271,0.248) yaw=0.006 esdf_distance=-0.033 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.299 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.220 pipeline_age_ms=79.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=OCCUPIED base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=HEADROOM_BLOCKED candidate_reason=HEADROOM_BLOCKED prior_occupied=0 prior_free=1 occupied_z=[0.120,0.465] height_delta=0.350 vertical_ratio=0.235 ground_z=nan support_z=nan ceiling_z=0.120 headroom=-0.001 headroom_known=0.000 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=0 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=0.122 support_error=nan support_tolerance=nan confidence=1.000 planning_frame='map' rog_frame='odom'."
+          },
+          {
+            "stamp": 1793125185.3783593,
+            "t": 52.703,
+            "receipt_wall": 1793125185.3788028,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Escape trajectory rejected (TRAJECTORY_SAFETY_CHECK_FAILED); BLOCK published."
+          },
+          {
+            "stamp": 1793125185.4665809,
+            "t": 52.791,
+            "receipt_wall": 1793125185.466807,
+            "name": "local_costmap.local_costmap",
+            "msg": "ROG master merge: layer_lethal=26 merged_lethal=9 cleared_static=42 master_lethal_after=26 window=100x100 bounds_ignored=true"
+          },
+          {
+            "stamp": 1793125185.914196,
+            "t": 53.239,
+            "receipt_wall": 1793125185.9147325,
+            "name": "controller_server",
+            "msg": "Minco MPC fail-closed: BLOCKED"
+          },
+          {
+            "stamp": 1793125186.1925857,
+            "t": 53.517,
+            "receipt_wall": 1793125186.192814,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Global static footprint yaw=0.006 rad (polygon clearance)."
+          },
+          {
+            "stamp": 1793125186.2293737,
+            "t": 53.554,
+            "receipt_wall": 1793125186.2296102,
+            "name": "global_costmap.global_costmap",
+            "msg": "ROG master merge: layer_lethal=14 merged_lethal=9 cleared_static=35 master_lethal_after=14 window=583x300 bounds_ignored=true"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "sample_count": 626,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 354,
+      "missing_safety_reason": 626,
+      "missing_command_speed": 0
+    }
+  },
+  "notes": [
+    "Region labels are approximate snapshots from samples or supplied scenario rectangles.",
+    "Protective evidence is a log association for review, not proof that a stop was necessary.",
+    "Path excludes intervals longer than 0.3 simulation seconds."
+  ]
+}

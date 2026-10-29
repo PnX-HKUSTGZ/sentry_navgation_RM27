@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 
 namespace minco_planner
@@ -495,13 +496,27 @@ void StaticObstacleClearanceQuery::buildOverlay()
   if (nx == 0U || ny == 0U || !std::isfinite(map_resolution) || map_resolution <= 0.0) {
     throw std::invalid_argument("StaticObstacleClearanceQuery base geometry is invalid");
   }
-  if (static_source_->sizeX() != nx || static_source_->sizeY() != ny ||
-    std::abs(static_source_->resolution() - map_resolution) > 1.0e-9 ||
-    std::abs(static_source_->originX() - originX()) > 1.0e-9 ||
-    std::abs(static_source_->originY() - originY()) > 1.0e-9)
+  const auto base_origin_x = originX();
+  const auto base_origin_y = originY();
+  const auto static_nx = static_source_->sizeX();
+  const auto static_ny = static_source_->sizeY();
+  const auto static_resolution = static_source_->resolution();
+  const auto static_origin_x = static_source_->originX();
+  const auto static_origin_y = static_source_->originY();
+  if (static_nx != nx || static_ny != ny ||
+    std::abs(static_resolution - map_resolution) > 1.0e-9 ||
+    std::abs(static_origin_x - base_origin_x) > 1.0e-9 ||
+    std::abs(static_origin_y - base_origin_y) > 1.0e-9)
   {
-    throw std::invalid_argument(
-            "StaticObstacleClearanceQuery static-source geometry does not match the base query");
+    std::ostringstream message;
+    message.precision(17);
+    message << "StaticObstacleClearanceQuery static-source geometry does not match the base query"
+            << ": base=" << nx << "x" << ny << " resolution=" << map_resolution
+            << " origin=(" << base_origin_x << "," << base_origin_y << ")"
+            << "; static=" << static_nx << "x" << static_ny
+            << " resolution=" << static_resolution << " origin=(" << static_origin_x
+            << "," << static_origin_y << ")";
+    throw std::invalid_argument(message.str());
   }
 
   std::vector<unsigned char> static_values;

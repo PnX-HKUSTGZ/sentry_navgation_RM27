@@ -853,6 +853,51 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
              now >= cell.clearance_dropout_deadline) {
     cell.clearance_dropout_deadline = 0.0;
   }
+
+  const auto isUncertainPriorFreeReason = [](ProjectionClassReason reason) {
+    return reason == ProjectionClassReason::GROUND_UNVERIFIED ||
+           reason == ProjectionClassReason::HEADROOM_UNVERIFIED ||
+           reason == ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED ||
+           reason == ProjectionClassReason::HEADROOM_BLOCKED;
+  };
+  const bool unsupported_prior_free_return =
+      raw_type == CellType::OCCUPIED && cell.prior_known_free != 0U &&
+      !(config.require_ground_support && cell.ground_support_known) &&
+      isUncertainPriorFreeReason(raw_reason);
+  if (unsupported_prior_free_return &&
+      config.prior_free_uncertain_obstacle_confirmations > 1) {
+    const bool same_return =
+        previous_raw_type == CellType::OCCUPIED &&
+        previous_raw_reason == raw_reason;
+    const int count = same_return
+                          ? std::min<int>(255, cell.uncertain_obstacle_count + 1)
+                          : 1;
+    cell.uncertain_obstacle_count = static_cast<uint8_t>(count);
+    cell.raw_type = raw_type;
+    cell.raw_reason = raw_reason;
+    if (count < config.prior_free_uncertain_obstacle_confirmations) {
+      cell.pending_count = static_cast<uint8_t>(count);
+      cell.pending_type = CellType::OCCUPIED;
+      // Keep the diagnostic raw evidence, but publish UNKNOWN to the dynamic
+      // layer. This prevents one down-ramp scan from changing global topology
+      // or forcing an immediate MINCO stop. A persistent same-cell return is
+      // promoted below and remains a hard obstacle.
+      cell.base_type = CellType::UNKNOWN;
+      cell.type = CellType::UNKNOWN;
+      cell.value = config.unknown_as_occupied ? 254U : 255U;
+      cell.mask = config.unknown_as_occupied ? 0U : 1U;
+      cell.traversable = config.unknown_as_occupied ? 0U : 1U;
+      cell.occupied_clear_deadline = 0.0;
+      return;
+    }
+    // The confirmation count has been met. Fall through to the normal
+    // OCCUPIED commit path and preserve fail-closed behavior.
+  } else {
+    // Obstacle confirmation and obstacle clearing have independent histories.
+    // Resetting pending_count here prevents applyHysteresis from ever reaching
+    // its second FREE/UNKNOWN frame after an obstacle disappears.
+    cell.uncertain_obstacle_count = 0U;
+  }
   cell.raw_type = raw_type;
   cell.raw_reason = raw_reason;
   if (raw_type == CellType::OCCUPIED) {

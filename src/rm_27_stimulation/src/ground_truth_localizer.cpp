@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <pcl_ros/transforms.hpp>
@@ -60,6 +61,20 @@ public:
                                                              "base_footprint");
     lidar_frame_ =
       this->declare_parameter<std::string>("lidar_frame", "left_mid360");
+    wait_for_initial_pose_ =
+      this->declare_parameter<bool>("wait_for_initial_pose", false);
+    const auto initial_pose_topic = this->declare_parameter<std::string>(
+      "initial_pose_topic", "/relocalization/initialpose");
+    if (wait_for_initial_pose_) {
+      initial_pose_ack_pub_ =
+        this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+          "~/initialpose_accepted", rclcpp::QoS(1).transient_local().reliable());
+      initial_pose_sub_ =
+        this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+          initial_pose_topic, 10,
+          std::bind(&GroundTruthLocalizer::initialPoseCallback, this,
+            std::placeholders::_1));
+    }
 
     const auto lidar_xyz = this->declare_parameter<std::vector<double>>(
         "base_to_lidar_xyz", {0.0, 0.126, 0.130});
@@ -95,7 +110,7 @@ public:
     const int horizontal_samples =
       this->declare_parameter<int>("lidar_horizontal_samples", 360);
     const int vertical_samples =
-      this->declare_parameter<int>("lidar_vertical_samples", 192);
+      this->declare_parameter<int>("lidar_vertical_samples", 288);
     const int horizontal_stride =
       this->declare_parameter<int>("no_return_horizontal_stride", 1);
     const int vertical_stride =
@@ -310,7 +325,7 @@ private:
       return;
     }
 
-    if (initialized_now) {
+    if (initialized_now && !wait_for_initial_pose_) {
       geometry_msgs::msg::TransformStamped map_transform;
       map_transform.header.stamp = msg->header.stamp;
       map_transform.header.frame_id = map_frame_;
@@ -329,6 +344,48 @@ private:
     }
     enqueueLatestReadyScan(ready_scans);
     logDrops(drops);
+  }
+
+  void initialPoseCallback(
+    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr msg)
+  {
+    tf2::Transform map_to_base;
+    const auto stamp = stampNanoseconds(msg->header.stamp);
+    const auto & q = msg->pose.pose.orientation;
+    const auto norm_squared = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    if (msg->header.frame_id != map_frame_ || stamp <= 0 ||
+      !std::isfinite(norm_squared) || std::abs(norm_squared - 1.0) > 1e-3 ||
+      !transformFromPose(msg->pose.pose, map_to_base))
+    {
+      RCLCPP_WARN(get_logger(), "Rejected initial pose: invalid map frame, timestamp or pose");
+      return;
+    }
+    geometry_msgs::msg::TransformStamped transform;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      // A retry may repeat the same sample. Never reseed a running navigator.
+      if (accepted_initial_pose_) {
+        if (*msg == *accepted_initial_pose_) {
+          initial_pose_ack_pub_->publish(*msg);
+        }
+        return;
+      }
+      GroundTruthState state;
+      if (state_buffer_.interpolate(stamp, max_interpolation_gap_, state) !=
+        GroundTruthLookupStatus::READY)
+      {
+        return;  // The startup coordinator retries until matching history arrives.
+      }
+      transform.header = msg->header;
+      transform.child_frame_id = odom_frame_;
+      transform.transform = tf2::toMsg(map_to_base * state.odom_to_base.inverse());
+      accepted_initial_pose_ = *msg;
+    }
+    // Only map->odom is initialized here. The original odometry, scan processing,
+    // velocities and subsequent TF updates continue through the same code path.
+    static_tf_broadcaster_->sendTransform(transform);
+    initial_pose_ack_pub_->publish(*msg);
+    RCLCPP_INFO(get_logger(), "Initialized map->odom from confirmed global pose");
   }
 
   void lidarCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
@@ -646,6 +703,12 @@ private:
   int64_t last_lidar_output_stamp_nanoseconds_{-1};
   uint64_t miss_ray_phase_index_{0U};
   bool initialized_{false};
+  bool wait_for_initial_pose_{false};
+  std::optional<geometry_msgs::msg::PoseWithCovarianceStamped> accepted_initial_pose_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
+    initial_pose_ack_pub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
+    initial_pose_sub_;
   bool reconstruct_no_return_rays_{false};
   bool cycle_no_return_stride_phase_{false};
 };

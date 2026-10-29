@@ -1,6 +1,7 @@
 // Corresponding header
 #include "minco_core/minco_planner.hpp"
 #include "minco_core/components/cached_trajectory_policy.hpp"
+#include "minco_core/components/planning_odometry.hpp"
 #include "nav2_util/node_utils.hpp"
 
 // Project
@@ -618,6 +619,24 @@ void MincoPlanner::configure(
   node->get_parameter(prefix + "minco_optimizer.traj_goal_tolerance",
                       traj_goal_tolerance_);
 
+  PathSmoothingOptions smoothing_options;
+  auto smoothing_parameter = [&](const std::string & key, auto & value) {
+    nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "path_smoothing." + key, rclcpp::ParameterValue(value));
+    node->get_parameter(prefix + "path_smoothing." + key, value);
+  };
+  smoothing_parameter("enabled", smoothing_options.enabled);
+  smoothing_parameter("enable_shortcuts", smoothing_options.enable_shortcuts);
+  smoothing_parameter("max_iterations", smoothing_options.max_iterations);
+  smoothing_parameter("data_weight", smoothing_options.data_weight);
+  smoothing_parameter("smooth_weight", smoothing_options.smooth_weight);
+  smoothing_parameter("max_deviation", smoothing_options.max_deviation);
+  smoothing_parameter("tolerance", smoothing_options.tolerance);
+  smoothing_parameter("max_time_ms", smoothing_options.max_time_ms);
+  smoothing_parameter("peak_cost_slack", smoothing_options.peak_cost_slack);
+  smoothing_parameter("mean_cost_slack", smoothing_options.mean_cost_slack);
+  smoothing_options.validate();
+
   double shortcut_peak_cost_slack = 10.0;
   double shortcut_mean_cost_slack = 5.0;
   nav2_util::declare_parameter_if_not_declared(
@@ -635,6 +654,10 @@ void MincoPlanner::configure(
       rclcpp::ParameterValue(observed_prefix_max_velocity_));
   node->get_parameter(prefix + "local_path.observed_prefix_max_velocity",
                       observed_prefix_max_velocity_);
+  double local_path_repair_max_offset = 0.0;
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "local_path.repair_max_offset", rclcpp::ParameterValue(0.0));
+  node->get_parameter(prefix + "local_path.repair_max_offset", local_path_repair_max_offset);
   if (!std::isfinite(shortcut_peak_cost_slack) ||
       shortcut_peak_cost_slack < 0.0 ||
       !std::isfinite(shortcut_mean_cost_slack) ||
@@ -905,6 +928,16 @@ void MincoPlanner::configure(
       node, prefix + "minco_optimizer.enable_yaw_opt",
       rclcpp::ParameterValue(true));
   node->get_parameter(prefix + "minco_optimizer.enable_yaw_opt", use_yaw_opt_);
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "minco_optimizer.hold_cruise_heading", rclcpp::ParameterValue(false));
+  node->get_parameter(prefix + "minco_optimizer.hold_cruise_heading", hold_cruise_heading_);
+  nav2_util::declare_parameter_if_not_declared(
+      node, prefix + "minco_optimizer.route_refresh_stall_time", rclcpp::ParameterValue(0.0));
+  node->get_parameter(prefix + "minco_optimizer.route_refresh_stall_time", route_refresh_stall_time_);
+  if (!std::isfinite(route_refresh_stall_time_) || route_refresh_stall_time_ < 0.0 ||
+      route_refresh_stall_time_ > 5.0) {
+    throw std::invalid_argument("route_refresh_stall_time must be in [0, 5] seconds");
+  }
 
   nav2_util::declare_parameter_if_not_declared(
       node, prefix + "minco_optimizer.time_allocation_iters",
@@ -1092,6 +1125,7 @@ void MincoPlanner::configure(
         std::make_unique<minco_planner::smac::SmacPlanner2DSimple>();
     smac_planner_->configure(node, costmap_ros_, prefix);
     smac_planner_->setParameters(allow_unknown_, 1000000, tolerance_);
+    smac_planner_->setSmoothingOptions(smoothing_options);
     smac_planner_->setMap(global_query);
     smac_planner_->setESDFQuery(
         mode_context_ && mode_context_->dynamicGlobalObstacleEnabled()
@@ -1122,6 +1156,9 @@ void MincoPlanner::configure(
                                    minco_config.max_acc, traj_goal_tolerance_,
                                    shortcut_peak_cost_slack,
                                    shortcut_mean_cost_slack, logger_, clock_);
+
+  local_path_processor_->setSmoothingOptions(smoothing_options);
+  local_path_processor_->setRepairMaxOffset(local_path_repair_max_offset);
 
   safety_checker_ = std::make_unique<TrajectorySafetyChecker>();
   safety_checker_->configure(safety_config, logger_, clock_);
@@ -1584,10 +1621,14 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".exploration.unknown_as_occupied" ||
            param_name == name_ + ".exploration.prefer_goal_direction" ||
            param_name == name_ + ".allow_unknown_motion" ||
+           param_name.rfind(name_ + ".path_smoothing.", 0) == 0 ||
            param_name == name_ + ".local_path.shortcut_peak_cost_slack" ||
            param_name == name_ + ".local_path.shortcut_mean_cost_slack" ||
            param_name == name_ + ".local_path.observed_prefix_max_velocity" ||
+           param_name == name_ + ".local_path.repair_max_offset" ||
            param_name == name_ + ".minco_optimizer.safe_dist" ||
+           param_name == name_ + ".minco_optimizer.hold_cruise_heading" ||
+           param_name == name_ + ".minco_optimizer.route_refresh_stall_time" ||
            param_name == name_ + ".minco_optimizer.collision_dist" ||
            param_name == name_ + ".minco_optimizer.guide_lateral_weight" ||
            param_name == name_ + ".minco_optimizer.terminal_tangent_lookahead" ||
@@ -1915,6 +1956,24 @@ bool MincoPlanner::PlanGlobalPath(const geometry_msgs::msg::PoseStamped &start,
     return false;
   }
   std::vector<geometry_msgs::msg::PoseStamped> planned_path;
+  {
+    std::scoped_lock lock(mutex_, path_mutex_);
+    if (!planning_session_.accepts(expected_session)) {return false;}
+    if (latest_global_path_session_ == expected_session && latest_global_path_.size() >= 2U) {
+      // Route persistence follows physical progress and map evidence, both
+      // stamped in ROS time. Wall time rerouted too early when Gazebo ran
+      // slower than real time. The request lease still uses its own watchdog.
+      const double progress_time = nowSeconds();
+      if (route_refresh_policy_.defer(expected_session,
+          projectedRouteProgress(latest_global_path_, start.pose.position.x, start.pose.position.y),
+          progress_time, route_refresh_stall_time_)) {
+        RCLCPP_INFO_THROTTLE(logger_, *clock_, 1000,
+            "[MincoPlanner] Retaining global corridor while route progress continues; "
+            "local collision checks and stopping prefix remain mandatory.");
+        return true;
+      }
+    }
+  }
   if (!global_path_searcher_->plan(start, goal, *mode_context_, planned_path)) {
     record_search_time();
     return false;
@@ -1931,6 +1990,9 @@ bool MincoPlanner::PlanGlobalPath(const geometry_msgs::msg::PoseStamped &start,
     if (latest_global_path_.size() < 2U) {
       return false;
     }
+    route_refresh_policy_.reset(expected_session,
+        projectedRouteProgress(latest_global_path_, start.pose.position.x, start.pose.position.y),
+        nowSeconds());
 
     if (visualizer_) {
       nav_msgs::msg::Path global_path_msg;
@@ -2012,6 +2074,22 @@ bool MincoPlanner::ReplanLocal(
     return finish(false, "OPTIMIZER_FAILED");
   }
 
+  // Use one frame-consistent measurement throughout this replan. Missing TF
+  // is not evidence of zero velocity and must not launch a cold-start path.
+  const Eigen::Vector3d current_speed = getCurrentSpeed();
+  if (!current_speed.allFinite()) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (planning_session_.accepts(expected_session)) {
+        invalidateTrajectoryLocked();
+        emergency_stop_latched_ = true;
+        is_traj_safe_.store(false);
+        publishBlockCommandLocked(true);
+      }
+    }
+    return finish(false, "ODOMETRY_FRAME_UNAVAILABLE");
+  }
+
   // Snapshot the global goal for end-state logic.
   Eigen::Vector3d global_goal(0.0, 0.0, 0.0);
   double goal_yaw = 0.0;
@@ -2034,6 +2112,14 @@ bool MincoPlanner::ReplanLocal(
     return finish(false, "OPTIMIZER_FAILED");
   }
 
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!planning_session_.accepts(expected_session)) {return finish(false, "STALE_SESSION");}
+    route_refresh_policy_.observe(expected_session,
+        projectedRouteProgress(global_path_snapshot, current_pose.pose.position.x, current_pose.pose.position.y),
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
+  }
+
   const auto build_seed = [&]() {
     return local_path_processor_->buildSeed(
         global_path_snapshot, current_pose, *mode_context_,
@@ -2047,7 +2133,7 @@ bool MincoPlanner::ReplanLocal(
     for (size_t i = 1U; i < seed.dense_path.size(); ++i) {
       available_progress += (seed.dense_path[i] - seed.dense_path[i - 1U]).head<2>().norm();
     }
-    const double speed = std::min(minco_config.max_vel, getCurrentSpeed().head<2>().norm());
+    const double speed = std::min(minco_config.max_vel, current_speed.head<2>().norm());
     const double refresh_distance = std::max(0.60,
         speed * speed / (2.0 * minco_config.max_acc) +
         speed * (successful_replan_period_ + 0.20) + 0.30);
@@ -2097,7 +2183,7 @@ bool MincoPlanner::ReplanLocal(
   PlanningState state = PlanningState::COLD_START;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    state = determinePlanningState(current_pose.pose, sparse_path);
+    state = determinePlanningState(current_pose.pose, sparse_path, current_speed);
   }
 
   // A clipped prefix ends at the current observation frontier. Use cold
@@ -2116,10 +2202,10 @@ bool MincoPlanner::ReplanLocal(
   if (state == PlanningState::HOT_START) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      prepareHotStart(current_pose.pose, start_state);
+      prepareHotStart(current_pose.pose, start_state, current_speed);
     }
   } else {
-    prepareColdStart(current_pose.pose, start_state, sparse_path);
+    prepareColdStart(current_pose.pose, start_state, sparse_path, current_speed);
     // Avoid reusing stale warm-start guesses.
     minco_optimizer_->setInitPsAndTs(vec_Vec3f{}, VecDf{});
   }
@@ -2158,7 +2244,10 @@ bool MincoPlanner::ReplanLocal(
 
   // End state logic.
   const double dist_to_goal = (end_state.col(0) - global_goal).head<2>().norm();
-  if (!stop_at_local_end && dist_to_goal > 1.0) {
+  // Only a real goal or an observation frontier requires a stopped endpoint.
+  // A rolling endpoint within 1 m of the goal is still an intermediate point;
+  // stopping there creates a brake/restart cycle at short tunnel exits.
+  if (!stop_at_local_end) {
     Eigen::Vector3d tangent(1.0, 0.0, 0.0);
     if (sparse_path.size() >= 2) {
       tangent = sparse_path.back() - sparse_path[sparse_path.size() - 2];
@@ -2237,8 +2326,12 @@ bool MincoPlanner::ReplanLocal(
     for (const auto & point : seed.dense_path) {
       const double clearance = safety_checker_->getDistance(point);
       if (std::isfinite(clearance) && clearance < minco_config.obstacle_slowdown_distance) {
-        trajectory_max_velocity = std::min(trajectory_max_velocity, minco_config.obstacle_max_velocity);
-        break;
+        // Avoid switching the entire rolling trajectory between cruise and
+        // tunnel speed when an edge cell crosses the slowdown threshold.
+        trajectory_max_velocity = std::min(trajectory_max_velocity,
+          utils::obstacleVelocityLimit(clearance, minco_config.safe_dist,
+            minco_config.obstacle_slowdown_distance,
+            minco_config.obstacle_max_velocity, minco_config.max_vel));
       }
     }
   }
@@ -2408,9 +2501,16 @@ bool MincoPlanner::ReplanLocal(
   }
 
   traj_opt::Trajectory yaw_traj;
-  // Seed and global footprint checks use measured chassis yaw. Keep that yaw
-  // on rolling or observation-clipped segments; approach the explicit goal
-  // heading only when this segment actually reaches the navigation goal.
+  double cruise_yaw = fallback_yaw;
+  if (hold_cruise_heading_) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto heading = planning_session_.cruiseHeading(expected_session, fallback_yaw);
+    if (!heading) {return false;}
+    cruise_yaw = *heading;
+  }
+  // Seed/global checks use measured chassis yaw. Rolling segments hold the
+  // configured cruise reference; approach the explicit goal heading only
+  // when this segment actually reaches the navigation goal.
   if (shouldOptimizeYawForSeed(use_yaw_opt_, seed)) {
     const bool yaw_success = optimizeYaw(start_state, opt_traj, yaw_traj, state,
                                          current_pose.pose, goal_yaw);
@@ -2431,7 +2531,12 @@ bool MincoPlanner::ReplanLocal(
   } else {
     Eigen::MatrixXd cMat(3, 6);
     cMat.setZero();
-    cMat(0, 5) = std::isfinite(fallback_yaw) ? fallback_yaw : 0.0;
+    // Keeping measured yaw on every replacement lets small contact-induced
+    // yaw errors accumulate into a different chassis heading. A session-fixed
+    // reference provides restoring feedback. The actual-to-reference rotation
+    // and the full trajectory still pass the swept-footprint safety gate below;
+    // blocked rotations fall back to measured yaw without changing the latch.
+    cMat(0, 5) = cruise_yaw;
     const double yaw_dur = std::max(0.02, opt_traj.getTotalDuration());
     yaw_traj.clear();
     yaw_traj.emplace_back(yaw_dur, cMat);
@@ -2642,6 +2747,10 @@ MincoPlanner::extractLocalPath(const Eigen::Vector3d &cur_pos) {
   current_pose.pose.position.y = cur_pos.y();
   current_pose.pose.position.z = cur_pos.z();
   const double current_yaw = getCurrentYawFromOdom();
+  if (!std::isfinite(current_yaw)) {
+    return {};
+  }
+  current_pose.header.frame_id = planning_frame_;
   current_pose.pose.orientation.z = std::sin(0.5 * current_yaw);
   current_pose.pose.orientation.w = std::cos(0.5 * current_yaw);
   std::vector<geometry_msgs::msg::PoseStamped> global_path_snapshot;
@@ -2660,7 +2769,8 @@ MincoPlanner::extractLocalPath(const Eigen::Vector3d &cur_pos) {
 
 MincoPlanner::PlanningState MincoPlanner::determinePlanningState(
     const geometry_msgs::msg::Pose &start_pose,
-    const std::vector<Eigen::Vector3d> &new_path) {
+    const std::vector<Eigen::Vector3d> &new_path,
+    const Eigen::Vector3d &current_speed) {
   if (!has_last_traj_) {
     return PlanningState::COLD_START;
   }
@@ -2680,7 +2790,6 @@ MincoPlanner::PlanningState MincoPlanner::determinePlanningState(
   Eigen::Vector3d pred_pos = last_traj_.getPos(t_dur);
   Eigen::Vector3d pred_vel = last_traj_.getVel(t_dur);
   double tracking_error = (current_pos - pred_pos).norm();
-  Eigen::Vector3d current_speed = getCurrentSpeed();
   // A shifted polynomial is only an optimizer seed. Once the physical robot
   // falls behind on a slope, accepting a metre of position error or nearly a
   // metre per second of velocity error feeds stale momentum into every rolling
@@ -2726,22 +2835,15 @@ MincoPlanner::PlanningState MincoPlanner::determinePlanningState(
 
 void MincoPlanner::prepareColdStart(
     const geometry_msgs::msg::Pose &start_pose, Eigen::Matrix3d &start_state,
-    const std::vector<Eigen::Vector3d> &sparse_path) {
+    const std::vector<Eigen::Vector3d> &sparse_path,
+    const Eigen::Vector3d &current_speed) {
   start_state.setZero();
   start_state.col(0) =
       Eigen::Vector3d(start_pose.position.x, start_pose.position.y, 0.0);
-  Eigen::Vector3d real_speed = getCurrentSpeed();
+  Eigen::Vector3d real_speed = current_speed;
   real_speed.z() = 0.0;
   Eigen::Vector2d speed_xy = real_speed.head<2>();
   double planar_speed = speed_xy.norm();
-  if (!speed_xy.allFinite()) {
-    RCLCPP_WARN_THROTTLE(
-        logger_, *clock_, 1000,
-        "[MincoPlanner] Cold-start odometry velocity is non-finite; "
-        "starting the optimizer from rest.");
-    real_speed.head<2>().setZero();
-    planar_speed = 0.0;
-  }
 
   // A cold start is used precisely after the previous optimizer seed was
   // rejected.  Feeding its measured velocity through unchanged can preserve
@@ -2780,11 +2882,12 @@ void MincoPlanner::prepareColdStart(
 }
 
 void MincoPlanner::prepareHotStart(const geometry_msgs::msg::Pose &start_pose,
-                                   Eigen::Matrix3d &start_state) {
+                                   Eigen::Matrix3d &start_state,
+                                   const Eigen::Vector3d &current_speed) {
   start_state.setZero();
   start_state.col(0) =
       Eigen::Vector3d(start_pose.position.x, start_pose.position.y, 0.0);
-  Eigen::Vector3d measured_speed = getCurrentSpeed();
+  Eigen::Vector3d measured_speed = current_speed;
   measured_speed.z() = 0.0;
   const double planar_speed = measured_speed.head<2>().norm();
   if (std::isfinite(planar_speed) && planar_speed > minco_config.max_vel) {
@@ -3349,9 +3452,21 @@ void MincoPlanner::publishEmergencyStopImpl(
   std_msgs::msg::Header header_msg;
   header_msg.frame_id = output_frame_;
 
+  const Eigen::Vector3d current_speed = getCurrentSpeed();
+  if (!current_speed.allFinite()) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (require_generation_match && expected_generation != trajectory_generation_) {
+      return;
+    }
+    invalidateTrajectoryLocked();
+    emergency_stop_latched_ = true;
+    is_traj_safe_.store(false);
+    publishBlockCommandLocked(true);
+    return;
+  }
   Eigen::Matrix3d start_state;
   prepareColdStart(current_pose.pose, start_state,
-                   std::vector<Eigen::Vector3d>{});
+                   std::vector<Eigen::Vector3d>{}, current_speed);
   double current_yaw = 0.0;
   if (!utils::quaternionToYawChecked(current_pose.pose.orientation,
                                      current_yaw)) {
@@ -3549,6 +3664,14 @@ bool MincoPlanner::getPhysicalRobotPoseInPlanningFrame(
                            planning_frame_.c_str());
       return false;
     }
+    // Keep timestamped physical samples in ordinary ROS logs. Safety failure
+    // centers can be future path samples and cannot time a tunnel crossing.
+    RCLCPP_INFO_THROTTLE(logger_, *clock_, 500,
+        "[MincoPlanner] Physical pose: stamp=%.6f frame=%s x=%.4f y=%.4f "
+        "z=%.4f yaw=%.5f age=%.3f",
+        rclcpp::Time(transform.header.stamp).seconds(), planning_frame_.c_str(),
+        pose.pose.position.x, pose.pose.position.y, pose.pose.position.z, yaw,
+        clock_->now().seconds() - rclcpp::Time(transform.header.stamp).seconds());
     return true;
   } catch (const tf2::TransformException &ex) {
     RCLCPP_WARN_THROTTLE(
@@ -3574,40 +3697,30 @@ bool MincoPlanner::checkGoalReached(
 }
 
 Eigen::Vector3d MincoPlanner::getCurrentSpeed() const {
-  std::lock_guard<std::mutex> lk(odom_mutex_);
-  if (has_latest_odom_) {
-    const auto &twist = latest_odom_.twist.twist;
-    const double yaw =
-        utils::quaternionToYaw(latest_odom_.pose.pose.orientation);
-
-    double vx_global = 0.0;
-    double vy_global = 0.0;
-    double omega_global = 0.0;
-    utils::compensateLeverArm(twist.linear.x, twist.linear.y, twist.angular.z,
-                              yaw, lidar_offset_x_, lidar_offset_y_, vx_global,
-                              vy_global, omega_global);
-
-    // std::cout << "[MincoPlanner] Lever-arm compensation: raw_v=(" <<
-    // twist.linear.x << ", "
-    //           << twist.linear.y << ") wz=" << twist.angular.z << " yaw=" <<
-    //           yaw << " -> v=("
-    //           << vx_global << ", " << vy_global << ")" << std::endl;
-
-    // This stack plans a 2.5D ground path but optimizes a z=0 polynomial. A
-    // vertical/body-frame slope component would make the boundary state
-    // inconsistent with that polynomial and can invalidate continuous dynamic
-    // feasibility before retiming starts.
-    return Eigen::Vector3d(vx_global, vy_global, 0.0);
+  nav_msgs::msg::Odometry odometry;
+  {
+    std::lock_guard<std::mutex> lk(odom_mutex_);
+    if (has_latest_odom_) {
+      odometry = latest_odom_;
+    }
   }
-  return Eigen::Vector3d::Zero();
+  Eigen::Vector3d velocity;
+  std::string reason;
+  if (!planning_odometry::planarVelocity(
+      odometry, planning_frame_, tf_.get(), lidar_offset_x_, lidar_offset_y_, velocity, reason)) {
+    RCLCPP_WARN_THROTTLE(logger_, *clock_, 1000,
+      "[MincoPlanner] Cannot express odometry velocity in planning frame '%s': %s",
+      planning_frame_.c_str(), reason.c_str());
+  }
+  return velocity;
 }
 
 double MincoPlanner::getCurrentYawFromOdom() const {
-  std::lock_guard<std::mutex> lk(odom_mutex_);
-  if (!has_latest_odom_) {
-    return 0.0;
+  geometry_msgs::msg::PoseStamped physical_pose;
+  if (!getPhysicalRobotPoseInPlanningFrame(physical_pose)) {
+    return std::numeric_limits<double>::quiet_NaN();
   }
-  return utils::quaternionToYaw(latest_odom_.pose.pose.orientation);
+  return utils::quaternionToYaw(physical_pose.pose.orientation);
 }
 
 bool MincoPlanner::isTrajectoryTimeExpired(double now_s) const {

@@ -22,11 +22,12 @@ if(BUILD_TESTING)
     test/test_navigation_launch.py
     TIMEOUT 30
   )
-  ament_add_pytest_test(test_rendering_launch
-    test/test_rendering_launch.py
-    TIMEOUT 30
-  )
+  ament_add_pytest_test(test_rmul2027_maps test/test_rmul2027_maps.py TIMEOUT 30)
+  ament_add_pytest_test(test_startup_heading test/test_startup_heading.py TIMEOUT 30)
+  ament_add_pytest_test(test_global_pose_handoff test/test_global_pose_handoff.py TIMEOUT 30)
 endif()
+
+install(PROGRAMS scripts/relocalize_then_navigate.py scripts/global_pose_handoff.py DESTINATION lib/${PROJECT_NAME})
 
 ament_auto_package(
   INSTALL_TO_SHARE

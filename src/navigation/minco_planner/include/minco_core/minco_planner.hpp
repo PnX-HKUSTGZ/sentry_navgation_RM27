@@ -5,6 +5,7 @@
 #include "minco_core/components/planning_request_contract.hpp"
 #include "minco_core/components/planning_request_lease.hpp"
 #include "minco_core/components/planning_session_state.hpp"
+#include "minco_core/components/route_refresh_policy.hpp"
 #include "minco_core/components/overlap_escape_guard.hpp"
 #include "minco_core/performance/planner_performance_monitor.hpp"
 
@@ -119,14 +120,16 @@ private:
 
   // === Utility & Helper Functions ===
   PlanningState determinePlanningState(
-    const geometry_msgs::msg::Pose & start_pose, const std::vector<Eigen::Vector3d> & new_path);
+    const geometry_msgs::msg::Pose & start_pose, const std::vector<Eigen::Vector3d> & new_path,
+    const Eigen::Vector3d & current_speed);
 
   void prepareColdStart(const geometry_msgs::msg::Pose & start_pose,
     Eigen::Matrix3d & start_state,
-    const std::vector<Eigen::Vector3d> & sparse_path);
+    const std::vector<Eigen::Vector3d> & sparse_path, const Eigen::Vector3d & current_speed);
 
   void prepareHotStart(
-    const geometry_msgs::msg::Pose & start_pose, Eigen::Matrix3d & start_state);
+    const geometry_msgs::msg::Pose & start_pose, Eigen::Matrix3d & start_state,
+    const Eigen::Vector3d & current_speed);
 
   void PTAllocation(const std::vector<Eigen::Vector3d> & sparse_path,
     const Eigen::Matrix3d & start_state,
@@ -228,6 +231,7 @@ private:
   bool allow_unknown_;
   bool use_smac_;
   bool use_yaw_opt_{true};
+  bool hold_cruise_heading_{false};
   bool priormap_use_nav2_global_search_{true};
   bool priormap_dynamic_global_obstacle_enable_{false};
   bool priormap_clip_seed_by_rog_boundary_{true};
@@ -252,6 +256,7 @@ private:
   double opt_freq_;
   double failed_replan_retry_period_{0.25};
   double successful_replan_period_{1.0};
+  double route_refresh_stall_time_{0.0};
   double hot_start_tracking_error_base_{0.30};
   double hot_start_velocity_error_threshold_{0.35};
   double hot_start_direction_cosine_threshold_{0.50};
@@ -306,6 +311,7 @@ private:
   uint64_t last_trajectory_session_{0};
   builtin_interfaces::msg::Time planning_stamp_;
   PlanningSessionState planning_session_;
+  RouteRefreshPolicy route_refresh_policy_;
   PlanningRequestLease request_lease_;
   bool emergency_stop_latched_{false};
   bool overlap_recovery_enabled_{true};

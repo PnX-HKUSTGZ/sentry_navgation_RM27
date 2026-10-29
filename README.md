@@ -1,5 +1,7 @@
 独立全局重定位的最终实现、Gazebo/RViz 一键演示及验证方法见 [全局重定位说明](docs/global_relocalization.md)。
 
+MINCO 仿真中，RViz 选择出生点、全局重定位一次初始化、随后手动 Goal 沿原 MINCO 导航的入口见 [全链路仿真说明](docs/simulation_global_navigation.md)。
+
 
 ## 1. Overview
 

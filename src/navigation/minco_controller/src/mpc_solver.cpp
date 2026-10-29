@@ -153,6 +153,27 @@ bool MpcSolver::buildCondensedQP(const State &curr,
   // g = 2*(B^T Q d - R U_ref)
   g = 2.0 * (B_hat.transpose() * Q_bar * d - R_bar * U_ref);
 
+  // Penalize changes rather than absolute velocity, preserving steady motion
+  // while damping alternating corrections from small localization/path errors.
+  // The first difference joins the previous solution; after reset it joins
+  // measured velocity, so old mission commands cannot leak into a new session.
+  const Eigen::Vector3d previous = has_last_u_ ? last_u_global_ :
+      Eigen::Vector3d(curr.vx, curr.vy, curr.omega);
+  for (int k = 0; k < N; ++k) {
+    for (int axis = 0; axis < nu; ++axis) {
+      const int col = k * nu + axis;
+      const double weight = 2.0 * config_.control_delta_weight(axis);
+      H(col, col) += weight;
+      if (k == 0) {
+        g(col) -= weight * previous(axis);
+      } else {
+        H(col - nu, col - nu) += weight;
+        H(col, col - nu) -= weight;
+        H(col - nu, col) -= weight;
+      }
+    }
+  }
+
   // 变量边界（速度约束，map/global 系）
   // Use -1e12 instead of -inf: qpOASES defines INFTY=1e20 internally.
   // IEEE -inf causes NaN in active-set arithmetic.
@@ -245,6 +266,8 @@ bool MpcSolver::solve(const State &curr,
   const int N = config_.horizon;
   if (N <= 0 || !std::isfinite(config_.dt) || config_.dt <= 0.0 ||
       !config_.Q.allFinite() || !config_.R.allFinite() ||
+      !config_.control_delta_weight.allFinite() ||
+      (config_.control_delta_weight.array() < 0.0).any() ||
       (config_.Q.array() < 0.0).any() || (config_.R.array() <= 0.0).any() ||
       !std::isfinite(config_.q_along) || !std::isfinite(config_.q_cross) ||
       config_.q_along < 0.0 || config_.q_cross < 0.0 ||

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import os
+import random
+import math
 import xml.etree.ElementTree as ET
 
 import yaml
@@ -58,12 +60,50 @@ def _spawn_robot(context, *args, **kwargs):
         )
     }
 
+    if LaunchConfiguration("rviz_spawn").perform(context).lower() in (
+        "true",
+        "1",
+        "yes",
+    ):
+        return [
+            Node(
+                package="rm_27_stimulation",
+                executable="spawn_from_rviz.py",
+                output="screen",
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "map_yaml": LaunchConfiguration("spawn_map_yaml"),
+                        "world_name": _world_name(context),
+                        "entity": entity_name,
+                    }
+                ],
+            )
+        ]
+
     spawn_poses = _load_yaml(config_path).get("spawn_poses", {})
     if world_name not in spawn_poses:
         valid_worlds = ", ".join(sorted(spawn_poses.keys()))
-        raise RuntimeError(f"Unknown spawn pose world '{world_name}'. Valid worlds: {valid_worlds}")
+        raise RuntimeError(
+            f"Unknown spawn pose world '{world_name}'. Valid worlds: {valid_worlds}"
+        )
 
     pose = spawn_poses[world_name]
+    if LaunchConfiguration("random_spawn").perform(context).lower() in (
+        "true",
+        "1",
+        "yes",
+    ):
+        candidates = _load_yaml(
+            LaunchConfiguration("random_spawn_config").perform(context)
+        ).get(world_name, [])
+        if not candidates:
+            raise RuntimeError(f"No validated random spawn positions for {world_name}")
+        seed = LaunchConfiguration("random_seed").perform(context).strip()
+        rng = random.Random(int(seed) if seed else None)
+        pose = dict(rng.choice(candidates))
+        pose["yaw"] = rng.uniform(-math.pi, math.pi)
+        print(f"[random_spawn] seed={seed or 'system'} pose={pose}", flush=True)
     spawn_arguments = [
         "-world",
         _world_name(context),
@@ -171,6 +211,16 @@ def generate_launch_description():
                 name="robot_state_publisher",
                 output="screen",
                 parameters=[{"use_sim_time": use_sim_time}, robot_description],
+            ),
+            DeclareLaunchArgument("rviz_spawn", default_value="false"),
+            DeclareLaunchArgument("spawn_map_yaml", default_value=""),
+            DeclareLaunchArgument("random_spawn", default_value="false"),
+            DeclareLaunchArgument("random_seed", default_value=""),
+            DeclareLaunchArgument(
+                "random_spawn_config",
+                default_value=os.path.join(
+                    package_share, "config", "random_spawn_poses.yaml"
+                ),
             ),
             OpaqueFunction(function=_spawn_robot),
         ]

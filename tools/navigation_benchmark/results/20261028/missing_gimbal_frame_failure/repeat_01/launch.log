@@ -1,0 +1,884 @@
+[INFO] [launch]: All log files can be found below /home/zhang/.ros/log/2026-10-28-02-10-09-481672-powercenter-554134
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: [rm_27_stimulation] Gazebo rendering: requested=auto, selected=gpu, backend=glx, renderer=D3D12 (NVIDIA GeForce RTX 5070 Ti Laptop GPU)
+[INFO] [gazebo-1]: process started with pid [554169]
+[INFO] [parameter_bridge-2]: process started with pid [554170]
+[INFO] [joint_state_publisher-3]: process started with pid [554172]
+[INFO] [robot_state_publisher-4]: process started with pid [554173]
+[robot_state_publisher-4] [INFO] [1793124610.700413070] [robot_state_publisher]: Robot initialized
+[joint_state_publisher-3] [INFO] [1793124610.969723278] [joint_state_publisher]: Waiting for robot_description to be published on the robot_description topic...
+[joint_state_publisher-3] [INFO] [1793124611.117469937] [joint_state_publisher]: Got description, configuring robot
+[parameter_bridge-2] [INFO] [1793124611.751207593] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/clock (gz.msgs.Clock) -> /clock (rosgraph_msgs/msg/Clock)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793124611.752911716] [rm_27_ros_gz_bridge]: Creating ROS->GZ Bridge: [cmd_vel (geometry_msgs/msg/Twist) -> /cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793124611.754559525] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/livox/lidar/points (gz.msgs.PointCloudPacked) -> livox/lidar (sensor_msgs/msg/PointCloud2)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793124611.755899172] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/livox/imu (gz.msgs.IMU) -> livox/imu (sensor_msgs/msg/Imu)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793124611.756582410] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/ground_truth/odometry (gz.msgs.Odometry) -> ground_truth/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[INFO] [create-5]: process started with pid [554290]
+[create-5] [INFO] [1793124614.012937810] [spawn_rm27_sentry]: Entity creation successful.
+[gazebo-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="robot"]/link[@name="base_footprint"]/sensor[@name="mid360_imu"]/gz_frame_id:<urdf-string>:L0]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[gazebo-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="robot"]/link[@name="base_footprint"]/sensor[@name="left_mid360"]/gz_frame_id:<urdf-string>:L0]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[INFO] [create-5]: process has finished cleanly [pid 554290]
+[INFO] [rm27_ground_truth_localizer-6]: process started with pid [554388]
+[INFO] [map_server-7]: process started with pid [554389]
+[INFO] [lifecycle_manager-8]: process started with pid [554390]
+[INFO] [fake_vel_transform_node-9]: process started with pid [554391]
+[INFO] [controller_server-10]: process started with pid [554392]
+[INFO] [smoother_server-11]: process started with pid [554393]
+[INFO] [planner_server_mt-12]: process started with pid [554394]
+[INFO] [behavior_server-13]: process started with pid [554395]
+[INFO] [bt_navigator-14]: process started with pid [554396]
+[INFO] [waypoint_follower-15]: process started with pid [554397]
+[INFO] [velocity_smoother-16]: process started with pid [554398]
+[INFO] [lifecycle_manager-17]: process started with pid [554401]
+[fake_vel_transform_node-9] [0m[INFO] [1793124616.229823549] [fake_vel_transform]: Start FakeVelTransform![0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124616.239951369] [rm27_ground_truth_localizer]: Using Gazebo ground truth from [ground_truth/odometry] with 0.100s interpolation gap and 0.200s scan timeout; organized no-return rays=enabled
+[lifecycle_manager-8] [0m[INFO] [1793124616.242219845] [lifecycle_manager_localization]: Creating[0m
+[behavior_server-13] [0m[INFO] [1793124616.244821798] [behavior_server]: 
+[behavior_server-13] 	behavior_server lifecycle node launched. 
+[behavior_server-13] 	Waiting on external lifecycle transitions to activate
+[behavior_server-13] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[lifecycle_manager-8] [0m[INFO] [1793124616.246592194] [lifecycle_manager_localization]: [34m[1mCreating and initializing lifecycle service clients[0m[0m[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.256557799] [planner_server]: 
+[planner_server_mt-12] 	planner_server lifecycle node launched. 
+[planner_server_mt-12] 	Waiting on external lifecycle transitions to activate
+[planner_server_mt-12] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.259617778] [planner_server]: Creating[0m
+[controller_server-10] [0m[INFO] [1793124616.259874773] [controller_server]: 
+[controller_server-10] 	controller_server lifecycle node launched. 
+[controller_server-10] 	Waiting on external lifecycle transitions to activate
+[controller_server-10] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124616.267340920] [lifecycle_manager_navigation]: Creating[0m
+[controller_server-10] [0m[INFO] [1793124616.267731029] [controller_server]: Creating controller server[0m
+[lifecycle_manager-17] [0m[INFO] [1793124616.271457819] [lifecycle_manager_navigation]: [34m[1mCreating and initializing lifecycle service clients[0m[0m[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.274374885] [global_costmap.global_costmap]: 
+[planner_server_mt-12] 	global_costmap lifecycle node launched. 
+[planner_server_mt-12] 	Waiting on external lifecycle transitions to activate
+[planner_server_mt-12] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.275465320] [global_costmap.global_costmap]: Creating Costmap[0m
+[controller_server-10] [0m[INFO] [1793124616.277600426] [local_costmap.local_costmap]: 
+[controller_server-10] 	local_costmap lifecycle node launched. 
+[controller_server-10] 	Waiting on external lifecycle transitions to activate
+[controller_server-10] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[controller_server-10] [0m[INFO] [1793124616.278251841] [local_costmap.local_costmap]: Creating Costmap[0m
+[smoother_server-11] [0m[INFO] [1793124616.279530131] [smoother_server]: 
+[smoother_server-11] 	smoother_server lifecycle node launched. 
+[smoother_server-11] 	Waiting on external lifecycle transitions to activate
+[smoother_server-11] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[waypoint_follower-15] [0m[INFO] [1793124616.280969122] [waypoint_follower]: 
+[waypoint_follower-15] 	waypoint_follower lifecycle node launched. 
+[waypoint_follower-15] 	Waiting on external lifecycle transitions to activate
+[waypoint_follower-15] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[smoother_server-11] [0m[INFO] [1793124616.281752262] [smoother_server]: Creating smoother server[0m
+[waypoint_follower-15] [0m[INFO] [1793124616.282557867] [waypoint_follower]: Creating[0m
+[velocity_smoother-16] [0m[INFO] [1793124616.291912491] [velocity_smoother]: 
+[velocity_smoother-16] 	velocity_smoother lifecycle node launched. 
+[velocity_smoother-16] 	Waiting on external lifecycle transitions to activate
+[velocity_smoother-16] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[bt_navigator-14] [0m[INFO] [1793124616.295361697] [bt_navigator]: 
+[bt_navigator-14] 	bt_navigator lifecycle node launched. 
+[bt_navigator-14] 	Waiting on external lifecycle transitions to activate
+[bt_navigator-14] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[bt_navigator-14] [0m[INFO] [1793124616.297360790] [bt_navigator]: Creating[0m
+[lifecycle_manager-8] [0m[INFO] [1793124616.302456402] [lifecycle_manager_localization]: [34m[1mStarting managed nodes bringup...[0m[0m[0m
+[lifecycle_manager-8] [0m[INFO] [1793124616.302500566] [lifecycle_manager_localization]: [34m[1mConfiguring map_server[0m[0m[0m
+[map_server-7] [0m[INFO] [1793124616.304062445] [map_server]: 
+[map_server-7] 	map_server lifecycle node launched. 
+[map_server-7] 	Waiting on external lifecycle transitions to activate
+[map_server-7] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[map_server-7] [0m[INFO] [1793124616.304148737] [map_server]: Creating[0m
+[map_server-7] [0m[INFO] [1793124616.431156395] [map_server]: Configuring[0m
+[map_server-7] [0m[INFO] [1793124616.431280911] [map_io]: Loading yaml file: /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.yaml[0m
+[map_server-7] [0m[INFO] [1793124616.431525368] [map_io]: resolution: 0.05[0m
+[map_server-7] [0m[INFO] [1793124616.431530868] [map_io]: origin[0]: -14.6[0m
+[map_server-7] [0m[INFO] [1793124616.431533387] [map_io]: origin[1]: -5.86[0m
+[map_server-7] [0m[INFO] [1793124616.431534924] [map_io]: origin[2]: 0[0m
+[map_server-7] [0m[INFO] [1793124616.431536635] [map_io]: free_thresh: 0.35[0m
+[map_server-7] [0m[INFO] [1793124616.431538133] [map_io]: occupied_thresh: 0.65[0m
+[map_server-7] [0m[INFO] [1793124616.431540256] [map_io]: mode: trinary[0m
+[map_server-7] [0m[INFO] [1793124616.431542001] [map_io]: negate: 0[0m
+[map_server-7] [0m[INFO] [1793124616.431763266] [map_io]: Loading image_file: /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.pgm[0m
+[map_server-7] [0m[INFO] [1793124616.434269096] [map_io]: Read map /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.pgm: 583 X 300 map @ 0.05 m/cell[0m
+[lifecycle_manager-8] [0m[INFO] [1793124616.440474942] [lifecycle_manager_localization]: [34m[1mActivating map_server[0m[0m[0m
+[map_server-7] [0m[INFO] [1793124616.440784705] [map_server]: Activating[0m
+[map_server-7] [0m[INFO] [1793124616.441330881] [map_server]: Creating bond (map_server) to lifecycle manager.[0m
+[lifecycle_manager-8] [0m[INFO] [1793124616.546748477] [lifecycle_manager_localization]: Server map_server connected with bond.[0m
+[lifecycle_manager-8] [0m[INFO] [1793124616.546873495] [lifecycle_manager_localization]: [34m[1mManaged nodes are active[0m[0m[0m
+[lifecycle_manager-8] [0m[INFO] [1793124616.546948509] [lifecycle_manager_localization]: [34m[1mCreating bond timer...[0m[0m[0m
+[lifecycle_manager-17] [0m[INFO] [1793124616.578769857] [lifecycle_manager_navigation]: [34m[1mStarting managed nodes bringup...[0m[0m[0m
+[lifecycle_manager-17] [0m[INFO] [1793124616.578864172] [lifecycle_manager_navigation]: [34m[1mConfiguring controller_server[0m[0m[0m
+[controller_server-10] [0m[INFO] [1793124616.579282039] [controller_server]: Configuring controller interface[0m
+[controller_server-10] [0m[INFO] [1793124616.579298715] [controller_server]: getting progress checker plugins..[0m
+[controller_server-10] [0m[INFO] [1793124616.579522225] [controller_server]: getting goal checker plugins..[0m
+[controller_server-10] [0m[INFO] [1793124616.579547685] [controller_server]: Controller frequency set to 20.0000Hz[0m
+[controller_server-10] [0m[INFO] [1793124616.579574089] [local_costmap.local_costmap]: Configuring[0m
+[controller_server-10] [0m[INFO] [1793124616.586662624] [local_costmap.local_costmap]: Using plugin "static_layer"[0m
+[controller_server-10] [0m[INFO] [1793124616.590283154] [local_costmap.local_costmap]: Subscribing to the map topic (/map) with transient local durability[0m
+[controller_server-10] [0m[INFO] [1793124616.591895844] [local_costmap.local_costmap]: Initialized plugin "static_layer"[0m
+[controller_server-10] [0m[INFO] [1793124616.591920879] [local_costmap.local_costmap]: Using plugin "rog_dynamic_obstacle_layer"[0m
+[controller_server-10] [0m[INFO] [1793124616.596298280] [local_costmap.local_costmap]: ROG dynamic obstacle layer enabled=true topic=/rog_map/dynamic_obstacles threshold=65 stale_timeout=2.75s obstacle_marking_max_range=0.00m (0=unlimited) footprint_clearing=true[0m
+[controller_server-10] [0m[INFO] [1793124616.596337802] [local_costmap.local_costmap]: Initialized plugin "rog_dynamic_obstacle_layer"[0m
+[controller_server-10] [0m[INFO] [1793124616.596341234] [local_costmap.local_costmap]: Using plugin "inflation_layer"[0m
+[controller_server-10] [0m[INFO] [1793124616.597131929] [local_costmap.local_costmap]: Initialized plugin "inflation_layer"[0m
+[controller_server-10] [0m[INFO] [1793124616.620833153] [local_costmap.local_costmap]: StaticLayer: Resizing static layer to 583 X 300 at 0.050000 m/pix[0m
+[controller_server-10] [0m[INFO] [1793124616.621071869] [controller_server]: Created progress_checker : progress_checker of type nav2_controller::SimpleProgressChecker[0m
+[controller_server-10] [0m[INFO] [1793124616.621488119] [controller_server]: Controller Server has progress_checker  progress checkers available.[0m
+[controller_server-10] [0m[INFO] [1793124616.622160033] [controller_server]: Created goal checker : general_goal_checker of type nav2_controller::SimpleGoalChecker[0m
+[controller_server-10] [0m[INFO] [1793124616.622767441] [controller_server]: Controller Server has general_goal_checker  goal checkers available.[0m
+[controller_server-10] [0m[INFO] [1793124616.624368304] [controller_server]: Created controller : MincoMpc of type minco_controller::MincoMpcController[0m
+[controller_server-10] [0m[INFO] [1793124616.640114140] [controller_server]: MincoMpc: MincoMpcController configured (dt=0.050, lookahead_time=1.000, deadzone=0.050, delay_comp=0.120, reference_max_lead=0.050, startup_lead=0.850, startup_target_speed=0.080, startup_min_command=0.600, uphill_assist=[grade=0.030..0.180,ref>=0.250,max_command=1.000], slope_slowdown=[0.060,0.180]rad, slope_speed_limit=1.150, small_gyro=false, fixed_wz=0.000, odom_timeout=0.250, trajectory_timeout=1.500, future_tolerance=0.050, q_along=3.000, q_cross=120.000, lidar_offset_x=0.000, lidar_offset_y=0.000, lidar_roll_offset=0.000, opt_path_topic=minco/opt_path, odom_topic=/odometry, cmd_vel_mpc_topic=minco/cmd_vel_mpc)[0m
+[controller_server-10] [0m[INFO] [1793124616.640163030] [controller_server]: Controller Server has MincoMpc  controllers available.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124616.652777701] [lifecycle_manager_navigation]: [34m[1mConfiguring smoother_server[0m[0m[0m
+[smoother_server-11] [0m[INFO] [1793124616.653231826] [smoother_server]: Configuring smoother server[0m
+[smoother_server-11] [0m[INFO] [1793124616.663881860] [smoother_server]: Created smoother : simple_smoother of type nav2_smoother::SimpleSmoother[0m
+[smoother_server-11] [0m[INFO] [1793124616.665281256] [smoother_server]: Smoother Server has simple_smoother  smoothers available.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124616.677566706] [lifecycle_manager_navigation]: [34m[1mConfiguring planner_server[0m[0m[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.677860136] [planner_server]: Configuring[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.677948721] [global_costmap.global_costmap]: Configuring[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.687677668] [global_costmap.global_costmap]: Using plugin "static_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.691169253] [global_costmap.global_costmap]: Subscribing to the map topic (/map) with transient local durability[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.692865941] [global_costmap.global_costmap]: Initialized plugin "static_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.692915643] [global_costmap.global_costmap]: Using plugin "rog_dynamic_obstacle_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.696278145] [global_costmap.global_costmap]: ROG dynamic obstacle layer enabled=true topic=/rog_map/dynamic_obstacles threshold=65 stale_timeout=2.75s obstacle_marking_max_range=2.00m (0=unlimited) footprint_clearing=true[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.696353423] [global_costmap.global_costmap]: Initialized plugin "rog_dynamic_obstacle_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.696370799] [global_costmap.global_costmap]: Using plugin "inflation_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.697251476] [global_costmap.global_costmap]: Initialized plugin "inflation_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.723443528] [global_costmap.global_costmap]: StaticLayer: Resizing costmap to 583 X 300 at 0.050000 m/pix[0m
+[planner_server_mt-12] [0m[INFO] [1793124616.771815160] [planner_server]: Created global planner plugin MincoPlanner of type minco_planner/MincoPlanner[0m
+[planner_server_mt-12] [32m -- [RM-Config] inflation_resolution: 0.05[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.067218965] [planner_server]: [ROGMap Config] loaded prefix='MincoPlanner.rog_map', frame_id='odom', cloud='/registered_scan', odom='/lidar_odometry', resolution=0.050, map_size=[6.05 6.05 2.05], projection=on, field=on/quadratic, performance=on, visualization=on[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.095032132] [planner_server]: [ROGMap] loaded prior map 583x300 at 0.050 m/cell in frame 'map': occupied=59349 known_free=114875 unknown=676[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.095142373] [planner_server]: [ROGMap] loaded ground-elevation support: default=0.000 m, grid=enabled (113792 supported cells), patches=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.103672550] [planner_server]: [ROGMap CloudFilter] enabled frame=base_link mode=transform_cloud pose_child=imu_link tf_timeout=0.200s remove_inside=true boxes=2 visualization=true[0m
+[planner_server_mt-12]  -- [ROG-Map] Init, resetMapSize: ORIGIN_AT_CORNER.
+[planner_server_mt-12]  -- [ROG-Map] Init, resetMapSize: virtual_ceil_height: 1.725, virtual_ground_height: -0.725.
+[planner_server_mt-12] [33m -- [Inf-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [CounterMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 125 125  45[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.25 6.25 2.25[0m
+[planner_server_mt-12] [33m -- [Inf-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [InfMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 125 125  45[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.25 6.25 2.25[0m
+[planner_server_mt-12] [ProbMap] virtual_ceil_height: 1.7
+[planner_server_mt-12] [ProbMap] virtual_ground_height: -0.75
+[planner_server_mt-12] [33m -- [Prob-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [ProbMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 121 121  41[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.05 6.05 2.05[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.179677659] [planner_server]: [MincoPlanner] ROGMap is created inside MincoPlanner plugin and shared by pointer.[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.183628228] [planner_server]: [MincoPlanner] hot_start thresholds: tracking_base=0.400 m velocity=0.450 m/s direction_cosine=0.350[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.187698407] [planner_server]: [MincoPlanner] Cached trajectory reuse limits: 2.00 s for collision/safety rejection, 2.00 s for optimizer failure.[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.203883216] [planner_server]: [MincoPlanner] Original-PGM global polygon clearance: vertices=16 grid_guard=0.000 m overlap_ratio=0.040 overlap_depth=0.030 m; static safety and recovery use the same source and tolerance.[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.204038538] [planner_server]: [MincoPlanner] planner_mode=PRIORMAP[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.204063016] [planner_server]: [MincoPlanner] planning_frame=map output_frame=map rog_frame=odom physical_base_frame=base_link[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.204073627] [planner_server]: [MincoPlanner] global_search=Nav2Costmap dynamic_query=FrameAwareRogQuery[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.215254772] [planner_server]: [SMAC 2D] costmap soft-cost bias: penalty=2.00 shaping=linear; ESDF bias=disabled[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.217774226] [planner_server]: [MincoPlanner] Global search dynamic ROG hard mask: enabled=false collision_distance=0.400 m; UNKNOWN/frontier cells are excluded.[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.218007149] [planner_server]: [MincoPlanner] Safety footprint: length=0.592 width=0.594 margin_per_side=0.050 polygon_vertices=16 sample_dt=0.050 map_timeout=2.500 future_tolerance=0.050 allow_unknown_motion=true dynamic_edge_overlap_tolerance=0.030 check_horizon=2.000 planning_frame=map rog_frame=odom[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.228128896] [planner_server]: [MincoPlanner] Planning-request heartbeat lease: enabled (timeout=0.750 s, steady clock).[0m
+[planner_server_mt-12] [0m[INFO] [1793124617.228201232] [planner_server]: Planner Server has MincoPlanner  planners available.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124617.239987982] [lifecycle_manager_navigation]: [34m[1mConfiguring behavior_server[0m[0m[0m
+[behavior_server-13] [0m[INFO] [1793124617.240277159] [behavior_server]: Configuring[0m
+[behavior_server-13] [0m[INFO] [1793124617.244745986] [behavior_server]: Creating behavior plugin wait of type nav2_behaviors::Wait[0m
+[behavior_server-13] [0m[INFO] [1793124617.252003194] [behavior_server]: Configuring wait[0m
+[lifecycle_manager-17] [0m[INFO] [1793124617.259200344] [lifecycle_manager_navigation]: [34m[1mConfiguring bt_navigator[0m[0m[0m
+[bt_navigator-14] [0m[INFO] [1793124617.259449230] [bt_navigator]: Configuring[0m
+[bt_navigator-14] [0m[INFO] [1793124617.265934618] [bt_navigator]: Creating navigator id navigate_to_pose of type nav2_bt_navigator::NavigateToPoseNavigator[0m
+[lifecycle_manager-17] [0m[INFO] [1793124617.339175375] [lifecycle_manager_navigation]: [34m[1mConfiguring waypoint_follower[0m[0m[0m
+[waypoint_follower-15] [0m[INFO] [1793124617.339537242] [waypoint_follower]: Configuring[0m
+[waypoint_follower-15] [0m[INFO] [1793124617.362013983] [waypoint_follower]: Created waypoint_task_executor : wait_at_waypoint of type nav2_waypoint_follower::WaitAtWaypoint[0m
+[lifecycle_manager-17] [0m[INFO] [1793124617.363085146] [lifecycle_manager_navigation]: [34m[1mConfiguring velocity_smoother[0m[0m[0m
+[velocity_smoother-16] [0m[INFO] [1793124617.363391449] [velocity_smoother]: Configuring velocity smoother[0m
+[lifecycle_manager-17] [0m[INFO] [1793124617.368654854] [lifecycle_manager_navigation]: [34m[1mActivating controller_server[0m[0m[0m
+[controller_server-10] [0m[INFO] [1793124617.369311610] [controller_server]: Activating[0m
+[controller_server-10] [0m[INFO] [1793124617.369407871] [local_costmap.local_costmap]: Activating[0m
+[controller_server-10] [0m[INFO] [1793124617.369430324] [local_costmap.local_costmap]: Checking transform[0m
+[controller_server-10] [0m[INFO] [1793124617.369602097] [local_costmap.local_costmap]: Timed out waiting for transform from gimbal_yaw_fake to odom to become available, tf error: Invalid frame ID "odom" passed to canTransform argument target_frame - frame does not exist[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124617.798079170] [rm27_ground_truth_localizer]: Initialized map->odom from Gazebo pose: x=-11.700 y=3.100 z=0.080
+[controller_server-10] [0m[INFO] [1793124617.869657978] [local_costmap.local_costmap]: start[0m
+[controller_server-10] [33m[WARN] [1793124617.869880783] [local_costmap.local_costmap]: ROG dynamic obstacle grid has not been received[0m
+[controller_server-10] [33m[WARN] [1793124617.919812037] [controller_server]: Minco MPC fail-closed: ACTIVATED_WAITING_FOR_PLAN[0m
+[controller_server-10] [0m[INFO] [1793124617.919852733] [controller_server]: Creating bond (controller_server) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.026157967] [lifecycle_manager_navigation]: Server controller_server connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.026252187] [lifecycle_manager_navigation]: [34m[1mActivating smoother_server[0m[0m[0m
+[smoother_server-11] [0m[INFO] [1793124618.026548355] [smoother_server]: Activating[0m
+[smoother_server-11] [0m[INFO] [1793124618.026604873] [smoother_server]: Creating bond (smoother_server) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.131719897] [lifecycle_manager_navigation]: Server smoother_server connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.131854205] [lifecycle_manager_navigation]: [34m[1mActivating planner_server[0m[0m[0m
+[planner_server_mt-12] [0m[INFO] [1793124618.132289152] [planner_server]: Activating[0m
+[planner_server_mt-12] [0m[INFO] [1793124618.132447517] [global_costmap.global_costmap]: Activating[0m
+[planner_server_mt-12] [0m[INFO] [1793124618.132586178] [global_costmap.global_costmap]: Checking transform[0m
+[planner_server_mt-12] [0m[INFO] [1793124618.132898867] [global_costmap.global_costmap]: start[0m
+[planner_server_mt-12] [33m[WARN] [1793124618.133184945] [global_costmap.global_costmap]: ROG dynamic obstacle grid has not been received[0m
+[planner_server_mt-12] [0m[INFO] [1793124618.199792395] [planner_server]: [MincoPlanner] Original-PGM global polygon clearance: vertices=16 grid_guard=0.000 m overlap_ratio=0.040 overlap_depth=0.030 m; static safety and recovery use the same source and tolerance.[0m
+[planner_server_mt-12] [0m[INFO] [1793124618.200239461] [planner_server]: [MincoPlanner] Rebuilt mode-dependent map queries.[0m
+[planner_server_mt-12] [0m[INFO] [1793124618.202230185] [planner_server]: Creating bond (planner_server) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.308743797] [lifecycle_manager_navigation]: Server planner_server connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.308837433] [lifecycle_manager_navigation]: [34m[1mActivating behavior_server[0m[0m[0m
+[behavior_server-13] [0m[INFO] [1793124618.309309264] [behavior_server]: Activating[0m
+[behavior_server-13] [0m[INFO] [1793124618.309342264] [behavior_server]: Activating wait[0m
+[behavior_server-13] [0m[INFO] [1793124618.309361339] [behavior_server]: Creating bond (behavior_server) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.415457096] [lifecycle_manager_navigation]: Server behavior_server connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.415538221] [lifecycle_manager_navigation]: [34m[1mActivating bt_navigator[0m[0m[0m
+[bt_navigator-14] [0m[INFO] [1793124618.415938856] [bt_navigator]: Activating[0m
+[bt_navigator-14] [0m[INFO] [1793124618.443461168] [bt_navigator]: Creating bond (bt_navigator) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.551256841] [lifecycle_manager_navigation]: Server bt_navigator connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.551339955] [lifecycle_manager_navigation]: [34m[1mActivating waypoint_follower[0m[0m[0m
+[waypoint_follower-15] [0m[INFO] [1793124618.552018844] [waypoint_follower]: Activating[0m
+[waypoint_follower-15] [0m[INFO] [1793124618.552080388] [waypoint_follower]: Creating bond (waypoint_follower) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.660590669] [lifecycle_manager_navigation]: Server waypoint_follower connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.660665201] [lifecycle_manager_navigation]: [34m[1mActivating velocity_smoother[0m[0m[0m
+[velocity_smoother-16] [0m[INFO] [1793124618.661037416] [velocity_smoother]: Activating[0m
+[velocity_smoother-16] [0m[INFO] [1793124618.661210679] [velocity_smoother]: Creating bond (velocity_smoother) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.767102104] [lifecycle_manager_navigation]: Server velocity_smoother connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.767276019] [lifecycle_manager_navigation]: [34m[1mManaged nodes are active[0m[0m[0m
+[lifecycle_manager-17] [0m[INFO] [1793124618.767314986] [lifecycle_manager_navigation]: [34m[1mCreating bond timer...[0m[0m[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [33m[WARN] [1793124619.019150499] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[bt_navigator-14] [0m[INFO] [1793124619.670694335] [bt_navigator]: Begin navigating from current location (-11.70, 3.10) to (5.23, 5.21)[0m
+[controller_server-10] [33m[WARN] [1793124619.671533671] [controller_server]: Minco MPC fail-closed: BLOCK_COMMAND[0m
+[controller_server-10] [0m[INFO] [1793124619.691943878] [controller_server]: Received a goal, begin computing control effort.[0m
+[parameter_bridge-2] [INFO] [1793124619.711686265] [rm_27_ros_gz_bridge]: Passing message from ROS geometry_msgs/msg/Twist to Gazebo gz.msgs.Twist (showing msg only once per type)
+[planner_server_mt-12] [0m[INFO] [1793124619.716161323] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124619.716265299] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124619.721074276] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124620.016296097] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124620.092171468] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124620.315655589] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124620.442181972] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124620.616219996] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124620.692237216] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124620.792137577] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124620.918236238] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124621.142162925] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124621.215892941] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124621.219160652] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[controller_server-10] [0m[INFO] [1793124621.492166351] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124621.516250526] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124621.692499766] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124621.818078702] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124621.818178981] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124621.823584752] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124621.842249724] [controller_server]: Passing new path to controller.[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124621.862516956] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124621.863498814] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [0m[INFO] [1793124621.984494207] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124621.984604429] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[planner_server_mt-12] [0m[INFO] [1793124622.118001500] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124622.192398628] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124622.417312886] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124622.542359016] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124622.718460707] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124622.742347447] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124622.892400328] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124623.018985989] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124623.242242887] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124623.319926075] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124623.482465776] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124623.592279869] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124623.618404795] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124623.742337655] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124623.919005315] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124623.919088398] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124623.924549418] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124623.942231401] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124624.219539355] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124624.292268032] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124624.520592962] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124624.642296664] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124624.742326021] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124624.819465969] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124624.992453559] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124625.118474330] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124625.342235123] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124625.420155271] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124625.683364780] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124625.692411105] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124625.720225132] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124625.792598928] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124625.992411500] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124626.020139238] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124626.020270272] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124626.028031852] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[planner_server_mt-12] [0m[INFO] [1793124626.320335281] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124626.392501937] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124626.618679355] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124626.742183301] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124626.842264425] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124626.867368372] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124626.868289699] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [0m[INFO] [1793124626.919096062] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124627.092185766] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124627.218496114] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124627.266711905] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124627.266796721] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124627.442216925] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124627.518864509] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124627.792206273] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124627.818923444] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124627.842250528] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [33m[WARN] [1793124627.883541386] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124628.119637260] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124628.119726754] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124628.124435709] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124628.142178582] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124628.420432376] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124628.492213172] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124628.719344979] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124628.842182758] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124628.892301317] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124629.021943651] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124629.192230213] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124629.319974694] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124629.542178429] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124629.619462615] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124629.892231031] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124629.892447103] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124629.919929156] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124630.182602303] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124630.221393760] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124630.221506156] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124630.226245561] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124630.242272269] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124630.520296286] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124630.592189302] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124630.819680121] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124630.892248501] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124630.942184327] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124631.121308059] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124631.292175763] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124631.420487802] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124631.642302134] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124631.719504369] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124631.892349876] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124631.964435834] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124631.965471545] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[controller_server-10] [0m[INFO] [1793124631.992178457] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124632.019892656] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124632.319663612] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124632.319765791] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124632.324694045] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124632.342232903] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[WARN] [1793124632.482352363] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124632.547795915] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124632.547873641] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[planner_server_mt-12] [0m[INFO] [1793124632.620198893] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124632.692216663] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124632.892325884] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124632.920297289] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124633.042182875] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124633.219684205] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124633.392185293] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124633.519922958] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124633.742183784] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124633.824371761] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124633.942294695] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124634.092267589] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124634.121615750] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124634.421360619] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124634.421449714] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124634.426334971] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124634.442271431] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[WARN] [1793124634.498927020] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124634.722224899] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [31m[ERROR] [1793124634.742255714] [controller_server]: Failed to make progress[0m
+[controller_server-10] [33m[WARN] [1793124634.742412287] [controller_server]: [follow_path] [ActionServer] Aborting handle.[0m
+[controller_server-10] [0m[INFO] [1793124634.761231405] [local_costmap.local_costmap]: Received request to clear entirely the local_costmap[0m
+[controller_server-10] [0m[INFO] [1793124634.762080545] [controller_server]: Received a goal, begin computing control effort.[0m
+[controller_server-10] [0m[INFO] [1793124634.772279252] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [33m[WARN] [1793124634.962450123] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124635.021371466] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124635.162257125] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124635.322035545] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124635.512259974] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124635.621593485] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124635.862256367] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124635.923599534] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124635.962502522] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124636.212261141] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124636.221875239] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124636.521479201] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124636.521660184] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124636.526798002] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124636.562268642] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[WARN] [1793124636.684399108] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124636.822003023] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124636.912266798] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124637.012396613] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124637.071352391] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124637.072214801] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [0m[INFO] [1793124637.122010583] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124637.262255028] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124637.422058007] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124637.612323423] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124637.721604374] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124637.829646107] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124637.829730000] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[controller_server-10] [0m[INFO] [1793124637.962365670] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124638.021439955] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124638.062479630] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124638.312294476] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124638.321773914] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124638.624024342] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124638.624126651] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124638.629250025] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124638.662296654] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124638.922651021] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124639.012373382] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124639.062366987] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [33m[WARN] [1793124639.083758670] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124639.221700477] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124639.362334751] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124639.521908237] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124639.712380217] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124639.821720205] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124640.062281191] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124640.062544899] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124640.122112610] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124640.412351319] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124640.421403698] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124640.721108937] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124640.721203836] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124640.726096201] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124640.762274043] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124641.021415278] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124641.062472020] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124641.112347706] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[WARN] [1793124641.184651705] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124641.321992313] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124641.462296192] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124641.621978897] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124641.812251048] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124641.921415401] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124642.062454964] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124642.162365477] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124642.221613045] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124642.373297831] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124642.374163606] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[controller_server-10] [0m[INFO] [1793124642.512260889] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124642.523250073] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124642.821889625] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124642.821975765] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124642.826866669] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124642.862279203] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124643.109569728] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124643.110718692] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[controller_server-10] [33m[WARN] [1793124643.112516460] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124643.121551578] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124643.212360967] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[WARN] [1793124643.300562822] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124643.422644056] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124643.562344560] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124643.721841641] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124643.912240171] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124644.022245643] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124644.112335805] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124644.262243866] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124644.322363519] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124644.612342767] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124644.621805778] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124644.921219035] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124644.921306751] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124644.926472882] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124644.962290312] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124645.112379058] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124645.221679358] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124645.312355331] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[WARN] [1793124645.502529269] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124645.523263319] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124645.662280008] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124645.823083108] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124646.012263972] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124646.122865486] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124646.162374059] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124646.362246029] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124646.422889216] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124646.712244276] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124646.723232434] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124647.023345455] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124647.023453763] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124647.028282352] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124647.062364345] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124647.162321174] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124647.325057893] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124647.412272604] [controller_server]: Passing new path to controller.[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124647.470077940] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124647.471083690] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [0m[INFO] [1793124647.623014934] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124647.684920202] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[controller_server-10] [0m[INFO] [1793124647.762283059] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124647.927905541] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124648.112246346] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124648.212378494] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124648.223601234] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124648.391935680] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124648.392014025] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[controller_server-10] [0m[INFO] [1793124648.462243138] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124648.524480300] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124648.812279122] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124648.824127868] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124649.124105849] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124649.124201080] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124649.129950233] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124649.162248654] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124649.212446450] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124649.423891186] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124649.512330311] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124649.724465458] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [31m[ERROR] [1793124649.812278825] [controller_server]: Failed to make progress[0m
+[controller_server-10] [33m[WARN] [1793124649.812406471] [controller_server]: [follow_path] [ActionServer] Aborting handle.[0m
+[controller_server-10] [0m[INFO] [1793124649.831116685] [local_costmap.local_costmap]: Received request to clear entirely the local_costmap[0m
+[planner_server_mt-12] [0m[INFO] [1793124649.831422990] [global_costmap.global_costmap]: Received request to clear entirely the global_costmap[0m
+[behavior_server-13] [0m[INFO] [1793124649.832170495] [behavior_server]: Running wait[0m
+[planner_server_mt-12] [0m[INFO] [1793124650.024479763] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124650.325956290] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124650.600704619] [planner_server]: [MincoPlanner] Planning-request heartbeat lease expired for session 2; old work invalidated and mirrored BLOCK published with token 33.756000000.[0m
+[controller_server-10] [33m[WARN] [1793124650.600948974] [controller_server]: Minco MPC fail-closed: BLOCK_COMMAND[0m
+[planner_server_mt-12] [33m[WARN] [1793124650.786752404] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[behavior_server-13] [0m[INFO] [1793124650.832400349] [behavior_server]: wait completed successfully[0m
+[controller_server-10] [0m[INFO] [1793124650.851925080] [controller_server]: Received a goal, begin computing control effort.[0m
+[planner_server_mt-12] [0m[INFO] [1793124650.875932223] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124650.902263842] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124651.176774089] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124651.176883853] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124651.182312091] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124651.252231558] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124651.475332545] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124651.602221986] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124651.602500404] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124651.775191171] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124651.952274972] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124652.075409285] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124652.302220291] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124652.375850162] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124652.566567633] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124652.567605673] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[controller_server-10] [33m[WARN] [1793124652.602312899] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124652.652213635] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124652.674157324] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124652.792125241] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124652.974998221] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124653.002248504] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124653.274887374] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124653.274973942] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124653.280261681] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124653.352221384] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124653.574564657] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124653.602456432] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124653.672366629] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124653.672529623] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[controller_server-10] [0m[INFO] [1793124653.702230463] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124653.874097881] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124654.052248026] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124654.174663511] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124654.402222428] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124654.482132863] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124654.652296388] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124654.752222216] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124654.774683732] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124654.887613819] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124655.076143411] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124655.102216906] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124655.375887686] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124655.375995574] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124655.381241958] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124655.452244229] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [33m[WARN] [1793124655.652335564] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124655.675014552] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124655.802221376] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124655.977772529] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124656.152233041] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124656.276806760] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124656.502239098] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124656.576519436] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [33m[WARN] [1793124656.702346653] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124656.852226366] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124656.876688358] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124657.088260775] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124657.176833981] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124657.202278781] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124657.475777481] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124657.475871508] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124657.482307806] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124657.552229480] [controller_server]: Passing new path to controller.[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124657.570115475] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124657.571018091] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[controller_server-10] [33m[WARN] [1793124657.702312041] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124657.775954262] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124657.902232607] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124658.077594084] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124658.252221409] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124658.379685730] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124658.602214225] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124658.678187261] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124658.752291197] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124658.952211065] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124658.956455058] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124658.956607494] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[planner_server_mt-12] [0m[INFO] [1793124658.978628432] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124659.278249605] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124659.290980273] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124659.302221926] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124659.580808195] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124659.580921094] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124659.585702931] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124659.652218567] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124659.752294018] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124659.879145066] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124660.002216950] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124660.179649371] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124660.352213417] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124660.479638177] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124660.702217324] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124660.752258421] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124660.779059844] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124661.052221876] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124661.079196102] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124661.379848040] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124661.402277281] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[WARN] [1793124661.490696862] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124661.679902932] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124661.679997582] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124661.685069829] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124661.752237437] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124661.752828399] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124661.977745292] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124662.102217731] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124662.278761718] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124662.452216894] [controller_server]: Passing new path to controller.[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124662.575053478] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124662.576639191] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [0m[INFO] [1793124662.581649258] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124662.752425042] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124662.802217880] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124662.880778802] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124663.152224384] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124663.183450665] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124663.479786217] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124663.499815593] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[controller_server-10] [0m[INFO] [1793124663.502218010] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124663.752388323] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124663.778502632] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124663.778591538] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124663.784168002] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [0m[INFO] [1793124663.852202611] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124664.079172481] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124664.202328418] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124664.236319665] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124664.236401497] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[planner_server_mt-12] [0m[INFO] [1793124664.380638414] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124664.552219923] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124664.679729925] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124664.802301992] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124664.902223952] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124664.982341675] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[controller_server-10] [0m[INFO] [1793124665.252228636] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124665.280489977] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793124665.579395734] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124665.602222522] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[WARN] [1793124665.697339503] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[controller_server-10] [33m[WARN] [1793124665.802299153] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[planner_server_mt-12] [0m[INFO] [1793124665.879282203] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124665.879393216] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124665.884748567] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[controller_server-10] [31m[ERROR] [1793124665.902321153] [controller_server]: Failed to make progress[0m
+[controller_server-10] [33m[WARN] [1793124665.902470360] [controller_server]: [follow_path] [ActionServer] Aborting handle.[0m
+[controller_server-10] [0m[INFO] [1793124665.921204263] [local_costmap.local_costmap]: Received request to clear entirely the local_costmap[0m
+[controller_server-10] [0m[INFO] [1793124665.921632178] [controller_server]: Received a goal, begin computing control effort.[0m
+[controller_server-10] [0m[INFO] [1793124665.971808813] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793124665.972129426] [controller_server]: Control loop missed its desired rate of 20.0000 Hz. Current loop rate is 20.0000 Hz.[0m
+[planner_server_mt-12] [0m[INFO] [1793124666.179791416] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124666.322246609] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124666.482730359] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [0m[INFO] [1793124666.672266629] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124666.782543009] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[controller_server-10] [33m[WARN] [1793124666.822418040] [controller_server]: Minco MPC fail-closed: BLOCKED[0m
+[controller_server-10] [0m[INFO] [1793124667.022257649] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793124667.084784693] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[bt_navigator-14] [31m[ERROR] [1793124667.371765987] [bt_navigator_navigate_to_pose_rclcpp_node]: Failed to get result for follow_path in node halt![0m
+[bt_navigator-14] [0m[INFO] [1793124667.371981923] [bt_navigator]: [navigate_to_pose] [ActionServer] Client requested to cancel the goal. Cancelling.[0m
+[bt_navigator-14] [0m[INFO] [1793124667.372226438] [bt_navigator]: Goal canceled[0m
+[controller_server-10] [0m[INFO] [1793124667.372274070] [controller_server]: Cancellation was successful. Stopping the robot.[0m
+[controller_server-10] [33m[WARN] [1793124667.372349974] [controller_server]: [follow_path] [ActionServer] Aborting handle.[0m
+[controller_server-10] [0m[INFO] [1793124667.372445264] [controller_server]: [follow_path] [ActionServer] Client requested to cancel the goal. Cancelling.[0m
+[planner_server_mt-12] [0m[INFO] [1793124667.384459571] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124667.673964910] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124667.674844318] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [0m[INFO] [1793124667.682615296] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124667.794125945] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [0m[INFO] [1793124667.981674757] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793124667.981732573] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(5.231,5.213) goal_cell=(396,221) goal_cost=0(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793124667.986666375] [planner_server]: [MincoPlanner] Local seed path is outside ROGMap boundary or too short after clipping.[0m
+[planner_server_mt-12] [33m[WARN] [1793124668.100645584] [planner_server]: [MincoPlanner] Planning-request heartbeat lease expired for session 4; old work invalidated and mirrored BLOCK published with token 51.249000000.[0m
+[controller_server-10] [33m[WARN] [1793124668.100753141] [controller_server]: Minco MPC fail-closed: BLOCK_COMMAND[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124669.519562067] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124669.519614460] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[planner_server_mt-12] [33m[WARN] [1793124669.806711025] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [33m[WARN] [1793124671.835824399] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[rm27_ground_truth_localizer-6] [INFO] [1793124673.160864657] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793124673.161867718] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [33m[WARN] [1793124674.348955905] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [0m[INFO] [1793124675.286668094] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793124675.286702628] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[planner_server_mt-12] [33m -- [ROG WARN] No point cloud input, check the topic name.[0m
+[planner_server_mt-12] [33m[WARN] [1793124676.783151048] [planner_server]: [ROGMap CloudFilter] TF lookup failed for base_link <- gimbal_roll: "gimbal_roll" passed to lookupTransform argument source_frame does not exist. [0m
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[lifecycle_manager-17] [0m[INFO] [1793124676.839892944] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-17] [0m[INFO] [1793124676.839991793] [lifecycle_manager_navigation]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_navigation)[0m
+[lifecycle_manager-17] [0m[INFO] [1793124676.840026648] [lifecycle_manager_navigation]: [34m[1mTerminating bond timer...[0m[0m[0m
+[velocity_smoother-16] [0m[INFO] [1793124676.839904663] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[velocity_smoother-16] [0m[INFO] [1793124676.839994614] [velocity_smoother]: Running Nav2 LifecycleNode rcl preshutdown (velocity_smoother)[0m
+[velocity_smoother-16] [0m[INFO] [1793124676.840050962] [velocity_smoother]: Deactivating[0m
+[velocity_smoother-16] [0m[INFO] [1793124676.840072465] [velocity_smoother]: Destroying bond (velocity_smoother) to lifecycle manager.[0m
+[waypoint_follower-15] [0m[INFO] [1793124676.839937260] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[waypoint_follower-15] [0m[INFO] [1793124676.840031752] [waypoint_follower]: Running Nav2 LifecycleNode rcl preshutdown (waypoint_follower)[0m
+[waypoint_follower-15] [0m[INFO] [1793124676.840088631] [waypoint_follower]: Deactivating[0m
+[waypoint_follower-15] [0m[INFO] [1793124676.840116670] [waypoint_follower]: Destroying bond (waypoint_follower) to lifecycle manager.[0m
+[controller_server-10] [0m[INFO] [1793124676.839951119] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[controller_server-10] [0m[INFO] [1793124676.839993729] [controller_server]: Running Nav2 LifecycleNode rcl preshutdown (controller_server)[0m
+[controller_server-10] [0m[INFO] [1793124676.840040182] [controller_server]: Deactivating[0m
+[controller_server-10] [33m[WARN] [1793124676.840070539] [controller_server]: Minco MPC fail-closed: DEACTIVATED[0m
+[controller_server-10] [0m[INFO] [1793124676.840095462] [local_costmap.local_costmap]: Deactivating[0m
+[behavior_server-13] [0m[INFO] [1793124676.839967724] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[behavior_server-13] [0m[INFO] [1793124676.840007990] [behavior_server]: Running Nav2 LifecycleNode rcl preshutdown (behavior_server)[0m
+[behavior_server-13] [0m[INFO] [1793124676.840055465] [behavior_server]: Deactivating[0m
+[behavior_server-13] [0m[INFO] [1793124676.840076714] [behavior_server]: Destroying bond (behavior_server) to lifecycle manager.[0m
+[planner_server_mt-12] [0m[INFO] [1793124676.839965157] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[planner_server_mt-12] [0m[INFO] [1793124676.840030343] [planner_server]: Running Nav2 LifecycleNode rcl preshutdown (planner_server)[0m
+[planner_server_mt-12] [0m[INFO] [1793124676.840077899] [planner_server]: Deactivating[0m
+[planner_server_mt-12] [0m[INFO] [1793124676.840117244] [global_costmap.global_costmap]: Deactivating[0m
+[lifecycle_manager-8] [0m[INFO] [1793124676.839972281] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-8] [0m[INFO] [1793124676.840027147] [lifecycle_manager_localization]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_localization)[0m
+[lifecycle_manager-8] [0m[INFO] [1793124676.840056796] [lifecycle_manager_localization]: [34m[1mTerminating bond timer...[0m[0m[0m
+[smoother_server-11] [0m[INFO] [1793124676.839980212] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[smoother_server-11] [0m[INFO] [1793124676.840050902] [smoother_server]: Running Nav2 LifecycleNode rcl preshutdown (smoother_server)[0m
+[smoother_server-11] [0m[INFO] [1793124676.840128533] [smoother_server]: Deactivating[0m
+[smoother_server-11] [0m[INFO] [1793124676.840160255] [smoother_server]: Destroying bond (smoother_server) to lifecycle manager.[0m
+[bt_navigator-14] [0m[INFO] [1793124676.839963510] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[bt_navigator-14] [0m[INFO] [1793124676.840044504] [bt_navigator]: Running Nav2 LifecycleNode rcl preshutdown (bt_navigator)[0m
+[bt_navigator-14] [0m[INFO] [1793124676.840094141] [bt_navigator]: Deactivating[0m
+[bt_navigator-14] [0m[INFO] [1793124676.840126181] [bt_navigator]: Destroying bond (bt_navigator) to lifecycle manager.[0m
+[INFO] [lifecycle_manager-17]: sending signal 'SIGINT' to process[lifecycle_manager-17]
+[INFO] [velocity_smoother-16]: sending signal 'SIGINT' to process[velocity_smoother-16]
+[INFO] [waypoint_follower-15]: sending signal 'SIGINT' to process[waypoint_follower-15]
+[INFO] [bt_navigator-14]: sending signal 'SIGINT' to process[bt_navigator-14]
+[INFO] [behavior_server-13]: sending signal 'SIGINT' to process[behavior_server-13]
+[INFO] [planner_server_mt-12]: sending signal 'SIGINT' to process[planner_server_mt-12]
+[INFO] [smoother_server-11]: sending signal 'SIGINT' to process[smoother_server-11]
+[INFO] [controller_server-10]: sending signal 'SIGINT' to process[controller_server-10]
+[INFO] [fake_vel_transform_node-9]: sending signal 'SIGINT' to process[fake_vel_transform_node-9]
+[INFO] [lifecycle_manager-8]: sending signal 'SIGINT' to process[lifecycle_manager-8]
+[INFO] [map_server-7]: sending signal 'SIGINT' to process[map_server-7]
+[ERROR] [fake_vel_transform_node-9]: process has died [pid 554391, exit code -2, cmd '/home/zhang/navi/sentry_navgation_RM27/install/fake_vel_transform/lib/fake_vel_transform/fake_vel_transform_node --ros-args --log-level info --ros-args -r __node:=fake_vel_transform -r __ns:=/ --params-file /tmp/launch_params_5t2gjj5r -r /tf:=tf -r /tf_static:=tf_static'].
+[INFO] [rm27_ground_truth_localizer-6]: sending signal 'SIGINT' to process[rm27_ground_truth_localizer-6]
+[ERROR] [lifecycle_manager-8]: process has died [pid 554390, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_lifecycle_manager/lifecycle_manager --ros-args --log-level info --ros-args -r __node:=lifecycle_manager_localization -r __ns:=/ --params-file /tmp/launch_params_9sty9qb8 --params-file /tmp/launch_params_iqp1duin --params-file /tmp/launch_params_bh779spc -r /tf:=tf -r /tf_static:=tf_static'].
+[INFO] [robot_state_publisher-4]: sending signal 'SIGINT' to process[robot_state_publisher-4]
+[INFO] [joint_state_publisher-3]: sending signal 'SIGINT' to process[joint_state_publisher-3]
+[ERROR] [map_server-7]: process has died [pid 554389, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_map_server/map_server --ros-args --log-level info --ros-args -r __node:=map_server -r __ns:=/ --params-file /tmp/launch_params_ocx_sepl -r /tf:=tf -r /tf_static:=tf_static'].
+[ERROR] [rm27_ground_truth_localizer-6]: process has died [pid 554388, exit code -2, cmd '/home/zhang/navi/sentry_navgation_RM27/install/rm_27_stimulation/lib/rm_27_stimulation/rm27_ground_truth_localizer --ros-args -r __node:=rm27_ground_truth_localizer -r __ns:=/ --params-file /tmp/launch_params_m3m4305t'].
+[INFO] [parameter_bridge-2]: sending signal 'SIGINT' to process[parameter_bridge-2]
+[ERROR] [robot_state_publisher-4]: process has died [pid 554173, exit code -2, cmd '/opt/ros/jazzy/lib/robot_state_publisher/robot_state_publisher --ros-args -r __node:=robot_state_publisher --params-file /tmp/launch_params_9wyuebt5 --params-file /tmp/launch_params_elaui9ry'].
+[INFO] [gazebo-1]: sending signal 'SIGINT' to process[gazebo-1]
+[map_server-7] [0m[INFO] [1793124676.840011803] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[map_server-7] [0m[INFO] [1793124676.840070503] [map_server]: Running Nav2 LifecycleNode rcl preshutdown (map_server)[0m
+[map_server-7] [0m[INFO] [1793124676.840126882] [map_server]: Deactivating[0m
+[map_server-7] [0m[INFO] [1793124676.840143575] [map_server]: Destroying bond (map_server) to lifecycle manager.[0m
+[fake_vel_transform_node-9] [0m[INFO] [1793124676.839991555] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[robot_state_publisher-4] [INFO] [1793124676.840031964] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[rm27_ground_truth_localizer-6] [INFO] [1793124676.840063123] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[parameter_bridge-2] [INFO] [1793124676.840076916] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[velocity_smoother-16] [0m[INFO] [1793124676.850422657] [velocity_smoother]: Cleaning up[0m
+[velocity_smoother-16] [0m[INFO] [1793124676.850451291] [velocity_smoother]: Destroying bond (velocity_smoother) to lifecycle manager.[0m
+[smoother_server-11] [0m[INFO] [1793124676.850453406] [smoother_server]: Cleaning up[0m
+[ERROR] [joint_state_publisher-3]: process has died [pid 554172, exit code -2, cmd '/opt/ros/jazzy/lib/joint_state_publisher/joint_state_publisher --ros-args -r __node:=joint_state_publisher --params-file /tmp/launch_params_l4sedw90 --params-file /tmp/launch_params_szysioym'].
+[map_server-7] [0m[INFO] [1793124676.850456634] [map_server]: Cleaning up[0m
+[map_server-7] [0m[INFO] [1793124676.850493698] [map_server]: Destroying bond (map_server) to lifecycle manager.[0m
+[waypoint_follower-15] [0m[INFO] [1793124676.850460676] [waypoint_follower]: Cleaning up[0m
+[behavior_server-13] [0m[INFO] [1793124676.850490534] [behavior_server]: Cleaning up[0m
+[bt_navigator-14] [0m[INFO] [1793124676.850529592] [bt_navigator]: Cleaning up[0m
+[behavior_server-13] [0m[INFO] [1793124676.852633936] [behavior_server]: Destroying bond (behavior_server) to lifecycle manager.[0m
+[velocity_smoother-16] [0m[INFO] [1793124676.853521589] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[controller_server-10] [0m[INFO] [1793124676.855164245] [controller_server]: Destroying bond (controller_server) to lifecycle manager.[0m
+[velocity_smoother-16] [0m[INFO] [1793124676.856019650] [velocity_smoother]: Destroying[0m
+[lifecycle_manager-8] [0m[INFO] [1793124676.856854592] [lifecycle_manager_localization]: Destroying lifecycle_manager_localization[0m
+[waypoint_follower-15] [0m[INFO] [1793124676.858480915] [waypoint_follower]: Destroying bond (waypoint_follower) to lifecycle manager.[0m
+[map_server-7] [0m[INFO] [1793124676.858838740] [map_server]: Destroying[0m
+[behavior_server-13] [0m[INFO] [1793124676.859078115] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[waypoint_follower-15] [0m[INFO] [1793124676.860333750] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[smoother_server-11] [0m[INFO] [1793124676.861766079] [smoother_server]: Destroying bond (smoother_server) to lifecycle manager.[0m
+[smoother_server-11] [0m[INFO] [1793124676.862911427] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[behavior_server-13] [0m[INFO] [1793124676.864603672] [behavior_server]: Destroying[0m
+[controller_server-10] [0m[INFO] [1793124676.865835785] [controller_server]: Cleaning up[0m
+[controller_server-10] [0m[INFO] [1793124676.865936114] [local_costmap.local_costmap]: Cleaning up[0m
+[smoother_server-11] [0m[INFO] [1793124676.866635301] [smoother_server]: Destroying[0m
+[waypoint_follower-15] [0m[INFO] [1793124676.870242445] [waypoint_follower]: Destroying[0m
+[parameter_bridge-2] [INFO] [1793124676.881610277] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[bt_navigator-14] [0m[INFO] [1793124676.890769709] [bt_navigator]: Completed Cleaning up[0m
+[bt_navigator-14] [0m[INFO] [1793124676.890830101] [bt_navigator]: Destroying bond (bt_navigator) to lifecycle manager.[0m
+[bt_navigator-14] [0m[INFO] [1793124676.891133342] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[controller_server-10] [0m[INFO] [1793124676.892697779] [controller_server]: Destroying bond (controller_server) to lifecycle manager.[0m
+[controller_server-10] [0m[INFO] [1793124676.894273338] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[bt_navigator-14] [0m[INFO] [1793124676.894445424] [bt_navigator]: Destroying[0m
+[controller_server-10] [0m[INFO] [1793124676.895285224] [local_costmap.local_costmap]: Destroying[0m
+[controller_server-10] [0m[INFO] [1793124676.901564326] [controller_server]: Destroying[0m
+[lifecycle_manager-17] [0m[INFO] [1793124676.930668290] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-17] [0m[INFO] [1793124676.931267193] [lifecycle_manager_navigation]: Destroying lifecycle_manager_navigation[0m
+[INFO] [parameter_bridge-2]: process has finished cleanly [pid 554170]
+[INFO] [velocity_smoother-16]: process has finished cleanly [pid 554398]
+[INFO] [behavior_server-13]: process has finished cleanly [pid 554395]
+[INFO] [smoother_server-11]: process has finished cleanly [pid 554393]
+[INFO] [waypoint_follower-15]: process has finished cleanly [pid 554397]
+[INFO] [bt_navigator-14]: process has finished cleanly [pid 554396]
+[INFO] [controller_server-10]: process has finished cleanly [pid 554392]
+[planner_server_mt-12] [0m[INFO] [1793124677.018426817] [planner_server]: Destroying bond (planner_server) to lifecycle manager.[0m
+[planner_server_mt-12] [0m[INFO] [1793124677.028622081] [planner_server]: Cleaning up[0m
+[planner_server_mt-12] [0m[INFO] [1793124677.031693505] [global_costmap.global_costmap]: Cleaning up[0m
+[INFO] [lifecycle_manager-17]: process has finished cleanly [pid 554401]
+[planner_server_mt-12] [0m[INFO] [1793124677.044265940] [planner_server]: Destroying bond (planner_server) to lifecycle manager.[0m
+[planner_server_mt-12] [0m[INFO] [1793124677.045044241] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[planner_server_mt-12] [0m[INFO] [1793124677.047661264] [global_costmap.global_costmap]: Destroying[0m
+[planner_server_mt-12] [0m[INFO] [1793124677.050873485] [planner_server]: Destroying[0m
+[gazebo-1] Segmentation fault
+[ERROR] [gazebo-1]: process has died [pid 554169, exit code -2, cmd 'ruby /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz sim -r -s --physics-engine gz-physics-bullet-featherstone-plugin --seed 42 /home/zhang/navi/sentry_navgation_RM27/install/rm_27_stimulation/share/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world --force-version 8'].
+[INFO] [launch]: process[gazebo-1] was required: shutting down launched system
+[INFO] [planner_server_mt-12]: process has finished cleanly [pid 554394]

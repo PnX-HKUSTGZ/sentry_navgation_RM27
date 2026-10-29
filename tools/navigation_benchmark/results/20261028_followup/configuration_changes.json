@@ -1,0 +1,59 @@
+{
+  "baseline": "profiles/safe_baseline.yaml",
+  "candidate": "src/pb2025_nav_bringup/config/simulation/minco_params.yaml",
+  "note": "YAML diff; world/input profiles merge at launch. Baseline already includes 0.24m height and fixed-body crop.",
+  "changes": [
+    {
+      "key": "loam_interface.ros__parameters.lidar_odom_is_gravity_aligned",
+      "before": null,
+      "after": true
+    },
+    {
+      "key": "minco_input_profiles.ros__parameters.point_lio.rog_map.ros_callback.cloud_topic",
+      "before": "/cloud_registered_full",
+      "after": "/cloud_registered"
+    },
+    {
+      "key": "planner_server.ros__parameters.MincoPlanner.minco_optimizer.obstacle_max_velocity",
+      "before": 1.0,
+      "after": 0.8
+    },
+    {
+      "key": "point_lio.ros__parameters.odometry.publish_odometry_without_downsample",
+      "before": true,
+      "after": false
+    },
+    {
+      "key": "point_lio.ros__parameters.preprocess.instantaneous_scan",
+      "before": null,
+      "after": true
+    },
+    {
+      "key": "simulation_world_profiles.ros__parameters.RMUC2026.point_lio.filter_size_surf",
+      "before": null,
+      "after": 0.1
+    },
+    {
+      "key": "simulation_world_profiles.ros__parameters.RMUC2026.point_lio.point_filter_num",
+      "before": null,
+      "after": 1
+    },
+    {
+      "key": "simulation_world_profiles.ros__parameters.RMUC2026.relocalization_manager.prior_pcd_transform",
+      "before": null,
+      "after": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "key": "simulation_world_profiles.ros__parameters.RMUC2026.relocalization_manager.transform_prior_map_with_lidar_offset",
+      "before": null,
+      "after": false
+    }
+  ]
+}

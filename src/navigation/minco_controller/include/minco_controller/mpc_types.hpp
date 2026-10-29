@@ -49,6 +49,9 @@ struct MPCConfig {
   double q_along{3.0};  // weight along heading (lower → timing flexibility)
   double q_cross{12.0}; // weight cross-track (higher → precision)
   Eigen::Vector3d R{1.0, 1.0, 0.5};
+  // Soft penalty on successive velocity commands (not divided by dt).
+  // Zero preserves the original objective; hard acceleration bounds still apply.
+  Eigen::Vector3d control_delta_weight{0.0, 0.0, 0.0};
 
   // 速度约束（作用在 map/global 速度变量上）
   double vx_min{-1.0};

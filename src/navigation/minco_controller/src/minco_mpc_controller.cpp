@@ -3,6 +3,7 @@
 #include "log.hpp"
 #include "minco_controller/input_validation.hpp"
 #include "minco_controller/reference_progress.hpp"
+#include "minco_controller/odometry_prediction.hpp"
 #include "minco_controller/tilt_speed_limit.hpp"
 #include <iostream>
 
@@ -248,6 +249,8 @@ void MincoMpcController::configure(
   configureMpcPerfLogging(node);
 
   // 声明/读取参数
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".compensate_odometry_age", rclcpp::ParameterValue(false));
   nav2_util::declare_parameter_if_not_declared(node, name + ".dt",
                                                rclcpp::ParameterValue(0.05));
   nav2_util::declare_parameter_if_not_declared(node, name + ".lookahead_time",
@@ -263,6 +266,9 @@ void MincoMpcController::configure(
   nav2_util::declare_parameter_if_not_declared(
       node, name + ".R",
       rclcpp::ParameterValue(std::vector<double>{1.0, 1.0, 0.5}));
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".control_delta_weight",
+      rclcpp::ParameterValue(std::vector<double>{0.0, 0.0, 0.0}));
 
   nav2_util::declare_parameter_if_not_declared(node, name + ".vx_min",
                                                rclcpp::ParameterValue(-1.0));
@@ -374,8 +380,15 @@ void MincoMpcController::configure(
 
   std::vector<double> Qv;
   std::vector<double> Rv;
+  std::vector<double> delta_weights;
   node->get_parameter(name + ".Q", Qv);
   node->get_parameter(name + ".R", Rv);
+  node->get_parameter(name + ".control_delta_weight", delta_weights);
+  if (delta_weights.size() != 3) {
+    throw std::invalid_argument("control_delta_weight requires three nonnegative weights");
+  }
+  mpc_config_.control_delta_weight =
+      Eigen::Vector3d(delta_weights[0], delta_weights[1], delta_weights[2]);
 
   mpc_config_.dt = dt;
   mpc_config_.lookahead_time = lookahead_time;
@@ -390,13 +403,15 @@ void MincoMpcController::configure(
   }
 
   if (Qv.size() != 3 || Rv.size() != 3 || !mpc_config_.Q.allFinite() ||
+      !mpc_config_.control_delta_weight.allFinite() ||
+      (mpc_config_.control_delta_weight.array() < 0.0).any() ||
       !mpc_config_.R.allFinite() || (mpc_config_.Q.array() < 0.0).any() ||
       (mpc_config_.R.array() <= 0.0).any() ||
       !std::isfinite(mpc_config_.q_along) ||
       !std::isfinite(mpc_config_.q_cross) || mpc_config_.q_along < 0.0 ||
       mpc_config_.q_cross < 0.0) {
     throw std::invalid_argument(
-        "MincoMpcController requires Q/q_along/q_cross >= 0 and R > 0");
+        "MincoMpcController requires Q/q_along/q_cross/control_delta_weight >= 0 and R > 0");
   }
 
   node->get_parameter(name + ".vx_min", mpc_config_.vx_min);
@@ -408,6 +423,7 @@ void MincoMpcController::configure(
   node->get_parameter(name + ".omega_max", mpc_config_.omega_max);
   node->get_parameter(name + ".fixed_wz", fixed_wz_);
   node->get_parameter(name + ".odom_timeout", odom_timeout_);
+  node->get_parameter(name + ".compensate_odometry_age", compensate_odometry_age_);
   node->get_parameter(name + ".trajectory_timeout", trajectory_timeout_);
   node->get_parameter(name + ".future_stamp_tolerance",
                       future_stamp_tolerance_);
@@ -863,7 +879,11 @@ void MincoMpcController::onOptPath(
               ? latest_opt_path_->cmds.front().trajectory_id
               : 0U;
 
-      if (new_traj_id != old_traj_id) {
+      const bool continuous_normal_replan = !blocked_ && latest_opt_path_ &&
+          msg->command_flag == ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND &&
+          latest_opt_path_->command_flag == ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND &&
+          sessionToken(latest_opt_path_->planning_stamp) == planning_token;
+      if (new_traj_id != old_traj_id && !continuous_normal_replan) {
         has_tracked_ref_ = false;
       }
 
@@ -1070,10 +1090,10 @@ bool MincoMpcController::buildReferenceFromOptPath(
   const uint32_t current_traj_id =
       (!opt->cmds.empty()) ? opt->cmds.front().trajectory_id : 0u;
 
-  // A new trajectory starts from its spatial pickup. While tracking that same
-  // trajectory, time progression escapes a zero-velocity t=0 sample, but is
-  // capped relative to the current spatial pickup so a slow vehicle cannot be
-  // left behind by a short stopping trajectory.
+  // A new mission starts from spatial pickup. Normal rolling replacements
+  // retain only the bounded lead relative to that pickup. Time progression
+  // escapes a zero-velocity t=0 sample without leaving a slow vehicle behind
+  // on a short stopping trajectory.
   const bool same_opt_traj =
       has_tracked_ref && tracked_opt_traj_id == current_traj_id;
   const double elapsed_since_update =
@@ -1084,7 +1104,7 @@ bool MincoMpcController::buildReferenceFromOptPath(
           nearest_idx_float, same_opt_traj, tracked_spatial_idx,
           tracked_ref_idx, elapsed_since_update, planner_dt,
           static_cast<double>(n_cmds - 1), reference_progress_max_lead_time_,
-          current_spatial_idx, current_idx_float)) {
+          current_spatial_idx, current_idx_float, has_tracked_ref)) {
     return false;
   }
 
@@ -1142,7 +1162,9 @@ bool MincoMpcController::buildReferenceFromOptPath(
   out_ref.reserve(static_cast<size_t>(N));
 
   for (int k = 0; k < N; ++k) {
-    double target_time = current_traj_time + k * mpc_dt;
+    // The condensed model stacks x_1 .. x_N after applying each command.
+    // Match those states to t+dt .. t+N*dt, not t .. t+(N-1)*dt.
+    double target_time = current_traj_time + (k + 1) * mpc_dt;
     double target_idx_float = target_time / planner_dt;
 
     if (target_idx_float < 0.0)
@@ -1445,11 +1467,18 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommandsImpl
     }
   }
 
-  if (!recovery_active && control_delay_compensation_ > 1e-3) {
-    curr.x += curr.vx * control_delay_compensation_;
-    curr.y += curr.vy * control_delay_compensation_;
-    curr.yaw += curr.omega * control_delay_compensation_;
-    curr.yaw = normalizeYaw(curr.yaw);
+  // The 10 Hz frontend pose can be 100-200 ms old at this 20 Hz control
+  // tick. Spatial pickup from that old pose feeds lateral corrections back
+  // after the chassis has already crossed the guide. First bring the state
+  // to now, then pick up the path; actuator compensation remains separate.
+  // Recovery, braking and stationary startup keep their measured-state
+  // safety/lead contracts; do not project near-zero velocity noise.
+  if (compensate_odometry_age_ && !recovery_active && !braking_active &&
+      measured_planar_speed > deadzone_speed_threshold_ &&
+      !predictOdometryToNow(curr,
+          input_validation::stampSeconds(latest_odom->header.stamp),
+          now.seconds(), odom_timeout_, future_stamp_tolerance_)) {
+    return stop("ODOMETRY_PREDICTION_INVALID");
   }
 
   // 2) 构造参考序列：优先 /opt_path
@@ -1459,6 +1488,15 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommandsImpl
 
   if (!ok_ref) {
     return stop("NO_REFERENCE");
+  }
+  // Spatial pickup must use the measured pose. Picking up from an already
+  // predicted pose and then adding the delay to the reference advances it
+  // twice, producing unnecessary corrections at bends and rolling replans.
+  if (!recovery_active && control_delay_compensation_ > 1e-3) {
+    curr.x += curr.vx * control_delay_compensation_;
+    curr.y += curr.vy * control_delay_compensation_;
+    curr.yaw += curr.omega * control_delay_compensation_;
+    curr.yaw = normalizeYaw(curr.yaw);
   }
   if (recovery_active || braking_active) {
     stationary_startup_active = false;

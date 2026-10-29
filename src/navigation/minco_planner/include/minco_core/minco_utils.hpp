@@ -54,6 +54,10 @@ double LimitLocalVel(const std::vector<Eigen::Vector3d> & sparse_path,
 
 double ComputeNextSpeed(double v_curr, double seg_len, double remain_after, double amax, double local_vmax);
 
+// Continuous approach speed between the soft clearance radius and slowdown radius.
+double obstacleVelocityLimit(double clearance, double full_slowdown_distance,
+  double slowdown_distance, double obstacle_velocity, double max_velocity);
+
 double ComputeSegmentTime(
   double seg_len, double v_curr, double v_next, double local_vmax, double amax, double min_seg_time);
 

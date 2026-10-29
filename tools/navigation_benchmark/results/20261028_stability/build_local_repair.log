@@ -1,0 +1,29 @@
+[0.394s] WARNING:colcon.colcon_core.package_selection:Some selected packages are already built in one or more underlay workspaces:
+	'minco_planner' is in: /home/zhang/navi/sentry_navgation_RM27/install/minco_planner, /home/zhang/ros_ws_jazzy/sentry_navgation_RM27/install/minco_planner
+If a package in a merged underlay workspace is overridden and it installs headers, then all packages in the overlay must sort their include directories by workspace order. Failure to do so may result in build failures or undefined behavior at run time.
+If the overridden package is used by another package in any underlay, then the overriding package in the overlay must be API and ABI compatible or undefined behavior at run time may occur.
+
+If you understand the risks and want to override a package anyways, add the following to the command line:
+	--allow-overriding minco_planner
+
+This may be promoted to an error in a future release of colcon-override-check.
+Starting >>> minco_planner
+--- stderr: minco_planner
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/components/local_path_processor.cpp: In function ‘bool minco_planner::{anonymous}::repairObservedPath(std::vector<Eigen::Matrix<double, 3, 1> >&, const std::shared_ptr<rog_map::MapQueryInterface>&, const minco_planner::LocalPathProcessor::FootprintSafetyCheck&, double, double, bool)’:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/components/local_path_processor.cpp:203:55: error: operands to ‘?:’ have different types ‘const Eigen::CwiseBinaryOp<Eigen::internal::scalar_product_op<double, double>, const Eigen::Matrix<double, 3, 1>, const Eigen::CwiseNullaryOp<Eigen::internal::scalar_constant_op<double>, const Eigen::Matrix<double, 3, 1> > >’ and ‘const Eigen::DenseBase<Eigen::Matrix<double, 3, 1> >::ConstantReturnType’ {aka ‘const Eigen::CwiseNullaryOp<Eigen::internal::scalar_constant_op<double>, Eigen::Matrix<double, 3, 1> >’}
+  203 |         const Eigen::Vector3d lateral = length > 1e-9 ?
+      |                                         ~~~~~~~~~~~~~~^
+  204 |           Eigen::Vector3d(-delta.y(), delta.x(), 0.0) * (0.5 * map->resolution() / length) :
+      |           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  205 |           Eigen::Vector3d::Zero();
+      |           ~~~~~~~~~~~~~~~~~~~~~~~                      
+gmake[2]: *** [CMakeFiles/minco_planner.dir/build.make:356: CMakeFiles/minco_planner.dir/src/minco_core/components/local_path_processor.cpp.o] Error 1
+gmake[2]: *** Waiting for unfinished jobs....
+gmake[1]: *** [CMakeFiles/Makefile2:181: CMakeFiles/minco_planner.dir/all] Error 2
+gmake: *** [Makefile:146: all] Error 2
+---
+Failed   <<< minco_planner [6.38s, exited with code 2]
+
+Summary: 0 packages finished [6.50s]
+  1 package failed: minco_planner
+  1 package had stderr output: minco_planner

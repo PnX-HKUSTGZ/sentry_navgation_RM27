@@ -62,6 +62,7 @@ struct CellData {
   uint8_t value{255};
   uint8_t mask{1};
   uint8_t pending_count{0};
+  uint8_t uncertain_obstacle_count{0};
   float confidence{0.0f};
   float occupied_z_min_abs{std::numeric_limits<float>::quiet_NaN()};
   float occupied_z_max_abs{std::numeric_limits<float>::quiet_NaN()};
@@ -126,7 +127,8 @@ inline bool hasVerifiedOverheadClearance(const CellData &cell) {
 inline int8_t navigationOverlayValue(const CellData &cell) {
   const bool measured_height = std::isfinite(cell.occupied_z_min_abs) &&
                                std::isfinite(cell.occupied_z_max_abs);
-  if (cell.raw_type == CellType::OCCUPIED && measured_height &&
+  if (cell.type == CellType::OCCUPIED && cell.raw_type == CellType::OCCUPIED &&
+      measured_height &&
       (isMeasuredObstacleReason(cell.raw_reason) ||
        isMeasuredObstacleReason(cell.candidate_reason))) {
     return 100;
@@ -156,6 +158,11 @@ struct ProjectionLayerConfig {
   int denoise_occ_max{0};
   bool clearance_check_en{false};
   bool observed_empty_as_free{false};
+  // A prior-map-free cell can still contain a transient, unsupported return
+  // while the sensor looks down a ramp. Keep that evidence UNKNOWN until it
+  // persists for this many projection commits; confirmed returns remain
+  // OCCUPIED and are still fail-closed.
+  int prior_free_uncertain_obstacle_confirmations{1};
   bool require_ground_support{false};
   double ground_support_tolerance{0.08};
   bool bridge_observed_empty_for_ground_connectivity{false};

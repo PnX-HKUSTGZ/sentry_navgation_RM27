@@ -6,6 +6,24 @@
 
 namespace minco_planner::utils {
 
+double obstacleVelocityLimit(double clearance, double full_slowdown_distance,
+  double slowdown_distance, double obstacle_velocity, double max_velocity)
+{
+  const double slow = std::min(obstacle_velocity, max_velocity);
+  if (slowdown_distance <= 0.0 || clearance >= slowdown_distance) {
+    return max_velocity;
+  }
+  if (!std::isfinite(clearance) || clearance <= full_slowdown_distance ||
+    slowdown_distance <= full_slowdown_distance)
+  {
+    return slow;
+  }
+  const double ratio = (clearance - full_slowdown_distance) /
+    (slowdown_distance - full_slowdown_distance);
+  const double blend = ratio * ratio * (3.0 - 2.0 * ratio);
+  return slow + (max_velocity - slow) * blend;
+}
+
 bool makeBrakingTrajectories(const Eigen::Vector3d & position,
   const Eigen::Vector3d & velocity, double yaw, double max_acceleration,
   traj_opt::Trajectory & position_traj, traj_opt::Trajectory & yaw_traj)
@@ -708,14 +726,31 @@ double LimitLocalVel(const std::vector<Eigen::Vector3d> & sparse_path,
     return global_vmax;
   }
 
-  const Eigen::Vector2d d1 =
-    (sparse_path[static_cast<size_t>(seg_idx + 1)] - sparse_path[static_cast<size_t>(seg_idx)]).head<2>();
-  const Eigen::Vector2d d2 =
-    (sparse_path[static_cast<size_t>(seg_idx + 2)] - sparse_path[static_cast<size_t>(seg_idx + 1)])
-      .head<2>();
+  // Measure heading change over a physical window, independent of waypoint
+  // density. The former 0.2 m per-edge cutoff disabled all turn limits on
+  // dense guides; using adjacent headings also misses a gradual curved turn.
+  const int vertex = seg_idx + 1;
+  auto point_at_distance = [&](int direction) -> Eigen::Vector2d {
+      constexpr double kTurnWindow = 0.3;
+      double remaining = kTurnWindow;
+      Eigen::Vector2d point = sparse_path[static_cast<size_t>(vertex)].head<2>();
+      for (int i = vertex + direction; i >= 0 && i < n; i += direction) {
+        const Eigen::Vector2d next = sparse_path[static_cast<size_t>(i)].head<2>();
+        const double length = (next - point).norm();
+        if (length >= remaining && length > 1e-9) {
+          return point + (next - point) * (remaining / length);
+        }
+        remaining -= length;
+        point = next;
+      }
+      return point;
+    };
+  const Eigen::Vector2d center = sparse_path[static_cast<size_t>(vertex)].head<2>();
+  const Eigen::Vector2d d1 = center - point_at_distance(-1);
+  const Eigen::Vector2d d2 = point_at_distance(1) - center;
   const double n1 = d1.norm();
   const double n2 = d2.norm();
-  if (n1 <= 0.2 || n2 <= 0.2) {
+  if (n1 <= 1e-6 || n2 <= 1e-6) {
     return global_vmax;
   }
 

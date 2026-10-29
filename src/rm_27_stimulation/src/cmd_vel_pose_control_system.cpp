@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <mutex>
@@ -20,7 +21,7 @@
 namespace rm_27_stimulation {
 class CmdVelPoseControlSystem final : public gz::sim::System,
                                       public gz::sim::ISystemConfigure,
-                                      public gz::sim::ISystemUpdate {
+                                      public gz::sim::ISystemPreUpdate {
 public:
   void Configure(const gz::sim::Entity &_entity,
                  const std::shared_ptr<const sdf::Element> &_sdf,
@@ -49,6 +50,10 @@ public:
                                 this->linearVelocityIntegralGain_);
     this->ReadNonnegativeFinite(_sdf, "angular_velocity_gain",
                                 this->angularVelocityGain_);
+    this->ReadNonnegativeFinite(_sdf, "angular_velocity_integral_gain",
+                                this->angularVelocityIntegralGain_);
+    this->ReadNonnegativeFinite(_sdf, "max_yaw_integral_torque",
+                                this->maxYawIntegralTorque_);
     this->ReadNonnegativeFinite(_sdf, "max_planar_force",
                                 this->maxPlanarForce_);
     this->ReadNonnegativeFinite(_sdf, "max_planar_integral_force",
@@ -76,6 +81,15 @@ public:
       return;
     }
 
+    for (size_t i = 0; i < this->wheelLinks_.size(); ++i) {
+      this->wheelLinks_[i] = gz::sim::Link(
+          this->model_.LinkByName(_ecm, "wheel_" + std::to_string(i + 1)));
+      if (!this->wheelLinks_[i].Valid(_ecm)) {
+        gzerr << "CmdVelPoseControlSystem requires four wheel links.\n";
+        return;
+      }
+    }
+
     if (!this->node_.Subscribe(this->topic_, &CmdVelPoseControlSystem::OnCmdVel,
                                this)) {
       gzerr << "CmdVelPoseControlSystem failed to subscribe to ["
@@ -97,8 +111,9 @@ public:
           << " N.\n";
   }
 
-  void Update(const gz::sim::UpdateInfo &_info,
-              gz::sim::EntityComponentManager &_ecm) override {
+  // Submit forces before Physics::Update consumes and clears wrench commands.
+  void PreUpdate(const gz::sim::UpdateInfo &_info,
+                 gz::sim::EntityComponentManager &_ecm) override {
     if (!this->configured_ || _info.paused) {
       return;
     }
@@ -106,6 +121,7 @@ public:
     const auto dt = std::chrono::duration<double>(_info.dt).count();
     if (!std::isfinite(dt) || dt <= 0.0) {
       this->planarVelocityPi_.Reset();
+      this->yawVelocityPi_.Reset();
       return;
     }
 
@@ -149,6 +165,7 @@ public:
     const auto yaw = pose.Rot().Euler().Z();
     if (!std::isfinite(yaw)) {
       this->planarVelocityPi_.Reset();
+      this->yawVelocityPi_.Reset();
       this->stictionAssist_.Reset();
       return;
     }
@@ -175,6 +192,7 @@ public:
         !std::isfinite(currentLinear.Y()) ||
         !std::isfinite(currentAngular.Z())) {
       this->planarVelocityPi_.Reset();
+      this->yawVelocityPi_.Reset();
       this->stictionAssist_.Reset();
       return;
     }
@@ -201,12 +219,43 @@ public:
     const auto planarForce =
         gz::math::Vector3d(assistedForce.x, assistedForce.y, 0.0);
 
+    const bool turning = commandActive && std::abs(wz) > 1e-6;
+    if (!turning) {
+      this->yawVelocityPi_.Reset();
+    }
     const auto yawTorque =
-        this->Clamp((wz - currentAngular.Z()) * this->angularVelocityGain_,
-                    this->maxYawTorque_);
-    this->driveLink_.AddWorldForce(_ecm, planarForce);
-    this->driveLink_.AddWorldWrench(_ecm, gz::math::Vector3d::Zero,
-                                    gz::math::Vector3d(0.0, 0.0, yawTorque));
+        this->yawVelocityPi_
+            .Update(wz - currentAngular.Z(), 0.0, dt,
+                    this->angularVelocityGain_,
+                    turning ? this->angularVelocityIntegralGain_ : 0.0,
+                    turning ? this->maxYawIntegralTorque_ : 0.0,
+                    this->maxYawTorque_)
+            .x;
+    // Apply traction at the wheel centers. A horizontal force couple produces
+    // yaw without constraining vertical velocity or roll/pitch. In particular,
+    // avoid Bullet Featherstone's world-torque / inertial-frame conversion.
+    std::array<gz::math::Vector3d, 4> offsets;
+    gz::math::Vector3d center = gz::math::Vector3d::Zero;
+    for (size_t i = 0; i < this->wheelLinks_.size(); ++i) {
+      offsets[i] =
+          gz::sim::worldPose(this->wheelLinks_[i].Entity(), _ecm).Pos();
+      center += offsets[i] / this->wheelLinks_.size();
+    }
+    double radiusSquaredSum = 0.0;
+    for (auto &offset : offsets) {
+      offset -= center;
+      radiusSquaredSum += offset.X() * offset.X() + offset.Y() * offset.Y();
+    }
+    if (radiusSquaredSum < 1e-6) {
+      return;
+    }
+    for (size_t i = 0; i < this->wheelLinks_.size(); ++i) {
+      const auto yawForce =
+          gz::math::Vector3d(-offsets[i].Y(), offsets[i].X(), 0) *
+          (yawTorque / radiusSquaredSum);
+      this->wheelLinks_[i].AddWorldForce(
+          _ecm, planarForce / this->wheelLinks_.size() + yawForce);
+    }
   }
 
 private:
@@ -276,9 +325,13 @@ private:
   double linearVelocityGain_{80.0};
   double linearVelocityIntegralGain_{0.0};
   double angularVelocityGain_{4.0};
+  double angularVelocityIntegralGain_{0.0};
+  double maxYawIntegralTorque_{0.0};
   double maxPlanarForce_{120.0};
   double maxPlanarIntegralForce_{0.0};
   double maxYawTorque_{8.0};
+  std::array<gz::sim::Link, 4> wheelLinks_;
+  PlanarVelocityPi yawVelocityPi_;
   PlanarVelocityPi planarVelocityPi_;
   StictionAssistConfig stictionAssistConfig_;
   StictionAssist stictionAssist_;
@@ -292,7 +345,7 @@ private:
 } // namespace rm_27_stimulation
 
 GZ_ADD_PLUGIN(rm_27_stimulation::CmdVelPoseControlSystem, gz::sim::System,
-              gz::sim::ISystemConfigure, gz::sim::ISystemUpdate)
+              gz::sim::ISystemConfigure, gz::sim::ISystemPreUpdate)
 
 GZ_ADD_PLUGIN_ALIAS(rm_27_stimulation::CmdVelPoseControlSystem,
                     "rm_27_stimulation::CmdVelPoseControlSystem")

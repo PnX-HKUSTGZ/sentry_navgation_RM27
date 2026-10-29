@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "loam_interface/loam_interface.hpp"
+#include "loam_interface/frame_transform.hpp"
 
 #include "pcl_ros/transforms.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -28,14 +29,14 @@ LoamInterfaceNode::LoamInterfaceNode(const rclcpp::NodeOptions & options)
   this->declare_parameter<std::string>("odom_frame", "odom");
   this->declare_parameter<std::string>("base_frame", "");
   this->declare_parameter<std::string>("lidar_frame", "");
-  this->declare_parameter<bool>("anchor_initial_base_frame", false);
+  this->declare_parameter<bool>("lidar_odom_is_gravity_aligned", false);
 
   this->get_parameter("state_estimation_topic", state_estimation_topic_);
   this->get_parameter("registered_scan_topic", registered_scan_topic_);
   this->get_parameter("odom_frame", odom_frame_);
   this->get_parameter("base_frame", base_frame_);
   this->get_parameter("lidar_frame", lidar_frame_);
-  this->get_parameter("anchor_initial_base_frame", anchor_initial_base_frame_);
+  this->get_parameter("lidar_odom_is_gravity_aligned", lidar_odom_is_gravity_aligned_);
 
   base_frame_to_lidar_initialized_ = false;
 
@@ -76,19 +77,15 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
   // Here we transform it to the `odom` frame
   if (!base_frame_to_lidar_initialized_) {
     try {
-      auto tf_stamped = tf_buffer_->lookupTransform(
-        base_frame_, lidar_frame_, msg->header.stamp, rclcpp::Duration::from_seconds(0.5));
       tf2::Transform tf_base_frame_to_lidar;
-      tf2::fromMsg(tf_stamped.transform, tf_base_frame_to_lidar);
-      tf_odom_to_lidar_odom_ = tf_base_frame_to_lidar;
-      if (anchor_initial_base_frame_) {
-        // Point-LIO can gravity-align camera_init, so its initial orientation
-        // already contains the sensor mounting rotation. Anchor the first
-        // chassis pose at odom identity instead of applying that rotation twice.
-        tf2::Transform initial_camera_to_lidar;
-        tf2::fromMsg(msg->pose.pose, initial_camera_to_lidar);
-        tf_odom_to_lidar_odom_ *= initial_camera_to_lidar.inverse();
+      tf_base_frame_to_lidar.setIdentity();
+      if (!lidar_odom_is_gravity_aligned_) {
+        auto tf_stamped = tf_buffer_->lookupTransform(
+          base_frame_, lidar_frame_, msg->header.stamp, rclcpp::Duration::from_seconds(0.5));
+        tf2::fromMsg(tf_stamped.transform, tf_base_frame_to_lidar);
       }
+      tf_odom_to_lidar_odom_ = odomFromLidarOdom(
+        lidar_odom_is_gravity_aligned_, tf_base_frame_to_lidar);
       base_frame_to_lidar_initialized_ = true;
 
       if (!msg->header.frame_id.empty() && msg->header.frame_id != odom_frame_) {

@@ -1,0 +1,199 @@
+{
+  "baseline": "tools/navigation_benchmark/results/20261028_followup/full_chain_high_density_seed42/repeat_01",
+  "final": "tools/navigation_benchmark/results/20261028_followup/final_installed_seed42/repeat_01",
+  "common_nodes": [
+    "bt_navigator",
+    "controller_server",
+    "ign_sim_pointcloud_tool",
+    "loam_interface",
+    "planner_server",
+    "point_lio",
+    "relocalization_manager",
+    "velocity_smoother"
+  ],
+  "missing_nodes": {
+    "baseline": [],
+    "final": []
+  },
+  "runtime_parameter_differences": {
+    "relocalization_manager": {
+      "gravity_aligned_registration": {
+        "high_density": false,
+        "final": "<missing>"
+      }
+    }
+  },
+  "key_final_parameters": {
+    "point_filter_num": 1,
+    "filter_size_surf": 0.1,
+    "prior_pcd_transform": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "prior_pcd_file": "/home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/pcd/simulation/RMUC2026.pcd",
+    "planner": {
+      "planner_plugins": [
+        "MincoPlanner"
+      ],
+      "MincoPlanner.plugin": "minco_planner/MincoPlanner",
+      "MincoPlanner.odom_topic": "/odometry",
+      "MincoPlanner.trajectory_topic": "minco/opt_path",
+      "MincoPlanner.rog_map.ros_callback.cloud_topic": "/cloud_registered"
+    },
+    "controller": {
+      "controller_plugins": [
+        "MincoMpc"
+      ],
+      "MincoMpc.plugin": "minco_controller::MincoMpcController",
+      "MincoMpc.odom_topic": "/odometry",
+      "MincoMpc.opt_path_topic": "minco/opt_path",
+      "MincoMpc.cmd_vel_mpc_topic": "minco/cmd_vel_mpc"
+    },
+    "planner_lifecycle": "active",
+    "controller_lifecycle": "active"
+  },
+  "mode_label": "full_chain",
+  "mode_label_is_verified": true,
+  "mode_verification": "topology verified; localization accuracy is not established",
+  "mode_evidence": {
+    "odometry_publishers": [
+      "/sensor_scan_generation"
+    ],
+    "pointlio_nodes": [
+      "/point_lio"
+    ],
+    "registered_scan_publishers": [
+      "/loam_interface"
+    ],
+    "lidar_odometry_publishers": [
+      "/loam_interface"
+    ],
+    "truth_localizer_nodes": []
+  },
+  "topic_publishers": {
+    "/odometry": [
+      "/sensor_scan_generation"
+    ],
+    "/ground_truth/odometry": [
+      "/rm_27_ros_gz_bridge"
+    ],
+    "/cloud_registered_full": [],
+    "/registered_scan": [
+      "/loam_interface"
+    ],
+    "/lidar_odometry": [
+      "/loam_interface"
+    ],
+    "/minco/opt_path": [
+      "/planner_server"
+    ],
+    "/minco/cmd_vel_mpc": [
+      "/controller_server"
+    ],
+    "/cmd_vel": [
+      "/fake_vel_transform"
+    ]
+  },
+  "runs": [
+    {
+      "run": "run_01.json",
+      "status": "succeeded",
+      "action_status": 4,
+      "motion_evidence_passed": true,
+      "truth_goal_gate_passed": true,
+      "final_truth_goal_distance": 0.06492163096786106,
+      "trajectory_messages": 57,
+      "mpc_nonzero_messages": 400
+    },
+    {
+      "run": "run_02.json",
+      "status": "succeeded",
+      "action_status": 4,
+      "motion_evidence_passed": true,
+      "truth_goal_gate_passed": true,
+      "final_truth_goal_distance": 0.11677636062606188,
+      "trajectory_messages": 118,
+      "mpc_nonzero_messages": 719
+    },
+    {
+      "run": "run_03.json",
+      "status": "succeeded",
+      "action_status": 4,
+      "motion_evidence_passed": true,
+      "truth_goal_gate_passed": true,
+      "final_truth_goal_distance": 0.0456700737004815,
+      "trajectory_messages": 25,
+      "mpc_nonzero_messages": 177
+    },
+    {
+      "run": "run_04.json",
+      "status": "succeeded",
+      "action_status": 4,
+      "motion_evidence_passed": true,
+      "truth_goal_gate_passed": true,
+      "final_truth_goal_distance": 0.1289176579343109,
+      "trajectory_messages": 15,
+      "mpc_nonzero_messages": 103
+    },
+    {
+      "run": "run_05.json",
+      "status": "succeeded",
+      "action_status": 4,
+      "motion_evidence_passed": true,
+      "truth_goal_gate_passed": true,
+      "final_truth_goal_distance": 0.09129919762698743,
+      "trajectory_messages": 24,
+      "mpc_nonzero_messages": 110
+    }
+  ],
+  "all_goal_truth_gates_passed": true,
+  "binary_hash_comparison": {
+    "ign_sim_pointcloud_tool": {
+      "baseline": "2da9705bf5f2ae2316ae92309fb3380b9f2170da63ac15d2e4d505437ebd03e2",
+      "final": "2da9705bf5f2ae2316ae92309fb3380b9f2170da63ac15d2e4d505437ebd03e2"
+    },
+    "loam_interface": {
+      "baseline": "f3b9fc05cde2ce588948de618d373152fbb1093e9b1b799b80730527fd5bc369",
+      "final": "f3b9fc05cde2ce588948de618d373152fbb1093e9b1b799b80730527fd5bc369"
+    },
+    "point_lio": {
+      "baseline": "3434b095841a7eb50917cb9953211ee72493c3ff85fef16b8d52bc5d53e7447a",
+      "final": "3434b095841a7eb50917cb9953211ee72493c3ff85fef16b8d52bc5d53e7447a"
+    },
+    "relocalization_manager": {
+      "baseline": "0b92c34d9f433aec80bdf7de1f7602201196dd6e9840f4d1d9b6ebd4df5d5b3a",
+      "final": "244ad6ad2d4c117a005c355d450ab9a5b3e8549c9802c0f959fa49ffa822011f"
+    },
+    "sensor_scan_generation": {
+      "baseline": "33059df23de8687586ee7cca8e8ec5955e81634cb8ba56f69502acdb0966faf4",
+      "final": "33059df23de8687586ee7cca8e8ec5955e81634cb8ba56f69502acdb0966faf4"
+    }
+  },
+  "core_library_hash_comparison": {
+    "install/minco_controller/lib/libminco_controller.so": {
+      "baseline": "9ccf00c4aa006a938dba7d97954de54bfcf25c7f178d8ae75f59001545951c15",
+      "final": "9ccf00c4aa006a938dba7d97954de54bfcf25c7f178d8ae75f59001545951c15"
+    },
+    "install/minco_planner/lib/libminco_planner.so": {
+      "baseline": "9c4c2648e48ed5e6105fbbe0dbad6d3e0efafc0a36f278241973422585afe96b",
+      "final": "9c4c2648e48ed5e6105fbbe0dbad6d3e0efafc0a36f278241973422585afe96b"
+    },
+    "install/rog_map/lib/librog_map.a": {
+      "baseline": "a84755a4ba86cad8be2092c338d3abbea89a3e62eaf93d884e4e8c403e0ecca3",
+      "final": "a84755a4ba86cad8be2092c338d3abbea89a3e62eaf93d884e4e8c403e0ecca3"
+    }
+  },
+  "dds_hash": {
+    "baseline": "37f34be58a656b0e2e5b6e8eea719338a574bc96b9a53bc3eb3541892a2b4b0e",
+    "final": "37f34be58a656b0e2e5b6e8eea719338a574bc96b9a53bc3eb3541892a2b4b0e"
+  },
+  "prior_pcd_hash": {
+    "baseline": "2b9e08cda8a63ade7ec3e153fe56363a4effd6566ed4a066c764b369abda0570",
+    "final": "2b9e08cda8a63ade7ec3e153fe56363a4effd6566ed4a066c764b369abda0570"
+  },
+  "limitations": "One seed and one route; these checks verify runtime topology, snapshot parameters, recorded motion and goal truth gates, not synchronized localization accuracy or absence of safety-related stopping."
+}

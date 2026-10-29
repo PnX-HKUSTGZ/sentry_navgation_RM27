@@ -1,0 +1,193 @@
+--- a/src/navigation/minco_controller/src/minco_mpc_controller.cpp
++++ b/src/navigation/minco_controller/src/minco_mpc_controller.cpp
+@@ -263,9 +263,6 @@
+   nav2_util::declare_parameter_if_not_declared(
+       node, name + ".R",
+       rclcpp::ParameterValue(std::vector<double>{1.0, 1.0, 0.5}));
+-  nav2_util::declare_parameter_if_not_declared(
+-      node, name + ".control_delta_weight",
+-      rclcpp::ParameterValue(std::vector<double>{0.0, 0.0, 0.0}));
+ 
+   nav2_util::declare_parameter_if_not_declared(node, name + ".vx_min",
+                                                rclcpp::ParameterValue(-1.0));
+@@ -377,15 +374,8 @@
+ 
+   std::vector<double> Qv;
+   std::vector<double> Rv;
+-  std::vector<double> delta_weights;
+   node->get_parameter(name + ".Q", Qv);
+   node->get_parameter(name + ".R", Rv);
+-  node->get_parameter(name + ".control_delta_weight", delta_weights);
+-  if (delta_weights.size() != 3) {
+-    throw std::invalid_argument("control_delta_weight requires three nonnegative weights");
+-  }
+-  mpc_config_.control_delta_weight =
+-      Eigen::Vector3d(delta_weights[0], delta_weights[1], delta_weights[2]);
+ 
+   mpc_config_.dt = dt;
+   mpc_config_.lookahead_time = lookahead_time;
+@@ -400,15 +390,13 @@
+   }
+ 
+   if (Qv.size() != 3 || Rv.size() != 3 || !mpc_config_.Q.allFinite() ||
+-      !mpc_config_.control_delta_weight.allFinite() ||
+-      (mpc_config_.control_delta_weight.array() < 0.0).any() ||
+       !mpc_config_.R.allFinite() || (mpc_config_.Q.array() < 0.0).any() ||
+       (mpc_config_.R.array() <= 0.0).any() ||
+       !std::isfinite(mpc_config_.q_along) ||
+       !std::isfinite(mpc_config_.q_cross) || mpc_config_.q_along < 0.0 ||
+       mpc_config_.q_cross < 0.0) {
+     throw std::invalid_argument(
+-        "MincoMpcController requires Q/q_along/q_cross/control_delta_weight >= 0 and R > 0");
++        "MincoMpcController requires Q/q_along/q_cross >= 0 and R > 0");
+   }
+ 
+   node->get_parameter(name + ".vx_min", mpc_config_.vx_min);
+@@ -875,11 +863,7 @@
+               ? latest_opt_path_->cmds.front().trajectory_id
+               : 0U;
+ 
+-      const bool continuous_normal_replan = !blocked_ && latest_opt_path_ &&
+-          msg->command_flag == ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND &&
+-          latest_opt_path_->command_flag == ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND &&
+-          sessionToken(latest_opt_path_->planning_stamp) == planning_token;
+-      if (new_traj_id != old_traj_id && !continuous_normal_replan) {
++      if (new_traj_id != old_traj_id) {
+         has_tracked_ref_ = false;
+       }
+ 
+@@ -1086,10 +1070,10 @@
+   const uint32_t current_traj_id =
+       (!opt->cmds.empty()) ? opt->cmds.front().trajectory_id : 0u;
+ 
+-  // A new mission starts from spatial pickup. Normal rolling replacements
+-  // retain only the bounded lead relative to that pickup. Time progression
+-  // escapes a zero-velocity t=0 sample without leaving a slow vehicle behind
+-  // on a short stopping trajectory.
++  // A new trajectory starts from its spatial pickup. While tracking that same
++  // trajectory, time progression escapes a zero-velocity t=0 sample, but is
++  // capped relative to the current spatial pickup so a slow vehicle cannot be
++  // left behind by a short stopping trajectory.
+   const bool same_opt_traj =
+       has_tracked_ref && tracked_opt_traj_id == current_traj_id;
+   const double elapsed_since_update =
+@@ -1100,7 +1084,7 @@
+           nearest_idx_float, same_opt_traj, tracked_spatial_idx,
+           tracked_ref_idx, elapsed_since_update, planner_dt,
+           static_cast<double>(n_cmds - 1), reference_progress_max_lead_time_,
+-          current_spatial_idx, current_idx_float, has_tracked_ref)) {
++          current_spatial_idx, current_idx_float)) {
+     return false;
+   }
+ 
+@@ -1158,9 +1142,7 @@
+   out_ref.reserve(static_cast<size_t>(N));
+ 
+   for (int k = 0; k < N; ++k) {
+-    // The condensed model stacks x_1 .. x_N after applying each command.
+-    // Match those states to t+dt .. t+N*dt, not t .. t+(N-1)*dt.
+-    double target_time = current_traj_time + (k + 1) * mpc_dt;
++    double target_time = current_traj_time + k * mpc_dt;
+     double target_idx_float = target_time / planner_dt;
+ 
+     if (target_idx_float < 0.0)
+@@ -1463,22 +1445,20 @@
+     }
+   }
+ 
+-  // 2) 构造参考序列：优先 /opt_path
+-  std::vector<ReferencePoint> ref;
+-  bool stationary_startup_active = false;
+-  bool ok_ref = buildReferenceFromOptPath(curr, ref, stationary_startup_active);
+-
+-  if (!ok_ref) {
+-    return stop("NO_REFERENCE");
+-  }
+-  // Spatial pickup must use the measured pose. Picking up from an already
+-  // predicted pose and then adding the delay to the reference advances it
+-  // twice, producing unnecessary corrections at bends and rolling replans.
+   if (!recovery_active && control_delay_compensation_ > 1e-3) {
+     curr.x += curr.vx * control_delay_compensation_;
+     curr.y += curr.vy * control_delay_compensation_;
+     curr.yaw += curr.omega * control_delay_compensation_;
+     curr.yaw = normalizeYaw(curr.yaw);
++  }
++
++  // 2) 构造参考序列：优先 /opt_path
++  std::vector<ReferencePoint> ref;
++  bool stationary_startup_active = false;
++  bool ok_ref = buildReferenceFromOptPath(curr, ref, stationary_startup_active);
++
++  if (!ok_ref) {
++    return stop("NO_REFERENCE");
+   }
+   if (recovery_active || braking_active) {
+     stationary_startup_active = false;
+--- a/src/navigation/minco_controller/src/mpc_solver.cpp
++++ b/src/navigation/minco_controller/src/mpc_solver.cpp
+@@ -152,27 +152,6 @@
+ 
+   // g = 2*(B^T Q d - R U_ref)
+   g = 2.0 * (B_hat.transpose() * Q_bar * d - R_bar * U_ref);
+-
+-  // Penalize changes rather than absolute velocity, preserving steady motion
+-  // while damping alternating corrections from small localization/path errors.
+-  // The first difference joins the previous solution; after reset it joins
+-  // measured velocity, so old mission commands cannot leak into a new session.
+-  const Eigen::Vector3d previous = has_last_u_ ? last_u_global_ :
+-      Eigen::Vector3d(curr.vx, curr.vy, curr.omega);
+-  for (int k = 0; k < N; ++k) {
+-    for (int axis = 0; axis < nu; ++axis) {
+-      const int col = k * nu + axis;
+-      const double weight = 2.0 * config_.control_delta_weight(axis);
+-      H(col, col) += weight;
+-      if (k == 0) {
+-        g(col) -= weight * previous(axis);
+-      } else {
+-        H(col - nu, col - nu) += weight;
+-        H(col, col - nu) -= weight;
+-        H(col - nu, col) -= weight;
+-      }
+-    }
+-  }
+ 
+   // 变量边界（速度约束，map/global 系）
+   // Use -1e12 instead of -inf: qpOASES defines INFTY=1e20 internally.
+@@ -266,8 +245,6 @@
+   const int N = config_.horizon;
+   if (N <= 0 || !std::isfinite(config_.dt) || config_.dt <= 0.0 ||
+       !config_.Q.allFinite() || !config_.R.allFinite() ||
+-      !config_.control_delta_weight.allFinite() ||
+-      (config_.control_delta_weight.array() < 0.0).any() ||
+       (config_.Q.array() < 0.0).any() || (config_.R.array() <= 0.0).any() ||
+       !std::isfinite(config_.q_along) || !std::isfinite(config_.q_cross) ||
+       config_.q_along < 0.0 || config_.q_cross < 0.0 ||
+--- a/src/navigation/minco_planner/src/minco_core/minco_planner.cpp
++++ b/src/navigation/minco_planner/src/minco_core/minco_planner.cpp
+@@ -2196,10 +2196,7 @@
+ 
+   // End state logic.
+   const double dist_to_goal = (end_state.col(0) - global_goal).head<2>().norm();
+-  // Only a real goal or an observation frontier requires a stopped endpoint.
+-  // A rolling endpoint within 1 m of the goal is still an intermediate point;
+-  // stopping there creates a brake/restart cycle at short tunnel exits.
+-  if (!stop_at_local_end) {
++  if (!stop_at_local_end && dist_to_goal > 1.0) {
+     Eigen::Vector3d tangent(1.0, 0.0, 0.0);
+     if (sparse_path.size() >= 2) {
+       tangent = sparse_path.back() - sparse_path[sparse_path.size() - 2];
+@@ -2278,12 +2275,8 @@
+     for (const auto & point : seed.dense_path) {
+       const double clearance = safety_checker_->getDistance(point);
+       if (std::isfinite(clearance) && clearance < minco_config.obstacle_slowdown_distance) {
+-        // Avoid switching the entire rolling trajectory between cruise and
+-        // tunnel speed when an edge cell crosses the slowdown threshold.
+-        trajectory_max_velocity = std::min(trajectory_max_velocity,
+-          utils::obstacleVelocityLimit(clearance, minco_config.safe_dist,
+-            minco_config.obstacle_slowdown_distance,
+-            minco_config.obstacle_max_velocity, minco_config.max_vel));
++        trajectory_max_velocity = std::min(trajectory_max_velocity, minco_config.obstacle_max_velocity);
++        break;
+       }
+     }
+   }

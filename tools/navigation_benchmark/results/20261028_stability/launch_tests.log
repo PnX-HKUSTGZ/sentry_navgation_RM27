@@ -1,0 +1,359 @@
+......FF..FF.F......F...........F.FF.FF...........                       [100%]
+=================================== FAILURES ===================================
+_______ test_rmuc2026_ground_elevation_grid_is_current_generator_output ________
+
+    def test_rmuc2026_ground_elevation_grid_is_current_generator_output():
+        generator = load_rmuc2026_elevation_generator()
+        config = yaml.safe_load(RMUC2026_MAP.read_text())
+        elevation_path = RMUC2026_MAP.parent / config["ground_elevation"]["grid"]["image"]
+        args = SimpleNamespace(
+            map_yaml=RMUC2026_MAP,
+            map_pgm=RMUC2026_MAP.parent / config["image"],
+            stl=RMUC2026_STL,
+            world=RMUC2026_WORLD,
+            max_slope=28.0,
+            max_height=0.60,
+            seed_tolerance=0.04,
+            step_tolerance=0.005,
+        )
+    
+>       output, _, _, _ = generator.build(args)
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:280: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py:363: in build
+    ground_center, ground_size, mesh_scale, mesh_poses = _world_geometry(args.world)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/home/zhang/navi/sentry_navgation_RM27/src/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world')
+
+    def _world_geometry(path):
+        root = ET.parse(path).getroot()
+        world = root.find("world")
+        if world is None:
+            raise RuntimeError(f"SDF has no world: {path}")
+    
+        ground = world.find("./model[@name='ground_plane']")
+        map_model = world.find("./model[@name='map']")
+        if ground is None or map_model is None:
+>           raise RuntimeError("world must contain ground_plane and map models")
+E           RuntimeError: world must contain ground_plane and map models
+
+src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py:95: RuntimeError
+_________ test_simulation_minco_uses_no_elevation_ground_connectivity __________
+
+    def test_simulation_minco_uses_no_elevation_ground_connectivity():
+        config = yaml.safe_load(
+            (BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text()
+        )
+        planner = config["planner_server"]["ros__parameters"]["MincoPlanner"]
+        smac = planner["smac_2d"]
+        ground_edge = planner["priormap"]["ground_edge_avoidance"]
+        projection = planner["rog_map"]["projection"]
+    
+        assert smac["use_esdf_cost"] is False
+        assert ground_edge["enable"] is False
+        assert projection["prior_map"]["require_ground_support"] is False
+        assert projection["observed_empty_as_free"] is True
+        assert projection["bridge_observed_empty_for_ground_connectivity"] is True
+        # Simulation publishes a complete organized no-return ray lattice. An
+        # observed empty column with no finite occupied height must not become a
+        # false downhill-hole obstacle solely because its body band is sparse.
+>       assert projection["min_headroom_known_ratio"] == pytest.approx(0.0)
+E       assert 0.1 == 0.0 ± 1.0e-12
+E         comparison failed
+E         Obtained: 0.1
+E         Expected: 0.0 ± 1.0e-12
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:302: AssertionError
+_________ test_simulation_collision_height_and_filter_clear_250mm_roof _________
+
+    def test_simulation_collision_height_and_filter_clear_250mm_roof():
+        robot = ET.fromstring(subprocess.check_output(["xacro", str(SIMULATION_ROBOT_XACRO)]))
+        projection = yaml.safe_load((BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text())[
+            "planner_server"]["ros__parameters"]["MincoPlanner"]["rog_map"]["projection"]
+        sphere = robot.find("./link[@name='wheel_1']/collision/geometry/sphere")
+        axle_height = float(sphere.get("radius"))
+        tops = []
+        for collision in robot.findall("./link[@name='base_link']/collision"):
+            origin_z = float(collision.find("origin").get("xyz").split()[2])
+            box = collision.find("./geometry/box")
+            half_height = (float(box.get("size").split()[2]) if box is not None else
+                           float(collision.find("./geometry/cylinder").get("length"))) / 2.0
+            tops.append(origin_z + half_height)
+        mount = robot.find("./joint[@name='imu_joint']/origin")
+        roll = float(mount.get("rpy").split()[0])
+        mount_z = float(mount.get("xyz").split()[2])
+        sensor = [float(v) for v in robot.find("./link[@name='imu_link']/collision/geometry/box").get("size").split()]
+        tops.append(mount_z + abs(math.sin(roll)) * sensor[1] / 2.0 + abs(math.cos(roll)) * sensor[2] / 2.0)
+        collision_height = axle_height + max(tops)
+        assert collision_height == pytest.approx(0.240)
+        assert projection["vehicle_height"] == pytest.approx(collision_height)
+>       assert projection["robot_origin_to_ground"] == pytest.approx(axle_height + mount_z)
+E       assert 0.08 == 0.21000000000000002 ± 2.1e-07
+E         comparison failed
+E         Obtained: 0.08
+E         Expected: 0.21000000000000002 ± 2.1e-07
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:404: AssertionError
+____________ test_overlap_recovery_limits_match_controller[reality] ____________
+
+profile = 'reality'
+
+    @pytest.mark.parametrize("profile", ["reality", "simulation"])
+    def test_overlap_recovery_limits_match_controller(profile):
+        config = yaml.safe_load((BRINGUP_DIR / f"config/{profile}/minco_params.yaml").read_text())
+        recovery = config["planner_server"]["ros__parameters"]["MincoPlanner"]["recovery_server"]
+        controller = config["controller_server"]["ros__parameters"]["MincoMpc"]
+        assert controller["physical_base_frame"] == config["planner_server"]["ros__parameters"]["MincoPlanner"]["frames"]["physical_base_frame"]
+        assert recovery["allow_start_overlap"]
+        for quantity in ("speed", "distance", "duration"):
+>           assert recovery[f"overlap_max_{quantity}"] == controller[f"recovery_max_{quantity}"]
+E           assert 0.15 == 0.2
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:421: AssertionError
+____________ test_reality_global_seed_ignores_rolling_rog_frontier _____________
+
+    def test_reality_global_seed_ignores_rolling_rog_frontier():
+        config = yaml.safe_load(
+            (BRINGUP_DIR / "config/reality/minco_params.yaml").read_text()
+        )
+        planner = config["planner_server"]["ros__parameters"]["MincoPlanner"]
+        smac = planner["smac_2d"]
+        ground_edge = planner["priormap"]["ground_edge_avoidance"]
+        projection = planner["rog_map"]["projection"]
+    
+        assert smac["use_esdf_cost"] is False
+        assert ground_edge["enable"] is False
+        assert projection["prior_map"]["require_ground_support"] is False
+        assert projection["observed_empty_as_free"] is True
+        assert projection["bridge_observed_empty_for_ground_connectivity"] is True
+        assert projection["near_field_prior_fill_enable"] is False
+        assert 0.0 <= projection["ground_connectivity_quantile"] < 1.0
+        assert projection["ground_connectivity_quantile_lateral_radius"] > 0.0
+        assert projection["ground_connectivity_quantile_min_samples"] >= 3
+        assert (
+            projection["ground_connectivity_fit_residual_tolerance"]
+            <= projection["ground_connectivity_bridge_max_height_delta"]
+        )
+>       assert ground_edge["max_step"] == pytest.approx(projection["max_ground_step"])
+E       assert 0.06 == 0.08 ± 8.0e-08
+E         comparison failed
+E         Obtained: 0.06
+E         Expected: 0.08 ± 8.0e-08
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:448: AssertionError
+_______________ test_minco_uses_one_complete_deployment_profile ________________
+
+    def test_minco_uses_one_complete_deployment_profile():
+        module = load_navigation_launch()
+        for deployment in ("reality", "simulation"):
+            context = make_context(deployment, "minco")
+            execute_configuration(module, context)
+            path = Path(context.launch_configurations["selected_navigation_params_file"])
+            assert path == BRINGUP_DIR / "config" / deployment / "minco_params.yaml"
+    
+            profile = yaml.safe_load(path.read_text())
+            base = yaml.safe_load(
+                (BRINGUP_DIR / "config" / deployment / "nav2_params.yaml").read_text()
+            )
+            for node in (
+                "point_lio",
+                "map_server",
+                "relocalization_manager",
+                "velocity_smoother",
+            ):
+                assert profile[node] == base[node]
+            sensor = (
+                "livox_ros_driver2"
+                if deployment == "reality"
+                else "rm27_ground_truth_localizer"
+            )
+            assert profile[sensor] == base[sensor]
+>           assert profile["controller_server"]["ros__parameters"]["progress_checker"] == (
+                base["controller_server"]["ros__parameters"]["progress_checker"]
+            )
+E           AssertionError: assert {'movement_ti..._radius': 0.1} == {'movement_ti..._radius': 0.5}
+E             Omitting 1 identical items, use -vv to show
+E             Differing items:
+E             {'movement_time_allowance': 15.0} != {'movement_time_allowance': 10.0}
+E             {'required_movement_radius': 0.1} != {'required_movement_radius': 0.5}
+E             Use -v to get more diff
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:552: AssertionError
+___ test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps ____
+
+    def test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps():
+        for deployment in ("simulation", "reality"):
+            profile = yaml.safe_load(
+                (BRINGUP_DIR / "config" / deployment / "minco_params.yaml").read_text()
+            )
+            for costmap_name in ("local_costmap", "global_costmap"):
+                params = profile[costmap_name][costmap_name]["ros__parameters"]
+                assert params["plugins"] == [
+                    "static_layer",
+                    "rog_dynamic_obstacle_layer",
+                    "inflation_layer",
+                ]
+                rog_layer = params["rog_dynamic_obstacle_layer"]
+                assert rog_layer["plugin"] == (
+                    "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
+                )
+                assert rog_layer["topic"] == "/rog_map/dynamic_obstacles"
+                assert 0 < rog_layer["obstacle_threshold"] <= 100
+                assert rog_layer["stale_timeout"] > 0.0
+                assert rog_layer["footprint_clearing_enabled"] is True
+                expected_range = (
+                    2.0
+                    if deployment == "simulation" and costmap_name == "global_costmap"
+                    else 0.0
+                )
+>               assert rog_layer["obstacle_marking_max_range"] == pytest.approx(
+                    expected_range
+                )
+E               assert 2.0 == 0.0 ± 1.0e-12
+E                 comparison failed
+E                 Obtained: 2.0
+E                 Expected: 0.0 ± 1.0e-12
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:728: AssertionError
+___________ test_reality_short_ramp_speed_and_connectivity_contract ____________
+
+    def test_reality_short_ramp_speed_and_connectivity_contract():
+        reality = yaml.safe_load(
+            (BRINGUP_DIR / "config/reality/minco_params.yaml").read_text()
+        )
+        planner = reality["planner_server"]["ros__parameters"]["MincoPlanner"]
+        controller = reality["controller_server"]["ros__parameters"]["MincoMpc"]
+        projection = planner["rog_map"]["projection"]
+    
+        assert controller["reference_startup_min_command_speed"] == pytest.approx(
+            planner["local_path"]["observed_prefix_max_velocity"]
+        )
+        assert controller["uphill_startup_min_grade"] == pytest.approx(0.03)
+        assert controller["uphill_full_assist_grade"] == pytest.approx(0.18)
+>       assert controller["uphill_assist_min_reference_speed"] > planner["local_path"][
+            "observed_prefix_max_velocity"
+        ]
+E       assert 0.3 > 0.6
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:831: AssertionError
+_____ test_simulation_minco_gate_clearance_accounts_for_voxel_quantization _____
+
+    def test_simulation_minco_gate_clearance_accounts_for_voxel_quantization():
+        simulation = yaml.safe_load(
+            (BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text()
+        )
+        reality = yaml.safe_load(
+            (BRINGUP_DIR / "config/reality/minco_params.yaml").read_text()
+        )
+        simulation_projection = simulation["planner_server"]["ros__parameters"][
+            "MincoPlanner"
+        ]["rog_map"]["projection"]
+        reality_projection = reality["planner_server"]["ros__parameters"][
+            "MincoPlanner"
+        ]["rog_map"]["projection"]
+    
+        # The folded simulation vehicle is 240 mm tall; its 250 mm target gate
+        # must retain positive clearance without borrowing the old 165 mm chassis.
+        assert simulation_projection["vehicle_height"] == pytest.approx(0.24)
+        assert simulation_projection["headroom_margin"] == pytest.approx(0.0)
+        assert simulation_projection["headroom_voxel_inset_fraction"] == pytest.approx(
+            0.0
+        )
+        assert (
+            simulation_projection["vehicle_height"]
+            + simulation_projection["headroom_margin"]
+            < 0.250
+        )
+    
+        # The simulator's deterministic quantization budget must not weaken the
+        # independently calibrated hardware clearance policy.
+>       assert reality_projection["headroom_margin"] > 0.0
+E       assert 0.0 > 0.0
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:870: AssertionError
+__ test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope ___
+
+    def test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope():
+        simulation = yaml.safe_load(
+            (BRINGUP_DIR / "config" / "simulation" / "minco_params.yaml").read_text()
+        )
+        reality = yaml.safe_load(
+            (BRINGUP_DIR / "config" / "reality" / "minco_params.yaml").read_text()
+        )
+    
+        sim_planner = simulation["planner_server"]["ros__parameters"]["MincoPlanner"]
+        sim_optimizer = sim_planner["minco_optimizer"]
+        sim_mpc = simulation["controller_server"]["ros__parameters"]["MincoMpc"]
+        real_mpc = reality["controller_server"]["ros__parameters"]["MincoMpc"]
+    
+        assert sim_optimizer["max_velocity"] == pytest.approx(1.5)
+        assert sim_mpc["max_planar_speed"] > real_mpc["max_planar_speed"]
+        assert sim_optimizer["terminal_velocity_ratio"] == pytest.approx(0.85)
+        assert 0.0 < sim_optimizer["terminal_velocity_ratio"] < 1.0
+        assert sim_optimizer["max_trajectory_duration"] == pytest.approx(20.0)
+        assert sim_optimizer["max_velocity"] <= sim_mpc["vx_max"]
+        assert sim_optimizer["max_velocity"] <= sim_mpc["vy_max"]
+        assert sim_optimizer["max_velocity"] == pytest.approx(sim_mpc["max_planar_speed"])
+        assert sim_mpc["slope_speed_limit"] < sim_mpc["max_planar_speed"]
+        assert sim_mpc["uphill_startup_min_command_speed"] <= sim_mpc["slope_speed_limit"]
+        assert sim_mpc["uphill_startup_min_grade"] < sim_mpc["uphill_full_assist_grade"]
+        assert sim_optimizer["max_acceleration"] <= sim_mpc["ax_max"]
+        assert sim_optimizer["max_acceleration"] <= sim_mpc["ay_max"]
+        safety = sim_planner["safety"]
+>       assert (
+            safety["collision_cache_reuse_max_duration"]
+            < safety["optimizer_failure_cache_reuse_max_duration"]
+            <= safety["check_horizon"]
+        )
+E       assert 2.0 < 2.0
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:947: AssertionError
+___________ test_active_footprint_bootstrap_covers_one_rog_seed_step ___________
+
+    def test_active_footprint_bootstrap_covers_one_rog_seed_step():
+        simulation = yaml.safe_load(
+            (BRINGUP_DIR / "config" / "simulation" / "minco_params.yaml").read_text()
+        )
+        reality = yaml.safe_load(
+            (BRINGUP_DIR / "config" / "reality" / "minco_params.yaml").read_text()
+        )
+        for profile in (simulation, reality):
+            planner = profile["planner_server"]["ros__parameters"]["MincoPlanner"]
+            projection = planner["rog_map"]["projection"]
+            safety = planner["safety"]
+            seed_step = planner["priormap"]["rog_boundary_sample_step"]
+    
+            required_length = (
+                safety["footprint_length"]
+                + 2.0 * safety["footprint_margin"]
+                + 2.0 * seed_step
+            )
+            required_width = (
+                safety["footprint_width"]
+                + 2.0 * safety["footprint_margin"]
+                + 2.0 * seed_step
+            )
+>           assert projection["robot_footprint_clear_length"] == pytest.approx(
+                required_length
+            )
+E           assert 0.82 == 0.8919999999999999 ± 8.9e-07
+E             comparison failed
+E             Obtained: 0.82
+E             Expected: 0.8919999999999999 ± 8.9e-07
+
+src/pb2025_nav_bringup/test/test_navigation_launch.py:1006: AssertionError
+=========================== short test summary info ============================
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_rmuc2026_ground_elevation_grid_is_current_generator_output
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_simulation_minco_uses_no_elevation_ground_connectivity
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_simulation_collision_height_and_filter_clear_250mm_roof
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_overlap_recovery_limits_match_controller[reality]
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_reality_global_seed_ignores_rolling_rog_frontier
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_minco_uses_one_complete_deployment_profile
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_active_minco_profiles_feed_measured_rog_obstacles_to_nav2_costmaps
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_reality_short_ramp_speed_and_connectivity_contract
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_simulation_minco_gate_clearance_accounts_for_voxel_quantization
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_simulation_minco_speed_limit_is_faster_but_stays_inside_mpc_envelope
+FAILED src/pb2025_nav_bringup/test/test_navigation_launch.py::test_active_footprint_bootstrap_covers_one_rog_seed_step
+11 failed, 39 passed in 1.97s

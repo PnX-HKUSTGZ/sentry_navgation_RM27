@@ -775,6 +775,21 @@ bool GlobalPathSearcher::makePlanOnQuery(const geometry_msgs::msg::Pose & start,
     latest_global_path.back().pose.orientation = goal.orientation;
   }
 
+  if (use_smac_ && smac_ && plan.poses.size() >= 3U) {
+    std::vector<Eigen::Vector3d> points;
+    points.reserve(plan.poses.size());
+    for (const auto & pose : plan.poses) {
+      const auto & p = pose.pose.position;
+      points.emplace_back(p.x, p.y, p.z);
+    }
+    smac_->smoothWorldPath(points, cancel_checker);
+    if (cancel_checker && cancel_checker()) {return false;}
+    for (size_t i = 0; i < points.size(); ++i) {
+      plan.poses[i].pose.position.x = points[i].x();
+      plan.poses[i].pose.position.y = points[i].y();
+    }
+    latest_global_path = plan.poses;
+  }
   return !plan.poses.empty();
 }
 

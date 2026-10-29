@@ -299,9 +299,11 @@ void ROGMap::updateMap(const PointCloud &cloud, const Pose &pose) {
 void ROGMap::updateMapInternal(const PointCloud &cloud, const Pose &pose,
                                double sensor_stamp) {
   const Pose &sensor_pose = pose;
-  Vec3f map_center_pos = sensor_pose.first;
+  Vec3f map_center_pos = cfg_.projection_robot_pose_frame.empty() ?
+      sensor_pose.first : projection_robot_state_.p;
   if (cfg_.map_center_offset_enable) {
-    const double yaw = get_yaw_from_quaternion<double>(sensor_pose.second);
+    const double yaw = get_yaw_from_quaternion<double>(
+        cfg_.projection_robot_pose_frame.empty() ? sensor_pose.second : projection_robot_state_.q);
     const double c = std::cos(yaw);
     const double s = std::sin(yaw);
     Vec3f offset_world;
@@ -407,6 +409,8 @@ void ROGMap::refreshLayers() {
   layer_cfg.denoise_occ_max = cfg_.layer_denoise_occ_max;
   layer_cfg.clearance_check_en = cfg_.clearance_check_en;
   layer_cfg.observed_empty_as_free = cfg_.observed_empty_as_free;
+  layer_cfg.prior_free_uncertain_obstacle_confirmations =
+      cfg_.prior_free_uncertain_obstacle_confirmations;
   layer_cfg.require_ground_support = cfg_.require_ground_support;
   layer_cfg.ground_support_tolerance = cfg_.ground_support_tolerance;
   layer_cfg.bridge_observed_empty_for_ground_connectivity =
@@ -457,7 +461,8 @@ void ROGMap::refreshLayers() {
   layer_cfg.min_observed_overhead_headroom_known_ratio =
       cfg_.min_observed_overhead_headroom_known_ratio;
   layer_cfg.clearance_unknown_as_occupied = cfg_.clearance_unknown_as_occupied;
-  const RobotState robot_state = getRobotState();
+  const RobotState robot_state = cfg_.projection_robot_pose_frame.empty() ?
+      getRobotState() : projection_robot_state_;
   setProjectionRobotPose(
       layer_cfg, robot_state.p, robot_state.q, cfg_.sensor_mount_rpy,
       Eigen::Vector2d(cfg_.robot_footprint_clear_offset_x,

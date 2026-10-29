@@ -1,6 +1,7 @@
 #include <rog_map/prior_map.hpp>
 
 #include <yaml-cpp/yaml.h>
+#include <Eigen/Geometry>
 
 #include <algorithm>
 #include <array>
@@ -662,25 +663,43 @@ bool priorMapGroundSupportAtMapPoint(const PriorMapData &prior_map,
 
 bool priorMapGroundSupport(const PriorMapData &prior_map, double rog_x,
                            double rog_y, double &support_z_rog) {
-  if (!prior_map.transform_ready ||
-      std::abs(prior_map.fixed_transform.roll) > 1.0e-5 ||
-      std::abs(prior_map.fixed_transform.pitch) > 1.0e-5) {
+  if (!prior_map.transform_ready || !std::isfinite(rog_x) || !std::isfinite(rog_y)) {
     return false;
   }
+  // updatePriorMapTransform already enforces the configured tilt tolerance.
+  // A second hardcoded 1e-5 rad gate silently disabled all surveyed support
+  // after an otherwise accepted global registration with small roll/pitch.
+  // Intersect the ROG vertical line with the sampled map surface using the
+  // full rotation; subtracting only tz is incorrect even for a small tilt.
+  const auto & tf = prior_map.fixed_transform;
+  const Eigen::Matrix3d rotation =
+      (Eigen::AngleAxisd(tf.yaw, Eigen::Vector3d::UnitZ()) *
+       Eigen::AngleAxisd(tf.pitch, Eigen::Vector3d::UnitY()) *
+       Eigen::AngleAxisd(tf.roll, Eigen::Vector3d::UnitX())).toRotationMatrix();
+  if (!rotation.allFinite() || rotation(2, 2) < 0.99) {return false;}
   double map_x = 0.0;
   double map_y = 0.0;
   transformPriorMapPoint(prior_map.fixed_transform, rog_x, rog_y, map_x, map_y);
-  if (priorMapStateWithRotation(prior_map, map_x, map_y,
-                                prior_map.fast_origin_yaw_cos,
-                                prior_map.fast_origin_yaw_sin) != 1U) {
-    return false;
+  for (int iteration = 0; iteration < 8; ++iteration) {
+    double height = 0.0;
+    if (!priorMapGroundSupportAtMapPoint(prior_map, map_x, map_y, height)) {return false;}
+    const double z = (height - tf.tz - rotation(2, 0)*rog_x - rotation(2, 1)*rog_y) /
+        rotation(2, 2);
+    const Eigen::Vector3d mapped = rotation * Eigen::Vector3d(rog_x, rog_y, z) +
+        Eigen::Vector3d(tf.tx, tf.ty, tf.tz);
+    double checked_height = 0.0;
+    if (!mapped.allFinite() ||
+        !priorMapGroundSupportAtMapPoint(prior_map, mapped.x(), mapped.y(), checked_height)) {
+      return false;
+    }
+    if (std::abs(checked_height - mapped.z()) <= 1e-6) {
+      support_z_rog = z;
+      return true;
+    }
+    map_x = mapped.x();
+    map_y = mapped.y();
   }
-  double support_z_map = 0.0;
-  if (!groundElevationAtMapPoint(prior_map, map_x, map_y, support_z_map)) {
-    return false;
-  }
-  support_z_rog = support_z_map - prior_map.fixed_transform.tz;
-  return std::isfinite(support_z_rog);
+  return false;  // A discontinuous/ambiguous height boundary supplies no proof.
 }
 
 void transformPriorMapPoint(const PriorMapTransform2D &transform, double rog_x,
@@ -718,7 +737,9 @@ bool updatePriorMapTransform(PriorMapData &prior_map,
             kTransformEpsilon &&
         std::abs(yaw_delta) <= kTransformEpsilon &&
         std::abs(transform.tz - prior_map.fixed_transform.tz) <=
-            kTransformEpsilon) {
+            kTransformEpsilon &&
+        std::abs(transform.roll - prior_map.fixed_transform.roll) <= kTransformEpsilon &&
+        std::abs(transform.pitch - prior_map.fixed_transform.pitch) <= kTransformEpsilon) {
       return false;
     }
   }

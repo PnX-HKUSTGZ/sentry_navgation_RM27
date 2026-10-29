@@ -1,0 +1,1352 @@
+diff --git a/.clang-format b/.clang-format
+deleted file mode 100644
+index aea802f..0000000
+--- a/.clang-format
++++ /dev/null
+@@ -1,18 +0,0 @@
+----
+-Language: Cpp
+-BasedOnStyle: Google
+-
+-AccessModifierOffset: -2
+-AlignAfterOpenBracket: AlwaysBreak
+-BraceWrapping:
+-  AfterClass: true
+-  AfterFunction: true
+-  AfterNamespace: true
+-  AfterStruct: true
+-BreakBeforeBraces: Custom
+-ColumnLimit: 100
+-ConstructorInitializerIndentWidth: 0
+-ContinuationIndentWidth: 2
+-DerivePointerAlignment: false
+-PointerAlignment: Middle
+-ReflowComments: false
+diff --git a/.clang-tidy b/.clang-tidy
+deleted file mode 100644
+index d805018..0000000
+--- a/.clang-tidy
++++ /dev/null
+@@ -1,62 +0,0 @@
+----
+-Checks:          '-*,
+-                  performance-*,
+-                  -performance-unnecessary-value-param,
+-                  llvm-namespace-comment,
+-                  modernize-redundant-void-arg,
+-                  modernize-use-nullptr,
+-                  modernize-use-default,
+-                  modernize-use-override,
+-                  modernize-loop-convert,
+-                  modernize-make-shared,
+-                  modernize-make-unique,
+-                  misc-unused-parameters,
+-                  readability-named-parameter,
+-                  readability-redundant-smartptr-get,
+-                  readability-redundant-string-cstr,
+-                  readability-simplify-boolean-expr,
+-                  readability-container-size-empty,
+-                  readability-identifier-naming,
+-                  '
+-HeaderFilterRegex: ''
+-CheckOptions:
+-  - key:             llvm-namespace-comment.ShortNamespaceLines
+-    value:           '10'
+-  - key:             llvm-namespace-comment.SpacesBeforeComments
+-    value:           '2'
+-  - key:             misc-unused-parameters.StrictMode
+-    value:           '1'
+-  - key:             readability-braces-around-statements.ShortStatementLines
+-    value:           '2'
+-  # type names
+-  - key:             readability-identifier-naming.ClassCase
+-    value:           CamelCase
+-  - key:             readability-identifier-naming.EnumCase
+-    value:           CamelCase
+-  - key:             readability-identifier-naming.UnionCase
+-    value:           CamelCase
+-  # method names
+-  - key:             readability-identifier-naming.MethodCase
+-    value:           camelBack
+-  # variable names
+-  - key:             readability-identifier-naming.VariableCase
+-    value:           lower_case
+-  # class member names
+-  - key:             readability-identifier-naming.PrivateMemberCase
+-    value:           lower_case
+-  - key:             readability-identifier-naming.PrivateMemberSuffix
+-    value:           '_'
+-  - key:             readability-identifier-naming.ProtectedMemberCase
+-    value:           lower_case
+-  - key:             readability-identifier-naming.ProtectedMemberSuffix
+-    value:           '_'
+-  # const static or global variables are UPPER_CASE
+-  - key:             readability-identifier-naming.EnumConstantCase
+-    value:           UPPER_CASE
+-  - key:             readability-identifier-naming.StaticConstantCase
+-    value:           UPPER_CASE
+-  - key:             readability-identifier-naming.ClassConstantCase
+-    value:           UPPER_CASE
+-  - key:             readability-identifier-naming.GlobalVariableCase
+-    value:           UPPER_CASE
+-...
+diff --git a/.github/dependabot.yml b/.github/dependabot.yml
+deleted file mode 100644
+index b46ccae..0000000
+--- a/.github/dependabot.yml
++++ /dev/null
+@@ -1,8 +0,0 @@
+-version: 2
+-updates:
+-  - package-ecosystem: "github-actions"
+-    directory: "/"
+-    schedule:
+-      interval: "monthly"
+-    commit-message:
+-      prefix: "🛠️"
+diff --git a/.github/mergify.yml b/.github/mergify.yml
+deleted file mode 100644
+index 8ebe1da..0000000
+--- a/.github/mergify.yml
++++ /dev/null
+@@ -1,50 +0,0 @@
+-pull_request_rules:
+-  - name: backport to humble at reviewers discretion
+-    conditions:
+-      - base=main
+-      - "label=backport-humble"
+-    actions:
+-      backport:
+-        branches:
+-          - humble
+-
+-
+-  - name: ask to resolve conflict
+-    conditions:
+-      - conflict
+-      - author!=mergify
+-    actions:
+-      comment:
+-        message: This pull request is in conflict. Could you fix it @{{author}}?
+-
+-  - name: development targets main branch
+-    conditions:
+-      - base!=main
+-      - author!=LihanChen2004
+-      - author!=mergify[bot]
+-    actions:
+-      comment:
+-        message: |
+-          @{{author}}, all pull requests must be targeted towards the `main` development branch.
+-          Once merged into `main`, it is possible to backport to @{{base}}, but it must be in `main`
+-          to have these changes reflected into new distributions.
+-
+-  - name: Main build failures
+-    conditions:
+-      - base=main
+-      - or:
+-          - "check-failure=build_and_test"
+-    actions:
+-      comment:
+-        message: |
+-          @{{author}}, your PR has failed to build. Please check CI outputs and resolve issues.
+-          You may need to rebase or pull in `main` due to API changes (or your contribution genuinely fails).
+-
+-  - name: automatic merge for pre-commit ci updates
+-    conditions:
+-      - author=pre-commit-ci[bot]
+-      - title=[pre-commit.ci] pre-commit autoupdate
+-      - check-success=build_and_test
+-    actions:
+-      merge:
+-        method: squash
+diff --git a/.github/workflows/build_and_test.yml b/.github/workflows/build_and_test.yml
+deleted file mode 100644
+index 4029449..0000000
+--- a/.github/workflows/build_and_test.yml
++++ /dev/null
+@@ -1,15 +0,0 @@
+-name: Build
+-on:
+-  pull_request:
+-
+-jobs:
+-  build_and_test:
+-    runs-on: ubuntu-latest
+-    container:
+-      image: rostooling/setup-ros-docker:ubuntu-jammy-ros-humble-ros-base-latest
+-    steps:
+-      - name: Build and run tests
+-        uses: ros-tooling/action-ros-ci@v0.4
+-        with:
+-          package-name: pb_teleop_twist_joy
+-          target-ros2-distro: humble
+diff --git a/.gitignore b/.gitignore
+deleted file mode 100644
+index f7638c4..0000000
+--- a/.gitignore
++++ /dev/null
+@@ -1,20 +0,0 @@
+-build
+-
+-devel
+-
+-install
+-
+-log/*
+-
+-.catkin_workspace
+-
+-.vscode
+-
+-.cache
+-
+-__pycache__
+-
+-*~
+-*.pcd
+-*.gv
+-*.pdf
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+deleted file mode 100644
+index 2023096..0000000
+--- a/.pre-commit-config.yaml
++++ /dev/null
+@@ -1,86 +0,0 @@
+-# To use:
+-#
+-#     pre-commit run -a
+-#
+-# Or:
+-#
+-#     pre-commit install  # (runs every time you commit in git)
+-#
+-# To update this file:
+-#
+-#     pre-commit autoupdate
+-#
+-# See https://github.com/pre-commit/pre-commit
+-
+-exclude: ".pgm$|.svg$|.dae$"
+-
+-ci:
+-  skip: [ament_lint_cmake, ament_xmllint, ament_copyright]
+-
+-repos:
+-  - repo: https://github.com/pre-commit/pre-commit-hooks
+-    rev: v6.0.0
+-    hooks:
+-      - id: check-added-large-files
+-      - id: check-ast
+-      - id: check-case-conflict
+-      - id: check-docstring-first
+-      - id: check-merge-conflict
+-      - id: check-symlinks
+-      - id: check-xml
+-      - id: check-yaml
+-      - id: debug-statements
+-      - id: end-of-file-fixer
+-      - id: mixed-line-ending
+-      - id: trailing-whitespace
+-      - id: fix-byte-order-marker
+-
+-  - repo: https://github.com/codespell-project/codespell
+-    rev: v2.4.2
+-    hooks:
+-      - id: codespell
+-
+-  - repo: https://github.com/astral-sh/ruff-pre-commit
+-    rev: v0.15.18
+-    hooks:
+-      - id: ruff
+-        args: [--fix]
+-      - id: ruff-format
+-
+-  - repo: https://github.com/pre-commit/mirrors-clang-format
+-    rev: v22.1.5
+-    hooks:
+-      - id: clang-format
+-        args: ["-fallback-style=none", "-i"]
+-        types_or: [c, c++]
+-
+-  - repo: local
+-    hooks:
+-      - id: ament_lint_cmake
+-        name: ament_lint_cmake
+-        description: Check CMake code style using cmakelint.
+-        language: system
+-        types: [cmake]
+-        entry: ament_lint_cmake
+-      - id: ament_xmllint
+-        name: ament_xmllint
+-        description: Check XML markup using xmllint.
+-        language: system
+-        types: [xml]
+-        entry: ament_xmllint
+-      - id: ament_copyright
+-        name: ament_copyright
+-        description: Check if copyright notice is available in all files.
+-        entry: ament_copyright
+-        language: system
+-        exclude: "^\\.(devcontainer|github)/"
+-
+-  - repo: https://github.com/python-jsonschema/check-jsonschema
+-    rev: 0.37.3
+-    hooks:
+-      - id: check-github-workflows
+-        args: ["--verbose"]
+-      - id: check-github-actions
+-        args: ["--verbose"]
+-      - id: check-dependabot
+-        args: ["--verbose"]
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+deleted file mode 100644
+index 58d59a5..0000000
+--- a/CMakeLists.txt
++++ /dev/null
+@@ -1,56 +0,0 @@
+-cmake_minimum_required(VERSION 3.10)
+-project(pb_teleop_twist_joy)
+-
+-## Use C++14
+-set(CMAKE_CXX_STANDARD 14)
+-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+-
+-## By adding -Wall and -Werror, the compiler does not ignore warnings anymore,
+-## enforcing cleaner code.
+-add_definitions(-Wall -Werror)
+-
+-## Export compile commands for clangd
+-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+-
+-#######################
+-## Find dependencies ##
+-#######################
+-
+-find_package(ament_cmake_auto REQUIRED)
+-ament_auto_find_build_dependencies()
+-
+-###########
+-## Build ##
+-###########
+-
+-ament_auto_add_library(${PROJECT_NAME} SHARED
+-  DIRECTORY src
+-)
+-
+-rclcpp_components_register_node(${PROJECT_NAME}
+-  PLUGIN pb_teleop_twist_joy::TeleopTwistJoyNode
+-  EXECUTABLE ${PROJECT_NAME}_node
+-)
+-
+-#############
+-## Testing ##
+-#############
+-
+-if(BUILD_TESTING)
+-  set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
+-  set(ament_cmake_clang_tidy_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-tidy")
+-  find_package(ament_lint_auto REQUIRED)
+-  ament_lint_auto_find_test_dependencies()
+-endif()
+-
+-
+-#############
+-## Install ##
+-#############
+-
+-ament_auto_package(
+-  USE_SCOPED_HEADER_INSTALL_DIR
+-  INSTALL_TO_SHARE
+-  config
+-  launch
+-)
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+deleted file mode 100644
+index 7cbad80..0000000
+--- a/CONTRIBUTING.md
++++ /dev/null
+@@ -1,63 +0,0 @@
+-# Contributing Guidelines
+-
+-Thank you for your interest in contributing to `pb_teleop_twist_joy`.
+-Whether it's a bug report, new feature, correction, or additional
+-documentation, we greatly value feedback and contributions from our community.
+-
+-Please read through this document before submitting any issues or pull requests to ensure we have all the necessary
+-information to effectively respond to your bug report or contribution.
+-
+-## Reporting Bugs/Feature Requests
+-
+-We welcome you to use the GitHub issue tracker to report bugs or suggest features.
+-
+-When filing an issue, please check [existing open][issues], or [recently closed][closed-issues], issues to make sure
+- somebody else hasn't already reported the issue.
+-Please try to include as much information as you can. Details like these are incredibly useful:
+-
+-* A reproducible test case or series of steps
+-* The version of our code being used
+-* Any modifications you've made relevant to the bug
+-* Anything unusual about your environment or deployment
+-
+-## Contributing via Pull Requests
+-
+-To send us a pull request, please:
+-
+-1. Fork the repository.
+-2. Modify the source; please focus on the specific change you are contributing.
+-  If you also reformat all the code, it will be hard for us to focus on your change.
+-3. Ensure local tests pass. (`colcon test` and `pre-commit run` (requires you to install pre-commit by `pip3 install pre-commit`)
+-4. Commit to your fork using clear commit messages.
+-5. Send a pull request, answering any default questions in the pull request interface.
+-6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
+-
+-GitHub provides additional documentation on [forking a repository](https://help.github.com/articles/fork-a-repo/) and
+-[creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
+-
+-## Finding contributions to work on
+-
+-Looking at the existing issues is a great way to find something to contribute on.
+-As this project, by default, uses the default GitHub issue labels
+-  (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any ['help wanted'][help-wanted] issues
+-  is a great place to start.
+-
+-## Licensing
+-
+-Any contribution that you make to this repository will
+-be under the Apache 2 License, as dictated by that
+-[license](http://www.apache.org/licenses/LICENSE-2.0.html):
+-
+-~~~
+-5. Submission of Contributions. Unless You explicitly state otherwise,
+-   any Contribution intentionally submitted for inclusion in the Work
+-   by You to the Licensor shall be under the terms and conditions of
+-   this License, without any additional terms or conditions.
+-   Notwithstanding the above, nothing herein shall supersede or modify
+-   the terms of any separate license agreement you may have executed
+-   with Licensor regarding such Contributions.
+-~~~
+-
+-[issues]: https://github.com/SMBU-PolarBear-Robotics-Team/pb_teleop_twist_joy/issues
+-[closed-issues]: https://github.com/SMBU-PolarBear-Robotics-Team/pb_teleop_twist_joy/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aclosed%20
+-[help-wanted]: https://github.com/SMBU-PolarBear-Robotics-Team/pb_teleop_twist_joy/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22
+diff --git a/LICENSE b/LICENSE
+deleted file mode 100644
+index d645695..0000000
+--- a/LICENSE
++++ /dev/null
+@@ -1,202 +0,0 @@
+-
+-                                 Apache License
+-                           Version 2.0, January 2004
+-                        http://www.apache.org/licenses/
+-
+-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+-
+-   1. Definitions.
+-
+-      "License" shall mean the terms and conditions for use, reproduction,
+-      and distribution as defined by Sections 1 through 9 of this document.
+-
+-      "Licensor" shall mean the copyright owner or entity authorized by
+-      the copyright owner that is granting the License.
+-
+-      "Legal Entity" shall mean the union of the acting entity and all
+-      other entities that control, are controlled by, or are under common
+-      control with that entity. For the purposes of this definition,
+-      "control" means (i) the power, direct or indirect, to cause the
+-      direction or management of such entity, whether by contract or
+-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+-      outstanding shares, or (iii) beneficial ownership of such entity.
+-
+-      "You" (or "Your") shall mean an individual or Legal Entity
+-      exercising permissions granted by this License.
+-
+-      "Source" form shall mean the preferred form for making modifications,
+-      including but not limited to software source code, documentation
+-      source, and configuration files.
+-
+-      "Object" form shall mean any form resulting from mechanical
+-      transformation or translation of a Source form, including but
+-      not limited to compiled object code, generated documentation,
+-      and conversions to other media types.
+-
+-      "Work" shall mean the work of authorship, whether in Source or
+-      Object form, made available under the License, as indicated by a
+-      copyright notice that is included in or attached to the work
+-      (an example is provided in the Appendix below).
+-
+-      "Derivative Works" shall mean any work, whether in Source or Object
+-      form, that is based on (or derived from) the Work and for which the
+-      editorial revisions, annotations, elaborations, or other modifications
+-      represent, as a whole, an original work of authorship. For the purposes
+-      of this License, Derivative Works shall not include works that remain
+-      separable from, or merely link (or bind by name) to the interfaces of,
+-      the Work and Derivative Works thereof.
+-
+-      "Contribution" shall mean any work of authorship, including
+-      the original version of the Work and any modifications or additions
+-      to that Work or Derivative Works thereof, that is intentionally
+-      submitted to Licensor for inclusion in the Work by the copyright owner
+-      or by an individual or Legal Entity authorized to submit on behalf of
+-      the copyright owner. For the purposes of this definition, "submitted"
+-      means any form of electronic, verbal, or written communication sent
+-      to the Licensor or its representatives, including but not limited to
+-      communication on electronic mailing lists, source code control systems,
+-      and issue tracking systems that are managed by, or on behalf of, the
+-      Licensor for the purpose of discussing and improving the Work, but
+-      excluding communication that is conspicuously marked or otherwise
+-      designated in writing by the copyright owner as "Not a Contribution."
+-
+-      "Contributor" shall mean Licensor and any individual or Legal Entity
+-      on behalf of whom a Contribution has been received by Licensor and
+-      subsequently incorporated within the Work.
+-
+-   2. Grant of Copyright License. Subject to the terms and conditions of
+-      this License, each Contributor hereby grants to You a perpetual,
+-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+-      copyright license to reproduce, prepare Derivative Works of,
+-      publicly display, publicly perform, sublicense, and distribute the
+-      Work and such Derivative Works in Source or Object form.
+-
+-   3. Grant of Patent License. Subject to the terms and conditions of
+-      this License, each Contributor hereby grants to You a perpetual,
+-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+-      (except as stated in this section) patent license to make, have made,
+-      use, offer to sell, sell, import, and otherwise transfer the Work,
+-      where such license applies only to those patent claims licensable
+-      by such Contributor that are necessarily infringed by their
+-      Contribution(s) alone or by combination of their Contribution(s)
+-      with the Work to which such Contribution(s) was submitted. If You
+-      institute patent litigation against any entity (including a
+-      cross-claim or counterclaim in a lawsuit) alleging that the Work
+-      or a Contribution incorporated within the Work constitutes direct
+-      or contributory patent infringement, then any patent licenses
+-      granted to You under this License for that Work shall terminate
+-      as of the date such litigation is filed.
+-
+-   4. Redistribution. You may reproduce and distribute copies of the
+-      Work or Derivative Works thereof in any medium, with or without
+-      modifications, and in Source or Object form, provided that You
+-      meet the following conditions:
+-
+-      (a) You must give any other recipients of the Work or
+-          Derivative Works a copy of this License; and
+-
+-      (b) You must cause any modified files to carry prominent notices
+-          stating that You changed the files; and
+-
+-      (c) You must retain, in the Source form of any Derivative Works
+-          that You distribute, all copyright, patent, trademark, and
+-          attribution notices from the Source form of the Work,
+-          excluding those notices that do not pertain to any part of
+-          the Derivative Works; and
+-
+-      (d) If the Work includes a "NOTICE" text file as part of its
+-          distribution, then any Derivative Works that You distribute must
+-          include a readable copy of the attribution notices contained
+-          within such NOTICE file, excluding those notices that do not
+-          pertain to any part of the Derivative Works, in at least one
+-          of the following places: within a NOTICE text file distributed
+-          as part of the Derivative Works; within the Source form or
+-          documentation, if provided along with the Derivative Works; or,
+-          within a display generated by the Derivative Works, if and
+-          wherever such third-party notices normally appear. The contents
+-          of the NOTICE file are for informational purposes only and
+-          do not modify the License. You may add Your own attribution
+-          notices within Derivative Works that You distribute, alongside
+-          or as an addendum to the NOTICE text from the Work, provided
+-          that such additional attribution notices cannot be construed
+-          as modifying the License.
+-
+-      You may add Your own copyright statement to Your modifications and
+-      may provide additional or different license terms and conditions
+-      for use, reproduction, or distribution of Your modifications, or
+-      for any such Derivative Works as a whole, provided Your use,
+-      reproduction, and distribution of the Work otherwise complies with
+-      the conditions stated in this License.
+-
+-   5. Submission of Contributions. Unless You explicitly state otherwise,
+-      any Contribution intentionally submitted for inclusion in the Work
+-      by You to the Licensor shall be under the terms and conditions of
+-      this License, without any additional terms or conditions.
+-      Notwithstanding the above, nothing herein shall supersede or modify
+-      the terms of any separate license agreement you may have executed
+-      with Licensor regarding such Contributions.
+-
+-   6. Trademarks. This License does not grant permission to use the trade
+-      names, trademarks, service marks, or product names of the Licensor,
+-      except as required for reasonable and customary use in describing the
+-      origin of the Work and reproducing the content of the NOTICE file.
+-
+-   7. Disclaimer of Warranty. Unless required by applicable law or
+-      agreed to in writing, Licensor provides the Work (and each
+-      Contributor provides its Contributions) on an "AS IS" BASIS,
+-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+-      implied, including, without limitation, any warranties or conditions
+-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+-      PARTICULAR PURPOSE. You are solely responsible for determining the
+-      appropriateness of using or redistributing the Work and assume any
+-      risks associated with Your exercise of permissions under this License.
+-
+-   8. Limitation of Liability. In no event and under no legal theory,
+-      whether in tort (including negligence), contract, or otherwise,
+-      unless required by applicable law (such as deliberate and grossly
+-      negligent acts) or agreed to in writing, shall any Contributor be
+-      liable to You for damages, including any direct, indirect, special,
+-      incidental, or consequential damages of any character arising as a
+-      result of this License or out of the use or inability to use the
+-      Work (including but not limited to damages for loss of goodwill,
+-      work stoppage, computer failure or malfunction, or any and all
+-      other commercial damages or losses), even if such Contributor
+-      has been advised of the possibility of such damages.
+-
+-   9. Accepting Warranty or Additional Liability. While redistributing
+-      the Work or Derivative Works thereof, You may choose to offer,
+-      and charge a fee for, acceptance of support, warranty, indemnity,
+-      or other liability obligations and/or rights consistent with this
+-      License. However, in accepting such obligations, You may act only
+-      on Your own behalf and on Your sole responsibility, not on behalf
+-      of any other Contributor, and only if You agree to indemnify,
+-      defend, and hold each Contributor harmless for any liability
+-      incurred by, or claims asserted against, such Contributor by reason
+-      of your accepting any such warranty or additional liability.
+-
+-   END OF TERMS AND CONDITIONS
+-
+-   APPENDIX: How to apply the Apache License to your work.
+-
+-      To apply the Apache License to your work, attach the following
+-      boilerplate notice, with the fields enclosed by brackets "[]"
+-      replaced with your own identifying information. (Don't include
+-      the brackets!)  The text should be enclosed in the appropriate
+-      comment syntax for the file format. We also recommend that a
+-      file or class name and description of purpose be included on the
+-      same "printed page" as the copyright notice for easier
+-      identification within third-party archives.
+-
+-   Copyright [yyyy] [name of copyright owner]
+-
+-   Licensed under the Apache License, Version 2.0 (the "License");
+-   you may not use this file except in compliance with the License.
+-   You may obtain a copy of the License at
+-
+-       http://www.apache.org/licenses/LICENSE-2.0
+-
+-   Unless required by applicable law or agreed to in writing, software
+-   distributed under the License is distributed on an "AS IS" BASIS,
+-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-   See the License for the specific language governing permissions and
+-   limitations under the License.
+diff --git a/README.md b/README.md
+deleted file mode 100644
+index d10781b..0000000
+--- a/README.md
++++ /dev/null
+@@ -1,144 +0,0 @@
+-# pb_teleop_twist_joy
+-
+-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+-[![Build and Test](https://github.com/SMBU-PolarBear-Robotics-Team/pb_teleop_twist_joy/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/SMBU-PolarBear-Robotics-Team/pb_teleop_twist_joy/actions/workflows/build_and_test.yml/badge.svg)
+-
+-> [!NOTE]
+-> This code is currently quite messy, and it is not recommended to develop it again based on this code. The README update is not timely.
+-
+-## Overview
+-
+-The purpose of this package is to provide a generic facility for tele-operating Twist-based ROS 2 robots with a standard joystick.
+-It converts joy messages to velocity commands.
+-
+-This node provides no rate limiting or autorepeat functionality.
+-It is expected that you take advantage of the features built into [joy](https://index.ros.org/p/joy/github-ros-drivers-joystick_drivers) for this.
+-
+-### Executables
+-
+-The package comes with the `teleop_node` that republishes `sensor_msgs/msg/Joy` messages as scaled `geometry_msgs/msg/Twist` messages.
+-The message type can be changed to `geometry_msgs/msg/TwistStamped` by the `publish_stamped_twist` parameter.
+-
+-### Subscribed Topics
+-
+-- `joy (sensor_msgs/msg/Joy)`
+-  - Joystick messages to be translated to velocity commands.
+-
+-### Published Topics
+-
+-- `cmd_vel (geometry_msgs/msg/Twist or geometry_msgs/msg/TwistStamped)`
+-  - Command velocity messages arising from Joystick commands.
+-
+-- `cmd_gimbal_joint (sensor_msgs/msg/JointState)`
+-  - Command state messages of gimbal joint position arising from Joystick commands.
+-
+-### Client
+-
+-- `nav_to_pose_client_ (nav2_msgs/action/NavigateToPose)`
+-  - Action client for sending navigation goals to the `navigate_to_pose` action server. This client is used to send the robot to a specified pose in the map.
+-
+-### Parameters
+-
+-- `require_enable_button (bool, default: true)`
+-  - Whether to require the enable button for enabling movement.
+-
+-- `enable_button (int, default: 0)`
+-  - Joystick button to enable regular-speed movement.
+-
+-- `enable_turbo_button (int, default: -1)`
+-  - Joystick button to enable high-speed movement (disabled when -1).
+-
+-- `axis_chassis.<axis>`
+-  - Joystick axis to use for linear movement control.
+-  - `axis_chassis.x (int, default: 5)`
+-  - `axis_chassis.y (int, default: -1)`
+-  - `axis_chassis.yaw (int, default: -1)`
+-
+-- `scale_chassis.<axis>`
+-  - Scale to apply to joystick linear axis for regular-speed movement.
+-  - `scale_chassis.x (double, default: 0.5)`
+-  - `scale_chassis.y (double, default: 0.0)`
+-  - `scale_chassis.yaw (double, default: 0.0)`
+-
+-- `scale_chassis_turbo.<axis>`
+-  - Scale to apply to joystick linear axis for high-speed movement.
+-  - `scale_chassis_turbo.x (double, default: 1.0)`
+-  - `scale_chassis_turbo.y (double, default: 0.0)`
+-  - `scale_chassis_turbo.yaw (double, default: 0.0)`
+-
+-- `axis_gimbal.<axis>`
+-  - Joystick axis to use for angular movement control.
+-  - `axis_gimbal.yaw (int, default: 2)`
+-  - `axis_gimbal.pitch (int, default: -1)`
+-  - `axis_gimbal.roll (int, default: -1)`
+-
+-- `scale_gimbal.<axis>`
+-  - Scale to apply to joystick angular axis.
+-  - `scale_gimbal.yaw (double, default: 0.5)`
+-  - `scale_gimbal.pitch (double, default: 0.0)`
+-  - `scale_gimbal.roll (double, default: 0.0)`
+-
+-- `scale_gimbal_turbo.<axis>`
+-  - Scale to apply to joystick angular axis for high-speed movement.
+-  - `scale_gimbal_turbo.yaw (double, default: 1.0)`
+-  - `scale_gimbal_turbo.pitch (double, default: 0.0)`
+-  - `scale_gimbal_turbo.roll (double, default: 0.0)`
+-
+-- `inverted_reverse (bool, default: false)`
+-  - Whether to invert turning left-right while reversing (useful for differential wheeled robots).
+-
+-- `publish_stamped_twist (bool, default: false)`
+-  - Whether to publish `geometry_msgs/msg/TwistStamped` for command velocity messages.
+-
+-- `robot_base_frame (string, default: 'pb_teleop_twist_joy')`
+-  - Frame name used for the header of TwistStamped messages and lookup transform.
+-
+-- `control_mode` (string, default: 'manual_control')
+-  - Options:
+-  - `manual_control`: Publish speed directly to robot.
+-  - `auto_control`: Send lookahead goal to navigation2 to control the robot
+-
+-## Usage
+-
+-```zsh
+-mkdir -p ~/ros_ws/src
+-cd ~/ros_ws/src
+-```
+-
+-```zsh
+-git clone https://github.com/SMBU-PolarBear-Robotics-Team/pb_teleop_twist_joy.git
+-```
+-
+-```zsh
+-cd ~/ros_ws
+-rosdep install -r --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y
+-```
+-
+-```zsh
+-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+-```
+-
+-### Run
+-
+-A launch file has been provided which has three arguments which can be changed in the terminal or via your own launch file.
+-To configure the node to match your joystick a config file can be used.
+-There are several common ones provided in this package (atk3, ps3-holonomic, ps3, xbox, xd3), located here: [config](./config)
+-
+-PS3 is default, to run for another config (e.g. xbox) use this:
+-
+-````bash
+-ros2 launch pb_teleop_twist_joy pb_teleop_twist_joy_launch.py joy_config:='xbox'
+-````
+-
+-**Note**: this launch file also launches the `joy` node so do not run it separately.
+-
+-### Arguments
+-
+-- `joy_config (string, default: 'xbox')`
+-  - Config file to use
+-- `joy_dev (string, default: '0')`
+-  - Joystick device to use
+-- `config_filepath (string, default: './config' + LaunchConfig('joy_config') + '.config.yaml')`
+-  - Path to config files
+-- `publish_stamped_twist (bool, default: false)`
+-  - Whether to publish `geometry_msgs/msg/TwistStamped` for command velocity messages.
+diff --git a/config/xbox.config.yaml b/config/xbox.config.yaml
+deleted file mode 100644
+index 35ff202..0000000
+--- a/config/xbox.config.yaml
++++ /dev/null
+@@ -1,38 +0,0 @@
+-pb_teleop_twist_joy:
+-  ros__parameters:
+-    use_sim_time: false
+-    robot_base_frame: gimbal_yaw
+-    control_mode: manual_control  # Option: auto_control, manual_control
+-
+-    require_enable_button: true
+-    enable_button: 4              # L1 shoulder button
+-    enable_turbo_button: 5        # R1 shoulder button
+-
+-    axis_chassis:
+-      x: 1                        # Left thumb stick vertical
+-      y: 0                        # Left thumb stick horizontal
+-      yaw: 6                      # button_left and button_right
+-    scale_chassis:
+-      x: 2.5
+-      y: 2.5
+-      yaw: 3.0
+-    scale_chassis_turbo:
+-      x: 4.0
+-      y: 4.0
+-      yaw: 6.0
+-
+-    axis_gimbal:
+-      roll: -1                    # Disable
+-      pitch: 4                    # Right thumb stick vertical
+-      yaw: 3                      # Right thumb stick horizontal
+-      shoot: 7
+-    scale_gimbal:
+-      roll: 0.0
+-      pitch: -1.0
+-      yaw: 2.5
+-      shoot: 1.0
+-    scale_gimbal_turbo:
+-      roll: 0.0
+-      pitch: -1.5
+-      yaw: 3.5
+-      shoot: 1.0
+diff --git a/include/pb_teleop_twist_joy/pb_teleop_twist_joy.hpp b/include/pb_teleop_twist_joy/pb_teleop_twist_joy.hpp
+deleted file mode 100644
+index c3091ad..0000000
+--- a/include/pb_teleop_twist_joy/pb_teleop_twist_joy.hpp
++++ /dev/null
+@@ -1,89 +0,0 @@
+-// Copyright 2025 Lihan Chen
+-//
+-// Licensed under the Apache License, Version 2.0 (the "License");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-//
+-//     http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an "AS IS" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-#ifndef PB_TELEOP_TWIST_JOY__PB_TELEOP_TWIST_JOY_HPP_
+-#define PB_TELEOP_TWIST_JOY__PB_TELEOP_TWIST_JOY_HPP_
+-
+-#include <map>
+-#include <memory>
+-#include <string>
+-
+-#include "example_interfaces/msg/u_int8.hpp"
+-#include "geometry_msgs/msg/twist.hpp"
+-#include "geometry_msgs/msg/twist_stamped.hpp"
+-#include "nav2_msgs/action/navigate_to_pose.hpp"
+-#include "rclcpp/rclcpp.hpp"
+-#include "rclcpp_action/rclcpp_action.hpp"
+-#include "sensor_msgs/msg/joint_state.hpp"
+-#include "sensor_msgs/msg/joy.hpp"
+-#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+-#include "tf2_ros/buffer.h"
+-#include "tf2_ros/transform_listener.h"
+-
+-namespace pb_teleop_twist_joy
+-{
+-
+-class TeleopTwistJoyNode : public rclcpp::Node
+-{
+-public:
+-  explicit TeleopTwistJoyNode(const rclcpp::NodeOptions & options);
+-
+-private:
+-  void joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg);
+-  void sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map);
+-  void fillCmdVelMsg(
+-    const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map,
+-    geometry_msgs::msg::Twist * cmd_vel_msg);
+-  void fillJointStateMsg(
+-    const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map,
+-    sensor_msgs::msg::JointState * joint_state_msg);
+-  void fillShootMsg(
+-    const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map,
+-    example_interfaces::msg::UInt8 * shoot_msg);
+-  void sendGoalPoseAction(
+-    const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map);
+-  void sendZeroCommand();
+-  double getVal(
+-    const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::map<std::string, int64_t> & axis_map,
+-    const std::map<std::string, double> & scale_map, const std::string & fieldname);
+-
+-  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
+-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
+-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
+-  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr cmd_vel_stamped_pub_;
+-  rclcpp::Publisher<example_interfaces::msg::UInt8>::SharedPtr shoot_pub_;
+-  rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SharedPtr nav_to_pose_client_;
+-  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+-  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+-
+-  bool publish_stamped_twist_;
+-  std::string robot_base_frame_;
+-  std::string control_mode_;
+-  bool require_enable_button_;
+-  int64_t enable_button_;
+-  int64_t enable_turbo_button_;
+-  bool inverted_reverse_;
+-
+-  std::map<std::string, int64_t> axis_chassis_map_;
+-  std::map<std::string, std::map<std::string, double>> scale_chassis_map_;
+-  std::map<std::string, int64_t> axis_gimbal_map_;
+-  std::map<std::string, std::map<std::string, double>> scale_gimbal_map_;
+-
+-  bool sent_disable_msg_;
+-  double dt_;
+-};
+-
+-}  // namespace pb_teleop_twist_joy
+-
+-#endif  // PB_TELEOP_TWIST_JOY__PB_TELEOP_TWIST_JOY_HPP_
+diff --git a/launch/pb_teleop_twist_joy_launch.py b/launch/pb_teleop_twist_joy_launch.py
+deleted file mode 100755
+index 814a0d6..0000000
+--- a/launch/pb_teleop_twist_joy_launch.py
++++ /dev/null
+@@ -1,101 +0,0 @@
+-# Copyright 2025 Lihan Chen
+-#
+-# Licensed under the Apache License, Version 2.0 (the "License");
+-# you may not use this file except in compliance with the License.
+-# You may obtain a copy of the License at
+-#
+-#     http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS,
+-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-# See the License for the specific language governing permissions and
+-# limitations under the License.
+-
+-import os
+-
+-from ament_index_python.packages import get_package_share_directory
+-from launch import LaunchDescription
+-from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+-from launch.substitutions import LaunchConfiguration, TextSubstitution
+-from launch_ros.actions import Node
+-
+-
+-def generate_launch_description():
+-    # Create the launch configuration variables
+-    joy_config = LaunchConfiguration("joy_config")
+-    joy_dev = LaunchConfiguration("joy_dev")
+-    joy_vel = LaunchConfiguration("joy_vel")
+-    publish_stamped_twist = LaunchConfiguration("publish_stamped_twist")
+-    config_filepath = LaunchConfiguration("config_filepath")
+-
+-    # Set environment variables
+-    stdout_linebuf_envvar = SetEnvironmentVariable(
+-        "RCUTILS_LOGGING_BUFFERED_STREAM", "1"
+-    )
+-    colorized_output_envvar = SetEnvironmentVariable("RCUTILS_COLORIZED_OUTPUT", "1")
+-
+-    # Declare the launch arguments
+-    declare_joy_vel_cmd = DeclareLaunchArgument("joy_vel", default_value="cmd_vel")
+-    declare_joy_config_cmd = DeclareLaunchArgument("joy_config", default_value="xbox")
+-    declare_joy_dev_cmd = DeclareLaunchArgument("joy_dev", default_value="0")
+-    declare_publish_stamped_twist_cmd = DeclareLaunchArgument(
+-        "publish_stamped_twist", default_value="false"
+-    )
+-    declare_config_filepath_cmd = DeclareLaunchArgument(
+-        "config_filepath",
+-        default_value=[
+-            TextSubstitution(
+-                text=os.path.join(
+-                    get_package_share_directory("pb_teleop_twist_joy"), "config", ""
+-                )
+-            ),
+-            joy_config,
+-            TextSubstitution(text=".config.yaml"),
+-        ],
+-    )
+-
+-    # Define the nodes
+-    joy_node = Node(
+-        package="joy",
+-        executable="joy_node",
+-        name="joy_node",
+-        parameters=[
+-            {
+-                "device_id": joy_dev,
+-                "deadzone": 0.3,
+-                "autorepeat_rate": 20.0,
+-            }
+-        ],
+-    )
+-
+-    teleop_twist_joy_node = Node(
+-        package="pb_teleop_twist_joy",
+-        executable="pb_teleop_twist_joy_node",
+-        name="pb_teleop_twist_joy",
+-        parameters=[
+-            config_filepath,
+-            {"publish_stamped_twist": publish_stamped_twist},
+-        ],
+-        remappings={("/cmd_vel", joy_vel)},
+-    )
+-
+-    # Create the launch description and populate
+-    ld = LaunchDescription()
+-
+-    # Set environment variables
+-    ld.add_action(stdout_linebuf_envvar)
+-    ld.add_action(colorized_output_envvar)
+-
+-    # Declare the launch options
+-    ld.add_action(declare_joy_vel_cmd)
+-    ld.add_action(declare_joy_config_cmd)
+-    ld.add_action(declare_joy_dev_cmd)
+-    ld.add_action(declare_publish_stamped_twist_cmd)
+-    ld.add_action(declare_config_filepath_cmd)
+-
+-    # Add the nodes to the launch description
+-    ld.add_action(joy_node)
+-    ld.add_action(teleop_twist_joy_node)
+-
+-    return ld
+diff --git a/package.xml b/package.xml
+deleted file mode 100644
+index c7e1144..0000000
+--- a/package.xml
++++ /dev/null
+@@ -1,35 +0,0 @@
+-<?xml version="1.0"?>
+-<package format="2">
+-  <name>pb_teleop_twist_joy</name>
+-  <version>1.0.2</version>
+-  <description>Generic joystick teleop for robots with chassis and gimbal.</description>
+-  <maintainer email="lihanchen2004@163.com">Lihan Chen</maintainer>
+-  <license>Apache-2.0</license>
+-  <author email="lihanchen2004@163.com">Lihan Chen</author>
+-
+-  <buildtool_depend>ament_cmake</buildtool_depend>
+-
+-  <depend>rclcpp</depend>
+-  <depend>rclcpp_components</depend>
+-  <depend>rclcpp_action</depend>
+-  <depend>tf2</depend>
+-  <depend>tf2_ros</depend>
+-  <depend>tf2_geometry_msgs</depend>
+-  <depend>geometry_msgs</depend>
+-  <depend>sensor_msgs</depend>
+-  <depend>nav2_msgs</depend>
+-  <depend>example_interfaces</depend>
+-
+-  <exec_depend>joy</exec_depend>
+-
+-  <test_depend>ament_lint_auto</test_depend>
+-  <test_depend>ament_cmake_clang_format</test_depend>
+-  <test_depend>ament_cmake_clang_tidy</test_depend>
+-  <test_depend>ament_cmake_black</test_depend>
+-  <test_depend>ament_cmake_xmllint</test_depend>
+-  <test_depend>ament_cmake_copyright</test_depend>
+-
+-  <export>
+-    <build_type>ament_cmake</build_type>
+-  </export>
+-</package>
+diff --git a/src/pb_teleop_twist_joy.cpp b/src/pb_teleop_twist_joy.cpp
+deleted file mode 100644
+index 75530a9..0000000
+--- a/src/pb_teleop_twist_joy.cpp
++++ /dev/null
+@@ -1,269 +0,0 @@
+-// Copyright 2025 Lihan Chen
+-//
+-// Licensed under the Apache License, Version 2.0 (the "License");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-//
+-//     http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an "AS IS" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-#include "pb_teleop_twist_joy/pb_teleop_twist_joy.hpp"
+-
+-#include <cinttypes>
+-
+-namespace pb_teleop_twist_joy
+-{
+-
+-TeleopTwistJoyNode::TeleopTwistJoyNode(const rclcpp::NodeOptions & options)
+-: Node("teleop_twist_joy_node", options)
+-{
+-  RCLCPP_INFO(this->get_logger(), "Starting Teleop Twist Joy");
+-  tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+-  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+-
+-  this->declare_parameter<bool>("publish_stamped_twist", false);
+-  this->declare_parameter<std::string>("robot_base_frame", "base_link");
+-  this->declare_parameter<bool>("require_enable_button", true);
+-  this->declare_parameter<int64_t>("enable_button", 5);
+-  this->declare_parameter<int64_t>("enable_turbo_button", -1);
+-  this->declare_parameter<bool>("inverted_reverse", false);
+-  this->declare_parameter<std::string>("control_mode", "manual_control");
+-
+-  this->declare_parameters<int64_t>("axis_chassis", {{"x", 5L}, {"y", -1L}, {"yaw", -1L}});
+-  this->declare_parameters<int64_t>(
+-    "axis_gimbal", {{"yaw", 3L}, {"pitch", 4L}, {"roll", -1L}, {"shoot", 5L}});
+-  this->declare_parameters<double>("scale_chassis", {{"x", 0.5}, {"y", 0.0}, {"yaw", 0.0}});
+-  this->declare_parameters<double>("scale_chassis_turbo", {{"x", 1.0}, {"y", 0.0}, {"yaw", 0.0}});
+-  this->declare_parameters<double>(
+-    "scale_gimbal", {{"yaw", 0.5}, {"pitch", 0.0}, {"roll", 0.0}, {"shoot", 1.0}});
+-  this->declare_parameters<double>(
+-    "scale_gimbal_turbo", {{"yaw", 1.0}, {"pitch", 0.0}, {"roll", 0.0}, {"shoot", 1.0}});
+-
+-  this->get_parameter("publish_stamped_twist", publish_stamped_twist_);
+-  this->get_parameter("robot_base_frame", robot_base_frame_);
+-  this->get_parameter("require_enable_button", require_enable_button_);
+-  this->get_parameter("enable_button", enable_button_);
+-  this->get_parameter("enable_turbo_button", enable_turbo_button_);
+-  this->get_parameter("inverted_reverse", inverted_reverse_);
+-  this->get_parameter("control_mode", control_mode_);
+-  this->get_parameters("axis_chassis", axis_chassis_map_);
+-  this->get_parameters("axis_gimbal", axis_gimbal_map_);
+-  this->get_parameters("scale_chassis", scale_chassis_map_["normal"]);
+-  this->get_parameters("scale_chassis_turbo", scale_chassis_map_["turbo"]);
+-  this->get_parameters("scale_gimbal", scale_gimbal_map_["normal"]);
+-  this->get_parameters("scale_gimbal_turbo", scale_gimbal_map_["turbo"]);
+-
+-  if (control_mode_ == "auto_control") {
+-    nav_to_pose_client_ =
+-      rclcpp_action::create_client<nav2_msgs::action::NavigateToPose>(this, "navigate_to_pose");
+-  }
+-
+-  if (publish_stamped_twist_) {
+-    cmd_vel_stamped_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("cmd_vel", 10);
+-  } else {
+-    cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
+-  }
+-  joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("cmd_gimbal_joint", 10);
+-  shoot_pub_ = this->create_publisher<example_interfaces::msg::UInt8>("cmd_shoot", 10);
+-  joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
+-    "joy", 10, std::bind(&TeleopTwistJoyNode::joyCallback, this, std::placeholders::_1));
+-
+-  RCLCPP_INFO(this->get_logger(), "Teleop enable button %" PRId64 ".", enable_button_);
+-  RCLCPP_INFO(this->get_logger(), "Turbo on button %" PRId64 ".", enable_turbo_button_);
+-  RCLCPP_INFO(this->get_logger(), "%s", "Teleop enable inverted reverse.");
+-
+-  for (std::map<std::string, int64_t>::iterator it = axis_chassis_map_.begin();
+-       it != axis_chassis_map_.end(); ++it) {
+-    if (it->second != -1L) {
+-      RCLCPP_INFO(
+-        this->get_logger(), "Linear axis %s on %" PRId64 " at scale %f.", it->first.c_str(),
+-        it->second, scale_chassis_map_["normal"][it->first]);
+-    }
+-    if (enable_turbo_button_ >= 0 && it->second != -1) {
+-      RCLCPP_INFO(
+-        this->get_logger(), "Turbo for linear axis %s is scale %f.", it->first.c_str(),
+-        scale_chassis_map_["turbo"][it->first]);
+-    }
+-  }
+-
+-  for (std::map<std::string, int64_t>::iterator it = axis_gimbal_map_.begin();
+-       it != axis_gimbal_map_.end(); ++it) {
+-    if (it->second != -1L) {
+-      RCLCPP_INFO(
+-        this->get_logger(), "Angular axis %s on %" PRId64 " at scale %f.", it->first.c_str(),
+-        it->second, scale_gimbal_map_["normal"][it->first]);
+-    }
+-    if (enable_turbo_button_ >= 0 && it->second != -1) {
+-      RCLCPP_INFO(
+-        this->get_logger(), "Turbo for angular axis %s is scale %f.", it->first.c_str(),
+-        scale_gimbal_map_["turbo"][it->first]);
+-    }
+-  }
+-}
+-
+-double TeleopTwistJoyNode::getVal(
+-  const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::map<std::string, int64_t> & axis_map,
+-  const std::map<std::string, double> & scale_map, const std::string & fieldname)
+-{
+-  auto axis_it = axis_map.find(fieldname);
+-  auto scale_it = scale_map.find(fieldname);
+-
+-  if (
+-    axis_it == axis_map.end() || axis_it->second == -1L || scale_it == scale_map.end() ||
+-    static_cast<int>(joy_msg->axes.size()) <= axis_it->second) {
+-    return 0.0;
+-  }
+-
+-  return joy_msg->axes[axis_it->second] * scale_it->second;
+-}
+-
+-void TeleopTwistJoyNode::fillShootMsg(
+-  const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map,
+-  example_interfaces::msg::UInt8 * shoot_msg)
+-{
+-  shoot_msg->data = getVal(joy_msg, axis_gimbal_map_, scale_gimbal_map_[which_map], "shoot");
+-  shoot_pub_->publish(*shoot_msg);
+-}
+-
+-void TeleopTwistJoyNode::joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
+-{
+-  // Calculate the frequency of the callback function
+-  static auto last_time = this->now();
+-  auto current_time = this->now();
+-  dt_ = (current_time - last_time).seconds();
+-  last_time = current_time;
+-
+-  if (
+-    enable_turbo_button_ >= 0 && static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button_ &&
+-    joy_msg->buttons[enable_turbo_button_]) {
+-    sendCmdVelMsg(joy_msg, "turbo");
+-  } else if (
+-    !require_enable_button_ || (static_cast<int>(joy_msg->buttons.size()) > enable_button_ &&
+-                                joy_msg->buttons[enable_button_])) {
+-    sendCmdVelMsg(joy_msg, "normal");
+-  } else {
+-    // When enable button is released, immediately send a single no-motion command
+-    // in order to stop the robot.
+-    if (sent_disable_msg_) {
+-      sendZeroCommand();
+-      sent_disable_msg_ = false;
+-    }
+-  }
+-  fillShootMsg(joy_msg, "normal", new example_interfaces::msg::UInt8());
+-}
+-
+-void TeleopTwistJoyNode::sendCmdVelMsg(
+-  const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map)
+-{
+-  if (control_mode_ == "manual_control") {
+-    if (publish_stamped_twist_) {
+-      auto cmd_vel_stamped_msg = std::make_unique<geometry_msgs::msg::TwistStamped>();
+-      cmd_vel_stamped_msg->header.stamp = this->now();
+-      cmd_vel_stamped_msg->header.frame_id = robot_base_frame_;
+-      fillCmdVelMsg(joy_msg, which_map, &cmd_vel_stamped_msg->twist);
+-      cmd_vel_stamped_pub_->publish(std::move(cmd_vel_stamped_msg));
+-    } else {
+-      auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+-      fillCmdVelMsg(joy_msg, which_map, cmd_vel_msg.get());
+-      cmd_vel_pub_->publish(std::move(cmd_vel_msg));
+-    }
+-  } else {
+-    sendGoalPoseAction(joy_msg, which_map);
+-  }
+-  auto joint_state_msg = std::make_unique<sensor_msgs::msg::JointState>();
+-  fillJointStateMsg(joy_msg, which_map, joint_state_msg.get());
+-  joint_state_pub_->publish(std::move(joint_state_msg));
+-  sent_disable_msg_ = true;
+-}
+-
+-void TeleopTwistJoyNode::fillCmdVelMsg(
+-  const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map,
+-  geometry_msgs::msg::Twist * cmd_vel_msg)
+-{
+-  double lin_x = getVal(joy_msg, axis_chassis_map_, scale_chassis_map_[which_map], "x");
+-  double ang_z = getVal(joy_msg, axis_chassis_map_, scale_chassis_map_[which_map], "yaw");
+-
+-  cmd_vel_msg->linear.x = lin_x;
+-  cmd_vel_msg->linear.y = getVal(joy_msg, axis_chassis_map_, scale_chassis_map_[which_map], "y");
+-  cmd_vel_msg->linear.z = getVal(joy_msg, axis_chassis_map_, scale_chassis_map_[which_map], "z");
+-  cmd_vel_msg->angular.z = (lin_x < 0.0 && inverted_reverse_) ? -ang_z : ang_z;
+-  cmd_vel_msg->angular.y =
+-    getVal(joy_msg, axis_chassis_map_, scale_chassis_map_[which_map], "pitch");
+-  cmd_vel_msg->angular.x =
+-    getVal(joy_msg, axis_chassis_map_, scale_chassis_map_[which_map], "roll");
+-}
+-
+-void TeleopTwistJoyNode::fillJointStateMsg(
+-  const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map,
+-  sensor_msgs::msg::JointState * joint_state_msg)
+-{
+-  static double pitch = 0.0;
+-  static double yaw = 0.0;
+-
+-  pitch += getVal(joy_msg, axis_gimbal_map_, scale_gimbal_map_[which_map], "pitch") * dt_;
+-  yaw += getVal(joy_msg, axis_gimbal_map_, scale_gimbal_map_[which_map], "yaw") * dt_;
+-
+-  joint_state_msg->header.stamp = this->now();
+-  joint_state_msg->name = {"gimbal_pitch_joint", "gimbal_yaw_joint"};
+-  joint_state_msg->position = {pitch, yaw};
+-}
+-
+-void TeleopTwistJoyNode::sendGoalPoseAction(
+-  const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::string & which_map)
+-{
+-  double x = getVal(joy_msg, axis_chassis_map_, scale_chassis_map_[which_map], "x");
+-  double y = getVal(joy_msg, axis_chassis_map_, scale_chassis_map_[which_map], "y");
+-  if (abs(x) <= 0.1 && abs(y) <= 0.1) {
+-    sent_disable_msg_ = true;
+-    return;
+-  }
+-
+-  geometry_msgs::msg::PoseStamped gimbal_pose;
+-  gimbal_pose.pose.position.x = x;
+-  gimbal_pose.pose.position.y = y;
+-
+-  nav2_msgs::action::NavigateToPose::Goal goal;
+-  goal.pose.header.stamp = this->now();
+-  goal.pose.header.frame_id = "map";
+-
+-  try {
+-    auto transform = tf_buffer_->lookupTransform("map", robot_base_frame_, tf2::TimePointZero);
+-    tf2::doTransform(gimbal_pose, goal.pose, transform);
+-  } catch (tf2::TransformException & ex) {
+-    RCLCPP_WARN(
+-      this->get_logger(), "Failed to transform goal pose from %s to map: %s",
+-      robot_base_frame_.c_str(), ex.what());
+-    return;
+-  }
+-  static auto last_goal_time = this->now();
+-  auto current_time = this->now();
+-  if ((current_time - last_goal_time).seconds() >= 0.25) {
+-    auto goal_handle_future = nav_to_pose_client_->async_send_goal(goal);
+-    last_goal_time = current_time;
+-  }
+-}
+-
+-void TeleopTwistJoyNode::sendZeroCommand()
+-{
+-  if (control_mode_ == "auto_control") {
+-    auto goal_handle_future = nav_to_pose_client_->async_cancel_goals_before(this->now());
+-  }
+-  if (publish_stamped_twist_) {
+-    auto cmd_vel_stamped_msg = std::make_unique<geometry_msgs::msg::TwistStamped>();
+-    cmd_vel_stamped_msg->header.stamp = this->now();
+-    cmd_vel_stamped_msg->header.frame_id = robot_base_frame_;
+-    cmd_vel_stamped_pub_->publish(std::move(cmd_vel_stamped_msg));
+-  } else {
+-    auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+-    cmd_vel_pub_->publish(std::move(cmd_vel_msg));
+-  }
+-}
+-}  // namespace pb_teleop_twist_joy
+-
+-#include <rclcpp_components/register_node_macro.hpp>
+-RCLCPP_COMPONENTS_REGISTER_NODE(pb_teleop_twist_joy::TeleopTwistJoyNode)

@@ -1,4 +1,5 @@
 #include "minco_core/components/planner_mode_context.hpp"
+#include "minco_core/components/static_map_readiness.hpp"
 
 #include <cctype>
 
@@ -8,7 +9,7 @@ namespace minco_planner {
 
 namespace {
 
-std::shared_ptr<rog_map::MapQueryInterface> staticLayerQuery(
+std::shared_ptr<nav2_costmap_2d::CostmapLayer> findCostmapLayer(
   nav2_costmap_2d::Costmap2DROS * costmap_ros,
   const std::string & static_layer_suffix = "static_layer")
 {
@@ -37,7 +38,7 @@ std::shared_ptr<rog_map::MapQueryInterface> staticLayerQuery(
     const auto costmap_layer =
       std::dynamic_pointer_cast<nav2_costmap_2d::CostmapLayer>(plugin);
     if (costmap_layer) {
-      return std::make_shared<Nav2CostmapQuery>(costmap_layer.get());
+      return costmap_layer;
     }
   }
   return nullptr;
@@ -124,10 +125,30 @@ void PlannerModeContext::rebuildQueries(const std::shared_ptr<rog_map::MapQueryI
     global_query_ = nullptr;
     if (costmap_ros && costmap_ros->getCostmap()) {
       global_query_ = std::make_shared<Nav2CostmapQuery>(costmap_ros->getCostmap());
-      static_query_ = staticLayerQuery(costmap_ros);
-      if (!static_query_) {
+      const auto static_layer = findCostmapLayer(costmap_ros);
+      if (!static_layer) {
         throw std::invalid_argument("PRIORMAP requires an original static_layer for footprint checks");
       }
+      // StaticLayer sets current_ while holding its mutex after the initial map
+      // has been copied. Its costmap executor runs independently of this
+      // planner configure callback. Do not snapshot its pre-map default grid.
+      const bool ready = waitForStaticMap([&static_layer]() {
+          std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> lock(*static_layer->getMutex());
+          return static_layer->isCurrent();
+        }, std::chrono::seconds(3));
+      if (!ready) {
+        throw std::runtime_error(
+                "PRIORMAP static_layer did not receive its initial map within 3 seconds");
+      }
+      // LayeredCostmap::resizeMap takes master then layer locks in this order.
+      // Hold both through geometry validation and the immutable snapshot.
+      std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> master_lock(
+        *costmap_ros->getCostmap()->getMutex());
+      std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> static_lock(*static_layer->getMutex());
+      if (!static_layer->isCurrent()) {
+        throw std::runtime_error("PRIORMAP static_layer became unavailable before snapshot");
+      }
+      static_query_ = std::make_shared<Nav2CostmapQuery>(static_layer.get());
       if (params_.priormap_static_obstacle_clearance_radius > 0.0) {
         const auto static_source = static_query_;
         if (static_source) {
@@ -144,8 +165,10 @@ void PlannerModeContext::rebuildQueries(const std::shared_ptr<rog_map::MapQueryI
                 return local_name == "static_layer" || local_name == "rog_dynamic_obstacle_layer" ||
                   local_name == "inflation_layer";
               });
-            auto measured = known_layers ?
-              staticLayerQuery(costmap_ros, "rog_dynamic_obstacle_layer") : nullptr;
+            auto measured_layer = known_layers ?
+              findCostmapLayer(costmap_ros, "rog_dynamic_obstacle_layer") : nullptr;
+            auto measured = measured_layer ?
+              std::make_shared<Nav2CostmapQuery>(measured_layer.get()) : nullptr;
             static_clearance_query_ = std::make_shared<StaticObstacleClearanceQuery>(
               global_query_, static_source, params_.priormap_static_footprint,
               0.0, measured, costmap_ros->getLayeredCostmap()->getInscribedRadius(),

@@ -18,17 +18,19 @@
 #include <Eigen/Geometry>
 #include <atomic>
 #include <cstdint>
+#include <future>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "pcl/io/pcd_io.h"
 #include "pcl/kdtree/kdtree_flann.h"
 #include "rclcpp/rclcpp.hpp"
+#include "relocalization_manager/stationary_gate.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "small_gicp/ann/kdtree_omp.hpp"
 #include "small_gicp/factors/gicp_factor.hpp"
@@ -131,7 +133,8 @@ private:
   std::string localizationStateLogLabel(LocalizationState state) const;
   bool isLocalized() const;
   bool isRobotMoving() const;
-  void expireStaleMotionCommand();
+  void updateMotionState();
+  void odometryCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
   void setLocalizationState(LocalizationState state, const std::string & reason);
   void logLocalizationState();
   void recordAcceptedGicpVerification(const std::string & reason);
@@ -141,6 +144,20 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr motion_command_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_pcd_map_pub_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_ack_pub_;
+  geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr accepted_initial_pose_;
+  bool wait_for_initial_pose_{false};
+  bool initialized_{true};
+  bool enable_stationary_refinement_{true};
+  StationaryGate stationary_gate_;
+  double candidate_translation_tolerance_{0.08};
+  double candidate_rotation_tolerance_{0.035};
+  std::string refinement_reference_frame_;
+  double max_reference_tilt_{0.009};
+  uint64_t motion_epoch_{0};
+  uint64_t registration_epoch_{0};
+  double registration_scan_time_{0.0};
 
   SmallGicpParams small_gicp_params_;
   std::vector<double> init_pose_;
@@ -164,11 +181,8 @@ private:
   Eigen::Isometry3d previous_map_to_odom_;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_cloud_;
-  std::mutex motion_command_mutex_;
-  std::atomic_bool robot_moving_{false};
+  std::atomic_bool robot_moving_{true};
   std::atomic_bool reset_accumulated_cloud_{false};
-  bool has_motion_command_{false};
-  rclcpp::Time last_motion_command_time_;
   int consecutive_gicp_acceptances_{0};
   int required_consecutive_gicp_acceptances_{5};
   LocalizationState localization_state_{LocalizationState::LOCALIZING};
@@ -181,6 +195,8 @@ private:
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  // Destroy the future (join the worker) before destroying its verifier.
+  std::future<VerificationResult> registration_future_;
 };
 
 }  // namespace relocalization_manager

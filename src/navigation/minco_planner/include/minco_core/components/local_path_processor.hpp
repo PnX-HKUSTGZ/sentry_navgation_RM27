@@ -2,6 +2,7 @@
 #define MINCO_PLANNER__LOCAL_PATH_PROCESSOR_HPP_
 
 #include "minco_core/header.hpp"
+#include "minco_core/components/path_smoother.hpp"
 
 namespace minco_planner {
 
@@ -21,6 +22,9 @@ struct LocalPathSeed
 bool shouldOptimizeYawForSeed(
   bool yaw_optimization_enabled, const LocalPathSeed & seed) noexcept;
 
+double projectedRouteProgress(
+  const std::vector<geometry_msgs::msg::PoseStamped> & path, double x, double y);
+
 class LocalPathProcessor
 {
 public:
@@ -37,6 +41,8 @@ public:
     rclcpp::Clock::SharedPtr clock);
 
   void updateLimits(double max_vel, double max_acc, double traj_goal_tolerance);
+  void setSmoothingOptions(const PathSmoothingOptions & options) {smoothing_options_ = options;}
+  void setRepairMaxOffset(double offset);
 
   LocalPathSeed buildSeed(const std::vector<geometry_msgs::msg::PoseStamped> & global_path,
     const geometry_msgs::msg::PoseStamped & current_pose,
@@ -59,6 +65,8 @@ private:
     bool & clipped) const;
 
   double lookahead_dist_{5.0};
+  PathSmoothingOptions smoothing_options_;
+  double repair_max_offset_{0.0};
   double max_vel_{2.0};
   double max_acc_{4.0};
   double traj_goal_tolerance_{0.5};

@@ -10,7 +10,8 @@ inline bool computeReferenceIndex(
     double nearest_index, bool same_trajectory, double tracked_spatial_index,
     double tracked_reference_index, double elapsed_since_update,
     double sample_dt, double maximum_index, double maximum_lead_time,
-    double &spatial_index, double &reference_index) {
+    double &spatial_index, double &reference_index,
+    bool preserve_lead_on_replacement = false) {
   if (!std::isfinite(nearest_index) || nearest_index < 0.0 ||
       !std::isfinite(maximum_index) || maximum_index < 0.0 ||
       !std::isfinite(sample_dt) || sample_dt <= 0.0 ||
@@ -20,6 +21,17 @@ inline bool computeReferenceIndex(
 
   spatial_index = nearest_index;
   double progress_index = nearest_index;
+  if (!same_trajectory && preserve_lead_on_replacement) {
+    if (!std::isfinite(tracked_spatial_index) || tracked_spatial_index < 0.0 ||
+        !std::isfinite(tracked_reference_index) || tracked_reference_index < 0.0) {
+      return false;
+    }
+    // Rolling replans use a new spatial origin. Carry only the bounded time
+    // lead, never an index from the old polynomial. Otherwise each replacement
+    // erases the lead and produces a periodic brake/accelerate cycle.
+    progress_index += std::clamp(tracked_reference_index - tracked_spatial_index,
+                                0.0, maximum_lead_time / sample_dt);
+  }
   if (same_trajectory) {
     if (!std::isfinite(tracked_spatial_index) || tracked_spatial_index < 0.0 ||
         !std::isfinite(tracked_reference_index) ||

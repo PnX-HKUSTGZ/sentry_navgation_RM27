@@ -1,5 +1,8 @@
 #include "minco_core/components/local_path_processor.hpp"
 
+#include <chrono>
+#include <stdexcept>
+
 namespace minco_planner {
 
 namespace {
@@ -143,10 +146,147 @@ bool shortcutRespectsCostEnvelope(
 
 }  // namespace
 
+namespace {
+
+// Try smooth bounded offsets of the existing route. Validate inexpensive
+// vertices first, then every swept connection; an unsuccessful search leaves
+// the original checked stopping prefix intact.
+bool repairObservedPath(std::vector<Eigen::Vector3d> & path,
+  const std::shared_ptr<rog_map::MapQueryInterface> & map,
+  const LocalPathProcessor::FootprintSafetyCheck & safe, double yaw,
+  double max_offset, bool fixed_end, double original_progress,
+  bool & partial_repair)
+{
+  partial_repair = false;
+  if (max_offset <= 0.0 || path.size() < 2U || !map || !safe ||
+    !safe(path.front(), yaw) || !std::isfinite(map->resolution()) || map->resolution() <= 0.0)
+  {
+    return false;
+  }
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+  std::vector<Eigen::Vector3d> stations{path.front()};
+  std::vector<double> arc{0.0};
+  for (size_t i = 1; i < path.size(); ++i) {
+    const double length = (path[i] - path[i - 1]).head<2>().norm();
+    if (!std::isfinite(length)) {return false;}
+    if (length < 1e-6) {continue;}
+    const int steps = std::max(1, static_cast<int>(std::ceil(length / 0.10)));
+    if (stations.size() + steps > 80U) {return false;}
+    for (int k = 1; k <= steps; ++k) {
+      stations.push_back(path[i - 1] + (path[i] - path[i - 1]) * (double(k) / steps));
+      arc.push_back(arc.back() + length / steps);
+    }
+  }
+  if (stations.size() < 2U) {return false;}
+  const auto blend = [](double distance) {
+      const double t = std::clamp(distance / 0.40, 0.0, 1.0);
+      return t * t * (3.0 - 2.0 * t);
+    };
+  std::vector<Eigen::Vector3d> normals(stations.size());
+  for (size_t i = 0; i < stations.size(); ++i) {
+    const Eigen::Vector2d tangent = (stations[std::min(i + 1, stations.size() - 1)] -
+      stations[i == 0 ? 0 : i - 1]).head<2>();
+    if (tangent.norm() < 1e-6) {return false;}
+    normals[i] = Eigen::Vector3d(-tangent.y(), tangent.x(), 0.0) / tangent.norm();
+  }
+  std::vector<Eigen::Vector3d> best_prefix;
+  // Compare progress along the original route, not offset-polyline length:
+  // sideways movement must not count as extending the observed corridor.
+  double best_progress = original_progress + 0.20;
+  const auto use_prefix = [&]() {
+      if (best_prefix.empty()) {return false;}
+      path = std::move(best_prefix);
+      partial_repair = true;
+      return true;
+    };
+  std::vector<std::vector<Eigen::Vector3d>> alternatives;
+  for (double magnitude = 0.05; magnitude <= max_offset + 1e-9; magnitude += 0.05) {
+    for (const double sign : {-1.0, 1.0}) {
+      auto candidate = stations;
+      for (size_t i = 1; i < stations.size(); ++i) {
+        const double taper = blend(arc[i]) * (fixed_end ? blend(arc.back() - arc[i]) : 1.0);
+        candidate[i] += sign * magnitude * taper * normals[i];
+      }
+      alternatives.push_back(std::move(candidate));
+    }
+  }
+  for (const auto & alternative : alternatives) {
+      std::vector<Eigen::Vector3d> candidate;
+      for (size_t i = 0; i < stations.size(); ++i) {
+        if (std::chrono::steady_clock::now() >= deadline) {return use_prefix();}
+        const Eigen::Vector3d & point = alternative[i];
+        if (!safe(point, yaw)) {break;}
+        if (i > 0 && !(fixed_end && i + 1 == stations.size())) {
+          const Eigen::Vector3d guard = 0.5 * map->resolution() * normals[i];
+          if (!safe(point + guard, yaw) || !safe(point - guard, yaw)) {break;}
+        }
+        candidate.push_back(point);
+      }
+      // A distant unobserved cell must not discard a useful nearby detour.
+      // Validate the swept prefix in order, stopping at the first unsafe edge.
+      size_t checked = std::min(size_t{1}, candidate.size());
+      for (size_t i = 1; i < candidate.size(); ++i) {
+        if (!isLineFree(map, candidate[i - 1], candidate[i])) {break;}
+        const Eigen::Vector3d delta = candidate[i] - candidate[i - 1];
+        const int steps = std::max(1, static_cast<int>(std::ceil(
+          delta.head<2>().norm() / (0.5 * map->resolution()))));
+        bool valid = true;
+        for (int k = 1; k < steps; ++k) {
+          if (std::chrono::steady_clock::now() >= deadline) {return use_prefix();}
+          if (!safe(candidate[i - 1] + delta * (double(k) / steps), yaw)) {
+            valid = false; break;
+          }
+        }
+        if (!valid) {break;}
+        checked = i + 1;
+      }
+      if (checked == stations.size()) {path.swap(candidate); return true;}
+      if (checked >= 2 && arc[checked - 1] > best_progress) {
+        best_progress = arc[checked - 1];
+        candidate.resize(checked);
+        best_prefix = std::move(candidate);
+      }
+  }
+  return use_prefix();
+}
+
+}  // namespace
+
+void LocalPathProcessor::setRepairMaxOffset(double offset)
+{
+  if (!std::isfinite(offset) || offset < 0.0 || offset > 0.25) {
+    throw std::invalid_argument("local_path.repair_max_offset must be in [0, 0.25] m");
+  }
+  repair_max_offset_ = offset;
+}
+
 bool shouldOptimizeYawForSeed(
   bool yaw_optimization_enabled, const LocalPathSeed & seed) noexcept
 {
   return yaw_optimization_enabled && seed.local_end_is_goal && !seed.observed_prefix_clipped;
+}
+
+double projectedRouteProgress(
+  const std::vector<geometry_msgs::msg::PoseStamped> & path, double x, double y)
+{
+  if (path.size() < 2 || !std::isfinite(x) || !std::isfinite(y)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  double arc = 0.0, progress = 0.0;
+  double best = std::numeric_limits<double>::infinity();
+  for (size_t i = 1; i < path.size(); ++i) {
+    const auto & a = path[i - 1].pose.position;
+    const auto & b = path[i].pose.position;
+    const double dx = b.x - a.x, dy = b.y - a.y;
+    const double length = std::hypot(dx, dy);
+    if (!std::isfinite(length)) {return std::numeric_limits<double>::quiet_NaN();}
+    if (length < 1e-9) {continue;}
+    const double t = std::clamp(((x-a.x)*dx + (y-a.y)*dy)/(length*length), 0.0, 1.0);
+    const double distance = std::hypot(x-a.x-t*dx, y-a.y-t*dy);
+    if (distance < best) {best = distance; progress = arc + t*length;}
+    arc += length;
+  }
+  return progress;
 }
 
 void LocalPathProcessor::configure(
@@ -213,9 +353,61 @@ LocalPathSeed LocalPathProcessor::buildSeed(
       "[MincoPlanner] Current pose has an invalid quaternion; reject local replan seed.");
     return seed;
   }
-  if (!clipToObservedSafePrefix(
+  const auto original_path = seed.dense_path;
+  const bool prefix_valid = clipToObservedSafePrefix(
       seed.dense_path, mode_context, initial_yaw, footprint_is_safe,
-      seed.observed_prefix_clipped))
+      seed.observed_prefix_clipped);
+  bool repaired = false;
+  bool needs_repair = seed.observed_prefix_clipped;
+  if (!needs_repair && repair_max_offset_ > 0.0 && mode_context.dynamicQuery()) {
+    // Act before an accepted boundary-band overlap turns into a hard block on
+    // the next projection. This margin is a preference: when no wider safe
+    // corridor exists, retain the original independently checked prefix.
+    const double guard = 0.5 * mode_context.dynamicQuery()->resolution();
+    for (size_t i = 1; i < original_path.size(); ++i) {
+      const Eigen::Vector2d tangent = (original_path[i] - original_path[i - 1]).head<2>();
+      if (tangent.norm() < 1e-6) {continue;}
+      const Eigen::Vector3d lateral(-guard * tangent.y() / tangent.norm(),
+        guard * tangent.x() / tangent.norm(), 0.0);
+      if (!footprint_is_safe(original_path[i] + lateral, initial_yaw) ||
+        !footprint_is_safe(original_path[i] - lateral, initial_yaw)) {
+        needs_repair = true;
+        break;
+      }
+    }
+  }
+  if (needs_repair && repair_max_offset_ > 0.0) {
+    const auto repair_start = std::chrono::steady_clock::now();
+    auto candidate = original_path;
+    const bool fixed_end = (global_goal - candidate.back()).head<2>().norm() <= traj_goal_tolerance_;
+    double original_progress = std::numeric_limits<double>::infinity();
+    if (seed.observed_prefix_clipped) {
+      original_progress = 0.0;
+      for (size_t i = 1; i < seed.dense_path.size(); ++i) {
+        original_progress += (seed.dense_path[i] - seed.dense_path[i - 1]).head<2>().norm();
+      }
+    }
+    bool partial_repair = false;
+    if (repairObservedPath(candidate, mode_context.sparsifyQuery(), footprint_is_safe,
+        initial_yaw, repair_max_offset_, fixed_end, original_progress, partial_repair)) {
+      bool clipped = false;
+      if (clipToObservedSafePrefix(candidate, mode_context, initial_yaw, footprint_is_safe, clipped) && !clipped) {
+        seed.dense_path = std::move(candidate);
+        seed.observed_prefix_clipped = partial_repair;
+        repaired = true;
+        RCLCPP_INFO_THROTTLE(logger_, *clock_, 1000,
+          "[MincoPlanner] Repaired local guide inside %.2f m observed-safe corridor; frontier_stop=%s.",
+          repair_max_offset_, partial_repair ? "true" : "false");
+      }
+    }
+    if (!repaired && needs_repair) {
+      RCLCPP_INFO_THROTTLE(logger_, *clock_, 1000,
+        "[MincoPlanner] Local guide repair unavailable: clipped=%s elapsed=%.2f ms; retaining checked prefix.",
+        seed.observed_prefix_clipped ? "true" : "false",
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - repair_start).count());
+    }
+  }
+  if (!prefix_valid && !repaired)
   {
     RCLCPP_WARN_THROTTLE(logger_,
       *clock_,
@@ -242,13 +434,19 @@ LocalPathSeed LocalPathProcessor::buildSeed(
   unsigned int start_x = 0U, start_y = 0U;
   if (global_query && global_query->worldToMap(cur_pos.x(), cur_pos.y(), start_x, start_y) &&
       !global_query->isFree(start_x, start_y)) {
-    // A sub-cell body pose can be safe while the cell-centred footprint mask
-    // is lethal. Retain the already footprint-checked short connector to the
-    // snapped global start; do not ask that same centre mask to veto it again.
+    // The physical footprint can be safe inside the global guide's conservative
+    // footprint/terrain-edge buffer. Global search snaps its start out of that
+    // buffer; allow a bounded connector back to it, already swept-checked by
+    // clipToObservedSafePrefix against BOTH static and live physical obstacles.
+    // Limiting this to two cells deadlocked a safe robot ~20 cm inside a ramp
+    // buffer: sparsification rejected the start and overlap recovery correctly
+    // refused to escape a non-overlapping footprint. Never extend this exception
+    // to the rest of the route or to an unobserved/unsafe connector.
+    const double max_connector_length = std::max(0.30, 2.0 * global_query->resolution());
     double connector_length = 0.0;
     for (size_t i = 1U; i < sparse_input.size(); ++i) {
       connector_length += (sparse_input[i] - sparse_input[i - 1U]).head<2>().norm();
-      if (connector_length > 2.0 * global_query->resolution() + 1.0e-9) {break;}
+      if (connector_length > max_connector_length + 1.0e-9) {break;}
       unsigned int x = 0U, y = 0U;
       if (global_query->worldToMap(sparse_input[i].x(), sparse_input[i].y(), x, y) &&
           global_query->isFree(x, y)) {
@@ -308,7 +506,7 @@ LocalPathSeed LocalPathProcessor::buildSeed(
     const Eigen::Vector2d outgoing =
       (seed.sparse_waypoints[index + 1U] - seed.sparse_waypoints[index]).head<2>();
     if (incoming.norm() > 1.0e-6 && outgoing.norm() > 1.0e-6 &&
-        std::abs(incoming.normalized().dot(outgoing.normalized())) < 0.995) {
+        incoming.normalized().dot(outgoing.normalized()) < 0.995) {
       guide_has_turn = true;
       break;
     }
@@ -343,6 +541,12 @@ LocalPathSeed LocalPathProcessor::buildSeed(
           seed.sparse_waypoints.back(), 1.0e-9))) {
       seed.sparse_waypoints = std::move(densified);
     }
+  }
+  if (global_query && seed.sparse_waypoints.size() >= 3U) {
+    PathSmoother::smooth(seed.sparse_waypoints, *global_query, smoothing_options_,
+      [&footprint_is_safe, initial_yaw](const Eigen::Vector3d & point) {
+        return footprint_is_safe(point, initial_yaw);
+      });
   }
   seed.valid = seed.sparse_waypoints.size() >= 2U;
   return seed;

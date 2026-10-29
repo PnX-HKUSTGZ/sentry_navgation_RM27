@@ -8,6 +8,10 @@
 
 #include <rog_map/prob_map.h>
 
+#ifndef TEST_MISS_PROBABILITY
+#define TEST_MISS_PROBABILITY 0.45
+#endif
+
 namespace
 {
 
@@ -96,7 +100,7 @@ std::shared_ptr<rclcpp::Node> makeConfigNode()
       rclcpp::Parameter("prob_map_test.raycasting.local_update_box",
                       std::vector<double>{5.0, 5.0, 3.0}),
       rclcpp::Parameter("prob_map_test.raycasting.p_hit", 0.9),
-      rclcpp::Parameter("prob_map_test.raycasting.p_miss", 0.45),
+      rclcpp::Parameter("prob_map_test.raycasting.p_miss", TEST_MISS_PROBABILITY),
       rclcpp::Parameter("prob_map_test.raycasting.p_min", 0.12),
       rclcpp::Parameter("prob_map_test.raycasting.p_max", 0.97),
       rclcpp::Parameter("prob_map_test.raycasting.p_occ", 0.85),
@@ -251,6 +255,30 @@ TEST(ProbMapRaycast,
   clearing.push_back(pointAt({3.1, 0.1, 0.1}));
   for (int i = 0; i < 40; ++i) { map.updateProbMap(clearing, sensor_pose, sensor); }
   EXPECT_FALSE(std::isfinite(map.hitHeights(low).first));
+
+  // Saturate an obstacle, then prove it is retained without an intersecting
+  // free ray. Faster clearing must not mean time-only removal or unknown fill.
+  for (int i = 0; i < 3; ++i) {
+    map.updateProbMap(replacement, sensor_pose, sensor);
+  }
+  ASSERT_EQ(map.getGridType(low), super_utils::OCCUPIED);
+  rog_map::PointCloud elsewhere;
+  elsewhere.push_back(pointAt(horizontalPoint(sensor, 3.0, 90.0)));
+  for (int i = 0; i < 10; ++i) {
+    map.updateProbMap(elsewhere, sensor_pose, sensor);
+  }
+  EXPECT_EQ(map.getGridType(low), super_utils::OCCUPIED);
+  map.updateProbMap(clearing, sensor_pose, sensor);
+  EXPECT_EQ(map.getGridType(low), super_utils::OCCUPIED);
+  for (int i = 1; i < 6; ++i) {
+    map.updateProbMap(clearing, sensor_pose, sensor);
+  }
+  if (TEST_MISS_PROBABILITY == 0.35) {
+    EXPECT_EQ(map.getGridType(low), super_utils::KNOWN_FREE);
+    EXPECT_FALSE(std::isfinite(map.hitHeights(low).first));
+  } else {
+    EXPECT_EQ(map.getGridType(low), super_utils::OCCUPIED);
+  }
 }
 
 }  // namespace

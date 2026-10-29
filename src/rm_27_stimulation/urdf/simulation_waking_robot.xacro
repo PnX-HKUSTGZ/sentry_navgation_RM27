@@ -53,6 +53,8 @@
     <collision>
       <surface>
         <friction>
+          <!-- The fixed spheres approximate omni rollers, not torsional brakes. -->
+          <torsional><coefficient>0.0</coefficient></torsional>
           <bullet>
             <friction>${omni_friction}</friction>
             <friction2>${omni_friction}</friction2>
@@ -280,7 +282,9 @@
       <linear_velocity_gain>80.0</linear_velocity_gain>
       <!-- The 11.8-degree, low-friction test ramp needs about 21 N to hold this 10.2 kg model. -->
       <linear_velocity_integral_gain>45.0</linear_velocity_integral_gain>
-      <angular_velocity_gain>4.0</angular_velocity_gain>
+      <angular_velocity_gain>8.0</angular_velocity_gain>
+      <angular_velocity_integral_gain>15.0</angular_velocity_integral_gain>
+      <max_yaw_integral_torque>6.0</max_yaw_integral_torque>
       <max_planar_force>120.0</max_planar_force>
       <max_planar_integral_force>35.0</max_planar_integral_force>
       <!-- Add force only after measured motion stalls along a non-zero command.

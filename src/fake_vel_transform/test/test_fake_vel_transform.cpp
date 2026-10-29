@@ -91,9 +91,9 @@ protected:
     executor_.add_node(transform_node_);
     executor_.add_node(test_node_);
     ASSERT_TRUE(spinUntil(
-      [this]() {
+      [this, use_latest]() {
         return odom_pub_->get_subscription_count() > 0U &&
-               path_pub_->get_subscription_count() > 0U &&
+               (use_latest || path_pub_->get_subscription_count() > 0U) &&
                cmd_pub_->get_subscription_count() > 0U && output_sub_->get_publisher_count() > 0U;
       },
       std::chrono::seconds(2)));
@@ -221,6 +221,54 @@ TEST_F(FakeVelTransformFixture, LatestModeStopsWithoutValidFreshOdometry)
   EXPECT_DOUBLE_EQ(outputs_.back().linear.x, 0.0);
   EXPECT_DOUBLE_EQ(outputs_.back().linear.y, 0.0);
   EXPECT_DOUBLE_EQ(outputs_.back().angular.z, 0.0);
+}
+
+TEST_F(FakeVelTransformFixture, LatestModeDoesNotSubscribeToLocalPlan)
+{
+  createNodes(true);
+  spinFor(std::chrono::milliseconds(30));
+  EXPECT_EQ(path_pub_->get_subscription_count(), 0U);
+}
+
+TEST_F(FakeVelTransformFixture, LatestModeDelayedPathCannotRestoreOldYaw)
+{
+  createNodes(true);
+  const auto older_stamp = test_node_->now() - rclcpp::Duration::from_seconds(0.1);
+  odom_pub_->publish(makeOdometry(0.0, older_stamp));
+  spinFor(std::chrono::milliseconds(20));
+  odom_pub_->publish(makeOdometry(M_PI_2, test_node_->now()));
+  spinFor(std::chrono::milliseconds(20));
+
+  nav_msgs::msg::Path path;
+  path.header.stamp = older_stamp;
+  path_pub_->publish(path);
+  spinFor(std::chrono::milliseconds(30));
+
+  geometry_msgs::msg::Twist command;
+  command.linear.x = 1.0;
+  cmd_pub_->publish(command);
+  ASSERT_TRUE(spinUntil([this]() { return !outputs_.empty(); }, std::chrono::seconds(1)));
+  EXPECT_NEAR(outputs_.back().linear.x, 0.0, 1e-6);
+  EXPECT_NEAR(outputs_.back().linear.y, -1.0, 1e-6);
+}
+
+TEST_F(FakeVelTransformFixture, LatestModeRejectsOlderAndDuplicateOdometry)
+{
+  createNodes(true);
+  const auto stamp = test_node_->now();
+  odom_pub_->publish(makeOdometry(M_PI_2, stamp));
+  spinFor(std::chrono::milliseconds(20));
+  odom_pub_->publish(makeOdometry(0.0, stamp - rclcpp::Duration::from_seconds(0.1)));
+  spinFor(std::chrono::milliseconds(20));
+  odom_pub_->publish(makeOdometry(0.0, stamp));
+  spinFor(std::chrono::milliseconds(20));
+
+  geometry_msgs::msg::Twist command;
+  command.linear.x = 1.0;
+  cmd_pub_->publish(command);
+  ASSERT_TRUE(spinUntil([this]() { return !outputs_.empty(); }, std::chrono::seconds(1)));
+  EXPECT_NEAR(outputs_.back().linear.x, 0.0, 1e-6);
+  EXPECT_NEAR(outputs_.back().linear.y, -1.0, 1e-6);
 }
 
 TEST_F(FakeVelTransformFixture, LatestModeWatchdogStopsWhenOdometryExpires)

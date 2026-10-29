@@ -18,6 +18,7 @@ TEST(RecoveryControl, BoundedOutputBypassesAssistanceAndRejectsUnsafeCommand) {
   auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>(
     "recovery_control_test", rclcpp::NodeOptions().parameter_overrides({
       rclcpp::Parameter("FollowPath.performance.enable", false),
+      rclcpp::Parameter("FollowPath.compensate_odometry_age", true),
       rclcpp::Parameter("FollowPath.reference_startup_min_command_speed", 0.6),
       rclcpp::Parameter("FollowPath.uphill_startup_min_command_speed", 1.0),
       rclcpp::Parameter("FollowPath.fixed_wz", 2.0),
@@ -146,6 +147,116 @@ TEST(RecoveryControl, BoundedOutputBypassesAssistanceAndRejectsUnsafeCommand) {
   controller.cleanup();
   executor.remove_node(node->get_node_base_interface());
   executor.remove_node(publisher_node);
+  rclcpp::shutdown();
+}
+
+TEST(ReferenceTiming, ConstantVelocityReferenceHasNoArtificialDelayCorrection) {
+  rclcpp::init(0, nullptr);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>(
+    "reference_timing_test", rclcpp::NodeOptions().parameter_overrides({
+      rclcpp::Parameter("FollowPath.performance.enable", false),
+      rclcpp::Parameter("FollowPath.compensate_odometry_age", true),
+      rclcpp::Parameter("FollowPath.control_delay_compensation", 0.12),
+      rclcpp::Parameter("FollowPath.lidar_offset_x", 0.0),
+      rclcpp::Parameter("FollowPath.lidar_offset_y", 0.0),
+      rclcpp::Parameter("FollowPath.lidar_roll_offset", 0.0),
+      rclcpp::Parameter("FollowPath.use_acc_constraints", false),
+      rclcpp::Parameter("FollowPath.control_delta_weight", std::vector<double>{3.0, 3.0, 0.5}),
+      rclcpp::Parameter("FollowPath.opt_path_topic", "/reference_timing_test/path"),
+      rclcpp::Parameter("FollowPath.odom_topic", "/reference_timing_test/odom")
+    }));
+  auto costmap = std::make_shared<TestCostmap>();
+  auto tf = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+  minco_controller::MincoMpcController controller;
+  controller.configure(node, "FollowPath", tf, costmap);
+  controller.activate();
+  auto inputs = std::make_shared<rclcpp::Node>("reference_timing_inputs");
+  auto path_pub = inputs->create_publisher<ros_interfaces::msg::MpcPositionCommand>(
+    "/reference_timing_test/path", 1);
+  auto odom_pub = inputs->create_publisher<nav_msgs::msg::Odometry>(
+    "/reference_timing_test/odom", rclcpp::SensorDataQoS());
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(node->get_node_base_interface());
+  executor.add_node(inputs);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while ((path_pub->get_subscription_count() == 0U || odom_pub->get_subscription_count() == 0U) &&
+    std::chrono::steady_clock::now() < deadline) {
+    executor.spin_some();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_GT(path_pub->get_subscription_count(), 0U);
+  for (const double angle : {0.0, 0.7, 1.5707963267948966}) {
+    const double vx = 0.5 * std::cos(angle), vy = 0.5 * std::sin(angle);
+    nav_msgs::msg::Path plan;
+    plan.header.frame_id = "odom";
+    plan.header.stamp = node->now();
+    plan.poses.resize(1U);
+    plan.poses.front().header = plan.header;
+    plan.poses.front().pose.position.x = 6.0 * vx;
+    plan.poses.front().pose.position.y = 6.0 * vy;
+    plan.poses.front().pose.orientation.w = 1.0;
+    controller.setPlan(plan);
+    ros_interfaces::msg::MpcPositionCommand command;
+    command.header = plan.header;
+    command.planning_stamp = plan.header.stamp;
+    command.command_flag = ros_interfaces::msg::MpcPositionCommand::NORMAL_COMMAND;
+    command.mpc_horizon = 81U;
+    command.cmds.resize(81U);
+    for (size_t i = 0; i < command.cmds.size(); ++i) {
+      command.cmds[i].position.x = vx * 0.05 * i;
+      command.cmds[i].position.y = vy * 0.05 * i;
+      command.cmds[i].velocity.x = vx;
+      command.cmds[i].velocity.y = vy;
+      command.cmds[i].trajectory_id = 1U;
+    }
+    nav_msgs::msg::Odometry odom;
+    odom.header = plan.header;
+    odom.header.stamp = node->now() - rclcpp::Duration::from_seconds(.10);
+    odom.child_frame_id = "base_link";
+    odom.pose.pose.orientation.w = 1.0;
+    odom.twist.twist.linear.x = vx;
+    odom.twist.twist.linear.y = vy;
+    path_pub->publish(command);
+    odom_pub->publish(odom);
+    for (int i = 0; i < 4; ++i) {
+      executor.spin_some();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header.frame_id = "odom";
+    pose.pose.orientation.w = 1.0;
+    const auto output = controller.computeVelocityCommands(pose, geometry_msgs::msg::Twist{}, nullptr);
+    EXPECT_NEAR(output.twist.linear.x, vx, 1e-5);
+    EXPECT_NEAR(output.twist.linear.y, vy, 1e-5);
+    // Hold spatial pickup fixed while allowing bounded time lead to build.
+    // A normal replacement within this mission must not erase that lead.
+    double previous_speed = 0.5;
+    const auto refresh = [&]() {
+      command.header.stamp = node->now();
+      odom.header.stamp = command.header.stamp;
+      path_pub->publish(command);
+      odom_pub->publish(odom);
+      for (int i = 0; i < 4; ++i) {
+        executor.spin_some();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      const auto result = controller.computeVelocityCommands(
+        pose, geometry_msgs::msg::Twist{}, nullptr);
+      return std::hypot(result.twist.linear.x, result.twist.linear.y);
+    };
+    for (int i = 0; i < 5; ++i) {
+      previous_speed = refresh();
+    }
+    EXPECT_GT(previous_speed, 0.52);
+    for (auto & point : command.cmds) {
+      point.trajectory_id = 2U;
+    }
+    EXPECT_GE(refresh(), previous_speed - 0.015);
+  }
+  controller.deactivate();
+  controller.cleanup();
+  executor.remove_node(node->get_node_base_interface());
+  executor.remove_node(inputs);
   rclcpp::shutdown();
 }
 }  // namespace

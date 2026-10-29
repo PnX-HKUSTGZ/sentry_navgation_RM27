@@ -1,0 +1,776 @@
+[INFO] [launch]: All log files can be found below /home/zhang/.ros/log/2026-10-28-11-49-40-407798-powercenter-31026
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: [rm_27_stimulation] Gazebo rendering: requested=auto, selected=gpu, backend=glx, renderer=D3D12 (NVIDIA GeForce RTX 5070 Ti Laptop GPU)
+[INFO] [gazebo-1]: process started with pid [31067]
+[INFO] [parameter_bridge-2]: process started with pid [31068]
+[INFO] [joint_state_publisher-3]: process started with pid [31070]
+[INFO] [robot_state_publisher-4]: process started with pid [31071]
+[robot_state_publisher-4] [INFO] [1793159381.293450901] [robot_state_publisher]: Robot initialized
+[joint_state_publisher-3] [INFO] [1793159381.535536251] [joint_state_publisher]: Waiting for robot_description to be published on the robot_description topic...
+[joint_state_publisher-3] [INFO] [1793159381.687546738] [joint_state_publisher]: Got description, configuring robot
+[parameter_bridge-2] [INFO] [1793159382.330758403] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/clock (gz.msgs.Clock) -> /clock (rosgraph_msgs/msg/Clock)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793159382.332134892] [rm_27_ros_gz_bridge]: Creating ROS->GZ Bridge: [cmd_vel (geometry_msgs/msg/Twist) -> /cmd_vel (gz.msgs.Twist)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793159382.333494725] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/livox/lidar/points (gz.msgs.PointCloudPacked) -> livox/lidar (sensor_msgs/msg/PointCloud2)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793159382.334878321] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/livox/imu (gz.msgs.IMU) -> livox/imu (sensor_msgs/msg/Imu)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1793159382.335516124] [rm_27_ros_gz_bridge]: Creating GZ->ROS Bridge: [/ground_truth/odometry (gz.msgs.Odometry) -> ground_truth/odometry (nav_msgs/msg/Odometry)] (Lazy 0)
+[INFO] [create-5]: process started with pid [31183]
+[create-5] [INFO] [1793159384.602398600] [spawn_rm27_sentry]: Entity creation successful.
+[gazebo-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="robot"]/link[@name="base_footprint"]/sensor[@name="mid360_imu"]/gz_frame_id:<urdf-string>:L0]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[gazebo-1] [1;33mWarning [Utils.cc:132][0m [/sdf/model[@name="robot"]/link[@name="base_footprint"]/sensor[@name="left_mid360"]/gz_frame_id:<urdf-string>:L0]: XML Element[gz_frame_id], child of element[sensor], not defined in SDF. Copying[gz_frame_id] as children of [sensor].
+[INFO] [create-5]: process has finished cleanly [pid 31183]
+[INFO] [rm27_ground_truth_localizer-6]: process started with pid [31272]
+[INFO] [map_server-7]: process started with pid [31273]
+[INFO] [lifecycle_manager-8]: process started with pid [31274]
+[INFO] [fake_vel_transform_node-9]: process started with pid [31275]
+[INFO] [controller_server-10]: process started with pid [31276]
+[INFO] [smoother_server-11]: process started with pid [31277]
+[INFO] [planner_server_mt-12]: process started with pid [31278]
+[INFO] [behavior_server-13]: process started with pid [31279]
+[INFO] [bt_navigator-14]: process started with pid [31280]
+[INFO] [waypoint_follower-15]: process started with pid [31281]
+[INFO] [velocity_smoother-16]: process started with pid [31282]
+[INFO] [lifecycle_manager-17]: process started with pid [31283]
+[fake_vel_transform_node-9] [0m[INFO] [1793159386.840108372] [fake_vel_transform]: Start FakeVelTransform![0m
+[lifecycle_manager-8] [0m[INFO] [1793159386.843711031] [lifecycle_manager_localization]: Creating[0m
+[velocity_smoother-16] [0m[INFO] [1793159386.845377558] [velocity_smoother]: 
+[velocity_smoother-16] 	velocity_smoother lifecycle node launched. 
+[velocity_smoother-16] 	Waiting on external lifecycle transitions to activate
+[velocity_smoother-16] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[lifecycle_manager-8] [0m[INFO] [1793159386.851114206] [lifecycle_manager_localization]: [34m[1mCreating and initializing lifecycle service clients[0m[0m[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793159386.860624728] [rm27_ground_truth_localizer]: Using Gazebo ground truth from [ground_truth/odometry] with 0.100s interpolation gap and 0.200s scan timeout; organized no-return rays=enabled
+[bt_navigator-14] [0m[INFO] [1793159386.863586527] [bt_navigator]: 
+[bt_navigator-14] 	bt_navigator lifecycle node launched. 
+[bt_navigator-14] 	Waiting on external lifecycle transitions to activate
+[bt_navigator-14] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[waypoint_follower-15] [0m[INFO] [1793159386.865345473] [waypoint_follower]: 
+[waypoint_follower-15] 	waypoint_follower lifecycle node launched. 
+[waypoint_follower-15] 	Waiting on external lifecycle transitions to activate
+[waypoint_follower-15] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[bt_navigator-14] [0m[INFO] [1793159386.866054356] [bt_navigator]: Creating[0m
+[waypoint_follower-15] [0m[INFO] [1793159386.866082572] [waypoint_follower]: Creating[0m
+[lifecycle_manager-17] [0m[INFO] [1793159386.872756422] [lifecycle_manager_navigation]: Creating[0m
+[controller_server-10] [0m[INFO] [1793159386.873082088] [controller_server]: 
+[controller_server-10] 	controller_server lifecycle node launched. 
+[controller_server-10] 	Waiting on external lifecycle transitions to activate
+[controller_server-10] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159386.877608317] [lifecycle_manager_navigation]: [34m[1mCreating and initializing lifecycle service clients[0m[0m[0m
+[controller_server-10] [0m[INFO] [1793159386.880132542] [controller_server]: Creating controller server[0m
+[planner_server_mt-12] [0m[INFO] [1793159386.888059522] [planner_server]: 
+[planner_server_mt-12] 	planner_server lifecycle node launched. 
+[planner_server_mt-12] 	Waiting on external lifecycle transitions to activate
+[planner_server_mt-12] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[smoother_server-11] [0m[INFO] [1793159386.888342568] [smoother_server]: 
+[smoother_server-11] 	smoother_server lifecycle node launched. 
+[smoother_server-11] 	Waiting on external lifecycle transitions to activate
+[smoother_server-11] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[planner_server_mt-12] [0m[INFO] [1793159386.890489582] [planner_server]: Creating[0m
+[smoother_server-11] [0m[INFO] [1793159386.890503366] [smoother_server]: Creating smoother server[0m
+[controller_server-10] [0m[INFO] [1793159386.898077599] [local_costmap.local_costmap]: 
+[controller_server-10] 	local_costmap lifecycle node launched. 
+[controller_server-10] 	Waiting on external lifecycle transitions to activate
+[controller_server-10] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[controller_server-10] [0m[INFO] [1793159386.898943688] [local_costmap.local_costmap]: Creating Costmap[0m
+[behavior_server-13] [0m[INFO] [1793159386.899349213] [behavior_server]: 
+[behavior_server-13] 	behavior_server lifecycle node launched. 
+[behavior_server-13] 	Waiting on external lifecycle transitions to activate
+[behavior_server-13] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[planner_server_mt-12] [0m[INFO] [1793159386.899937194] [global_costmap.global_costmap]: 
+[planner_server_mt-12] 	global_costmap lifecycle node launched. 
+[planner_server_mt-12] 	Waiting on external lifecycle transitions to activate
+[planner_server_mt-12] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[planner_server_mt-12] [0m[INFO] [1793159386.900399522] [global_costmap.global_costmap]: Creating Costmap[0m
+[lifecycle_manager-8] [0m[INFO] [1793159386.903500605] [lifecycle_manager_localization]: [34m[1mStarting managed nodes bringup...[0m[0m[0m
+[lifecycle_manager-8] [0m[INFO] [1793159386.903540100] [lifecycle_manager_localization]: [34m[1mConfiguring map_server[0m[0m[0m
+[map_server-7] [0m[INFO] [1793159386.905179787] [map_server]: 
+[map_server-7] 	map_server lifecycle node launched. 
+[map_server-7] 	Waiting on external lifecycle transitions to activate
+[map_server-7] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.[0m
+[map_server-7] [0m[INFO] [1793159386.905279527] [map_server]: Creating[0m
+[map_server-7] [0m[INFO] [1793159388.754246947] [map_server]: Configuring[0m
+[map_server-7] [0m[INFO] [1793159388.754349157] [map_io]: Loading yaml file: /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.yaml[0m
+[map_server-7] [0m[INFO] [1793159388.754598194] [map_io]: resolution: 0.05[0m
+[map_server-7] [0m[INFO] [1793159388.754603687] [map_io]: origin[0]: -14.6[0m
+[map_server-7] [0m[INFO] [1793159388.754606055] [map_io]: origin[1]: -5.86[0m
+[map_server-7] [0m[INFO] [1793159388.754607560] [map_io]: origin[2]: 0[0m
+[map_server-7] [0m[INFO] [1793159388.754609268] [map_io]: free_thresh: 0.35[0m
+[map_server-7] [0m[INFO] [1793159388.754610642] [map_io]: occupied_thresh: 0.65[0m
+[map_server-7] [0m[INFO] [1793159388.754612537] [map_io]: mode: trinary[0m
+[map_server-7] [0m[INFO] [1793159388.754614743] [map_io]: negate: 0[0m
+[map_server-7] [0m[INFO] [1793159388.754765533] [map_io]: Loading image_file: /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.pgm[0m
+[map_server-7] [0m[INFO] [1793159388.757321890] [map_io]: Read map /home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/map/simulation/RMUC2026.pgm: 583 X 300 map @ 0.05 m/cell[0m
+[lifecycle_manager-8] [0m[INFO] [1793159388.764689729] [lifecycle_manager_localization]: [34m[1mActivating map_server[0m[0m[0m
+[map_server-7] [0m[INFO] [1793159388.764848515] [map_server]: Activating[0m
+[map_server-7] [0m[INFO] [1793159388.765158635] [map_server]: Creating bond (map_server) to lifecycle manager.[0m
+[lifecycle_manager-8] [0m[INFO] [1793159388.869078771] [lifecycle_manager_localization]: Server map_server connected with bond.[0m
+[lifecycle_manager-8] [0m[INFO] [1793159388.869116569] [lifecycle_manager_localization]: [34m[1mManaged nodes are active[0m[0m[0m
+[lifecycle_manager-8] [0m[INFO] [1793159388.869120343] [lifecycle_manager_localization]: [34m[1mCreating bond timer...[0m[0m[0m
+[lifecycle_manager-17] [0m[INFO] [1793159388.932963290] [lifecycle_manager_navigation]: [34m[1mStarting managed nodes bringup...[0m[0m[0m
+[lifecycle_manager-17] [0m[INFO] [1793159388.933047908] [lifecycle_manager_navigation]: [34m[1mConfiguring controller_server[0m[0m[0m
+[controller_server-10] [0m[INFO] [1793159388.933318315] [controller_server]: Configuring controller interface[0m
+[controller_server-10] [0m[INFO] [1793159388.933379973] [controller_server]: getting progress checker plugins..[0m
+[controller_server-10] [0m[INFO] [1793159388.933726701] [controller_server]: getting goal checker plugins..[0m
+[controller_server-10] [0m[INFO] [1793159388.933771765] [controller_server]: Controller frequency set to 20.0000Hz[0m
+[controller_server-10] [0m[INFO] [1793159388.933809984] [local_costmap.local_costmap]: Configuring[0m
+[controller_server-10] [0m[INFO] [1793159388.942704716] [local_costmap.local_costmap]: Using plugin "static_layer"[0m
+[controller_server-10] [0m[INFO] [1793159388.947375284] [local_costmap.local_costmap]: Subscribing to the map topic (/map) with transient local durability[0m
+[controller_server-10] [0m[INFO] [1793159388.949751783] [local_costmap.local_costmap]: Initialized plugin "static_layer"[0m
+[controller_server-10] [0m[INFO] [1793159388.949823751] [local_costmap.local_costmap]: Using plugin "rog_dynamic_obstacle_layer"[0m
+[controller_server-10] [0m[INFO] [1793159388.954436886] [local_costmap.local_costmap]: ROG dynamic obstacle layer enabled=true topic=/rog_map/dynamic_obstacles threshold=65 stale_timeout=2.75s obstacle_marking_max_range=0.00m (0=unlimited) footprint_clearing=true[0m
+[controller_server-10] [0m[INFO] [1793159388.954517551] [local_costmap.local_costmap]: Initialized plugin "rog_dynamic_obstacle_layer"[0m
+[controller_server-10] [0m[INFO] [1793159388.954533962] [local_costmap.local_costmap]: Using plugin "inflation_layer"[0m
+[controller_server-10] [0m[INFO] [1793159388.955402746] [local_costmap.local_costmap]: Initialized plugin "inflation_layer"[0m
+[controller_server-10] [0m[INFO] [1793159388.986373236] [local_costmap.local_costmap]: StaticLayer: Resizing static layer to 583 X 300 at 0.050000 m/pix[0m
+[controller_server-10] [0m[INFO] [1793159388.986611519] [controller_server]: Created progress_checker : progress_checker of type nav2_controller::SimpleProgressChecker[0m
+[controller_server-10] [0m[INFO] [1793159388.987271141] [controller_server]: Controller Server has progress_checker  progress checkers available.[0m
+[controller_server-10] [0m[INFO] [1793159388.988144744] [controller_server]: Created goal checker : general_goal_checker of type nav2_controller::SimpleGoalChecker[0m
+[controller_server-10] [0m[INFO] [1793159388.989380550] [controller_server]: Controller Server has general_goal_checker  goal checkers available.[0m
+[controller_server-10] [0m[INFO] [1793159388.991285217] [controller_server]: Created controller : MincoMpc of type minco_controller::MincoMpcController[0m
+[controller_server-10] [0m[INFO] [1793159389.009070824] [controller_server]: MincoMpc: MincoMpcController configured (dt=0.050, lookahead_time=1.000, deadzone=0.050, delay_comp=0.120, reference_max_lead=0.050, startup_lead=0.850, startup_target_speed=0.080, startup_min_command=0.600, uphill_assist=[grade=0.030..0.180,ref>=0.250,max_command=1.000], slope_slowdown=[0.060,0.180]rad, slope_speed_limit=1.150, small_gyro=false, fixed_wz=0.000, odom_timeout=0.250, trajectory_timeout=1.500, future_tolerance=0.050, q_along=3.000, q_cross=120.000, lidar_offset_x=0.000, lidar_offset_y=0.000, lidar_roll_offset=0.000, opt_path_topic=minco/opt_path, odom_topic=/odometry, cmd_vel_mpc_topic=minco/cmd_vel_mpc)[0m
+[controller_server-10] [0m[INFO] [1793159389.009146918] [controller_server]: Controller Server has MincoMpc  controllers available.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159389.019928179] [lifecycle_manager_navigation]: [34m[1mConfiguring smoother_server[0m[0m[0m
+[smoother_server-11] [0m[INFO] [1793159389.020287863] [smoother_server]: Configuring smoother server[0m
+[smoother_server-11] [0m[INFO] [1793159389.032914811] [smoother_server]: Created smoother : simple_smoother of type nav2_smoother::SimpleSmoother[0m
+[smoother_server-11] [0m[INFO] [1793159389.034423323] [smoother_server]: Smoother Server has simple_smoother  smoothers available.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159389.042848958] [lifecycle_manager_navigation]: [34m[1mConfiguring planner_server[0m[0m[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.043131462] [planner_server]: Configuring[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.043208732] [global_costmap.global_costmap]: Configuring[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.051412276] [global_costmap.global_costmap]: Using plugin "static_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.056306686] [global_costmap.global_costmap]: Subscribing to the map topic (/map) with transient local durability[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.058506780] [global_costmap.global_costmap]: Initialized plugin "static_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.058583848] [global_costmap.global_costmap]: Using plugin "rog_dynamic_obstacle_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.062674136] [global_costmap.global_costmap]: ROG dynamic obstacle layer enabled=true topic=/rog_map/dynamic_obstacles threshold=65 stale_timeout=2.75s obstacle_marking_max_range=2.00m (0=unlimited) footprint_clearing=true[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.062737588] [global_costmap.global_costmap]: Initialized plugin "rog_dynamic_obstacle_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.062746935] [global_costmap.global_costmap]: Using plugin "inflation_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.063762978] [global_costmap.global_costmap]: Initialized plugin "inflation_layer"[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.090873427] [global_costmap.global_costmap]: StaticLayer: Resizing costmap to 583 X 300 at 0.050000 m/pix[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.119756927] [planner_server]: Created global planner plugin MincoPlanner of type minco_planner/MincoPlanner[0m
+[planner_server_mt-12] [32m -- [RM-Config] inflation_resolution: 0.05[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.429203390] [planner_server]: [ROGMap Config] loaded prefix='MincoPlanner.rog_map', frame_id='odom', cloud='/registered_scan', odom='/lidar_odometry', resolution=0.050, map_size=[6.05 6.05 2.05], projection=on, field=on/quadratic, performance=on, visualization=on[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.464245845] [planner_server]: [ROGMap] loaded prior map 583x300 at 0.050 m/cell in frame 'map': occupied=59349 known_free=114875 unknown=676[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.464353131] [planner_server]: [ROGMap] loaded ground-elevation support: default=0.000 m, grid=enabled (113792 supported cells), patches=0[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.473756972] [planner_server]: [ROGMap CloudFilter] enabled frame=base_link mode=transform_cloud pose_child=imu_link tf_timeout=0.200s remove_inside=true boxes=1 visualization=true[0m
+[planner_server_mt-12]  -- [ROG-Map] Init, resetMapSize: ORIGIN_AT_CORNER.
+[planner_server_mt-12]  -- [ROG-Map] Init, resetMapSize: virtual_ceil_height: 1.725, virtual_ground_height: -0.725.
+[planner_server_mt-12] [33m -- [Inf-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [CounterMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 125 125  45[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.25 6.25 2.25[0m
+[planner_server_mt-12] [33m -- [Inf-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [InfMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 125 125  45[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.25 6.25 2.25[0m
+[planner_server_mt-12] [ProbMap] virtual_ceil_height: 1.7
+[planner_server_mt-12] [ProbMap] virtual_ground_height: -0.75
+[planner_server_mt-12] [33m -- [Prob-Map] Clear all local map.[0m
+[planner_server_mt-12] [32m -- [ProbMap] Init successfully -- .[0m
+[planner_server_mt-12] [32m	resolution: 0.05[0m
+[planner_server_mt-12] [32m	map_sliding_en: 1[0m
+[planner_server_mt-12] [32m	local_map_size_i: 121 121  41[0m
+[planner_server_mt-12] [32m	local_map_size_d: 6.05 6.05 2.05[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.555503446] [planner_server]: [MincoPlanner] ROGMap is created inside MincoPlanner plugin and shared by pointer.[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.559814149] [planner_server]: [MincoPlanner] hot_start thresholds: tracking_base=0.400 m velocity=0.450 m/s direction_cosine=0.350[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.563513132] [planner_server]: [MincoPlanner] Cached trajectory reuse limits: 2.00 s for collision/safety rejection, 2.00 s for optimizer failure.[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.579285278] [planner_server]: [MincoPlanner] Original-PGM global polygon clearance: vertices=16 grid_guard=0.000 m overlap_ratio=0.040 overlap_depth=0.030 m; static safety and recovery use the same source and tolerance.[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.579401644] [planner_server]: [MincoPlanner] planner_mode=PRIORMAP[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.579423097] [planner_server]: [MincoPlanner] planning_frame=map output_frame=map rog_frame=odom physical_base_frame=base_link[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.579455920] [planner_server]: [MincoPlanner] global_search=Nav2Costmap dynamic_query=FrameAwareRogQuery[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.589965526] [planner_server]: [SMAC 2D] costmap soft-cost bias: penalty=2.00 shaping=linear; ESDF bias=disabled[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.591762541] [planner_server]: [MincoPlanner] Global search dynamic ROG hard mask: enabled=false collision_distance=0.400 m; UNKNOWN/frontier cells are excluded.[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.591934535] [planner_server]: [MincoPlanner] Safety footprint: length=0.592 width=0.594 margin_per_side=0.050 polygon_vertices=16 sample_dt=0.050 map_timeout=2.500 future_tolerance=0.050 allow_unknown_motion=true dynamic_edge_overlap_tolerance=0.030 check_horizon=2.000 planning_frame=map rog_frame=odom[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.602358349] [planner_server]: [MincoPlanner] Planning-request heartbeat lease: enabled (timeout=0.750 s, steady clock).[0m
+[planner_server_mt-12] [0m[INFO] [1793159389.602443106] [planner_server]: Planner Server has MincoPlanner  planners available.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159389.615009559] [lifecycle_manager_navigation]: [34m[1mConfiguring behavior_server[0m[0m[0m
+[behavior_server-13] [0m[INFO] [1793159389.615324186] [behavior_server]: Configuring[0m
+[behavior_server-13] [0m[INFO] [1793159389.620027417] [behavior_server]: Creating behavior plugin wait of type nav2_behaviors::Wait[0m
+[behavior_server-13] [0m[INFO] [1793159389.629944763] [behavior_server]: Configuring wait[0m
+[lifecycle_manager-17] [0m[INFO] [1793159389.637699104] [lifecycle_manager_navigation]: [34m[1mConfiguring bt_navigator[0m[0m[0m
+[bt_navigator-14] [0m[INFO] [1793159389.638131031] [bt_navigator]: Configuring[0m
+[bt_navigator-14] [0m[INFO] [1793159389.645759059] [bt_navigator]: Creating navigator id navigate_to_pose of type nav2_bt_navigator::NavigateToPoseNavigator[0m
+[lifecycle_manager-17] [0m[INFO] [1793159389.720490419] [lifecycle_manager_navigation]: [34m[1mConfiguring waypoint_follower[0m[0m[0m
+[waypoint_follower-15] [0m[INFO] [1793159389.720918404] [waypoint_follower]: Configuring[0m
+[waypoint_follower-15] [0m[INFO] [1793159389.750197282] [waypoint_follower]: Created waypoint_task_executor : wait_at_waypoint of type nav2_waypoint_follower::WaitAtWaypoint[0m
+[lifecycle_manager-17] [0m[INFO] [1793159389.751454529] [lifecycle_manager_navigation]: [34m[1mConfiguring velocity_smoother[0m[0m[0m
+[velocity_smoother-16] [0m[INFO] [1793159389.751775517] [velocity_smoother]: Configuring velocity smoother[0m
+[lifecycle_manager-17] [0m[INFO] [1793159389.757046844] [lifecycle_manager_navigation]: [34m[1mActivating controller_server[0m[0m[0m
+[controller_server-10] [0m[INFO] [1793159389.757340145] [controller_server]: Activating[0m
+[controller_server-10] [0m[INFO] [1793159389.757470691] [local_costmap.local_costmap]: Activating[0m
+[controller_server-10] [0m[INFO] [1793159389.757560414] [local_costmap.local_costmap]: Checking transform[0m
+[controller_server-10] [0m[INFO] [1793159389.757616273] [local_costmap.local_costmap]: Timed out waiting for transform from gimbal_yaw_fake to odom to become available, tf error: Invalid frame ID "odom" passed to canTransform argument target_frame - frame does not exist[0m
+[controller_server-10] [0m[INFO] [1793159390.257625537] [local_costmap.local_costmap]: Timed out waiting for transform from gimbal_yaw_fake to odom to become available, tf error: Invalid frame ID "odom" passed to canTransform argument target_frame - frame does not exist[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793159390.437514702] [rm27_ground_truth_localizer]: Initialized map->odom from Gazebo pose: x=-11.700 y=3.100 z=0.080
+[controller_server-10] [0m[INFO] [1793159390.757874518] [local_costmap.local_costmap]: start[0m
+[controller_server-10] [33m[WARN] [1793159390.858110495] [local_costmap.local_costmap]: ROG dynamic obstacle grid has not been received[0m
+[controller_server-10] [33m[WARN] [1793159390.908186681] [controller_server]: Minco MPC fail-closed: ACTIVATED_WAITING_FOR_PLAN[0m
+[controller_server-10] [0m[INFO] [1793159390.908249980] [controller_server]: Creating bond (controller_server) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.013448171] [lifecycle_manager_navigation]: Server controller_server connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.013566570] [lifecycle_manager_navigation]: [34m[1mActivating smoother_server[0m[0m[0m
+[smoother_server-11] [0m[INFO] [1793159391.013818878] [smoother_server]: Activating[0m
+[smoother_server-11] [0m[INFO] [1793159391.013902622] [smoother_server]: Creating bond (smoother_server) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.118786538] [lifecycle_manager_navigation]: Server smoother_server connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.118949144] [lifecycle_manager_navigation]: [34m[1mActivating planner_server[0m[0m[0m
+[planner_server_mt-12] [0m[INFO] [1793159391.119389585] [planner_server]: Activating[0m
+[planner_server_mt-12] [0m[INFO] [1793159391.119466846] [global_costmap.global_costmap]: Activating[0m
+[planner_server_mt-12] [0m[INFO] [1793159391.119501015] [global_costmap.global_costmap]: Checking transform[0m
+[planner_server_mt-12] [0m[INFO] [1793159391.119624055] [global_costmap.global_costmap]: start[0m
+[planner_server_mt-12] [33m[WARN] [1793159391.119834912] [global_costmap.global_costmap]: ROG dynamic obstacle grid has not been received[0m
+[planner_server_mt-12] [0m[INFO] [1793159391.186636094] [planner_server]: [MincoPlanner] Original-PGM global polygon clearance: vertices=16 grid_guard=0.000 m overlap_ratio=0.040 overlap_depth=0.030 m; static safety and recovery use the same source and tolerance.[0m
+[planner_server_mt-12] [0m[INFO] [1793159391.187023368] [planner_server]: [MincoPlanner] Rebuilt mode-dependent map queries.[0m
+[planner_server_mt-12] [0m[INFO] [1793159391.188480505] [planner_server]: Creating bond (planner_server) to lifecycle manager.[0m
+[planner_server_mt-12] [PriorMap] updated local projection cache 121x121 at 0.05 m/cell, occupied=7208, known_free=7006
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=83, projection free_count=2913, projection passable_count=1355, projection unknown_count=10290, classification: thin=1355, wall=0, tunnel=0, ambiguous=1337, empty=2735, dropout_hold=0, bounded_fill=0, insufficient=9214, mask0_count=7093, mask1_count=7548
+[lifecycle_manager-17] [0m[INFO] [1793159391.293637817] [lifecycle_manager_navigation]: Server planner_server connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.293999121] [lifecycle_manager_navigation]: [34m[1mActivating behavior_server[0m[0m[0m
+[behavior_server-13] [0m[INFO] [1793159391.294618485] [behavior_server]: Activating[0m
+[behavior_server-13] [0m[INFO] [1793159391.294689064] [behavior_server]: Activating wait[0m
+[behavior_server-13] [0m[INFO] [1793159391.294729281] [behavior_server]: Creating bond (behavior_server) to lifecycle manager.[0m
+[controller_server-10] [0m[INFO] [1793159391.358154308] [local_costmap.local_costmap]: ROG master merge: layer_lethal=5 merged_lethal=1 cleared_static=135 master_lethal_after=5 window=100x100 bounds_ignored=true[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.399794514] [lifecycle_manager_navigation]: Server behavior_server connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.399883368] [lifecycle_manager_navigation]: [34m[1mActivating bt_navigator[0m[0m[0m
+[bt_navigator-14] [0m[INFO] [1793159391.400340391] [bt_navigator]: Activating[0m
+[bt_navigator-14] [0m[INFO] [1793159391.423792082] [bt_navigator]: Creating bond (bt_navigator) to lifecycle manager.[0m
+[planner_server_mt-12] [0m[INFO] [1793159391.520260935] [global_costmap.global_costmap]: ROG master merge: layer_lethal=5 merged_lethal=1 cleared_static=135 master_lethal_after=5 window=583x300 bounds_ignored=true[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.529803362] [lifecycle_manager_navigation]: Server bt_navigator connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.530073144] [lifecycle_manager_navigation]: [34m[1mActivating waypoint_follower[0m[0m[0m
+[waypoint_follower-15] [0m[INFO] [1793159391.530525700] [waypoint_follower]: Activating[0m
+[waypoint_follower-15] [0m[INFO] [1793159391.530596106] [waypoint_follower]: Creating bond (waypoint_follower) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.637053241] [lifecycle_manager_navigation]: Server waypoint_follower connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.637132908] [lifecycle_manager_navigation]: [34m[1mActivating velocity_smoother[0m[0m[0m
+[velocity_smoother-16] [0m[INFO] [1793159391.637445694] [velocity_smoother]: Activating[0m
+[velocity_smoother-16] [0m[INFO] [1793159391.637520130] [velocity_smoother]: Creating bond (velocity_smoother) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.744364458] [lifecycle_manager_navigation]: Server velocity_smoother connected with bond.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.744466173] [lifecycle_manager_navigation]: [34m[1mManaged nodes are active[0m[0m[0m
+[lifecycle_manager-17] [0m[INFO] [1793159391.744479897] [lifecycle_manager_navigation]: [34m[1mCreating bond timer...[0m[0m[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=161, projection free_count=3114, projection passable_count=1380, projection unknown_count=9986, classification: thin=1380, wall=0, tunnel=0, ambiguous=1516, empty=2939, dropout_hold=0, bounded_fill=0, insufficient=8806, mask0_count=7167, mask1_count=7474
+[planner_server_mt-12] [ROGMapPerf] win=1.05s cloud_cb_hz=5.73 map_update_hz=5.73Hz field_update=5.73Hz
+[planner_server_mt-12]   time_ms: total=32.20 raycast=8.28 (parallel=1.97 merge=1.99 endpoint_dedup=2.79) prob=1.47 projection=16.48 field=4.38 snapshot=0.39
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=53.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60677.00 unique_endpoints=4835.00 duplicate_endpoints=55842.00
+[planner_server_mt-12]   cells: free=3121.00 passable=1386.00 occupied=164.00 unknown=9970.00
+[planner_server_mt-12]   classification: thin=1386.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1504.00 empty=2946.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=8805.00
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=174, projection free_count=3125, projection passable_count=1395, projection unknown_count=9947, classification: thin=1395, wall=0, tunnel=0, ambiguous=1553, empty=2950, dropout_hold=0, bounded_fill=0, insufficient=8743, mask0_count=7171, mask1_count=7470
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=5.00 map_update_hz=5.00Hz field_update=5.00Hz
+[planner_server_mt-12]   time_ms: total=29.33 raycast=7.19 (parallel=1.73 merge=1.97 endpoint_dedup=2.43) prob=1.09 projection=15.11 field=4.30 snapshot=0.33
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=50.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60677.00 unique_endpoints=4838.00 duplicate_endpoints=55839.00
+[planner_server_mt-12]   cells: free=3125.00 passable=1395.00 occupied=174.00 unknown=9947.00
+[planner_server_mt-12]   classification: thin=1395.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1553.00 empty=2950.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=8743.00
+[controller_server-10] [0m[INFO] [1793159393.358197203] [local_costmap.local_costmap]: ROG master merge: layer_lethal=5 merged_lethal=1 cleared_static=136 master_lethal_after=5 window=100x100 bounds_ignored=true[0m
+[planner_server_mt-12] [0m[INFO] [1793159393.520180867] [global_costmap.global_costmap]: ROG master merge: layer_lethal=5 merged_lethal=1 cleared_static=136 master_lethal_after=5 window=583x300 bounds_ignored=true[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=174, projection free_count=3120, projection passable_count=1401, projection unknown_count=9946, classification: thin=1401, wall=0, tunnel=0, ambiguous=1556, empty=2945, dropout_hold=0, bounded_fill=0, insufficient=8739, mask0_count=7171, mask1_count=7470
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=3.00 map_update_hz=3.00Hz field_update=3.00Hz
+[planner_server_mt-12]   time_ms: total=31.35 raycast=7.20 (parallel=1.78 merge=1.81 endpoint_dedup=2.52) prob=1.42 projection=16.54 field=4.30 snapshot=0.35
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=53.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60677.00 unique_endpoints=4824.00 duplicate_endpoints=55853.00
+[planner_server_mt-12]   cells: free=3120.00 passable=1401.00 occupied=174.00 unknown=9946.00
+[planner_server_mt-12]   classification: thin=1401.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1556.00 empty=2945.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=8739.00
+[controller_server-10] [0m[INFO] [1793159394.358063611] [local_costmap.local_costmap]: ROG obstacle projection: sequence=14 frame=odom->odom obstacles=5/5 clearances=136/136 range_filtered=0 outside=0 transform_failed=0[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793159394.380709030] [rm27_ground_truth_localizer]: No-return rays: synthesized=44394 finite_returns=24726 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793159394.381616153] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [0m[INFO] [1793159394.423941495] [planner_server]: [ROGMap] dynamic obstacle grid published: frame='odom' measured_obstacles=5 verified_clearances=136 subscribers=2[0m
+[planner_server_mt-12] [0m[INFO] [1793159394.519831973] [global_costmap.global_costmap]: ROG obstacle projection: sequence=15 frame=odom->map obstacles=5/5 clearances=136/136 range_filtered=0 outside=0 transform_failed=0[0m
+[planner_server_mt-12] [0m[INFO] [1793159394.610647894] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=5 missing_cores=0 inflated_soft=450 visible=1182 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793159394.610732752] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110833 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[bt_navigator-14] [0m[INFO] [1793159394.661399422] [bt_navigator]: Begin navigating from current location (-11.70, 3.10) to (-2.00, -4.40)[0m
+[controller_server-10] [33m[WARN] [1793159394.662302285] [controller_server]: Minco MPC fail-closed: BLOCK_COMMAND[0m
+[controller_server-10] [0m[INFO] [1793159394.682202516] [controller_server]: Received a goal, begin computing control effort.[0m
+[parameter_bridge-2] [INFO] [1793159394.687905522] [rm_27_ros_gz_bridge]: Passing message from ROS geometry_msgs/msg/Twist to Gazebo gz.msgs.Twist (showing msg only once per type)
+[planner_server_mt-12] [0m[INFO] [1793159394.717209188] [planner_server]: [MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793159394.717318633] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-11.700,3.100) start_cell=(58,179)->(58,179) start_cost=77(free) goal_world=(-2.000,-4.400) goal_cell=(251,29) goal_cost=87(free)[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.016 seconds, raw cost: 293.672, retime_iters: 1, peak |v|: 1.31304, peak |a|: 1.73619[0m
+[controller_server-10] [0m[INFO] [1793159394.782629899] [controller_server]: Minco MPC stationary startup reference: spatial=0.00 regular=0.00 startup=5.00 (0.25 s, target_speed=0.08 m/s)[0m
+[controller_server-10] [0m[INFO] [1793159394.783083266] [controller_server]: Minco MPC startup command floor: 0.109 -> 0.600 m/s[0m
+[controller_server-10] [0m[INFO] [1793159395.082569270] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.019 seconds, raw cost: 239.862, retime_iters: 0, peak |v|: 1.29666, peak |a|: 1.80106[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=8.00 map_update_hz=8.00Hz field_update=8.00Hz
+[planner_server_mt-12]   time_ms: total=27.76 raycast=6.33 (parallel=1.31 merge=1.76 endpoint_dedup=2.26) prob=1.18 projection=15.00 field=3.90 snapshot=0.28
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=53.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60669.00 unique_endpoints=4754.00 duplicate_endpoints=55915.00
+[planner_server_mt-12]   cells: free=3157.00 passable=1522.00 occupied=151.00 unknown=9811.00
+[planner_server_mt-12]   classification: thin=1522.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1661.00 empty=3013.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=8445.00
+[controller_server-10] [0m[INFO] [1793159395.358083021] [local_costmap.local_costmap]: ROG master merge: layer_lethal=2 merged_lethal=0 cleared_static=142 master_lethal_after=2 window=100x100 bounds_ignored=true[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=154, projection free_count=3081, projection passable_count=1611, projection unknown_count=9795, classification: thin=1611, wall=0, tunnel=0, ambiguous=1661, empty=2957, dropout_hold=0, bounded_fill=0, insufficient=8412, mask0_count=7549, mask1_count=7092
+[controller_server-10] [0m[INFO] [1793159395.432569500] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159395.520165668] [global_costmap.global_costmap]: ROG master merge: layer_lethal=2 merged_lethal=0 cleared_static=145 master_lethal_after=2 window=583x300 bounds_ignored=true[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.016 seconds, raw cost: 212.86, retime_iters: 0, peak |v|: 1.45744, peak |a|: 1.80128[0m
+[controller_server-10] [0m[INFO] [1793159395.782571331] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.005 seconds, raw cost: 239.531, retime_iters: 0, peak |v|: 1.31571, peak |a|: 1.80072[0m
+[controller_server-10] [0m[INFO] [1793159396.132561677] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=7.00 map_update_hz=7.00Hz field_update=7.00Hz
+[planner_server_mt-12]   time_ms: total=34.21 raycast=7.74 (parallel=2.07 merge=2.01 endpoint_dedup=2.59) prob=2.44 projection=17.02 field=4.02 snapshot=0.28
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=38.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60717.00 unique_endpoints=6153.00 duplicate_endpoints=54564.00
+[planner_server_mt-12]   cells: free=3411.00 passable=2679.00 occupied=149.00 unknown=8402.00
+[planner_server_mt-12]   classification: thin=2679.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=2002.00 empty=3250.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=6710.00
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 110.368, retime_iters: 0, peak |v|: 1.47611, peak |a|: 0.475113[0m
+[controller_server-10] [0m[INFO] [1793159396.482568669] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 107.031, retime_iters: 0, peak |v|: 1.50052, peak |a|: 0.477134[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=150, projection free_count=3278, projection passable_count=3469, projection unknown_count=7744, classification: thin=3469, wall=0, tunnel=0, ambiguous=1868, empty=3117, dropout_hold=0, bounded_fill=0, insufficient=6187, mask0_count=4993, mask1_count=9648
+[controller_server-10] [33m[WARN] [1793159396.732592591] [controller_server]: Minco MPC measured planar speed 1.552 m/s exceeds the 1.500 m/s planner/controller contract; output remains radially limited.[0m
+[controller_server-10] [0m[INFO] [1793159396.832560855] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 107.767, retime_iters: 0, peak |v|: 1.50053, peak |a|: 0.477048[0m
+[controller_server-10] [0m[INFO] [1793159397.182561892] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.10s cloud_cb_hz=5.45 map_update_hz=5.45Hz field_update=5.45Hz
+[planner_server_mt-12]   time_ms: total=37.14 raycast=8.62 (parallel=2.57 merge=2.37 endpoint_dedup=2.44) prob=3.72 projection=16.59 field=3.70 snapshot=0.50
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=54.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=7412.00 duplicate_endpoints=53312.00
+[planner_server_mt-12]   cells: free=2739.00 passable=4844.00 occupied=117.00 unknown=6941.00
+[planner_server_mt-12]   classification: thin=4844.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1396.00 empty=2563.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=5838.00
+[controller_server-10] [0m[INFO] [1793159397.458088523] [local_costmap.local_costmap]: ROG master merge: layer_lethal=1 merged_lethal=0 cleared_static=148 master_lethal_after=1 window=100x100 bounds_ignored=true[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 108.929, retime_iters: 0, peak |v|: 1.50054, peak |a|: 0.47714[0m
+[controller_server-10] [0m[INFO] [1793159397.532557667] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159397.720173371] [global_costmap.global_costmap]: ROG master merge: layer_lethal=2 merged_lethal=0 cleared_static=178 master_lethal_after=2 window=583x300 bounds_ignored=true[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=91, projection free_count=2825, projection passable_count=5092, projection unknown_count=6633, classification: thin=5092, wall=0, tunnel=0, ambiguous=1112, empty=2665, dropout_hold=0, bounded_fill=0, insufficient=5772, mask0_count=2276, mask1_count=12365
+[controller_server-10] [0m[INFO] [1793159397.882555262] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 110.567, retime_iters: 0, peak |v|: 1.50055, peak |a|: 0.476464[0m
+[controller_server-10] [0m[INFO] [1793159398.232570005] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 107.737, retime_iters: 0, peak |v|: 1.50053, peak |a|: 0.477766[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=6.00 map_update_hz=6.00Hz field_update=6.00Hz
+[planner_server_mt-12]   time_ms: total=29.57 raycast=7.37 (parallel=2.21 merge=1.93 endpoint_dedup=2.19) prob=2.59 projection=14.15 field=3.79 snapshot=0.27
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=54.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=6328.00 duplicate_endpoints=54396.00
+[planner_server_mt-12]   cells: free=3455.00 passable=4755.00 occupied=85.00 unknown=6346.00
+[planner_server_mt-12]   classification: thin=4755.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=755.00 empty=3294.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=5837.00
+[controller_server-10] [0m[INFO] [1793159398.582563126] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [33m[WARN] [1793159398.657996277] [local_costmap.local_costmap]: ROG grid contains 2 measured obstacle cells, but none project into the odom costmap (outside=48 transform_failed=0)[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 109.659, retime_iters: 0, peak |v|: 1.50056, peak |a|: 0.47675[0m
+[controller_server-10] [0m[INFO] [1793159398.932548731] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 111.024, retime_iters: 0, peak |v|: 1.50055, peak |a|: 0.476298[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=92, projection free_count=3432, projection passable_count=4386, projection unknown_count=6731, classification: thin=4386, wall=0, tunnel=0, ambiguous=796, empty=3270, dropout_hold=0, bounded_fill=0, insufficient=6189, mask0_count=1181, mask1_count=13460
+[controller_server-10] [0m[INFO] [1793159399.282553974] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 109.657, retime_iters: 0, peak |v|: 1.50054, peak |a|: 0.476952[0m
+[controller_server-10] [0m[INFO] [1793159399.458010687] [local_costmap.local_costmap]: ROG obstacle projection: sequence=46 frame=odom->odom obstacles=6/12 clearances=0/0 range_filtered=0 outside=6 transform_failed=0[0m
+[controller_server-10] [0m[INFO] [1793159399.458175158] [local_costmap.local_costmap]: ROG master merge: layer_lethal=6 merged_lethal=0 cleared_static=0 master_lethal_after=6 window=100x100 bounds_ignored=true[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793159399.466504937] [rm27_ground_truth_localizer]: No-return rays: synthesized=49502 finite_returns=19618 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793159399.467363034] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [ROGMapPerf] win=1.10s cloud_cb_hz=5.45 map_update_hz=5.45Hz field_update=5.45Hz
+[planner_server_mt-12]   time_ms: total=41.24 raycast=8.78 (parallel=3.06 merge=2.23 endpoint_dedup=2.29) prob=5.43 projection=16.76 field=5.32 snapshot=0.35
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=38.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=6877.00 duplicate_endpoints=53847.00
+[planner_server_mt-12]   cells: free=3269.00 passable=4472.00 occupied=105.00 unknown=6795.00
+[planner_server_mt-12]   classification: thin=4472.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=833.00 empty=3086.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=6250.00
+[planner_server_mt-12] [0m[INFO] [1793159399.514652453] [planner_server]: [ROGMap] dynamic obstacle grid published: frame='odom' measured_obstacles=10 verified_clearances=0 subscribers=2[0m
+[controller_server-10] [0m[INFO] [1793159399.632582650] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159399.719801055] [global_costmap.global_costmap]: ROG obstacle projection: sequence=47 frame=odom->map obstacles=0/10 clearances=0/0 range_filtered=10 outside=0 transform_failed=0[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 107.013, retime_iters: 0, peak |v|: 1.50052, peak |a|: 0.478185[0m
+[planner_server_mt-12] [0m[INFO] [1793159399.892058041] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=0 missing_cores=0 inflated_soft=0 visible=0 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793159399.892126945] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110823 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[planner_server_mt-12] [0m[INFO] [1793159399.920196076] [global_costmap.global_costmap]: ROG master merge: layer_lethal=0 merged_lethal=0 cleared_static=9 master_lethal_after=0 window=583x300 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159399.982556916] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 108.452, retime_iters: 0, peak |v|: 1.50054, peak |a|: 0.477347[0m
+[controller_server-10] [0m[INFO] [1793159400.332559593] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=160, projection free_count=2084, projection passable_count=4895, projection unknown_count=7502, classification: thin=4895, wall=0, tunnel=0, ambiguous=1697, empty=1910, dropout_hold=0, bounded_fill=0, insufficient=6139, mask0_count=2135, mask1_count=12506
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 114.302, retime_iters: 0, peak |v|: 1.50054, peak |a|: 0.554293[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.10s cloud_cb_hz=6.36 map_update_hz=6.36Hz field_update=6.36Hz
+[planner_server_mt-12]   time_ms: total=37.72 raycast=9.03 (parallel=2.32 merge=2.24 endpoint_dedup=3.32) prob=3.18 projection=18.50 field=3.57 snapshot=0.26
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=54.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=7078.00 duplicate_endpoints=53646.00
+[planner_server_mt-12]   cells: free=1835.00 passable=4905.00 occupied=156.00 unknown=7745.00
+[planner_server_mt-12]   classification: thin=4905.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1941.00 empty=1673.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=6122.00
+[controller_server-10] [0m[INFO] [1793159400.682532843] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.03 seconds, raw cost: 1048.01, retime_iters: 9, peak |v|: 1.5, peak |a|: 1.73268[0m
+[controller_server-10] [0m[INFO] [1793159401.032561174] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.003 seconds, raw cost: 532.329, retime_iters: 0, peak |v|: 1.31106, peak |a|: 1.80427[0m
+[controller_server-10] [0m[INFO] [1793159401.382553141] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [0m[INFO] [1793159401.458080153] [local_costmap.local_costmap]: ROG master merge: layer_lethal=5 merged_lethal=0 cleared_static=45 master_lethal_after=5 window=100x100 bounds_ignored=true[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=145, projection free_count=1211, projection passable_count=4430, projection unknown_count=8855, classification: thin=4430, wall=0, tunnel=0, ambiguous=2801, empty=1045, dropout_hold=0, bounded_fill=0, insufficient=6365, mask0_count=1463, mask1_count=13178
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=5.00 map_update_hz=5.00Hz field_update=5.00Hz
+[planner_server_mt-12]   time_ms: total=33.71 raycast=7.24 (parallel=1.78 merge=1.87 endpoint_dedup=2.51) prob=2.07 projection=17.68 field=3.85 snapshot=0.28
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=54.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=6181.00 duplicate_endpoints=54543.00
+[planner_server_mt-12]   cells: free=1161.00 passable=4241.00 occupied=141.00 unknown=9098.00
+[planner_server_mt-12]   classification: thin=4241.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=2823.00 empty=984.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=6593.00
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.01 seconds, raw cost: 517.064, retime_iters: 0, peak |v|: 1.11497, peak |a|: 1.81899[0m
+[controller_server-10] [0m[INFO] [1793159401.732564550] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [0m[INFO] [1793159401.732905528] [controller_server]: Minco MPC uphill command floor: grade=0.044 roll=-0.048 pitch=0.000 ref_peak=0.821 floor=0.973 speed 0.972 -> 0.973 m/s[0m
+[planner_server_mt-12] [0m[INFO] [1793159401.920257889] [global_costmap.global_costmap]: ROG master merge: layer_lethal=2 merged_lethal=1 cleared_static=52 master_lethal_after=2 window=583x300 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159402.082574984] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.008 seconds, raw cost: 406.291, retime_iters: 0, peak |v|: 0.821395, peak |a|: 1.83121[0m
+[controller_server-10] [0m[INFO] [1793159402.432571493] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.007 seconds, raw cost: 254.867, retime_iters: 1, peak |v|: 0.785971, peak |a|: 1.64277[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=150, projection free_count=882, projection passable_count=4435, projection unknown_count=9174, classification: thin=4435, wall=0, tunnel=0, ambiguous=2667, empty=728, dropout_hold=0, bounded_fill=0, insufficient=6811, mask0_count=1069, mask1_count=13572
+[controller_server-10] [0m[INFO] [1793159402.782556141] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [0m[INFO] [1793159402.782952519] [controller_server]: Minco MPC uphill command floor: grade=0.172 roll=-0.173 pitch=0.000 ref_peak=0.784 floor=0.999 speed 0.887 -> 0.999 m/s[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.008 seconds, raw cost: 304.571, retime_iters: 0, peak |v|: 0.892472, peak |a|: 1.66598[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.30s cloud_cb_hz=3.85 map_update_hz=3.85Hz field_update=3.85Hz
+[planner_server_mt-12]   time_ms: total=44.02 raycast=9.77 (parallel=2.45 merge=3.62 endpoint_dedup=2.62) prob=3.14 projection=20.12 field=4.58 snapshot=0.56
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=58.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60183.00 unique_endpoints=6667.00 duplicate_endpoints=53516.00
+[planner_server_mt-12]   cells: free=725.00 passable=4055.00 occupied=135.00 unknown=9726.00
+[planner_server_mt-12]   classification: thin=4055.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=2491.00 empty=594.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=7501.00
+[controller_server-10] [0m[INFO] [1793159403.132567931] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.046 seconds, raw cost: 367.36, retime_iters: 11, peak |v|: 1.275, peak |a|: 1.71216[0m
+[controller_server-10] [0m[INFO] [1793159403.458094543] [local_costmap.local_costmap]: ROG master merge: layer_lethal=6 merged_lethal=1 cleared_static=29 master_lethal_after=6 window=100x100 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159403.482570684] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=163, projection free_count=2960, projection passable_count=4512, projection unknown_count=7006, classification: thin=4512, wall=0, tunnel=0, ambiguous=1126, empty=2779, dropout_hold=0, bounded_fill=0, insufficient=6224, mask0_count=908, mask1_count=13733
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.013 seconds, raw cost: 174.177, retime_iters: 0, peak |v|: 1.30636, peak |a|: 1.8009[0m
+[controller_server-10] [0m[INFO] [1793159403.832566525] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159403.920211174] [global_costmap.global_costmap]: ROG master merge: layer_lethal=6 merged_lethal=3 cleared_static=36 master_lethal_after=6 window=583x300 bounds_ignored=true[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.015 seconds, raw cost: 218.633, retime_iters: 0, peak |v|: 1.34581, peak |a|: 1.80049[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.20s cloud_cb_hz=6.67 map_update_hz=6.67Hz field_update=6.67Hz
+[planner_server_mt-12]   time_ms: total=38.86 raycast=6.88 (parallel=1.82 merge=1.81 endpoint_dedup=2.22) prob=2.68 projection=21.28 field=4.16 snapshot=0.34
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=58.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60723.00 unique_endpoints=5359.00 duplicate_endpoints=55364.00
+[planner_server_mt-12]   cells: free=3263.00 passable=4397.00 occupied=153.00 unknown=6828.00
+[planner_server_mt-12]   classification: thin=4397.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1060.00 empty=3109.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=6075.00
+[controller_server-10] [0m[INFO] [1793159404.182561322] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.006 seconds, raw cost: 195.132, retime_iters: 0, peak |v|: 1.50064, peak |a|: 1.80063[0m
+[controller_server-10] [0m[INFO] [1793159404.458086879] [local_costmap.local_costmap]: ROG obstacle projection: sequence=72 frame=odom->odom obstacles=9/10 clearances=70/70 range_filtered=0 outside=1 transform_failed=0[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793159404.488261956] [rm27_ground_truth_localizer]: No-return rays: synthesized=49474 finite_returns=19646 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793159404.489133434] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[controller_server-10] [0m[INFO] [1793159404.532578152] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159404.534601445] [planner_server]: [ROGMap] dynamic obstacle grid published: frame='odom' measured_obstacles=8 verified_clearances=65 subscribers=2[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=150, projection free_count=3315, projection passable_count=4587, projection unknown_count=6589, classification: thin=4587, wall=0, tunnel=0, ambiguous=1164, empty=3225, dropout_hold=0, bounded_fill=0, insufficient=5665, mask0_count=1213, mask1_count=13428
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.005 seconds, raw cost: 158.004, retime_iters: 0, peak |v|: 1.5, peak |a|: 1.80035[0m
+[planner_server_mt-12] [0m[INFO] [1793159404.719911694] [global_costmap.global_costmap]: ROG obstacle projection: sequence=74 frame=odom->map obstacles=6/9 clearances=59/59 range_filtered=3 outside=0 transform_failed=0[0m
+[controller_server-10] [0m[INFO] [1793159404.882564714] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.003 seconds, raw cost: 159.786, retime_iters: 0, peak |v|: 1.45606, peak |a|: 1.80142[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=4.00 map_update_hz=4.00Hz field_update=4.00Hz
+[planner_server_mt-12]   time_ms: total=40.37 raycast=7.55 (parallel=2.26 merge=1.76 endpoint_dedup=2.39) prob=2.52 projection=22.81 field=4.33 snapshot=0.30
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=54.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=5661.00 duplicate_endpoints=55063.00
+[planner_server_mt-12]   cells: free=4048.00 passable=4082.00 occupied=162.00 unknown=6349.00
+[planner_server_mt-12]   classification: thin=4082.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1426.00 empty=4022.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=5111.00
+[planner_server_mt-12] [0m[INFO] [1793159405.172245312] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=6 missing_cores=0 inflated_soft=788 visible=946 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793159405.172324205] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110827 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[controller_server-10] [0m[INFO] [1793159405.232561715] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 796.424, retime_iters: 5, peak |v|: 0.826033, peak |a|: 1.74859[0m
+[controller_server-10] [0m[INFO] [1793159405.458089763] [local_costmap.local_costmap]: ROG master merge: layer_lethal=9 merged_lethal=6 cleared_static=50 master_lethal_after=9 window=100x100 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159405.482672082] [controller_server]: Reached the goal![0m
+[bt_navigator-14] [0m[INFO] [1793159405.511913619] [bt_navigator]: Goal succeeded[0m
+[bt_navigator-14] [0m[INFO] [1793159405.519921833] [bt_navigator]: Begin navigating from current location (-2.14, -4.44) to (2.00, -4.20)[0m
+[controller_server-10] [33m[WARN] [1793159405.520708395] [controller_server]: Minco MPC fail-closed: BLOCK_COMMAND[0m
+[controller_server-10] [0m[INFO] [1793159405.540608053] [controller_server]: Received a goal, begin computing control effort.[0m
+[planner_server_mt-12] [0m[INFO] [1793159405.570136049] [planner_server]: [MincoPlanner] Global static footprint yaw=-0.003 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793159405.570239693] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-2.119,-4.434) start_cell=(249,28)->(249,28) start_cost=0(free) goal_world=(2.000,-4.200) goal_cell=(331,33) goal_cost=102(free)[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.018 seconds, raw cost: 983.676, retime_iters: 15, peak |v|: 0.760943, peak |a|: 1.71559[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=214, projection free_count=4054, projection passable_count=4136, projection unknown_count=6237, classification: thin=4136, wall=0, tunnel=0, ambiguous=1720, empty=4054, dropout_hold=0, bounded_fill=0, insufficient=4731, mask0_count=1810, mask1_count=12831
+[planner_server_mt-12] [0m[INFO] [1793159405.920248534] [global_costmap.global_costmap]: ROG master merge: layer_lethal=3 merged_lethal=3 cleared_static=47 master_lethal_after=3 window=583x300 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159405.940819026] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.011 seconds, raw cost: 464.04, retime_iters: 0, peak |v|: 0.768302, peak |a|: 1.65867[0m
+[controller_server-10] [0m[INFO] [1793159406.290800698] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.20s cloud_cb_hz=5.00 map_update_hz=5.00Hz field_update=5.00Hz
+[planner_server_mt-12]   time_ms: total=42.39 raycast=7.38 (parallel=1.98 merge=1.97 endpoint_dedup=2.38) prob=2.65 projection=24.45 field=4.64 snapshot=0.36
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=55.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=5846.00 duplicate_endpoints=54878.00
+[planner_server_mt-12]   cells: free=4106.00 passable=4377.00 occupied=255.00 unknown=5903.00
+[planner_server_mt-12]   classification: thin=4377.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1852.00 empty=4106.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=4306.00
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.007 seconds, raw cost: 308.424, retime_iters: 1, peak |v|: 0.787827, peak |a|: 1.78775[0m
+[controller_server-10] [0m[INFO] [1793159406.640790847] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.007 seconds, raw cost: 246.87, retime_iters: 0, peak |v|: 0.803472, peak |a|: 1.16093[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=195, projection free_count=4313, projection passable_count=4395, projection unknown_count=5738, classification: thin=4395, wall=0, tunnel=0, ambiguous=1953, empty=4313, dropout_hold=0, bounded_fill=0, insufficient=3980, mask0_count=2077, mask1_count=12564
+[controller_server-10] [0m[INFO] [1793159406.990782512] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.005 seconds, raw cost: 217.166, retime_iters: 0, peak |v|: 0.808284, peak |a|: 1.1474[0m
+[controller_server-10] [0m[INFO] [1793159407.340807817] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.10s cloud_cb_hz=2.73 map_update_hz=2.73Hz field_update=2.73Hz
+[planner_server_mt-12]   time_ms: total=40.99 raycast=7.36 (parallel=2.09 merge=1.80 endpoint_dedup=2.32) prob=2.98 projection=20.97 field=4.62 snapshot=0.30
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=58.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=5872.00 duplicate_endpoints=54852.00
+[planner_server_mt-12]   cells: free=4298.00 passable=4099.00 occupied=201.00 unknown=6043.00
+[planner_server_mt-12]   classification: thin=4099.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=2188.00 empty=4298.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=4056.00
+[controller_server-10] [0m[INFO] [1793159407.458088271] [local_costmap.local_costmap]: ROG master merge: layer_lethal=23 merged_lethal=11 cleared_static=43 master_lethal_after=23 window=100x100 bounds_ignored=true[0m
+[planner_server_mt-12] [33m[WARN] [1793159407.619561194] [planner_server]: [MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=nan/nan sample=footprint center=(0.408,-4.335,0.000) query_point=(0.704,-4.533,0.000) footprint_offset=(0.296,-0.197) yaw=-0.003 esdf_distance=-0.001 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.087 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.012 pipeline_age_ms=75.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=OCCUPIED base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=OVERHEAD_GROUND_UNVERIFIED candidate_reason=OVERHEAD_GROUND_UNVERIFIED prior_occupied=0 prior_free=1 occupied_z=[0.168,0.337] height_delta=0.150 vertical_ratio=0.118 ground_z=nan support_z=nan ceiling_z=0.168 headroom=0.048 headroom_known=0.000 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=0 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=nan support_error=nan support_tolerance=nan confidence=1.000 planning_frame='map' rog_frame='odom'.[0m
+[planner_server_mt-12] [0m[INFO] [1793159407.619650118] [planner_server]: [MincoPlanner] Clipped local seed to observed-safe prefix at (0.392, -4.335); the local terminal state will stop.[0m
+[planner_server_mt-12] [0m[INFO] [1793159407.627867620] [planner_server]: [MincoPlanner] Observation-frontier bootstrap: prefix=1.340 m, speed_limit=0.80 m/s, terminal_stop=true.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 252.771, retime_iters: 0, peak |v|: 0.87275, peak |a|: 1.38748[0m
+[controller_server-10] [0m[INFO] [1793159407.690807560] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=180, projection free_count=4427, projection passable_count=4334, projection unknown_count=5700, classification: thin=4334, wall=0, tunnel=0, ambiguous=2113, empty=4427, dropout_hold=0, bounded_fill=0, insufficient=3767, mask0_count=2525, mask1_count=12116
+[planner_server_mt-12] [0m[INFO] [1793159407.972248807] [planner_server]: [MincoPlanner] Short observed prefix (1.014 m < 1.054 m); refreshing global route.[0m
+[planner_server_mt-12] [0m[INFO] [1793159407.988784149] [planner_server]: [MincoPlanner] Global static footprint yaw=-0.003 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793159407.988869047] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-0.622,-4.328) start_cell=(279,30)->(279,30) start_cost=173(high-cost) goal_world=(2.000,-4.200) goal_cell=(331,33) goal_cost=102(free)[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.006 seconds, raw cost: 452.487, retime_iters: 0, peak |v|: 0.932012, peak |a|: 1.3567[0m
+[controller_server-10] [0m[INFO] [1793159408.040807618] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159408.120600762] [global_costmap.global_costmap]: ROG master merge: layer_lethal=8 merged_lethal=8 cleared_static=47 master_lethal_after=8 window=583x300 bounds_ignored=true[0m
+[planner_server_mt-12] [0m[INFO] [1793159408.335914754] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(-0.304,-4.319) start_cell=(285,30)->(285,30) start_cost=129(high-cost) goal_world=(2.000,-4.200) goal_cell=(331,33) goal_cost=102(free)[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.005 seconds, raw cost: 439.378, retime_iters: 0, peak |v|: 1.04431, peak |a|: 1.80238[0m
+[controller_server-10] [0m[INFO] [1793159408.390814451] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.20s cloud_cb_hz=4.17 map_update_hz=4.17Hz field_update=4.17Hz
+[planner_server_mt-12]   time_ms: total=35.42 raycast=5.23 (parallel=0.93 merge=1.10 endpoint_dedup=2.14) prob=0.91 projection=17.21 field=4.45 snapshot=0.53
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=56.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60725.00 unique_endpoints=1863.00 duplicate_endpoints=58862.00
+[planner_server_mt-12]   cells: free=1100.00 passable=3986.00 occupied=92.00 unknown=9463.00
+[planner_server_mt-12]   classification: thin=3986.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=4873.00 empty=1098.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=4684.00
+[planner_server_mt-12] [33m[WARN] [1793159408.708075301] [planner_server]: [MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=nan/nan sample=footprint center=(0.408,-4.335,0.000) query_point=(0.704,-4.533,0.000) footprint_offset=(0.296,-0.197) yaw=-0.003 esdf_distance=-0.001 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.175 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.079 pipeline_age_ms=96.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=OCCUPIED base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=OVERHEAD_GROUND_UNVERIFIED candidate_reason=OVERHEAD_GROUND_UNVERIFIED prior_occupied=0 prior_free=1 occupied_z=[0.173,0.343] height_delta=0.150 vertical_ratio=0.129 ground_z=nan support_z=nan ceiling_z=0.173 headroom=0.191 headroom_known=0.000 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=0 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=nan support_error=nan support_tolerance=nan confidence=1.000 planning_frame='map' rog_frame='odom'.[0m
+[planner_server_mt-12] [0m[INFO] [1793159408.708176891] [planner_server]: [MincoPlanner] Clipped local seed to observed-safe prefix at (0.392, -4.335); the local terminal state will stop.[0m
+[planner_server_mt-12] [0m[INFO] [1793159408.728359416] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(0.106,-4.299) start_cell=(294,31)->(294,31) start_cost=199(high-cost) goal_world=(2.000,-4.200) goal_cell=(331,33) goal_cost=102(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793159408.738234314] [planner_server]: [MincoPlanner] Observation-frontier bootstrap: prefix=0.288 m, speed_limit=0.80 m/s, terminal_stop=true.[0m
+[controller_server-10] [0m[INFO] [1793159408.740886752] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.007 seconds, raw cost: 148.207, retime_iters: 0, peak |v|: 0.904747, peak |a|: 1.80115[0m
+[controller_server-10] [0m[INFO] [1793159409.090776155] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159409.105859124] [planner_server]: [MincoPlanner] Short observed prefix (0.034 m < 0.600 m); refreshing global route.[0m
+[planner_server_mt-12] [0m[INFO] [1793159409.122991494] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(0.362,-4.346) start_cell=(299,30)->(299,30) start_cost=170(high-cost) goal_world=(2.000,-4.200) goal_cell=(331,33) goal_cost=102(free)[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 139.008, retime_iters: 1, peak |v|: 0.261006, peak |a|: 1.79618[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=129, projection free_count=1251, projection passable_count=3584, projection unknown_count=9677, classification: thin=3584, wall=0, tunnel=0, ambiguous=5104, empty=1237, dropout_hold=0, bounded_fill=0, insufficient=4716, mask0_count=2739, mask1_count=11902
+[controller_server-10] [0m[INFO] [1793159409.440814780] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [33m[MincoPlanner] Hot Start Rejected: Invalid time duration (t_dur=0.364s)[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793159409.490448256] [rm27_ground_truth_localizer]: No-return rays: synthesized=35233 finite_returns=33887 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793159409.491551216] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.006 seconds, raw cost: 319.792, retime_iters: 1, peak |v|: 0.784289, peak |a|: 1.41232[0m
+[controller_server-10] [0m[INFO] [1793159409.540875341] [controller_server]: Minco MPC stationary startup reference: spatial=1.16 regular=1.16 startup=3.00 (0.09 s, target_speed=0.08 m/s)[0m
+[controller_server-10] [0m[INFO] [1793159409.541411794] [controller_server]: Minco MPC startup command floor: 0.122 -> 0.600 m/s[0m
+[controller_server-10] [0m[INFO] [1793159409.558044047] [local_costmap.local_costmap]: ROG obstacle projection: sequence=93 frame=odom->odom obstacles=22/26 clearances=765/1117 range_filtered=0 outside=356 transform_failed=0[0m
+[controller_server-10] [0m[INFO] [1793159409.558211445] [local_costmap.local_costmap]: ROG master merge: layer_lethal=22 merged_lethal=18 cleared_static=64 master_lethal_after=22 window=100x100 bounds_ignored=true[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.10s cloud_cb_hz=3.64 map_update_hz=3.64Hz field_update=3.64Hz
+[planner_server_mt-12]   time_ms: total=20.07 raycast=5.47 (parallel=0.91 merge=1.15 endpoint_dedup=1.96) prob=0.50 projection=8.16 field=4.03 snapshot=0.34
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=41.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60725.00 unique_endpoints=1470.00 duplicate_endpoints=59255.00
+[planner_server_mt-12]   cells: free=1275.00 passable=3512.00 occupied=170.00 unknown=9684.00
+[planner_server_mt-12]   classification: thin=3512.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=5172.00 empty=1259.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=4698.00
+[planner_server_mt-12] [0m[INFO] [1793159409.714361111] [planner_server]: [ROGMap] dynamic obstacle grid published: frame='odom' measured_obstacles=25 verified_clearances=1126 subscribers=2[0m
+[planner_server_mt-12] [0m[INFO] [1793159409.755283948] [planner_server]: [MincoPlanner] Accepted shallow dynamic boundary cell: center=(0.568,-4.379) offset=(0.296,-0.148) signed_distance=-0.019 tolerance=0.030 raw_reason=GROUND_UNVERIFIED[0m
+[planner_server_mt-12] [33m[WARN] [1793159409.755493088] [planner_server]: [MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=0.652/2.888 sample=footprint center=(0.601,-4.379,0.000) query_point=(0.872,-4.528,0.000) footprint_offset=(0.271,-0.148) yaw=-0.003 esdf_distance=-0.035 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.122 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.041 pipeline_age_ms=81.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=PASSABLE base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=GROUND_UNVERIFIED candidate_reason=CLEARANCE_OK prior_occupied=0 prior_free=1 occupied_z=[0.170,0.170] height_delta=0.000 vertical_ratio=0.033 ground_z=0.170 support_z=nan ceiling_z=nan headroom=inf headroom_known=0.500 ground_candidate=1 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=0 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(0.477,-0.172) continuous_support=0 support_ref=-0.085 support_error=0.255 support_tolerance=0.120 confidence=1.000 planning_frame='map' rog_frame='odom'.[0m
+[planner_server_mt-12] [0m[INFO] [1793159409.758391223] [planner_server]: [MincoPlanner] Future path blocked; published a fully checked 0.39 s braking trajectory at 0.26 m/s while replanning.[0m
+[controller_server-10] [0m[INFO] [1793159409.790792291] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159409.806506400] [planner_server]: [MincoPlanner] Clipped local seed to observed-safe prefix at (0.558, -4.385); the local terminal state will stop.[0m
+[planner_server_mt-12] [0m[INFO] [1793159409.826467784] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(0.426,-4.370) start_cell=(300,29)->(300,29) start_cost=141(high-cost) goal_world=(2.000,-4.200) goal_cell=(331,33) goal_cost=102(free)[0m
+[planner_server_mt-12] [0m[INFO] [1793159409.831577986] [planner_server]: [MincoPlanner] Observation-frontier bootstrap: prefix=0.133 m, speed_limit=0.80 m/s, terminal_stop=true.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.002 seconds, raw cost: 81.4025, retime_iters: 0, peak |v|: 0.287907, peak |a|: 0.869527[0m
+[planner_server_mt-12] [0m[INFO] [1793159409.919912450] [global_costmap.global_costmap]: ROG obstacle projection: sequence=94 frame=odom->map obstacles=22/25 clearances=1126/1126 range_filtered=3 outside=0 transform_failed=0[0m
+[planner_server_mt-12] [0m[INFO] [1793159410.120284087] [global_costmap.global_costmap]: ROG master merge: layer_lethal=6 merged_lethal=2 cleared_static=85 master_lethal_after=6 window=583x300 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159410.140792184] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.005 seconds, raw cost: 299.285, retime_iters: 1, peak |v|: 0.784306, peak |a|: 1.40695[0m
+[planner_server_mt-12] [0m[INFO] [1793159410.453133005] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=8 missing_cores=0 inflated_soft=733 visible=1199 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793159410.453200903] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110784 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[controller_server-10] [0m[INFO] [1793159410.490796853] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=370, projection free_count=1225, projection passable_count=3523, projection unknown_count=9523, classification: thin=3523, wall=0, tunnel=0, ambiguous=5032, empty=1207, dropout_hold=0, bounded_fill=0, insufficient=4879, mask0_count=3123, mask1_count=11518
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.003 seconds, raw cost: 268.957, retime_iters: 1, peak |v|: 0.784743, peak |a|: 1.38217[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=6.00 map_update_hz=6.00Hz field_update=6.00Hz
+[planner_server_mt-12]   time_ms: total=21.40 raycast=5.10 (parallel=0.76 merge=1.61 endpoint_dedup=1.86) prob=0.76 projection=9.65 field=3.61 snapshot=0.27
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=56.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=1649.00 duplicate_endpoints=59075.00
+[planner_server_mt-12]   cells: free=1278.00 passable=3405.00 occupied=360.00 unknown=9598.00
+[planner_server_mt-12]   classification: thin=3405.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=4938.00 empty=1259.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=5039.00
+[controller_server-10] [0m[INFO] [1793159410.840836716] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.004 seconds, raw cost: 241.966, retime_iters: 1, peak |v|: 0.784914, peak |a|: 1.37148[0m
+[controller_server-10] [0m[INFO] [1793159411.190801165] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.002 seconds, raw cost: 246.36, retime_iters: 0, peak |v|: 0.80217, peak |a|: 1.47551[0m
+[controller_server-10] [0m[INFO] [1793159411.540807402] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [0m[INFO] [1793159411.558164398] [local_costmap.local_costmap]: ROG master merge: layer_lethal=10 merged_lethal=3 cleared_static=64 master_lethal_after=10 window=100x100 bounds_ignored=true[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.002 seconds, raw cost: 166.969, retime_iters: 0, peak |v|: 0.857788, peak |a|: 1.36697[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=112, projection free_count=2116, projection passable_count=3567, projection unknown_count=8846, classification: thin=3567, wall=0, tunnel=0, ambiguous=5024, empty=2100, dropout_hold=0, bounded_fill=0, insufficient=3950, mask0_count=3299, mask1_count=11342
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=5.00 map_update_hz=5.00Hz field_update=5.00Hz
+[planner_server_mt-12]   time_ms: total=31.97 raycast=6.07 (parallel=1.29 merge=1.72 endpoint_dedup=2.00) prob=2.26 projection=16.49 field=4.32 snapshot=0.28
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=55.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=3265.00 duplicate_endpoints=57459.00
+[planner_server_mt-12]   cells: free=2116.00 passable=3567.00 occupied=112.00 unknown=8846.00
+[planner_server_mt-12]   classification: thin=3567.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=5024.00 empty=2100.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=3950.00
+[controller_server-10] [0m[INFO] [1793159411.890814495] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 134.108, retime_iters: 0, peak |v|: 0.778351, peak |a|: 1.66959[0m
+[planner_server_mt-12] [0m[INFO] [1793159412.120346492] [global_costmap.global_costmap]: ROG master merge: layer_lethal=37 merged_lethal=14 cleared_static=78 master_lethal_after=37 window=583x300 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159412.240819354] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [0m[INFO] [1793159412.341956411] [controller_server]: Reached the goal![0m
+[bt_navigator-14] [0m[INFO] [1793159412.370360383] [bt_navigator]: Goal succeeded[0m
+[bt_navigator-14] [0m[INFO] [1793159412.375501071] [bt_navigator]: Begin navigating from current location (1.86, -4.26) to (-2.00, -4.40)[0m
+[controller_server-10] [33m[WARN] [1793159412.376108325] [controller_server]: Minco MPC fail-closed: BLOCK_COMMAND[0m
+[controller_server-10] [0m[INFO] [1793159412.396025245] [controller_server]: Received a goal, begin computing control effort.[0m
+[planner_server_mt-12] [0m[INFO] [1793159412.419892390] [planner_server]: [MincoPlanner] Global static footprint yaw=-0.003 rad (polygon clearance).[0m
+[planner_server_mt-12] [0m[INFO] [1793159412.419976328] [planner_server]: [MincoPlanner] Nav2 costmap global search input: planner=SMAC2D frame=map map=583x300 origin=(-14.600,-5.860) res=0.050 tolerance=0.300 allow_unknown=true start_world=(1.872,-4.255) start_cell=(329,32)->(329,32) start_cost=118(free) goal_world=(-2.000,-4.400) goal_cell=(251,29) goal_cost=87(free)[0m
+[planner_server_mt-12] [33m[WARN] [1793159412.449611051] [planner_server]: [MincoPlanner] Cold-start velocity rejected against local path (speed=0.515 m/s, direction_cos=-0.994); starting from rest.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.011 seconds, raw cost: 278.622, retime_iters: 1, peak |v|: 0.784298, peak |a|: 1.39561[0m
+[controller_server-10] [0m[INFO] [1793159412.596274965] [controller_server]: Minco MPC stationary startup reference: spatial=0.00 regular=1.00 startup=4.00 (0.20 s, target_speed=0.08 m/s)[0m
+[controller_server-10] [0m[INFO] [1793159412.596646382] [controller_server]: Minco MPC startup command floor: 0.285 -> 0.600 m/s[0m
+[controller_server-10] [0m[INFO] [1793159412.796213709] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=204, projection free_count=2336, projection passable_count=2591, projection unknown_count=9510, classification: thin=2591, wall=0, tunnel=0, ambiguous=6304, empty=2336, dropout_hold=0, bounded_fill=0, insufficient=3410, mask0_count=3515, mask1_count=11126
+[planner_server_mt-12] [ROGMapPerf] win=1.10s cloud_cb_hz=4.55 map_update_hz=4.55Hz field_update=4.55Hz
+[planner_server_mt-12]   time_ms: total=32.63 raycast=6.45 (parallel=1.51 merge=1.46 endpoint_dedup=2.28) prob=1.33 projection=19.42 field=3.87 snapshot=0.32
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=58.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=4243.00 duplicate_endpoints=56481.00
+[planner_server_mt-12]   cells: free=2336.00 passable=2591.00 occupied=204.00 unknown=9510.00
+[planner_server_mt-12]   classification: thin=2591.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=6304.00 empty=2336.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=3410.00
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.007 seconds, raw cost: 233.017, retime_iters: 1, peak |v|: 0.784453, peak |a|: 1.0209[0m
+[controller_server-10] [0m[INFO] [1793159413.146166178] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.006 seconds, raw cost: 242.105, retime_iters: 1, peak |v|: 0.785453, peak |a|: 0.958168[0m
+[controller_server-10] [0m[INFO] [1793159413.496215742] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [0m[INFO] [1793159413.558100416] [local_costmap.local_costmap]: ROG master merge: layer_lethal=26 merged_lethal=15 cleared_static=9 master_lethal_after=26 window=100x100 bounds_ignored=true[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 215.578, retime_iters: 0, peak |v|: 0.850349, peak |a|: 0.330671[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=5.00 map_update_hz=5.00Hz field_update=5.00Hz
+[planner_server_mt-12]   time_ms: total=24.91 raycast=5.92 (parallel=1.23 merge=1.53 endpoint_dedup=2.17) prob=1.28 projection=11.90 field=4.33 snapshot=0.28
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=56.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=3360.00 duplicate_endpoints=57364.00
+[planner_server_mt-12]   cells: free=1873.00 passable=2777.00 occupied=171.00 unknown=9820.00
+[planner_server_mt-12]   classification: thin=2777.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=6036.00 empty=1864.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=3964.00
+[controller_server-10] [0m[INFO] [1793159413.846198921] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 222.285, retime_iters: 0, peak |v|: 0.865448, peak |a|: 0.395534[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=167, projection free_count=1659, projection passable_count=2489, projection unknown_count=10326, classification: thin=2489, wall=0, tunnel=0, ambiguous=5910, empty=1650, dropout_hold=0, bounded_fill=0, insufficient=4592, mask0_count=3301, mask1_count=11340
+[planner_server_mt-12] [0m[INFO] [1793159414.120313083] [global_costmap.global_costmap]: ROG master merge: layer_lethal=24 merged_lethal=21 cleared_static=6 master_lethal_after=24 window=583x300 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159414.196219107] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.001 seconds, raw cost: 213.359, retime_iters: 0, peak |v|: 0.844127, peak |a|: 0.26722[0m
+[controller_server-10] [0m[INFO] [1793159414.546224481] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [0m[INFO] [1793159414.557991916] [local_costmap.local_costmap]: ROG obstacle projection: sequence=119 frame=odom->odom obstacles=30/45 clearances=86/87 range_filtered=0 outside=16 transform_failed=0[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793159414.568710510] [rm27_ground_truth_localizer]: No-return rays: synthesized=24687 finite_returns=44433 unsupported_nonfinite=0 stride_skipped=0 length=10.50m stride=1x1 phase=0,0
+[rm27_ground_truth_localizer-6] [INFO] [1793159414.569581915] [rm27_ground_truth_localizer]: Compacted registered scan: kept=69120 removed=0
+[planner_server_mt-12] [0m[INFO] [1793159414.721445634] [planner_server]: [MincoPlanner] Accepted shallow dynamic boundary cell: center=(-0.942,-4.335) offset=(-0.225,0.289) signed_distance=-0.001 tolerance=0.030 raw_reason=GROUND_UNVERIFIED[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0 seconds, raw cost: 272.301, retime_iters: 0, peak |v|: 0.851044, peak |a|: 1.1215[0m
+[controller_server-10] [0m[INFO] [1793159414.796475188] [controller_server]: Minco MPC uphill command floor: grade=0.038 roll=-0.000 pitch=0.038 ref_peak=0.804 floor=0.843 speed 0.841 -> 0.843 m/s[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=5.00 map_update_hz=5.00Hz field_update=5.00Hz
+[planner_server_mt-12]   time_ms: total=23.18 raycast=5.01 (parallel=0.71 merge=1.63 endpoint_dedup=1.81) prob=0.38 projection=10.42 field=4.18 snapshot=0.31
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=58.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=1374.00 duplicate_endpoints=59350.00
+[planner_server_mt-12]   cells: free=1515.00 passable=1719.00 occupied=154.00 unknown=11253.00
+[planner_server_mt-12]   classification: thin=1719.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=5923.00 empty=1510.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=5489.00
+[planner_server_mt-12] [0m[INFO] [1793159414.817255483] [planner_server]: [ROGMap] dynamic obstacle grid published: frame='odom' measured_obstacles=42 verified_clearances=83 subscribers=2[0m
+[planner_server_mt-12] [33m[WARN] [1793159414.858577809] [planner_server]: [MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=1.748/2.474 sample=footprint center=(-0.827,-4.335,0.000) query_point=(-1.108,-4.090,0.000) footprint_offset=(-0.282,0.244) yaw=-0.003 esdf_distance=-0.049 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.125 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.041 pipeline_age_ms=84.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=PASSABLE base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=GROUND_UNVERIFIED candidate_reason=CLEARANCE_OK prior_occupied=0 prior_free=1 occupied_z=[0.125,0.125] height_delta=0.000 vertical_ratio=0.033 ground_z=0.125 support_z=nan ceiling_z=nan headroom=inf headroom_known=1.000 ground_candidate=1 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=0 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(-1.588,0.254) continuous_support=0 support_ref=-0.057 support_error=0.181 support_tolerance=0.120 confidence=1.000 planning_frame='map' rog_frame='odom'.[0m
+[planner_server_mt-12] [0m[INFO] [1793159414.864807964] [planner_server]: [MincoPlanner] Future path blocked; published a fully checked 0.92 s braking trajectory at 0.74 m/s while replanning.[0m
+[controller_server-10] [0m[INFO] [1793159414.896216258] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [0m[INFO] [1793159414.919911324] [global_costmap.global_costmap]: ROG obstacle projection: sequence=121 frame=odom->map obstacles=16/46 clearances=54/54 range_filtered=30 outside=0 transform_failed=0[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.012 seconds, raw cost: 262.19, retime_iters: 1, peak |v|: 0.785866, peak |a|: 1.36742[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=152, projection free_count=1494, projection passable_count=1582, projection unknown_count=11413, classification: thin=1582, wall=0, tunnel=0, ambiguous=5843, empty=1490, dropout_hold=0, bounded_fill=0, insufficient=5726, mask0_count=2802, mask1_count=11839
+[controller_server-10] [0m[INFO] [1793159415.246226075] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.006 seconds, raw cost: 243.545, retime_iters: 0, peak |v|: 0.801571, peak |a|: 1.45743[0m
+[controller_server-10] [0m[INFO] [1793159415.558090318] [local_costmap.local_costmap]: ROG master merge: layer_lethal=16 merged_lethal=14 cleared_static=4 master_lethal_after=16 window=100x100 bounds_ignored=true[0m
+[controller_server-10] [0m[INFO] [1793159415.596216425] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.007 seconds, raw cost: 302.144, retime_iters: 0, peak |v|: 0.831962, peak |a|: 1.29861[0m
+[planner_server_mt-12] [0m[INFO] [1793159415.733359090] [planner_server]: [MincoVisualizer] dynamic final costmap: sources=11 missing_cores=0 inflated_soft=1057 visible=1227 radius=0.60 subscribers=0[0m
+[planner_server_mt-12] [0m[INFO] [1793159415.733512947] [planner_server]: [MincoVisualizer] final costmap cloud: cells=110821 subscribers=0 frame='map' (cost 1..254 includes inflation and lethal obstacle cores)[0m
+[controller_server-10] [0m[INFO] [1793159415.796476450] [controller_server]: Minco MPC uphill command floor: grade=0.198 roll=-0.000 pitch=0.199 ref_peak=0.802 floor=1.000 speed 0.869 -> 1.000 m/s[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.00s cloud_cb_hz=6.00 map_update_hz=6.00Hz field_update=6.00Hz
+[planner_server_mt-12]   time_ms: total=36.17 raycast=7.08 (parallel=1.82 merge=2.14 endpoint_dedup=2.16) prob=2.27 projection=21.25 field=3.99 snapshot=0.32
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=59.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60725.00 unique_endpoints=4098.00 duplicate_endpoints=56627.00
+[planner_server_mt-12]   cells: free=3499.00 passable=1537.00 occupied=199.00 unknown=9406.00
+[planner_server_mt-12]   classification: thin=1537.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=5517.00 empty=3479.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=4108.00
+[controller_server-10] [0m[INFO] [1793159415.946176925] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.004 seconds, raw cost: 365.445, retime_iters: 0, peak |v|: 0.938867, peak |a|: 1.40215[0m
+[planner_server_mt-12] [0m[INFO] [1793159416.120273620] [global_costmap.global_costmap]: ROG master merge: layer_lethal=15 merged_lethal=15 cleared_static=44 master_lethal_after=15 window=583x300 bounds_ignored=true[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=221, projection free_count=5406, projection passable_count=2005, projection unknown_count=7009, classification: thin=2005, wall=0, tunnel=0, ambiguous=2520, empty=5400, dropout_hold=0, bounded_fill=0, insufficient=4716, mask0_count=2566, mask1_count=12075
+[controller_server-10] [0m[INFO] [1793159416.296218237] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.008 seconds, raw cost: 314.378, retime_iters: 0, peak |v|: 0.853414, peak |a|: 1.8026[0m
+[controller_server-10] [0m[INFO] [1793159416.646240276] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.015 seconds, raw cost: 328.279, retime_iters: 1, peak |v|: 0.915501, peak |a|: 1.74731[0m
+[controller_server-10] [0m[INFO] [1793159416.996215975] [controller_server]: Passing new path to controller.[0m
+[planner_server_mt-12] [ROGMapPerf] win=1.30s cloud_cb_hz=4.62 map_update_hz=4.62Hz field_update=4.62Hz
+[planner_server_mt-12]   time_ms: total=39.18 raycast=8.45 (parallel=2.37 merge=2.21 endpoint_dedup=2.76) prob=2.80 projection=18.97 field=4.26 snapshot=0.29
+[planner_server_mt-12]   input_age_ms: cloud_to_callback=57.00 cloud_odom_stamp_delta=0.00
+[planner_server_mt-12]   rays: input=60724.00 unique_endpoints=5908.00 duplicate_endpoints=54816.00
+[planner_server_mt-12]   cells: free=4933.00 passable=3014.00 occupied=118.00 unknown=6576.00
+[planner_server_mt-12]   classification: thin=3014.00 solid_wall=0.00 hollow_tunnel=0.00 ambiguous=1293.00 empty=4855.00 dropout_hold=0.00 bounded_fill=0.00 insufficient=5479.00
+[controller_server-10] [33m[WARN] [1793159417.158047099] [local_costmap.local_costmap]: ROG grid contains 4 measured obstacle cells, but none project into the odom costmap (outside=4 transform_failed=0)[0m
+[planner_server_mt-12] [32m[MincoPlanner] Minco optimization time: 0.011 seconds, raw cost: 652.091, retime_iters: 10, peak |v|: 0.952848, peak |a|: 1.71533[0m
+[controller_server-10] [0m[INFO] [1793159417.346187310] [controller_server]: Passing new path to controller.[0m
+[controller_server-10] [0m[INFO] [1793159417.546247610] [controller_server]: Reached the goal![0m
+[controller_server-10] [0m[INFO] [1793159417.558069684] [local_costmap.local_costmap]: ROG master merge: layer_lethal=0 merged_lethal=0 cleared_static=24 master_lethal_after=0 window=100x100 bounds_ignored=true[0m
+[bt_navigator-14] [0m[INFO] [1793159417.575836349] [bt_navigator]: Goal succeeded[0m
+[planner_server_mt-12] [ROGMapProjection] projection occupied_count=140, projection free_count=4615, projection passable_count=3160, projection unknown_count=6726, classification: thin=3160, wall=0, tunnel=0, ambiguous=1141, empty=4467, dropout_hold=0, bounded_fill=0, insufficient=5873, mask0_count=1989, mask1_count=12652
+[controller_server-10] [33m[WARN] [1793159417.753973929] [controller_server]: Minco MPC fail-closed: BLOCK_COMMAND[0m
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[lifecycle_manager-17] [0m[INFO] [1793159417.770687943] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-17] [0m[INFO] [1793159417.770779258] [lifecycle_manager_navigation]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_navigation)[0m
+[lifecycle_manager-17] [0m[INFO] [1793159417.770819932] [lifecycle_manager_navigation]: [34m[1mTerminating bond timer...[0m[0m[0m
+[waypoint_follower-15] [0m[INFO] [1793159417.770708000] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[waypoint_follower-15] [0m[INFO] [1793159417.770781019] [waypoint_follower]: Running Nav2 LifecycleNode rcl preshutdown (waypoint_follower)[0m
+[waypoint_follower-15] [0m[INFO] [1793159417.770839983] [waypoint_follower]: Deactivating[0m
+[waypoint_follower-15] [0m[INFO] [1793159417.770895920] [waypoint_follower]: Destroying bond (waypoint_follower) to lifecycle manager.[0m
+[behavior_server-13] [0m[INFO] [1793159417.770726611] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[behavior_server-13] [0m[INFO] [1793159417.770781891] [behavior_server]: Running Nav2 LifecycleNode rcl preshutdown (behavior_server)[0m
+[behavior_server-13] [0m[INFO] [1793159417.770840395] [behavior_server]: Deactivating[0m
+[behavior_server-13] [0m[INFO] [1793159417.770863454] [behavior_server]: Destroying bond (behavior_server) to lifecycle manager.[0m
+[velocity_smoother-16] [0m[INFO] [1793159417.770745507] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[velocity_smoother-16] [0m[INFO] [1793159417.770802606] [velocity_smoother]: Running Nav2 LifecycleNode rcl preshutdown (velocity_smoother)[0m
+[velocity_smoother-16] [0m[INFO] [1793159417.770854716] [velocity_smoother]: Deactivating[0m
+[velocity_smoother-16] [0m[INFO] [1793159417.770874403] [velocity_smoother]: Destroying bond (velocity_smoother) to lifecycle manager.[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.770756827] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.770818076] [planner_server]: Running Nav2 LifecycleNode rcl preshutdown (planner_server)[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.770872344] [planner_server]: Deactivating[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.770919915] [global_costmap.global_costmap]: Deactivating[0m
+[smoother_server-11] [0m[INFO] [1793159417.770766083] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[smoother_server-11] [0m[INFO] [1793159417.770836697] [smoother_server]: Running Nav2 LifecycleNode rcl preshutdown (smoother_server)[0m
+[smoother_server-11] [0m[INFO] [1793159417.770928679] [smoother_server]: Deactivating[0m
+[smoother_server-11] [0m[INFO] [1793159417.770958714] [smoother_server]: Destroying bond (smoother_server) to lifecycle manager.[0m
+[bt_navigator-14] [0m[INFO] [1793159417.770776232] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[bt_navigator-14] [0m[INFO] [1793159417.770824758] [bt_navigator]: Running Nav2 LifecycleNode rcl preshutdown (bt_navigator)[0m
+[bt_navigator-14] [0m[INFO] [1793159417.770870917] [bt_navigator]: Deactivating[0m
+[bt_navigator-14] [0m[INFO] [1793159417.770885818] [bt_navigator]: Destroying bond (bt_navigator) to lifecycle manager.[0m
+[INFO] [lifecycle_manager-17]: sending signal 'SIGINT' to process[lifecycle_manager-17]
+[INFO] [velocity_smoother-16]: sending signal 'SIGINT' to process[velocity_smoother-16]
+[INFO] [waypoint_follower-15]: sending signal 'SIGINT' to process[waypoint_follower-15]
+[INFO] [bt_navigator-14]: sending signal 'SIGINT' to process[bt_navigator-14]
+[INFO] [behavior_server-13]: sending signal 'SIGINT' to process[behavior_server-13]
+[INFO] [planner_server_mt-12]: sending signal 'SIGINT' to process[planner_server_mt-12]
+[INFO] [smoother_server-11]: sending signal 'SIGINT' to process[smoother_server-11]
+[INFO] [controller_server-10]: sending signal 'SIGINT' to process[controller_server-10]
+[INFO] [fake_vel_transform_node-9]: sending signal 'SIGINT' to process[fake_vel_transform_node-9]
+[INFO] [lifecycle_manager-8]: sending signal 'SIGINT' to process[lifecycle_manager-8]
+[INFO] [map_server-7]: sending signal 'SIGINT' to process[map_server-7]
+[ERROR] [fake_vel_transform_node-9]: process has died [pid 31275, exit code -2, cmd '/home/zhang/navi/sentry_navgation_RM27/install/fake_vel_transform/lib/fake_vel_transform/fake_vel_transform_node --ros-args --log-level info --ros-args -r __node:=fake_vel_transform -r __ns:=/ --params-file /tmp/launch_params_whu67n78 -r /tf:=tf -r /tf_static:=tf_static'].
+[INFO] [rm27_ground_truth_localizer-6]: sending signal 'SIGINT' to process[rm27_ground_truth_localizer-6]
+[ERROR] [lifecycle_manager-8]: process has died [pid 31274, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_lifecycle_manager/lifecycle_manager --ros-args --log-level info --ros-args -r __node:=lifecycle_manager_localization -r __ns:=/ --params-file /tmp/launch_params_uxm3705u --params-file /tmp/launch_params_3crhupoe --params-file /tmp/launch_params_sf9db24r -r /tf:=tf -r /tf_static:=tf_static'].
+[INFO] [robot_state_publisher-4]: sending signal 'SIGINT' to process[robot_state_publisher-4]
+[INFO] [joint_state_publisher-3]: sending signal 'SIGINT' to process[joint_state_publisher-3]
+[ERROR] [map_server-7]: process has died [pid 31273, exit code -2, cmd '/opt/ros/jazzy/lib/nav2_map_server/map_server --ros-args --log-level info --ros-args -r __node:=map_server -r __ns:=/ --params-file /tmp/launch_params_dlia8v02 -r /tf:=tf -r /tf_static:=tf_static'].
+[ERROR] [rm27_ground_truth_localizer-6]: process has died [pid 31272, exit code -2, cmd '/home/zhang/navi/sentry_navgation_RM27/install/rm_27_stimulation/lib/rm_27_stimulation/rm27_ground_truth_localizer --ros-args -r __node:=rm27_ground_truth_localizer -r __ns:=/ --params-file /tmp/launch_params_fifw3xha'].
+[INFO] [parameter_bridge-2]: sending signal 'SIGINT' to process[parameter_bridge-2]
+[ERROR] [robot_state_publisher-4]: process has died [pid 31071, exit code -2, cmd '/opt/ros/jazzy/lib/robot_state_publisher/robot_state_publisher --ros-args -r __node:=robot_state_publisher --params-file /tmp/launch_params_c0es8s5c --params-file /tmp/launch_params_6ejqdn3n'].
+[INFO] [gazebo-1]: sending signal 'SIGINT' to process[gazebo-1]
+[parameter_bridge-2] [INFO] [1793159417.770844712] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[controller_server-10] [0m[INFO] [1793159417.770904086] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[controller_server-10] [0m[INFO] [1793159417.770983958] [controller_server]: Running Nav2 LifecycleNode rcl preshutdown (controller_server)[0m
+[controller_server-10] [0m[INFO] [1793159417.771052292] [controller_server]: Deactivating[0m
+[controller_server-10] [0m[INFO] [1793159417.771129357] [local_costmap.local_costmap]: Deactivating[0m
+[ERROR] [joint_state_publisher-3]: process has died [pid 31070, exit code -2, cmd '/opt/ros/jazzy/lib/joint_state_publisher/joint_state_publisher --ros-args -r __node:=joint_state_publisher --params-file /tmp/launch_params_u1sapwzt --params-file /tmp/launch_params_r2bjxyic'].
+[lifecycle_manager-8] [0m[INFO] [1793159417.770919663] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-8] [0m[INFO] [1793159417.771002762] [lifecycle_manager_localization]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_localization)[0m
+[lifecycle_manager-8] [0m[INFO] [1793159417.771071912] [lifecycle_manager_localization]: [34m[1mTerminating bond timer...[0m[0m[0m
+[map_server-7] [0m[INFO] [1793159417.770940190] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[map_server-7] [0m[INFO] [1793159417.771044195] [map_server]: Running Nav2 LifecycleNode rcl preshutdown (map_server)[0m
+[map_server-7] [0m[INFO] [1793159417.771116403] [map_server]: Deactivating[0m
+[map_server-7] [0m[INFO] [1793159417.771139552] [map_server]: Destroying bond (map_server) to lifecycle manager.[0m
+[fake_vel_transform_node-9] [0m[INFO] [1793159417.770944860] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[rm27_ground_truth_localizer-6] [INFO] [1793159417.770956175] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[robot_state_publisher-4] [INFO] [1793159417.771122966] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[velocity_smoother-16] [0m[INFO] [1793159417.781222727] [velocity_smoother]: Cleaning up[0m
+[velocity_smoother-16] [0m[INFO] [1793159417.781268124] [velocity_smoother]: Destroying bond (velocity_smoother) to lifecycle manager.[0m
+[behavior_server-13] [0m[INFO] [1793159417.781232157] [behavior_server]: Cleaning up[0m
+[waypoint_follower-15] [0m[INFO] [1793159417.781282999] [waypoint_follower]: Cleaning up[0m
+[smoother_server-11] [0m[INFO] [1793159417.781296198] [smoother_server]: Cleaning up[0m
+[bt_navigator-14] [0m[INFO] [1793159417.781465877] [bt_navigator]: Cleaning up[0m
+[map_server-7] [0m[INFO] [1793159417.781734002] [map_server]: Cleaning up[0m
+[map_server-7] [0m[INFO] [1793159417.781790512] [map_server]: Destroying bond (map_server) to lifecycle manager.[0m
+[velocity_smoother-16] [0m[INFO] [1793159417.782496481] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[behavior_server-13] [0m[INFO] [1793159417.783672687] [behavior_server]: Destroying bond (behavior_server) to lifecycle manager.[0m
+[velocity_smoother-16] [0m[INFO] [1793159417.784651995] [velocity_smoother]: Destroying[0m
+[map_server-7] [0m[INFO] [1793159417.786041257] [map_server]: Destroying[0m
+[behavior_server-13] [0m[INFO] [1793159417.786479046] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[waypoint_follower-15] [0m[INFO] [1793159417.788186332] [waypoint_follower]: Destroying bond (waypoint_follower) to lifecycle manager.[0m
+[waypoint_follower-15] [0m[INFO] [1793159417.788677732] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-8] [0m[INFO] [1793159417.788233880] [lifecycle_manager_localization]: Destroying lifecycle_manager_localization[0m
+[smoother_server-11] [0m[INFO] [1793159417.789314908] [smoother_server]: Destroying bond (smoother_server) to lifecycle manager.[0m
+[smoother_server-11] [0m[INFO] [1793159417.790882060] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[behavior_server-13] [0m[INFO] [1793159417.794560625] [behavior_server]: Destroying[0m
+[smoother_server-11] [0m[INFO] [1793159417.794857192] [smoother_server]: Destroying[0m
+[waypoint_follower-15] [0m[INFO] [1793159417.799532743] [waypoint_follower]: Destroying[0m
+[parameter_bridge-2] [INFO] [1793159417.803676262] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[bt_navigator-14] [0m[INFO] [1793159417.812247093] [bt_navigator]: Completed Cleaning up[0m
+[bt_navigator-14] [0m[INFO] [1793159417.812294895] [bt_navigator]: Destroying bond (bt_navigator) to lifecycle manager.[0m
+[bt_navigator-14] [0m[INFO] [1793159417.812765194] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[bt_navigator-14] [0m[INFO] [1793159417.814879455] [bt_navigator]: Destroying[0m
+[controller_server-10] [0m[INFO] [1793159417.858107340] [controller_server]: Destroying bond (controller_server) to lifecycle manager.[0m
+[lifecycle_manager-17] [0m[INFO] [1793159417.861693500] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[lifecycle_manager-17] [0m[INFO] [1793159417.862786906] [lifecycle_manager_navigation]: Destroying lifecycle_manager_navigation[0m
+[controller_server-10] [0m[INFO] [1793159417.868311064] [controller_server]: Cleaning up[0m
+[controller_server-10] [0m[INFO] [1793159417.868464975] [local_costmap.local_costmap]: Cleaning up[0m
+[controller_server-10] [0m[INFO] [1793159417.879439598] [controller_server]: Destroying bond (controller_server) to lifecycle manager.[0m
+[controller_server-10] [0m[INFO] [1793159417.880453336] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[controller_server-10] [0m[INFO] [1793159417.883304111] [local_costmap.local_costmap]: Destroying[0m
+[INFO] [parameter_bridge-2]: process has finished cleanly [pid 31068]
+[controller_server-10] [0m[INFO] [1793159417.888954276] [controller_server]: Destroying[0m
+[INFO] [velocity_smoother-16]: process has finished cleanly [pid 31282]
+[INFO] [smoother_server-11]: process has finished cleanly [pid 31277]
+[INFO] [behavior_server-13]: process has finished cleanly [pid 31279]
+[INFO] [waypoint_follower-15]: process has finished cleanly [pid 31281]
+[planner_server_mt-12] [0m[INFO] [1793159417.919874984] [planner_server]: Destroying bond (planner_server) to lifecycle manager.[0m
+[INFO] [bt_navigator-14]: process has finished cleanly [pid 31280]
+[planner_server_mt-12] [0m[INFO] [1793159417.930048581] [planner_server]: Cleaning up[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.932909126] [global_costmap.global_costmap]: Cleaning up[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.945631483] [planner_server]: Destroying bond (planner_server) to lifecycle manager.[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.946233954] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.955590713] [global_costmap.global_costmap]: Destroying[0m
+[planner_server_mt-12] [0m[INFO] [1793159417.958560246] [planner_server]: Destroying[0m
+[INFO] [lifecycle_manager-17]: process has finished cleanly [pid 31283]
+[INFO] [controller_server-10]: process has finished cleanly [pid 31276]
+[gazebo-1] Segmentation fault
+[ERROR] [gazebo-1]: process has died [pid 31067, exit code -2, cmd 'ruby /opt/ros/jazzy/opt/gz_tools_vendor/bin/gz sim -r -s --physics-engine gz-physics-bullet-featherstone-plugin --seed 44 /home/zhang/navi/sentry_navgation_RM27/install/rm_27_stimulation/share/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world --force-version 8'].
+[INFO] [launch]: process[gazebo-1] was required: shutting down launched system
+[INFO] [planner_server_mt-12]: process has finished cleanly [pid 31278]

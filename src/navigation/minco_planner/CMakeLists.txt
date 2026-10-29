@@ -51,6 +51,7 @@ set(MINCO_CORE_SOURCES
   src/minco_core/components/global_path_searcher.cpp
   src/minco_core/components/footprint_geometry.cpp
   src/minco_core/components/local_path_processor.cpp
+  src/minco_core/components/path_smoother.cpp
   src/minco_core/components/map_query_adapters.cpp
   src/minco_core/components/planner_mode_context.cpp
   src/minco_core/components/recovery_behaivor.cpp
@@ -136,6 +137,10 @@ ament_target_dependencies(planner_server_mt
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_planning_odometry test/planning_odometry_test.cpp)
+  target_include_directories(test_planning_odometry PRIVATE include)
+  target_link_libraries(test_planning_odometry Eigen3::Eigen)
+  ament_target_dependencies(test_planning_odometry nav_msgs tf2_ros rclcpp)
   ament_add_gtest(test_overlap_escape_guard test/overlap_escape_guard_test.cpp)
   target_compile_options(test_overlap_escape_guard PRIVATE -Wno-error)
   target_link_libraries(test_overlap_escape_guard ${library_name})

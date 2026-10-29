@@ -1,0 +1,69 @@
+diff --git a/src/pb2025_nav_bringup/config/simulation/minco_params.yaml b/src/pb2025_nav_bringup/config/simulation/minco_params.yaml
+index 7301018..06fb137 100644
+--- a/src/pb2025_nav_bringup/config/simulation/minco_params.yaml
++++ b/src/pb2025_nav_bringup/config/simulation/minco_params.yaml
+@@ -408,17 +408,17 @@ planner_server:
+           box_padding: 0.005
+           position: {x: 0.0, y: 0.0, z: 0.040}
+           box_size: {x: 0.62, y: 0.62, z: 0.24}
+-          # Cover the new 0.592 x 0.594 m body without erasing valid near-field
+-          # returns in the 8 cm strip removed with the old protruding wires.
++          # The folded simulation URDF has no gimbal_roll joint. Filter its
++          # fixed body envelope in base_link; do not request a nonexistent TF.
+           positions:
+-            x: [0.0, 0.151083]
+-            y: [0.0, -0.064732]
+-            z: [0.040, -0.000066]
+-          box_frames: [base_link, gimbal_roll]
++            x: [0.0]
++            y: [0.0]
++            z: [0.040]
++          box_frames: [base_link]
+           box_sizes:
+-            x: [0.62, 0.246119]
+-            y: [0.62, 0.297858]
+-            z: [0.24, 0.125430]
++            x: [0.62]
++            y: [0.62]
++            z: [0.24]
+         raycasting:
+           enable: true
+           batch_update_size: 1
+@@ -523,8 +523,8 @@ planner_server:
+           # Axle height 0.080 m + original sensor mount height 0.130 m.
+           # Reference is now the chassis axle, not the moving lidar centre.
+           robot_origin_to_ground: 0.080
+-          # Trial clearance height: 235 mm; physical collision envelope is 240 mm.
+-          vehicle_height: 0.050
++          # Match the 240 mm physical collision envelope in simulation_waking_robot.xacro.
++          vehicle_height: 0.240
+           headroom_margin: 0.0
+           headroom_voxel_inset_fraction: 0.0
+           body_bottom_clearance: 0.03
+@@ -711,7 +711,7 @@ planner_server:
+         # Slow the approaching local horizon before entering a narrow gate.
+         # Distance is from the centerline to ROG ESDF obstacles, in metres.
+         obstacle_slowdown_distance: 0.50
+-        obstacle_max_velocity: 1.0
++        obstacle_max_velocity: 0.8
+         max_acceleration: 1.8
+         terminal_velocity_ratio: 0.85
+         terminal_tangent_lookahead: 0.30
+@@ -1211,6 +1211,8 @@ minco_input_profiles:
+       # its empty columns therefore keep the conservative body-band gate.
+       projection:
+         min_headroom_known_ratio: 0.40
++      # Use the published Point-LIO cloud in its gravity-aligned camera_init
++      # frame. The installed node does not publish cloud_registered_full.
+       frames:
+         rog_frame: camera_init
+       odom_topic: /odometry
+@@ -1219,7 +1221,7 @@ minco_input_profiles:
+       rog_map:
+         frame_id: camera_init
+         ros_callback:
+-          cloud_topic: /cloud_registered_full
++          cloud_topic: /cloud_registered
+           odom_topic: /aft_mapped_to_init
+         visualization:
+           frame_id: camera_init

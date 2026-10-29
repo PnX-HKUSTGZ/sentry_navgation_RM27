@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include <cstddef>
 #include <cstdint>
@@ -44,6 +45,7 @@ private:
   {
     Eigen::Vector3f center{Eigen::Vector3f::Zero()};
     Eigen::Vector3f size{Eigen::Vector3f::Zero()};
+    Eigen::Quaternionf rotation{Eigen::Quaternionf::Identity()};
   };
 
   static Eigen::Matrix4f transformToMatrix(const geometry_msgs::msg::TransformStamped & transform);
@@ -58,6 +60,7 @@ private:
     const super_utils::Pose & matched_pose,
     const std::string & pose_parent_frame,
     const std::string & pose_child_frame,
+    const rclcpp::Time & stamp,
     Eigen::Matrix4f & filter_from_cloud);
   void prepareBoxesForCloudFrame(const Eigen::Matrix4f & transform, bool transform_centers);
   bool shouldPublishVisualization();
@@ -89,9 +92,7 @@ private:
   std::string position_frame_;
   std::string filter_mode_;
   std::string pose_child_frame_override_;
-  std::string cached_pose_child_frame_;
-  Eigen::Matrix4f cached_filter_from_pose_child_{Eigen::Matrix4f::Identity()};
-  bool has_cached_filter_from_pose_child_{false};
+  std::vector<std::string> box_frames_;
   double transform_timeout_{0.05};
   bool remove_inside_{true};
   bool log_stats_{false};

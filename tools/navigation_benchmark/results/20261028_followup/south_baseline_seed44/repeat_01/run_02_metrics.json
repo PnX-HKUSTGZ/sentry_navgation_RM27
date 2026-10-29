@@ -1,0 +1,108 @@
+{
+  "summary": {
+    "status": "succeeded",
+    "duration": 5.579999999999998,
+    "path_m": 4.147728220099446,
+    "max_speed": 1.310880492054232,
+    "stop_count": 0,
+    "long_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "candidate_count": 0,
+    "raw_stop_count": 0,
+    "excluded_safety_count": 0,
+    "protective_stop_count": 0,
+    "unclassified_count": 0,
+    "run": "repeat_01/run_02.json"
+  },
+  "main": {
+    "total_episodes": 0,
+    "long_stop_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "excluded_start_count": 0,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 0,
+    "episodes": [],
+    "coverage": {
+      "sample_count": 94,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 39,
+      "missing_safety_reason": 94,
+      "missing_command_speed": 0
+    }
+  },
+  "short_stop_sensitivity": {
+    "total_episodes": 1,
+    "long_stop_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 1,
+    "excluded_start_count": 0,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 1,
+    "episodes": [
+      {
+        "start_time": 20.033,
+        "end_time": 20.213,
+        "duration": 0.17999999999999972,
+        "start_position": {
+          "x": 0.3884140313100707,
+          "y": -4.329576330695312,
+          "z": 0.09118231783986228
+        },
+        "end_position": {
+          "x": 0.39073278492570623,
+          "y": -4.327375887620593,
+          "z": 0.09094877804435235
+        },
+        "max_cmd_speed": 0.051174559007843845,
+        "excluded_start": false,
+        "excluded_goal": false,
+        "regions": [
+          "south_tunnel"
+        ],
+        "safety_reasons": [],
+        "long_stop": false,
+        "safety_coverage": 0.0,
+        "safety_status": "unknown",
+        "unexpected_candidate": true,
+        "evidence": [
+          {
+            "stamp": 1793160357.4746554,
+            "t": 19.793,
+            "receipt_wall": 1793160357.4752867,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=nan/nan sample=footprint center=(0.408,-4.335,0.000) query_point=(0.705,-4.531,0.000) footprint_offset=(0.296,-0.197) yaw=0.003 esdf_distance=-0.004 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.393 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.308 pipeline_age_ms=85.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=OCCUPIED base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=OVERHEAD_GROUND_UNVERIFIED candidate_reason=OVERHEAD_GROUND_UNVERIFIED prior_occupied=0 prior_free=1 occupied_z=[0.170,0.343] height_delta=0.150 vertical_ratio=0.133 ground_z=nan support_z=nan ceiling_z=0.170 headroom=0.210 headroom_known=0.000 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=0 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=nan support_error=nan support_tolerance=nan confidence=1.000 planning_frame='map' rog_frame='odom'."
+          },
+          {
+            "stamp": 1793160357.6377313,
+            "t": 19.956,
+            "receipt_wall": 1793160357.6379418,
+            "name": "global_costmap.global_costmap",
+            "msg": "ROG master merge: layer_lethal=14 merged_lethal=13 cleared_static=46 master_lethal_after=14 window=583x300 bounds_ignored=true"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "sample_count": 94,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 39,
+      "missing_safety_reason": 94,
+      "missing_command_speed": 0
+    }
+  },
+  "notes": [
+    "Region labels are approximate snapshots from samples or supplied scenario rectangles.",
+    "Protective evidence is a log association for review, not proof that a stop was necessary.",
+    "Path excludes intervals longer than 0.3 simulation seconds."
+  ]
+}

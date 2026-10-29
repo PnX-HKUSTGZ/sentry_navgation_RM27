@@ -28,6 +28,7 @@
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rog_map/map_query_interface.hpp"
+#include "minco_core/components/path_smoother.hpp"
 
 namespace minco_planner {
 namespace smac {
@@ -88,6 +89,9 @@ public:
   void setMap(const std::shared_ptr<rog_map::MapQueryInterface> & map);
   void setESDFQuery(const std::shared_ptr<rog_map::MapQueryInterface> & query);
   void setCollisionDistance(double collision_distance);
+  void setSmoothingOptions(const PathSmoothingOptions & options) {smoothing_options_ = options;}
+  void smoothWorldPath(std::vector<Eigen::Vector3d> & path,
+    const std::function<bool()> & cancel_checker = {});
 
   /**
    * @brief Create a path from start to goal
@@ -173,6 +177,7 @@ private:
   float esdf_decay_{0.5f};
   float esdf_max_cost_{5.0f};
   double collision_distance_{0.0};
+  PathSmoothingOptions smoothing_options_;
 
   // Per-planning-iteration cache to avoid allocations in the search loop.
   std::vector<float> esdf_cost_cache_;

@@ -1,0 +1,452 @@
+diff --git a/.github/mergify.yml b/.github/mergify.yml
+index 502d56e..17010b8 100644
+--- a/.github/mergify.yml
++++ b/.github/mergify.yml
+@@ -8,14 +8,19 @@ pull_request_rules:
+         branches:
+           - humble
+ 
++  - name: delete head branch after merge
++    conditions:
++      - merged
++    actions:
++      delete_head_branch:
+ 
+   - name: ask to resolve conflict
+     conditions:
+       - conflict
+       - author!=mergify
+     actions:
+-      comment:
+-        message: This pull request is in conflict. Could you fix it @{{author}}?
++        comment:
++          message: This pull request is in conflict. Could you fix it @{{author}}?
+ 
+   - name: development targets main branch
+     conditions:
+@@ -23,22 +28,22 @@ pull_request_rules:
+       - author!=LihanChen2004
+       - author!=mergify[bot]
+     actions:
+-      comment:
+-        message: |
+-          @{{author}}, all pull requests must be targeted towards the `main` development branch.
+-          Once merged into `main`, it is possible to backport to @{{base}}, but it must be in `main`
+-          to have these changes reflected into new distributions.
++        comment:
++          message: |
++            @{{author}}, all pull requests must be targeted towards the `main` development branch.
++            Once merged into `main`, it is possible to backport to @{{base}}, but it must be in `main`
++            to have these changes reflected into new distributions.
+ 
+   - name: Main build failures
+     conditions:
+       - base=main
+       - or:
+-          - "check-failure=build_and_test"
++        - "check-failure=build_and_test"
+     actions:
+-      comment:
+-        message: |
+-          @{{author}}, your PR has failed to build. Please check CI outputs and resolve issues.
+-          You may need to rebase or pull in `main` due to API changes (or your contribution genuinely fails).
++        comment:
++          message: |
++            @{{author}}, your PR has failed to build. Please check CI outputs and resolve issues.
++            You may need to rebase or pull in `main` due to API changes (or your contribution genuinely fails).
+ 
+   - name: automatic merge for pre-commit ci updates
+     conditions:
+@@ -48,5 +53,3 @@ pull_request_rules:
+     actions:
+       merge:
+         method: squash
+-merge_protections_settings:
+-  reporting_method: check-runs
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index 2023096..2337300 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -36,19 +36,19 @@ repos:
+       - id: fix-byte-order-marker
+ 
+   - repo: https://github.com/codespell-project/codespell
+-    rev: v2.4.2
++    rev: v2.4.1
+     hooks:
+       - id: codespell
+ 
+   - repo: https://github.com/astral-sh/ruff-pre-commit
+-    rev: v0.15.18
++    rev: v0.14.6
+     hooks:
+       - id: ruff
+         args: [--fix]
+       - id: ruff-format
+ 
+   - repo: https://github.com/pre-commit/mirrors-clang-format
+-    rev: v22.1.5
++    rev: v21.1.6
+     hooks:
+       - id: clang-format
+         args: ["-fallback-style=none", "-i"]
+@@ -76,7 +76,7 @@ repos:
+         exclude: "^\\.(devcontainer|github)/"
+ 
+   - repo: https://github.com/python-jsonschema/check-jsonschema
+-    rev: 0.37.3
++    rev: 0.35.0
+     hooks:
+       - id: check-github-workflows
+         args: ["--verbose"]
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c7aa8cd..57668fe 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -20,6 +20,7 @@ ament_auto_add_library(pb_back_up_frees_space_behavior SHARED
+ 
+ ament_auto_add_library(layers SHARED
+   src/layers/intensity_voxel_layer.cpp
++  src/layers/rog_dynamic_obstacle_layer.cpp
+ )
+ 
+ if(BUILD_TESTING)
+diff --git a/behavior_plugin.xml b/behavior_plugin.xml
+index e84af1d..c2f260e 100644
+--- a/behavior_plugin.xml
++++ b/behavior_plugin.xml
+@@ -1,6 +1,6 @@
+ <class_libraries>
+ 	<library path="pb_back_up_frees_space_behavior">
+-	  <class name="pb_nav2_behaviors/BackUpFreeSpace" type="pb_nav2_behaviors::BackUpFreeSpace" base_class_type="nav2_core::Behavior">
++	  <class name="pb_nav2_behaviors::BackUpFreeSpace" type="pb_nav2_behaviors::BackUpFreeSpace" base_class_type="nav2_core::Behavior">
+ 	    <description>An enhanced back_up action that move toward free space.</description>
+ 	  </class>
+ 	</library>
+diff --git a/costmap_plugins.xml b/costmap_plugins.xml
+index 4d3a411..6e1cd9e 100644
+--- a/costmap_plugins.xml
++++ b/costmap_plugins.xml
+@@ -3,5 +3,8 @@
+     <class type="pb_nav2_costmap_2d::IntensityVoxelLayer"     base_class_type="nav2_costmap_2d::Layer">
+       <description>Similar to obstacle costmap, but uses 3D voxel grid to store data.</description>
+     </class>
++    <class type="pb_nav2_costmap_2d::RogDynamicObstacleLayer" base_class_type="nav2_costmap_2d::Layer">
++      <description>Evidence-only ROG obstacle overlay placed before Nav2 inflation.</description>
++    </class>
+   </library>
+ </class_libraries>
+diff --git a/include/pb_nav2_plugins/behaviors/back_up_free_space.hpp b/include/pb_nav2_plugins/behaviors/back_up_free_space.hpp
+index acfa6df..77ded13 100644
+--- a/include/pb_nav2_plugins/behaviors/back_up_free_space.hpp
++++ b/include/pb_nav2_plugins/behaviors/back_up_free_space.hpp
+@@ -55,13 +55,14 @@ public:
+    * @param command Goal to execute
+    * @return Status of behavior
+    */
+-  nav2_behaviors::Status onRun(const std::shared_ptr<const BackUpAction::Goal> command) override;
++  nav2_behaviors::ResultStatus onRun(
++    const std::shared_ptr<const BackUpAction::Goal> command) override;
+ 
+   /**
+    * @brief Loop function to run behavior
+    * @return Status of behavior
+    */
+-  nav2_behaviors::Status onCycleUpdate() override;
++  nav2_behaviors::ResultStatus onCycleUpdate() override;
+ 
+ protected:
+   /**
+diff --git a/include/pb_nav2_plugins/layers/intensity_voxel_layer.hpp b/include/pb_nav2_plugins/layers/intensity_voxel_layer.hpp
+index 666f577..facc41b 100644
+--- a/include/pb_nav2_plugins/layers/intensity_voxel_layer.hpp
++++ b/include/pb_nav2_plugins/layers/intensity_voxel_layer.hpp
+@@ -15,6 +15,8 @@
+ #ifndef PB_NAV2_PLUGINS__LAYERS__INTENSITY_VOXEL_LAYER_HPP_
+ #define PB_NAV2_PLUGINS__LAYERS__INTENSITY_VOXEL_LAYER_HPP_
+ 
++#include <vector>
++
+ #include "laser_geometry/laser_geometry.hpp"
+ #include "message_filters/subscriber.h"
+ #include "nav2_costmap_2d/layer.hpp"
+@@ -67,6 +69,13 @@ private:
+   double z_resolution_, origin_z_;
+   double min_obstacle_intensity_, max_obstacle_intensity_;
+   unsigned int unknown_threshold_, mark_threshold_, size_z_;
++  // A point cloud can contain intermittent returns at tunnel edges. Keep a
++  // small amount of per-cell state so one-frame returns do not become lethal.
++  unsigned int obstacle_confirmation_frames_{2};
++  unsigned int obstacle_clear_frames_{2};
++  std::vector<unsigned int> obstacle_hit_streak_;
++  std::vector<unsigned int> obstacle_miss_streak_;
++  std::vector<unsigned char> obstacle_confirmed_;
+   rclcpp::Clock::SharedPtr clock_;
+ 
+   inline bool worldToMap3DFloat(
+diff --git a/src/behaviors/back_up_free_space.cpp b/src/behaviors/back_up_free_space.cpp
+index 200b46e..57588e0 100644
+--- a/src/behaviors/back_up_free_space.cpp
++++ b/src/behaviors/back_up_free_space.cpp
+@@ -51,13 +51,14 @@ void BackUpFreeSpace::onCleanup()
+   marker_pub_.reset();
+ }
+ 
+-nav2_behaviors::Status BackUpFreeSpace::onRun(
++nav2_behaviors::ResultStatus BackUpFreeSpace::onRun(
+   const std::shared_ptr<const BackUpAction::Goal> command)
+ {
+   while (!costmap_client_->wait_for_service(std::chrono::seconds(1))) {
+     if (!rclcpp::ok()) {
+       RCLCPP_ERROR(logger_, "Interrupted while waiting for the service. Exiting.");
+-      return nav2_behaviors::Status::FAILED;
++      return nav2_behaviors::ResultStatus{
++        nav2_behaviors::Status::FAILED, BackUpAction::Result::UNKNOWN};
+     }
+     RCLCPP_WARN(logger_, "service not available, waiting again...");
+   }
+@@ -66,7 +67,8 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
+   auto result = costmap_client_->async_send_request(request);
+   if (result.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+     RCLCPP_ERROR(logger_, "Interrupted while waiting for the service. Exiting.");
+-    return nav2_behaviors::Status::FAILED;
++    return nav2_behaviors::ResultStatus{
++      nav2_behaviors::Status::FAILED, BackUpAction::Result::TIMEOUT};
+   }
+ 
+   // get costmap
+@@ -75,7 +77,8 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
+   if (!nav2_util::getCurrentPose(
+         initial_pose_, *tf_, global_frame_, robot_base_frame_, transform_tolerance_)) {
+     RCLCPP_ERROR(logger_, "Initial robot pose is not available.");
+-    return nav2_behaviors::Status::FAILED;
++    return nav2_behaviors::ResultStatus{
++      nav2_behaviors::Status::FAILED, BackUpAction::Result::TF_ERROR};
+   }
+ 
+   // get current pose
+@@ -98,15 +101,17 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
+   if (!nav2_util::getCurrentPose(
+         initial_pose_, *tf_, global_frame_, robot_base_frame_, transform_tolerance_)) {
+     RCLCPP_ERROR(logger_, "Initial robot pose is not available.");
+-    return nav2_behaviors::Status::FAILED;
++    return nav2_behaviors::ResultStatus{
++      nav2_behaviors::Status::FAILED, BackUpAction::Result::TF_ERROR};
+   }
+   RCLCPP_WARN(
+     logger_, "backing up %f meters towards free space at angle %f", command_x_, best_angle);
+ 
+-  return nav2_behaviors::Status::SUCCEEDED;
++  return nav2_behaviors::ResultStatus{
++    nav2_behaviors::Status::SUCCEEDED, BackUpAction::Result::NONE};
+ }
+ 
+-nav2_behaviors::Status BackUpFreeSpace::onCycleUpdate()
++nav2_behaviors::ResultStatus BackUpFreeSpace::onCycleUpdate()
+ {
+   rclcpp::Duration time_remaining = end_time_ - clock_->now();
+   if (time_remaining.seconds() < 0.0 && command_time_allowance_.seconds() > 0.0) {
+@@ -115,14 +120,16 @@ nav2_behaviors::Status BackUpFreeSpace::onCycleUpdate()
+       logger_,
+       "Exceeded time allowance before reaching the "
+       "DriveOnHeading goal - Exiting DriveOnHeading");
+-    return nav2_behaviors::Status::FAILED;
++    return nav2_behaviors::ResultStatus{
++      nav2_behaviors::Status::FAILED, BackUpAction::Result::TIMEOUT};
+   }
+ 
+   geometry_msgs::msg::PoseStamped current_pose;
+   if (!nav2_util::getCurrentPose(
+         current_pose, *tf_, global_frame_, robot_base_frame_, transform_tolerance_)) {
+     RCLCPP_ERROR(logger_, "Current robot pose is not available.");
+-    return nav2_behaviors::Status::FAILED;
++    return nav2_behaviors::ResultStatus{
++      nav2_behaviors::Status::FAILED, BackUpAction::Result::TF_ERROR};
+   }
+ 
+   float diff_x = initial_pose_.pose.position.x - current_pose.pose.position.x;
+@@ -134,27 +141,31 @@ nav2_behaviors::Status BackUpFreeSpace::onCycleUpdate()
+ 
+   if (distance >= std::fabs(command_x_)) {
+     stopRobot();
+-    return nav2_behaviors::Status::SUCCEEDED;
++    return nav2_behaviors::ResultStatus{
++      nav2_behaviors::Status::SUCCEEDED, BackUpAction::Result::NONE};
+   }
+ 
+-  auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
+-  cmd_vel->linear.y = twist_y_;
+-  cmd_vel->linear.x = twist_x_;
++  auto cmd_vel = std::make_unique<geometry_msgs::msg::TwistStamped>();
++  cmd_vel->header.stamp = clock_->now();
++  cmd_vel->header.frame_id = robot_base_frame_;
++  cmd_vel->twist.linear.y = twist_y_;
++  cmd_vel->twist.linear.x = twist_x_;
+ 
+   geometry_msgs::msg::Pose2D pose;
+   pose.x = current_pose.pose.position.x;
+   pose.y = current_pose.pose.position.y;
+   pose.theta = tf2::getYaw(current_pose.pose.orientation);
+ 
+-  if (!isCollisionFree(distance, cmd_vel.get(), pose)) {
++  if (!isCollisionFree(distance, cmd_vel->twist, pose)) {
+     stopRobot();
+     RCLCPP_WARN(logger_, "Collision Ahead - Exiting DriveOnHeading");
+-    return nav2_behaviors::Status::FAILED;
++    return nav2_behaviors::ResultStatus{
++      nav2_behaviors::Status::FAILED, BackUpAction::Result::COLLISION_AHEAD};
+   }
+ 
+   vel_pub_->publish(std::move(cmd_vel));
+ 
+-  return nav2_behaviors::Status::RUNNING;
++  return nav2_behaviors::ResultStatus{nav2_behaviors::Status::RUNNING, BackUpAction::Result::NONE};
+ }
+ 
+ float BackUpFreeSpace::findBestDirection(
+diff --git a/src/layers/intensity_voxel_layer.cpp b/src/layers/intensity_voxel_layer.cpp
+index 6421db5..8a0ef0e 100644
+--- a/src/layers/intensity_voxel_layer.cpp
++++ b/src/layers/intensity_voxel_layer.cpp
+@@ -14,6 +14,9 @@
+ 
+ #include "pb_nav2_plugins/layers/intensity_voxel_layer.hpp"
+ 
++#include <algorithm>
++#include <cstdint>
++#include <cstring>
+ #include <vector>
+ 
+ #include "sensor_msgs/point_cloud2_iterator.hpp"
+@@ -39,7 +42,8 @@ void IntensityVoxelLayer::onInitialize()
+     node->get_parameter(name_ + ".footprint_clearing_enabled").as_bool();
+   enabled_ = node->get_parameter(name_ + ".enabled").as_bool();
+   max_obstacle_height_ = node->get_parameter(name_ + ".max_obstacle_height").as_double();
+-  combination_method_ = node->get_parameter(name_ + ".combination_method").as_int();
++  combination_method_ =
++    combination_method_from_int(node->get_parameter(name_ + ".combination_method").as_int());
+ 
+   size_z_ = node->declare_parameter(name_ + ".z_voxels", 16);
+   origin_z_ = node->declare_parameter(name_ + ".origin_z", 16.0);
+@@ -50,6 +54,10 @@ void IntensityVoxelLayer::onInitialize()
+     node->declare_parameter(name_ + ".unknown_threshold", 15) + (VOXEL_BITS - size_z_);
+   mark_threshold_ = node->declare_parameter(name_ + ".mark_threshold", 0);
+   publish_voxel_ = node->declare_parameter(name_ + ".publish_voxel_map", false);
++  obstacle_confirmation_frames_ = static_cast<unsigned int>(std::max<std::int64_t>(
++    1, node->declare_parameter<std::int64_t>(name_ + ".obstacle_confirmation_frames", 2)));
++  obstacle_clear_frames_ = static_cast<unsigned int>(std::max<std::int64_t>(
++    1, node->declare_parameter<std::int64_t>(name_ + ".obstacle_clear_frames", 2)));
+ 
+   if (publish_voxel_) {
+     voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
+@@ -82,12 +90,19 @@ void IntensityVoxelLayer::matchSize()
+ {
+   ObstacleLayer::matchSize();
+   voxel_grid_.resize(size_x_, size_y_, size_z_);
++  const auto cell_count = size_x_ * size_y_;
++  obstacle_hit_streak_.assign(cell_count, 0);
++  obstacle_miss_streak_.assign(cell_count, 0);
++  obstacle_confirmed_.assign(cell_count, 0);
+ }
+ 
+ void IntensityVoxelLayer::reset()
+ {
+   ObstacleLayer::reset();
+   resetMaps();
++  std::fill(obstacle_hit_streak_.begin(), obstacle_hit_streak_.end(), 0);
++  std::fill(obstacle_miss_streak_.begin(), obstacle_miss_streak_.end(), 0);
++  std::fill(obstacle_confirmed_.begin(), obstacle_confirmed_.end(), 0);
+ }
+ 
+ void IntensityVoxelLayer::resetMaps()
+@@ -121,6 +136,10 @@ void IntensityVoxelLayer::updateBounds(
+   std::vector<Observation> observations;
+   current = getMarkingObservations(observations) && current;
+ 
++  // Keep only the cells observed in this update. The costmap itself is reset
++  // above, so confirmed cells are rebuilt below from this temporal state.
++  std::vector<unsigned char> observed(size_x_ * size_y_, 0);
++
+   // update the global current status
+   current_ = current;
+ 
+@@ -169,10 +188,42 @@ void IntensityVoxelLayer::updateBounds(
+       // mark the cell in the voxel grid and check if we should also mark it in the costmap
+       if (voxel_grid_.markVoxelInMap(mx, my, mz, mark_threshold_)) {
+         unsigned int index = getIndex(mx, my);
++        observed[index] = 1;
++      }
++    }
++  }
+ 
+-        costmap_[index] = LETHAL_OBSTACLE;
+-        touch(static_cast<double>(px), static_cast<double>(py), min_x, min_y, max_x, max_y);
++  // Temporal hysteresis: intermittent returns never become lethal, while a
++  // real obstacle is retained for one missed scan to avoid flicker.
++  for (unsigned int index = 0; index < observed.size(); ++index) {
++    if (observed[index] != 0) {
++      obstacle_miss_streak_[index] = 0;
++      obstacle_hit_streak_[index] =
++        std::min(obstacle_hit_streak_[index] + 1, obstacle_confirmation_frames_);
++      if (obstacle_hit_streak_[index] >= obstacle_confirmation_frames_) {
++        obstacle_confirmed_[index] = 1;
+       }
++    } else if (obstacle_confirmed_[index] != 0) {
++      obstacle_hit_streak_[index] = obstacle_confirmation_frames_;
++      obstacle_miss_streak_[index] =
++        std::min(obstacle_miss_streak_[index] + 1, obstacle_clear_frames_);
++      if (obstacle_miss_streak_[index] >= obstacle_clear_frames_) {
++        obstacle_confirmed_[index] = 0;
++        obstacle_hit_streak_[index] = 0;
++        obstacle_miss_streak_[index] = 0;
++      }
++    } else {
++      obstacle_hit_streak_[index] = 0;
++      obstacle_miss_streak_[index] = 0;
++    }
++
++    if (obstacle_confirmed_[index] != 0) {
++      costmap_[index] = LETHAL_OBSTACLE;
++      const unsigned int mx = index % size_x_;
++      const unsigned int my = index / size_x_;
++      double wx, wy;
++      mapToWorld(mx, my, wx, wy);
++      touch(wx, wy, min_x, min_y, max_x, max_y);
+     }
+   }
+ 
+@@ -207,6 +258,34 @@ void IntensityVoxelLayer::updateOrigin(double new_origin_x, double new_origin_y)
+   cell_ox = static_cast<int>((new_origin_x - origin_x_) / resolution_);
+   cell_oy = static_cast<int>((new_origin_y - origin_y_) / resolution_);
+ 
++  if (cell_ox != 0 || cell_oy != 0) {
++    const auto old_hit_streak = obstacle_hit_streak_;
++    const auto old_miss_streak = obstacle_miss_streak_;
++    const auto old_confirmed = obstacle_confirmed_;
++    std::fill(obstacle_hit_streak_.begin(), obstacle_hit_streak_.end(), 0);
++    std::fill(obstacle_miss_streak_.begin(), obstacle_miss_streak_.end(), 0);
++    std::fill(obstacle_confirmed_.begin(), obstacle_confirmed_.end(), 0);
++
++    for (unsigned int old_y = 0; old_y < size_y_; ++old_y) {
++      const int new_y = static_cast<int>(old_y) - cell_oy;
++      if (new_y < 0 || new_y >= static_cast<int>(size_y_)) {
++        continue;
++      }
++      for (unsigned int old_x = 0; old_x < size_x_; ++old_x) {
++        const int new_x = static_cast<int>(old_x) - cell_ox;
++        if (new_x < 0 || new_x >= static_cast<int>(size_x_)) {
++          continue;
++        }
++        const unsigned int old_index = getIndex(old_x, old_y);
++        const unsigned int new_index =
++          getIndex(static_cast<unsigned int>(new_x), static_cast<unsigned int>(new_y));
++        obstacle_hit_streak_[new_index] = old_hit_streak[old_index];
++        obstacle_miss_streak_[new_index] = old_miss_streak[old_index];
++        obstacle_confirmed_[new_index] = old_confirmed[old_index];
++      }
++    }
++  }
++
+   // update the origin with the appropriate world coordinates
+   origin_x_ = origin_x_ + cell_ox * resolution_;
+   origin_y_ = origin_y_ + cell_oy * resolution_;

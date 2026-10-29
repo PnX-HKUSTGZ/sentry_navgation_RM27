@@ -148,6 +148,18 @@ void SmacPlanner2DSimple::setInflationCostParameters(
   search_info_.use_quadratic_cost_penalty = use_quadratic_cost_penalty;
 }
 
+void SmacPlanner2DSimple::smoothWorldPath(std::vector<Eigen::Vector3d> & path,
+  const std::function<bool()> & cancel_checker)
+{
+  if (!map_ || !smoothing_options_.enabled) {return;}
+  PathSmoother::smooth(path, *map_, smoothing_options_, {},
+    [this](unsigned int x, unsigned int y) -> unsigned char {
+      // Use precisely the same measured-obstacle policy and per-search ESDF
+      // cache as SMAC. A static-only smoother would erase dynamic detours.
+      return isESDFCollision(x, y) ? nav2_costmap_2d::LETHAL_OBSTACLE : map_->value(x, y);
+    }, cancel_checker);
+}
+
 void SmacPlanner2DSimple::ensureSearchBuffers()
 {
   grid_size_ = static_cast<uint64_t>(size_x_) * static_cast<uint64_t>(size_y_);

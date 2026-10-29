@@ -15,6 +15,7 @@
 import ast
 import importlib.util
 import math
+import re
 from pathlib import Path
 import struct
 import subprocess
@@ -296,10 +297,10 @@ def test_simulation_minco_uses_no_elevation_ground_connectivity():
     assert projection["prior_map"]["require_ground_support"] is False
     assert projection["observed_empty_as_free"] is True
     assert projection["bridge_observed_empty_for_ground_connectivity"] is True
-    # Simulation publishes a complete organized no-return ray lattice. An
-    # observed empty column with no finite occupied height must not become a
-    # false downhill-hole obstacle solely because its body band is sparse.
-    assert projection["min_headroom_known_ratio"] == pytest.approx(0.0)
+    # Empty columns retain a positive body-band observation gate; only the
+    # independently measured overhead-return branch has a zero ratio gate.
+    assert projection["min_headroom_known_ratio"] == pytest.approx(0.10)
+    assert projection["min_observed_overhead_headroom_known_ratio"] == pytest.approx(0.0)
     assert projection["near_field_prior_fill_enable"] is False
     assert projection["ground_seed_tolerance"] <= projection["max_ground_height_delta"]
     assert (
@@ -536,6 +537,12 @@ def test_minco_uses_one_complete_deployment_profile():
         base = yaml.safe_load(
             (BRINGUP_DIR / "config" / deployment / "nav2_params.yaml").read_text()
         )
+        if deployment == "simulation":
+            # Gazebo supplies instantaneous scans; MINCO's cloud/odometry
+            # contract uses the paired publication path instead of fast odom.
+            expected_lio = base["point_lio"]["ros__parameters"]
+            expected_lio["preprocess"]["instantaneous_scan"] = True
+            expected_lio["odometry"]["publish_odometry_without_downsample"] = False
         for node in (
             "point_lio",
             "map_server",
@@ -549,9 +556,12 @@ def test_minco_uses_one_complete_deployment_profile():
             else "rm27_ground_truth_localizer"
         )
         assert profile[sensor] == base[sensor]
-        assert profile["controller_server"]["ros__parameters"]["progress_checker"] == (
-            base["controller_server"]["ros__parameters"]["progress_checker"]
-        )
+        # MINCO's observed-frontier stop/replan cycle has its own bounded
+        # progress policy. It need not equal the legacy controller's policy.
+        progress = profile["controller_server"]["ros__parameters"]["progress_checker"]
+        assert progress["plugin"] == "nav2_controller::SimpleProgressChecker"
+        assert progress["required_movement_radius"] == pytest.approx(0.10)
+        assert progress["movement_time_allowance"] == pytest.approx(15.0)
         assert profile["planner_server"]["ros__parameters"]["planner_plugins"] == [
             "MincoPlanner"
         ]
@@ -594,6 +604,137 @@ def test_simulation_pointlio_selects_inputs_from_same_profile():
     assert planner["rog_map"]["visualization"]["frame_id"] == (
         point_lio["rog_map"]["visualization"]["frame_id"]
     )
+
+
+def test_pointlio_navigation_scan_preserves_simulation_ray_geometry():
+    config = yaml.safe_load((BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text())
+    registrar = config["pointlio_scan_registrar"]["ros__parameters"]
+    truth = config["rm27_ground_truth_localizer"]["ros__parameters"]
+    for key in ("lidar_horizontal_samples", "lidar_vertical_samples",
+                "lidar_horizontal_min_angle", "lidar_horizontal_max_angle",
+                "lidar_vertical_min_angle", "lidar_vertical_max_angle",
+                "no_return_ray_length", "rog_raycast_max_range", "rog_map_resolution"):
+        assert registrar[key] == truth[key]
+    inputs = config["minco_input_profiles"]["ros__parameters"]["point_lio"]
+    assert inputs["rog_map"]["ros_callback"]["cloud_topic"] == registrar["output_topic"]
+    assert inputs["rog_map"]["ros_callback"]["odom_topic"] == registrar["odom_topic"]
+    assert registrar["odom_topic"] == "/aft_mapped_to_init"
+    assert registrar["sensor_frame"] == "imu_link"
+    # Density must not be obtained by weakening physical clearance checks.
+    projection = config["planner_server"]["ros__parameters"]["MincoPlanner"]["rog_map"]["projection"]
+    assert projection["vehicle_height"] == pytest.approx(.240)
+    assert projection["headroom_voxel_inset_fraction"] == 0.
+    # Raw worker accepts at most 4 MiB. Its 32-byte Gazebo point layout must
+    # still fit after increasing the depth raster precision.
+    assert registrar["lidar_horizontal_samples"] * registrar["lidar_vertical_samples"] * 32 <= 4 * 1024 * 1024
+    assert config["ign_sim_pointcloud_tool"]["ros__parameters"]["n_scan"] == registrar["lidar_vertical_samples"]
+    assert config["point_lio"]["ros__parameters"]["preprocess"]["scan_line"] == registrar["lidar_vertical_samples"]
+
+
+def test_rmuc_tunnel_profile_keeps_height_gate_and_observed_hit_precedence():
+    module = load_launch(SIMULATION_LAUNCH_FILE, "rm27_tunnel_profile")
+    path = module._apply_world_profile(str(BRINGUP_DIR / "config/simulation/minco_params.yaml"), "RMUC2026")
+    config = yaml.safe_load(Path(path).read_text())
+    planner = config["planner_server"]["ros__parameters"]["MincoPlanner"]
+    edge = planner["priormap"]["ground_edge_avoidance"]
+    assert edge["enable"]
+    assert edge["lethal_clearance_radius"] == pytest.approx(.50)
+    assert edge["clearance_radius"] > edge["lethal_clearance_radius"]
+    assert planner["rog_map"]["raycasting"]["p_miss"] == pytest.approx(.35)
+    assert planner["rog_map"]["raycasting"]["p_hit"] == pytest.approx(.9)
+    assert planner["rog_map"]["projection"]["vehicle_height"] == pytest.approx(.240)
+    assert planner["rog_map"]["projection"]["clearance_dropout_hold_time"] == pytest.approx(1.5)
+    assert planner["minco_optimizer"]["route_refresh_stall_time"] >= planner["rog_map"]["decay"]["keep_time"] + .5
+    # Test the RESOLVED world profile: changing the base frontend block alone
+    # does not change keys already overridden by a world profile.
+    frontend = config["point_lio"]["ros__parameters"]
+    assert frontend["point_filter_num"] == 1
+    assert frontend["filter_size_surf"] == pytest.approx(.1)
+    assert frontend["filter_size_map"] == pytest.approx(.1)
+    assert frontend["mapping"]["plane_thr"] == pytest.approx(.03)
+
+
+@pytest.mark.parametrize("truth,mode,expected", [
+    ("false", "minco", True), ("true", "minco", False), ("false", "legacy", False)])
+def test_dense_scan_registration_launches_only_for_pointlio_minco(truth, mode, expected):
+    module = load_launch(SIMULATION_LAUNCH_FILE, "rm27_dense_scan_launch")
+    context = LaunchContext()
+    context.launch_configurations.update(
+        namespace="", slam="false", navigation_mode=mode,
+        use_ground_truth_odom=truth, use_sim_time="true", world="RMUC2026",
+        params_file=str(BRINGUP_DIR / "config/simulation/minco_params.yaml"),
+        prior_pcd_file=str(BRINGUP_DIR / "pcd/simulation/RMUC2026.pcd"))
+    actions = module._validate_localization_inputs(context)
+    nodes = [a for a in actions if getattr(a, "node_executable", None) == "pointlio_scan_registrar"]
+    assert bool(nodes) == expected
+
+
+@pytest.mark.parametrize("truth,global_match,owner", [
+    ("false", "true", "relocalization_manager_node"),
+    ("false", "false", "relocalization_manager_node"),
+    ("true", "true", None),
+    ("true", "false", None),
+    ("1", "true", None),
+])
+def test_global_handoff_has_one_map_odom_owner(truth, global_match, owner):
+    module = load_launch(BRINGUP_DIR / "launch/localization_launch.py", "rm27_localization")
+    description = module.generate_launch_description()
+    context = LaunchContext()
+    context.launch_configurations.update(use_ground_truth_odom=truth,
+                                         global_relocalization=global_match,
+                                         use_composition="false")
+    nodes = []
+    for entity in description.entities:
+        if hasattr(entity, "node_package"):
+            nodes.append(entity)
+        elif hasattr(entity, "get_sub_entities"):
+            nodes.extend(e for e in entity.get_sub_entities() if hasattr(e, "node_package"))
+    active = {n.node_executable for n in nodes
+              if n.node_executable in {"global_pose_handoff.py", "relocalization_manager_node"}
+              and n.condition.evaluate(context)}
+    assert active == ({owner} if owner else set())
+    pointlio = next(n for n in nodes if n.node_executable == "pointlio_mapping")
+    assert pointlio.condition.evaluate(context) == (truth == "false")
+
+
+def test_simulation_defaults_to_pointlio():
+    for path in (SIMULATION_LAUNCH_FILE,
+                 BRINGUP_DIR.parent / "rm_27_stimulation/launch/sim_with_nav.launch.py"):
+        module = load_launch(path, "rm27_pointlio_default")
+        arg = next(e for e in module.generate_launch_description().entities
+                   if getattr(e, "name", None) == "use_ground_truth_odom")
+        assert perform_substitutions(LaunchContext(), arg.default_value).lower() == "false"
+
+
+def test_stationary_correction_respects_navigation_projection_tilt_contract():
+    config = yaml.safe_load((BRINGUP_DIR / "config/simulation/minco_params.yaml").read_text())
+    backend = config["relocalization_manager"]["ros__parameters"]
+    lio = config["minco_input_profiles"]["ros__parameters"]["point_lio"]
+    projection = config["planner_server"]["ros__parameters"]["MincoPlanner"]["rog_map"]["projection"]
+    assert backend["refinement_reference_frame"] == lio["frames"]["rog_frame"]
+    assert 0 < backend["max_reference_tilt"] < projection["prior_map"]["horizontal_tolerance"]
+    assert backend["required_consecutive_gicp_acceptances"] >= 3
+    assert backend["stationary_settle_time"] > backend["odometry_timeout"]
+
+
+@pytest.mark.parametrize("profile", ["nav2_params.yaml", "minco_params.yaml"])
+def test_simulation_pointlio_parameters_are_declared_and_imu_period_matches(profile):
+    source = (BRINGUP_DIR.parent / "point_lio/src/parameters.cpp").read_text()
+    declared = set(re.findall(r'declare_parameter(?:<[^;\n]+?>)?\("([^"]+)"', source))
+    declared.add("use_sim_time")
+    config = yaml.safe_load((BRINGUP_DIR / "config/simulation" / profile).read_text())
+
+    def keys(mapping, prefix=""):
+        for name, value in mapping.items():
+            if isinstance(value, dict):
+                yield from keys(value, prefix + name + ".")
+            else:
+                yield prefix + name
+
+    assert set(keys(config["point_lio"]["ros__parameters"])) <= declared
+    model = ET.parse(SIMULATION_ROBOT_XACRO).getroot()
+    rate = float(model.find(".//sensor[@name='mid360_imu']/update_rate").text)
+    assert config["point_lio"]["ros__parameters"]["mapping"]["imu_time_inte"] == pytest.approx(1 / rate)
 
 
 @pytest.mark.parametrize("deployment", ["reality", "simulation"])
@@ -794,7 +935,15 @@ def test_active_minco_profiles_keep_physical_pose_and_bounded_reference_contract
             <= controller["max_planar_speed"]
         )
         assert 0.0 < planner["minco_optimizer"]["successful_replan_period"] <= 0.5
-        assert planner["minco_optimizer"]["enable_yaw_opt"] is True
+        if deployment == "simulation":
+            # Position-only arrival must not interrupt a terminal yaw maneuver
+            # and carry its diagonal intermediate heading into the next gate.
+            assert profile["controller_server"]["ros__parameters"][
+                "general_goal_checker"]["yaw_goal_tolerance"] >= 3.141592653589793
+            assert planner["minco_optimizer"]["enable_yaw_opt"] is False
+            assert planner["minco_optimizer"]["hold_cruise_heading"] is True
+        else:
+            assert planner["minco_optimizer"]["enable_yaw_opt"] is True
         assert (
             0.0
             <= controller["slope_slowdown_start_angle"]

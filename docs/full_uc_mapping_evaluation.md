@@ -32,6 +32,20 @@ bash tools/global_relocalization/test_full_uc_mapping.bash --view /data/full_uc_
 
 `--view` 只显示保存结果，不重跑 SLAM 或驱动车辆；Gazebo 中的实体机器人位于新仿真的出生点，轨迹标记是保存结果。使用 `--headless` 可只运行测试与报告。会话状态在 `tools/global_relocalization/.build/full_uc_visualization/session.json`，其中记录结果目录、环境和进程身份。停止操作核对 boot ID、PID 和内核启动时刻，仅停止该会话拥有的进程。
 
+## 动态重放录包
+
+以下命令打开独立的完整 UC Gazebo 场景和 RViz，并默认以 1 倍速循环重放本次 `run03/raw_bag`。Gazebo 中的无传感器静态车辆模型按录包中的 `/ground_truth/odometry` 移动；RViz 的注册点云和 SLAM Toolbox 地图来自录包，并随播放时间逐步更新。位姿评分使用该次录包预先保存的时间匹配结果，一次起点对齐；不是重新运行建图算法。播放末段超出有效评分时，RViz 会标注最后评分时间和 stale。
+
+```bash
+bash tools/global_relocalization/replay_mapping_bag.bash
+bash tools/global_relocalization/replay_mapping_bag.bash --pause
+bash tools/global_relocalization/replay_mapping_bag.bash --resume
+bash tools/global_relocalization/replay_mapping_bag.bash --restart
+bash tools/global_relocalization/replay_mapping_bag.bash --stop
+```
+
+可使用 `--capture /其他采集目录 --rate 0.5` 指定包含 `raw_bag`、`manifest.json`、`mapping_errors.json` 和 `route.json` 的采集结果以及播放速度。重放会话不修改原始包与采集目录；会话状态、日志和显示用的临时数据放在 `tools/global_relocalization/.build/bag_replay/`。`--stop` 只停止该回放会话的进程。
+
 ## 实际建图链路
 
 测试调用原有 `rm_navigation_simulation_launch.py slam:=true use_ground_truth_odom:=false navigation_mode:=legacy`：

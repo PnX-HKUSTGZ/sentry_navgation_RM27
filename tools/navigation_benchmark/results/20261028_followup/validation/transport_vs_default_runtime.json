@@ -1,0 +1,117 @@
+{
+  "note": "Runtime captures relocalization_manager only in default; transport comparison there uses captured YAML plus launch log and pre-4DoF code, not runtime node parameters. Values reflect snapshots at navigation startup. Seed and relocalization executable differ. Prior PCD content hash was not captured for transport; the default capture now records the resolved prior.",
+  "common_runtime_nodes": [
+    "bt_navigator",
+    "controller_server",
+    "ign_sim_pointcloud_tool",
+    "loam_interface",
+    "planner_server",
+    "point_lio",
+    "velocity_smoother"
+  ],
+  "common_runtime_parameter_differences": {},
+  "nodes_only_in_default": [
+    "relocalization_manager"
+  ],
+  "resolved_config_differences_after_RMUC2026_world_override": [],
+  "seed": [
+    42,
+    43
+  ],
+  "dds_hash": [
+    "37f34be58a656b0e2e5b6e8eea719338a574bc96b9a53bc3eb3541892a2b4b0e",
+    "37f34be58a656b0e2e5b6e8eea719338a574bc96b9a53bc3eb3541892a2b4b0e"
+  ],
+  "resolved_binary_hashes": {
+    "ign_sim_pointcloud_tool": [
+      "2da9705bf5f2ae2316ae92309fb3380b9f2170da63ac15d2e4d505437ebd03e2",
+      "2da9705bf5f2ae2316ae92309fb3380b9f2170da63ac15d2e4d505437ebd03e2"
+    ],
+    "loam_interface": [
+      "f3b9fc05cde2ce588948de618d373152fbb1093e9b1b799b80730527fd5bc369",
+      "f3b9fc05cde2ce588948de618d373152fbb1093e9b1b799b80730527fd5bc369"
+    ],
+    "point_lio": [
+      "3434b095841a7eb50917cb9953211ee72493c3ff85fef16b8d52bc5d53e7447a",
+      "3434b095841a7eb50917cb9953211ee72493c3ff85fef16b8d52bc5d53e7447a"
+    ],
+    "relocalization_manager": [
+      "244ad6ad2d4c117a005c355d450ab9a5b3e8549c9802c0f959fa49ffa822011f",
+      "0b92c34d9f433aec80bdf7de1f7602201196dd6e9840f4d1d9b6ebd4df5d5b3a"
+    ],
+    "sensor_scan_generation": [
+      "33059df23de8687586ee7cca8e8ec5955e81634cb8ba56f69502acdb0966faf4",
+      "33059df23de8687586ee7cca8e8ec5955e81634cb8ba56f69502acdb0966faf4"
+    ]
+  },
+  "common_file_hash_differences": {
+    "src/pb2025_nav_bringup/config/simulation/minco_params.yaml": [
+      "234c1bb264891cf8e4f28be0a4fa3b79db2da1b635bb3f8ae6fd187d48db0327",
+      "ccc27bad14a35a6ed605a1ac0906275c9c288356b179e4c552095d1b0fb10765"
+    ]
+  },
+  "default_relocalization_params": {
+    "base_frame": "base_footprint",
+    "global_leaf_size": 0.1,
+    "gravity_aligned_registration": false,
+    "init_pose": [
+      -11.7,
+      2.9,
+      0.26,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "initial_pose_topic": "initialpose",
+    "input_cloud_topic": "registered_scan",
+    "lidar_frame": "left_mid360",
+    "map_frame": "map",
+    "max_delta_xy": 0.6,
+    "max_delta_yaw": 0.1745329252,
+    "max_delta_z": 0.25,
+    "max_dist_sq": 3.0,
+    "max_iterations": 30,
+    "max_mean_error": 0.3,
+    "min_inlier_ratio": 0.75,
+    "min_inliers": 300,
+    "motion_command_timeout": 0.5,
+    "motion_command_topic": "cmd_vel",
+    "moving_linear_speed_threshold": 0.05,
+    "num_neighbors": 20,
+    "num_threads": 4,
+    "odom_frame": "odom",
+    "prior_neighbor_max_distance": 0.5,
+    "prior_pcd_file": "/home/zhang/navi/sentry_navgation_RM27/install/pb2025_nav_bringup/share/pb2025_nav_bringup/pcd/simulation/RMUC2026.pcd",
+    "prior_pcd_transform": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "qos_overrides./clock.subscription.depth": 1,
+    "qos_overrides./clock.subscription.durability": "volatile",
+    "qos_overrides./clock.subscription.history": "keep_last",
+    "qos_overrides./clock.subscription.reliability": "best_effort",
+    "qos_overrides./parameter_events.publisher.depth": 1000,
+    "qos_overrides./parameter_events.publisher.durability": "volatile",
+    "qos_overrides./parameter_events.publisher.history": "keep_last",
+    "qos_overrides./parameter_events.publisher.reliability": "reliable",
+    "qos_overrides./tf.publisher.depth": 100,
+    "qos_overrides./tf.publisher.durability": "volatile",
+    "qos_overrides./tf.publisher.history": "keep_last",
+    "qos_overrides./tf.publisher.reliability": "reliable",
+    "registered_leaf_size": 0.05,
+    "required_consecutive_gicp_acceptances": 3,
+    "robot_base_frame": "gimbal_yaw",
+    "start_type_description_service": true,
+    "transform_prior_map_with_lidar_offset": false,
+    "use_sim_time": true
+  },
+  "prior_evidence": "Both logs report 457278 points and no lidar mounting offset; default runtime reports prior_pcd_transform all zero, and manifest records resolved prior path and hash. Transport runtime path/hash were not captured.",
+  "resolved_prior_pcd_sha256": {
+    "transport": null,
+    "default": "2b9e08cda8a63ade7ec3e153fe56363a4effd6566ed4a066c764b369abda0570"
+  }
+}

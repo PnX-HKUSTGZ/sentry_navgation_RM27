@@ -404,6 +404,201 @@ TEST(SmacGlobalSearchPolicyTest,
   EXPECT_FLOAT_EQ(path.back().y, 10.0F);
 }
 
+
+static double bendingEnergy(const std::vector<Eigen::Vector3d> & path)
+{
+  double sum = 0.0;
+  for (size_t i = 1; i + 1 < path.size(); ++i) {
+    sum += (path[i - 1] - 2.0 * path[i] + path[i + 1]).squaredNorm();
+  }
+  return sum;
+}
+
+static std::vector<Eigen::Vector3d> staircase()
+{
+  std::vector<Eigen::Vector3d> path;
+  for (int i = 0; i < 50; ++i) {
+    path.emplace_back(0.525 + i * 0.05, 0.525 + (i / 2) * 0.05, 0.0);
+  }
+  return path;
+}
+
+TEST(PathSmootherTest, StraightensLongWavesWithinOriginalSafeCorridor)
+{
+  GridQuery map(100, 100, 0.05, 10.0);
+  std::vector<Eigen::Vector3d> original;
+  for (int i = 0; i <= 64; ++i) {
+    original.emplace_back(.525 + i*.05, 1.525 + .16*std::sin(2.*M_PI*i/64.), .02*i);
+  }
+  auto path = original;
+  PathSmoothingOptions options; options.enable_shortcuts = true;
+  ASSERT_TRUE(PathSmoother::smooth(path, map, options));
+  ASSERT_EQ(path.size(), original.size());
+  EXPECT_TRUE(path.front().isApprox(original.front()));
+  EXPECT_TRUE(path.back().isApprox(original.back()));
+  for (size_t i = 0; i < path.size(); ++i) {
+    EXPECT_NEAR(path[i].y(), 1.525, 1e-4);
+    EXPECT_DOUBLE_EQ(path[i].z(), original[i].z());
+    EXPECT_LE((path[i]-original[i]).norm(), options.max_deviation + 1e-10);
+  }
+}
+
+TEST(PathSmootherTest, LongShortcutRetainsThinObstaclesUnknownCostsAndFootprintGuard)
+{
+  for (const unsigned char value : {nav2_costmap_2d::LETHAL_OBSTACLE,
+      nav2_costmap_2d::NO_INFORMATION, static_cast<unsigned char>(220),
+      nav2_costmap_2d::FREE_SPACE}) {
+    GridQuery map(100, 100, .05, 10.);
+    // A 5 cm obstacle/cost ridge lies on the shortcut, not on the bowed guide.
+    map.setValue(42, 30, value);
+    std::vector<Eigen::Vector3d> path;
+    for (int i=0; i<=64; ++i) {
+      path.emplace_back(.525+i*.05, 1.525+.20*std::sin(M_PI*i/64.), 0.);
+    }
+    const auto original = path;
+    PathSmoothingOptions options; options.enable_shortcuts = true;
+    const auto safe = [value](const Eigen::Vector3d & p) {
+      return value != nav2_costmap_2d::FREE_SPACE ||
+        !(p.x()>2.0 && p.x()<2.3 && p.y()<1.65);
+    };
+    PathSmoother::smooth(path, map, options, safe);
+    for (size_t i=1; i<path.size(); ++i) {
+      EXPECT_LE((path[i]-original[i]).norm(), options.max_deviation+1e-10);
+      for (int j=0; j<=100; ++j) {
+        const Eigen::Vector3d point = path[i-1]+(path[i]-path[i-1])*(j/100.);
+        unsigned int x,y; ASSERT_TRUE(map.worldToMap(point.x(),point.y(),x,y));
+        EXPECT_EQ(map.value(x,y), nav2_costmap_2d::FREE_SPACE);
+        EXPECT_TRUE(safe(point));
+      }
+    }
+    path = original; int calls = 0;
+    EXPECT_FALSE(PathSmoother::smooth(path,map,options,{}, {}, [&](){return ++calls>80;}));
+    EXPECT_EQ(path, original);
+  }
+}
+
+TEST(PathSmootherTest, RemovesGridZigzagWithFixedEndpointsAndBoundedDisplacement)
+{
+  GridQuery map(100, 100, 0.05, 10.0);
+  const auto original = staircase();
+  auto path = original;
+  PathSmoothingOptions options;
+  ASSERT_TRUE(PathSmoother::smooth(path, map, options));
+  EXPECT_EQ(path.size(), original.size());
+  EXPECT_TRUE(path.front().isApprox(original.front()));
+  EXPECT_TRUE(path.back().isApprox(original.back()));
+  EXPECT_LT(bendingEnergy(path), 0.1 * bendingEnergy(original));
+  RecordProperty("bending_energy_ratio", bendingEnergy(path) / bendingEnergy(original));
+  for (size_t i = 0; i < path.size(); ++i) {
+    EXPECT_LE((path[i] - original[i]).norm(), options.max_deviation + 1e-10);
+  }
+}
+
+TEST(PathSmootherTest, PreservesStraightLineAndDisabledGuide)
+{
+  GridQuery map(100, 100, 0.05, 10.0);
+  PathSmoothingOptions options;
+  std::vector<Eigen::Vector3d> line{{0.5, 0.5, 0}, {1, 0.5, 0}, {1.5, 0.5, 0}};
+  EXPECT_FALSE(PathSmoother::smooth(line, map, options));
+  auto path = staircase();
+  const auto original = path;
+  options.enabled = false;
+  EXPECT_FALSE(PathSmoother::smooth(path, map, options));
+  EXPECT_EQ(path, original);
+}
+
+TEST(PathSmootherTest, RetainsObstacleUnknownAndInflationDetours)
+{
+  for (const unsigned char obstacle : {nav2_costmap_2d::LETHAL_OBSTACLE,
+      nav2_costmap_2d::NO_INFORMATION, static_cast<unsigned char>(220)}) {
+    GridQuery map(100, 100, 0.05, 10.0);
+    for (unsigned int x = 20; x < 40; ++x) {
+      for (unsigned int y = 0; y < 30; ++y) {map.setValue(x, y, obstacle);}
+    }
+    std::vector<Eigen::Vector3d> path;
+    for (int y = 10; y <= 32; ++y) {path.emplace_back(0.925, y * 0.05 + 0.025, 0);}
+    for (int x = 19; x <= 42; ++x) {path.emplace_back(x * 0.05 + 0.025, 1.625, 0);}
+    for (int y = 31; y >= 10; --y) {path.emplace_back(2.125, y * 0.05 + 0.025, 0);}
+    const double before = bendingEnergy(path);
+    PathSmoother::smooth(path, map, PathSmoothingOptions{});
+    EXPECT_LT(bendingEnergy(path), before);
+    for (size_t i = 1; i < path.size(); ++i) {
+      for (int sample = 0; sample <= 100; ++sample) {
+        const Eigen::Vector3d p = path[i - 1] + (path[i] - path[i - 1]) * (sample / 100.0);
+        unsigned int x, y;
+        ASSERT_TRUE(map.worldToMap(p.x(), p.y(), x, y));
+        EXPECT_EQ(map.value(x, y), nav2_costmap_2d::FREE_SPACE);
+      }
+    }
+  }
+}
+
+TEST(PathSmootherTest, ChecksEdgesAndKeepsDynamicFootprintDetour)
+{
+  GridQuery map(100, 100, 0.05, 10.0);
+  std::vector<Eigen::Vector3d> path{{0.5, 0.5, 0}, {0.5, 1.5, 0},
+    {1.5, 1.5, 0}, {1.5, 0.5, 0}};
+  const auto safe = [](const Eigen::Vector3d & p) {
+      return !(p.x() > 0.6 && p.x() < 1.4 && p.y() < 1.4);
+    };
+  PathSmoother::smooth(path, map, PathSmoothingOptions{}, safe);
+  for (size_t i = 1; i < path.size(); ++i) {
+    for (int sample = 0; sample <= 1000; ++sample) {
+      EXPECT_TRUE(safe(path[i - 1] + (path[i] - path[i - 1]) * (sample / 1000.0)));
+    }
+  }
+}
+
+TEST(PathSmootherTest, CancellationRestoresOriginalGuide)
+{
+  GridQuery map(100, 100, 0.05, 10.0);
+  auto path = staircase();
+  const auto original = path;
+  int checks = 0;
+  EXPECT_FALSE(PathSmoother::smooth(path, map, PathSmoothingOptions{}, {}, {},
+    [&checks]() {return ++checks > 80;}));
+  EXPECT_GT(checks, 80);
+  EXPECT_EQ(path, original);
+}
+
+TEST(PathSmootherTest, RejectsNonfiniteInputAndInvalidOptions)
+{
+  GridQuery map(100, 100, 0.05, 10.0);
+  auto path = staircase();
+  PathSmoothingOptions options;
+  options.max_deviation = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_THROW(PathSmoother::smooth(path, map, options), std::invalid_argument);
+  options = PathSmoothingOptions{};
+  path[3].x() = std::numeric_limits<double>::infinity();
+  EXPECT_FALSE(PathSmoother::smooth(path, map, options));
+}
+
+TEST(PathSmootherTest, SmacWorldPathRetainsMeasuredDynamicWall)
+{
+  auto map = std::make_shared<GridQuery>(100U, 100U, 0.05, 10.0);
+  SmacPlanner2DSimple planner;
+  planner.setMap(map);
+  planner.setESDFQuery(std::make_shared<GridQuery>(100U, 100U, 0.05, 0.0));
+  planner.setCollisionDistance(0.2);
+  // Establish a planning generation even when the search is blocked.
+  SmacPlanner2DSimple::CoordinateVector grid_path;
+  EXPECT_FALSE(planner.createPath(10U, 10U, 40U, 40U, grid_path));
+  auto path = staircase();
+  const auto original = path;
+  planner.smoothWorldPath(path);
+  EXPECT_EQ(path, original);
+}
+
+TEST(PathSmootherTest, DoesNotMoveAcrossGridCornerTouchingObstacle)
+{
+  GridQuery map(10, 10, 0.05, 10.0);
+  map.setValue(1, 0, nav2_costmap_2d::LETHAL_OBSTACLE);
+  std::vector<Eigen::Vector3d> path{{0.025, 0.025, 0}, {0.075, 0.075, 0}, {0.125, 0.075, 0}};
+  const auto original = path;
+  EXPECT_FALSE(PathSmoother::smooth(path, map, PathSmoothingOptions{}));
+  EXPECT_EQ(path, original);
+}
+
 } // namespace
 } // namespace smac
 }  // namespace minco_planner

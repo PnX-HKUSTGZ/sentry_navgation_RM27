@@ -1,0 +1,48 @@
+Running main() from /opt/ros/jazzy/src/gtest_vendor/src/gtest_main.cc
+Note: Google Test filter = ReferenceTiming.*
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ReferenceTiming
+[ RUN      ] ReferenceTiming.ConstantVelocityReferenceHasNoArtificialDelayCorrection
+[INFO] [1793168102.923744321] [recovery_control_costmap.recovery_control_costmap]: 
+	recovery_control_costmap lifecycle node launched. 
+	Waiting on external lifecycle transitions to activate
+	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[INFO] [1793168102.924326228] [recovery_control_costmap.recovery_control_costmap]: Creating Costmap
+[INFO] [1793168102.927209938] [reference_timing_test]: FollowPath: MincoMpcController configured (dt=0.050, lookahead_time=0.500, deadzone=0.020, delay_comp=0.120, reference_max_lead=0.250, startup_lead=1.500, startup_target_speed=0.080, startup_min_command=0.080, uphill_assist=[grade=0.080..0.180,ref>=0.080,max_command=0.080], slope_slowdown=[0.080,0.180]rad, slope_speed_limit=1.000, small_gyro=true, fixed_wz=0.000, odom_timeout=0.250, trajectory_timeout=1.500, future_tolerance=0.050, q_along=3.000, q_cross=12.000, lidar_offset_x=0.000, lidar_offset_y=0.000, lidar_roll_offset=0.000, opt_path_topic=/reference_timing_test/path, odom_topic=/reference_timing_test/odom, cmd_vel_mpc_topic=cmd_vel_mpc)
+[WARN] [1793168102.927274933] [reference_timing_test]: Minco MPC fail-closed: ACTIVATED_WAITING_FOR_PLAN
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_controller/test/test_recovery_control.cpp:226: Failure
+The difference between output.twist.linear.x and vx is 0.041104386237672652, which exceeds 1e-5, where
+output.twist.linear.x evaluates to 0.54110438623767265,
+vx evaluates to 0.5, and
+1e-5 evaluates to 1.0000000000000001e-05.
+
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_controller/test/test_recovery_control.cpp:226: Failure
+The difference between output.twist.linear.x and vx is 0.031438368677008, which exceeds 1e-5, where
+output.twist.linear.x evaluates to 0.41385946231925225,
+vx evaluates to 0.38242109364224425, and
+1e-5 evaluates to 1.0000000000000001e-05.
+
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_controller/test/test_recovery_control.cpp:227: Failure
+The difference between output.twist.linear.y and vy is 0.026480172637358301, which exceeds 1e-5, where
+output.twist.linear.y evaluates to 0.34858901625620381,
+vy evaluates to 0.32210884361884551, and
+1e-5 evaluates to 1.0000000000000001e-05.
+
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_controller/test/test_recovery_control.cpp:227: Failure
+The difference between output.twist.linear.y and vy is 0.041104386237672652, which exceeds 1e-5, where
+output.twist.linear.y evaluates to 0.54110438623767265,
+vy evaluates to 0.5, and
+1e-5 evaluates to 1.0000000000000001e-05.
+
+[INFO] [1793168102.993709376] [recovery_control_costmap.recovery_control_costmap]: Destroying
+[  FAILED  ] ReferenceTiming.ConstantVelocityReferenceHasNoArtificialDelayCorrection (91 ms)
+[----------] 1 test from ReferenceTiming (91 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (91 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] ReferenceTiming.ConstantVelocityReferenceHasNoArtificialDelayCorrection
+
+ 1 FAILED TEST

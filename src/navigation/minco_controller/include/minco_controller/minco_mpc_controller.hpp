@@ -192,6 +192,7 @@ private:
   double future_stamp_tolerance_{0.05};
   double deadzone_speed_threshold_{0.02};
   double control_delay_compensation_{0.25};
+  bool compensate_odometry_age_{false};
   double reference_progress_max_lead_time_{0.25};
   double reference_startup_max_lead_time_{1.50};
   double reference_startup_target_speed_{0.08};

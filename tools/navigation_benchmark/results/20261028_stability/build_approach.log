@@ -1,0 +1,118 @@
+[0.486s] WARNING:colcon.colcon_core.package_selection:Some selected packages are already built in one or more underlay workspaces:
+	'minco_planner' is in: /home/zhang/navi/sentry_navgation_RM27/install/minco_planner, /home/zhang/ros_ws_jazzy/sentry_navgation_RM27/install/minco_planner
+If a package in a merged underlay workspace is overridden and it installs headers, then all packages in the overlay must sort their include directories by workspace order. Failure to do so may result in build failures or undefined behavior at run time.
+If the overridden package is used by another package in any underlay, then the overriding package in the overlay must be API and ABI compatible or undefined behavior at run time may occur.
+
+If you understand the risks and want to override a package anyways, add the following to the command line:
+	--allow-overriding minco_planner
+
+This may be promoted to an error in a future release of colcon-override-check.
+Starting >>> minco_planner
+--- stderr: minco_planner
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/prob_map.h:30,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map.h:34,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:45,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:9:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/esdf_map.h: In member function ‘virtual void rog_map::ESDFMap::triggerJumpingEdge(const super_utils::Vec3i&, const super_utils::GridType&, const super_utils::GridType&)’:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/esdf_map.h:89:55: warning: unused parameter ‘id_g’ [-Wunused-parameter]
+   89 |         void triggerJumpingEdge(const rog_map::Vec3i &id_g, const rog_map::GridType &from_type,
+      |                                 ~~~~~~~~~~~~~~~~~~~~~~^~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/esdf_map.h:89:86: warning: unused parameter ‘from_type’ [-Wunused-parameter]
+   89 |         void triggerJumpingEdge(const rog_map::Vec3i &id_g, const rog_map::GridType &from_type,
+      |                                                             ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/esdf_map.h:90:58: warning: unused parameter ‘to_type’ [-Wunused-parameter]
+   90 |                                 const rog_map::GridType &to_type) override {}
+      |                                 ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map.h: At global scope:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map.h:52:11: warning: type qualifiers ignored on function return type [-Wignored-qualifiers]
+   52 |   virtual const double getSystemWalltimeNow() = 0;
+      |           ^~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:90:3: warning: type qualifiers ignored on function return type [-Wignored-qualifiers]
+   90 |   const double getSystemWalltimeNow() override { return now().seconds(); }
+      |   ^~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp: In static member function ‘static void rog_map::ROGMapROS::visualizeBoundingBox(visualization_msgs::msg::MarkerArray&, const double&, const super_utils::Vec3f&, const super_utils::Vec3f&, const std::string&, const Color&, const double&, const double&, const bool&)’:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1379:48: warning: unused parameter ‘print_ns’ [-Wunused-parameter]
+ 1379 |                                    const bool &print_ns = true) {
+      |                                    ~~~~~~~~~~~~^~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp: In static member function ‘static void rog_map::ROGMapROS::visualizeText(visualization_msgs::msg::MarkerArray&, const double&, const std::string&, const std::string&, const super_utils::Vec3f&, const Color&, const double&, const int&)’:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1459:18: warning: declaration of ‘int id’ shadows a parameter [-Wshadow]
+ 1459 |       static int id = 0;
+      |                  ^~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1449:66: note: shadowed declaration is here
+ 1449 |                             const double &size = 0.6, const int &id = -1) {
+      |                                                       ~~~~~~~~~~~^~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp: In static member function ‘static void rog_map::ROGMapROS::visualizePoint(visualization_msgs::msg::MarkerArray&, const double&, const super_utils::Vec3f&, Color, std::string, double, int, const bool&)’:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1515:20: warning: declaration of ‘int id’ shadows a parameter [-Wshadow]
+ 1515 |         static int id = 0;
+      |                    ^~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1476:53: note: shadowed declaration is here
+ 1476 |                              double size = 0.1, int id = -1,
+      |                                                 ~~~~^~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp: In lambda function:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:1194:14: warning: declaration of ‘node’ shadows a previous local [-Wshadow]
+ 1194 |         auto node = node_.lock();
+      |              ^~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:327:8: note: shadowed declaration is here
+  327 |   auto node = parent.lock();
+      |        ^~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp: In member function ‘minco_planner::MincoPlanner::PlanningState minco_planner::MincoPlanner::determinePlanningState(const geometry_msgs::msg::Pose&, const std::vector<Eigen::Matrix<double, 3, 1> >&, const Eigen::Vector3d&)’:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:2755:21: warning: declaration of ‘pred_vel’ shadows a previous local [-Wshadow]
+ 2755 |     Eigen::Vector3d pred_vel = last_traj_.getVel(t_dur);
+      |                     ^~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:2731:19: note: shadowed declaration is here
+ 2731 |   Eigen::Vector3d pred_vel = last_traj_.getVel(t_dur);
+      |                   ^~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/projection_layer.hpp:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/components/trajectory_safety_checker.cpp:5:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/config.hpp:32,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/sliding_map.h:26,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/counter_map.h:27,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/inf_map.h:26,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/prob_map.h:28:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp: At global scope:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/projection_layer.hpp:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/components/dynamic_obstacle_evidence.hpp:7,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/test/smac_global_search_policy_test.cpp:4:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/projection_layer.hpp:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/test/trajectory_safety_checker_test.cpp:6:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+---
+Finished <<< minco_planner [40.5s]
+
+Summary: 1 package finished [40.6s]
+  1 package had stderr output: minco_planner

@@ -1,0 +1,127 @@
+{
+  "summary": {
+    "status": "succeeded",
+    "duration": 11.219999999999999,
+    "path_m": 11.30357095544437,
+    "max_speed": 1.5519493210403146,
+    "stop_count": 0,
+    "long_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "candidate_count": 0,
+    "raw_stop_count": 0,
+    "excluded_safety_count": 0,
+    "protective_stop_count": 0,
+    "unclassified_count": 0,
+    "run": "repeat_01/run_02.json"
+  },
+  "main": {
+    "total_episodes": 0,
+    "long_stop_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "excluded_start_count": 0,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 0,
+    "episodes": [],
+    "coverage": {
+      "sample_count": 188,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 85,
+      "missing_safety_reason": 188,
+      "missing_command_speed": 0
+    }
+  },
+  "short_stop_sensitivity": {
+    "total_episodes": 0,
+    "long_stop_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "excluded_start_count": 1,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 0,
+    "episodes": [
+      {
+        "start_time": 24.956,
+        "end_time": 25.196,
+        "duration": 0.240000000000002,
+        "start_position": {
+          "x": 5.172243107661431,
+          "y": 5.278069097125943,
+          "z": 0.0799999701203114
+        },
+        "end_position": {
+          "x": 5.171702374359606,
+          "y": 5.281979162161678,
+          "z": 0.0799999701193687
+        },
+        "max_cmd_speed": 0.0,
+        "excluded_start": true,
+        "excluded_goal": false,
+        "regions": [],
+        "safety_reasons": [],
+        "long_stop": false,
+        "safety_coverage": 0.0,
+        "safety_status": "unknown",
+        "unexpected_candidate": false,
+        "evidence": [
+          {
+            "stamp": 1793159464.6145053,
+            "t": 24.714,
+            "receipt_wall": 1793159464.6153476,
+            "name": "controller_server",
+            "msg": "Minco MPC fail-closed: BLOCK_COMMAND"
+          },
+          {
+            "stamp": 1793159464.6357412,
+            "t": 24.738,
+            "receipt_wall": 1793159464.6359723,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Global static footprint yaw=-0.000 rad (polygon clearance)."
+          },
+          {
+            "stamp": 1793159464.7030334,
+            "t": 24.805,
+            "receipt_wall": 1793159464.703298,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=1.950/1.999 sample=footprint center=(4.835,6.654,0.000) query_point=(5.008,6.951,0.000) footprint_offset=(0.173,0.297) yaw=-0.000 esdf_distance=0.024 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.105 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.003 pipeline_age_ms=102.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=OCCUPIED base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=OVERHEAD_GROUND_UNVERIFIED candidate_reason=OVERHEAD_GROUND_UNVERIFIED prior_occupied=0 prior_free=1 occupied_z=[0.098,0.372] height_delta=0.300 vertical_ratio=0.233 ground_z=nan support_z=nan ceiling_z=0.098 headroom=0.178 headroom_known=0.000 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=0 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=nan support_error=nan support_tolerance=nan confidence=1.000 planning_frame='map' rog_frame='odom'."
+          },
+          {
+            "stamp": 1793159464.9682002,
+            "t": 25.07,
+            "receipt_wall": 1793159464.968507,
+            "name": "local_costmap.local_costmap",
+            "msg": "ROG master merge: layer_lethal=27 merged_lethal=22 cleared_static=82 master_lethal_after=27 window=100x100 bounds_ignored=true"
+          },
+          {
+            "stamp": 1793159465.3327887,
+            "t": 25.435,
+            "receipt_wall": 1793159465.3330002,
+            "name": "global_costmap.global_costmap",
+            "msg": "ROG master merge: layer_lethal=28 merged_lethal=10 cleared_static=97 master_lethal_after=28 window=583x300 bounds_ignored=true"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "sample_count": 188,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 85,
+      "missing_safety_reason": 188,
+      "missing_command_speed": 0
+    }
+  },
+  "notes": [
+    "Region labels are approximate snapshots from samples or supplied scenario rectangles.",
+    "Protective evidence is a log association for review, not proof that a stop was necessary.",
+    "Path excludes intervals longer than 0.3 simulation seconds."
+  ]
+}

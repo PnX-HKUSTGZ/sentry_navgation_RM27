@@ -401,7 +401,7 @@ void MincoFsm::callMainFsmOnce()
 
       // 4) Blocking wait until fully stopped.
       const Eigen::Vector3d speed = planner_->getCurrentSpeed();
-      if (std::isfinite(speed.head<2>().norm()) && speed.head<2>().norm() > 0.1) {
+      if (!speed.allFinite() || speed.head<2>().norm() > 0.1) {
         return;
       }
 

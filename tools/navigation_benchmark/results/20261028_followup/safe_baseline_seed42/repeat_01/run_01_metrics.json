@@ -1,0 +1,139 @@
+{
+  "summary": {
+    "status": "succeeded",
+    "duration": 19.259999999999998,
+    "path_m": 20.600432302778824,
+    "max_speed": 1.5880683724936466,
+    "stop_count": 0,
+    "long_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "candidate_count": 0,
+    "raw_stop_count": 0,
+    "excluded_safety_count": 0,
+    "protective_stop_count": 0,
+    "unclassified_count": 0,
+    "run": "repeat_01/run_01.json"
+  },
+  "main": {
+    "total_episodes": 0,
+    "long_stop_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "excluded_start_count": 0,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 0,
+    "episodes": [],
+    "coverage": {
+      "sample_count": 322,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 231,
+      "missing_safety_reason": 322,
+      "missing_command_speed": 1
+    }
+  },
+  "short_stop_sensitivity": {
+    "total_episodes": 1,
+    "long_stop_count": 0,
+    "ramp_count": 0,
+    "tunnel_count": 0,
+    "excluded_start_count": 1,
+    "excluded_goal_count": 0,
+    "excluded_safety_count": 0,
+    "unexpected_candidate_count": 1,
+    "episodes": [
+      {
+        "start_time": 5.416,
+        "end_time": 5.536,
+        "duration": 0.11999999999999922,
+        "start_position": {
+          "x": -11.699999823437564,
+          "y": 3.099999742061293,
+          "z": 0.0799996572013576
+        },
+        "end_position": {
+          "x": -11.699999823437564,
+          "y": 3.099999742061293,
+          "z": 0.0799996572013576
+        },
+        "max_cmd_speed": 0.0,
+        "excluded_start": true,
+        "excluded_goal": false,
+        "regions": [],
+        "safety_reasons": [],
+        "long_stop": false,
+        "safety_coverage": 0.0,
+        "safety_status": "unknown",
+        "unexpected_candidate": false,
+        "evidence": [
+          {
+            "stamp": 1793159443.5341868,
+            "t": 5.412,
+            "receipt_wall": 1793159443.5349433,
+            "name": "controller_server",
+            "msg": "Minco MPC fail-closed: BLOCK_COMMAND"
+          },
+          {
+            "stamp": 1793159443.5607336,
+            "t": 5.438,
+            "receipt_wall": 1793159443.5609946,
+            "name": "planner_server",
+            "msg": "[MincoPlanner] Global static footprint yaw=0.000 rad (polygon clearance)."
+          }
+        ]
+      },
+      {
+        "start_time": 8.896,
+        "end_time": 9.016,
+        "duration": 0.11999999999999922,
+        "start_position": {
+          "x": -8.250073441126391,
+          "y": 3.3133373925988265,
+          "z": 0.07999992544815665
+        },
+        "end_position": {
+          "x": -8.248864182112419,
+          "y": 3.3140865038070566,
+          "z": 0.0799999254480656
+        },
+        "max_cmd_speed": 0.280074862592571,
+        "excluded_start": false,
+        "excluded_goal": false,
+        "regions": [],
+        "safety_reasons": [],
+        "long_stop": false,
+        "safety_coverage": 0.0,
+        "safety_status": "unknown",
+        "unexpected_candidate": true,
+        "evidence": [
+          {
+            "stamp": 1793159446.7662292,
+            "t": 8.644,
+            "receipt_wall": 1793159446.766603,
+            "name": "global_costmap.global_costmap",
+            "msg": "ROG master merge: layer_lethal=0 merged_lethal=0 cleared_static=233 master_lethal_after=0 window=583x300 bounds_ignored=true"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "sample_count": 322,
+      "missing_time": 0,
+      "missing_active": 0,
+      "missing_goal_distance": 0,
+      "missing_speed": 0,
+      "missing_region": 231,
+      "missing_safety_reason": 322,
+      "missing_command_speed": 1
+    }
+  },
+  "notes": [
+    "Region labels are approximate snapshots from samples or supplied scenario rectangles.",
+    "Protective evidence is a log association for review, not proof that a stop was necessary.",
+    "Path excludes intervals longer than 0.3 simulation seconds."
+  ]
+}

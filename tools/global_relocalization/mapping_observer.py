@@ -53,7 +53,8 @@ class Observer(Node):
         self.grid_cloud_pub = self.create_publisher(PointCloud2, "/mapping_eval/occupancy_cloud", qos)
         self.status_pub = self.create_publisher(String, "/mapping_eval/status", qos)
         self.create_subscription(Odometry, "/ground_truth/odometry", self.truth, qos_profile_sensor_data)
-        self.create_subscription(Odometry, "/aft_mapped_to_init", self.odom, 100)
+        if not getattr(args, "skip_odom_subscription", False):
+            self.create_subscription(Odometry, "/aft_mapped_to_init", self.odom, 100)
         self.create_subscription(PointCloud2, "/cloud_registered", self.cloud, qos_profile_sensor_data)
         self.create_subscription(OccupancyGrid, "/map", self.grid, qos)
         self.grid_message, self.grid_cloud, self.map_transform = None, None, None
@@ -240,7 +241,7 @@ class Observer(Node):
             # sent only to the Gazebo GUI to keep both displays inexpensive.
         else:
             cloud_marker = None
-        status = {"mode": "saved_result" if self.frozen else "live", "samples": len(self.errors),
+        status = {"mode": "saved_result" if self.frozen else getattr(self, "display_mode", "live"), "samples": len(self.errors),
                   "unmatched_samples": self.skipped, "gazebo_markers_available": self.gz_ok,
                   "translation_3d_m": stats([r["translation_3d_m"] for r in self.errors]),
                   "orientation_so3_deg": stats([r["orientation_so3_deg"] for r in self.errors])}
@@ -263,6 +264,11 @@ class Observer(Node):
             text.text += "Waiting for timestamp-matched truth and Point-LIO"
         if "progress" in status:
             text.text += f"\nRoute {status['progress']['completed_waypoints']}/{status['progress']['total_waypoints']}"
+        replay_time = getattr(self, "replay_time", None)
+        if replay_time is not None:
+            text.text += f"\nBag time: {replay_time:.1f} s"
+            if self.errors and replay_time - self.errors[-1]["stamp"] > 2:
+                text.text += f" | Last valid score: {self.errors[-1]['stamp']:.1f} s (stale)"
         messages.append(text)
         if self.frozen and status.get("failure"):
             text.text += "\nMAPPING FAILED / incomplete estimate: " + status["failure"]

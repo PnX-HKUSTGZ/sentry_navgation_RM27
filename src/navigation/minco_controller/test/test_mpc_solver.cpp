@@ -3,9 +3,11 @@
 #include <cmath>
 #include <limits>
 #include <vector>
+#include <utility>
 #include <Eigen/Geometry>
 
 #include "minco_controller/mpc_solver.hpp"
+#include "minco_controller/odometry_prediction.hpp"
 
 namespace {
 
@@ -190,6 +192,88 @@ TEST(MpcSolver, ResetClearsPreviousControl) {
   EXPECT_TRUE(solver.getLastControl().isZero(0.0));
 }
 
+TEST(MpcSolver, DeltaPenaltyDampsNoisyLateralCorrectionsWithoutSteadySpeedLoss) {
+  auto config = testConfig();
+  config.dt = 0.05;
+  config.horizon = 20;
+  config.q_cross = 120.0;
+  config.R = {1.5, 1.5, 1.0};
+  config.use_acc_constraints = true;
+  struct Metrics { double variation{0.0}; double max_error{0.0}; double speed{0.0}; };
+  const auto track = [&](double weight) {
+    auto cfg = config;
+    cfg.control_delta_weight = {weight, weight, 0.5};
+    minco_controller::MpcSolver solver(cfg);
+    minco_controller::State truth;
+    truth.y = 0.04;
+    minco_controller::Control previous;
+    Metrics result;
+    for (int step = 0; step < 240; ++step) {
+      auto measured = truth;
+      // Alternating centimetre-scale localization error at a 20 Hz loop.
+      measured.y += (step % 2 ? -0.01 : 0.01);
+      std::vector<minco_controller::ReferencePoint> reference(cfg.horizon);
+      for (int k = 0; k < cfg.horizon; ++k) {
+        reference[k].pos = {truth.x + 0.5 * (k + 1) * cfg.dt, 0.0};
+        reference[k].vel = {0.5, 0.0};
+      }
+      minco_controller::Control command;
+      EXPECT_TRUE(solver.solve(measured, reference, command));
+      EXPECT_LE(std::abs(command.vy - previous.vy), cfg.ay_max * cfg.dt + 1e-6);
+      // First-order chassis response, matching the simulation's ~0.13 s lag.
+      truth.vx += (command.vx - truth.vx) * (1.0 - std::exp(-cfg.dt / 0.13));
+      truth.vy += (command.vy - truth.vy) * (1.0 - std::exp(-cfg.dt / 0.13));
+      truth.x += truth.vx * cfg.dt;
+      truth.y += truth.vy * cfg.dt;
+      if (step >= 80) {
+        result.variation += std::pow(command.vy - previous.vy, 2);
+        result.max_error = std::max(result.max_error, std::abs(truth.y));
+        result.speed += truth.vx / 160.0;
+      }
+      previous = command;
+    }
+    return result;
+  };
+  const auto baseline = track(0.0);
+  RecordProperty("baseline_lateral_delta_energy", baseline.variation);
+  for (const double weight : {3.0, 6.0}) {
+    SCOPED_TRACE(weight);
+    const auto damped = track(weight);
+    EXPECT_LT(damped.variation, 0.5 * baseline.variation);
+    EXPECT_LT(damped.max_error, 0.005);
+    EXPECT_NEAR(damped.speed, 0.5, 0.01);
+    RecordProperty(weight == 3.0 ? "damped3_lateral_delta_energy" :
+        "damped6_lateral_delta_energy", damped.variation);
+  }
+}
+
+TEST(MpcSolver, DeltaPenaltyResetUsesMeasuredVelocityAndInvalidWeightsFailClosed) {
+  auto config = testConfig();
+  config.control_delta_weight = {3.0, 3.0, 0.5};
+  minco_controller::MpcSolver solver(config);
+  minco_controller::State state;
+  state.vx = 0.5;
+  auto reference = testReference();
+  for (size_t i = 0; i < reference.size(); ++i) {
+    reference[i].pos = {0.5 * (i + 1) * config.dt, 0.0};
+  }
+  minco_controller::Control command;
+  ASSERT_TRUE(solver.solve(state, reference, command));
+  EXPECT_NEAR(command.vx, 0.5, 1e-6);
+  ASSERT_TRUE(solver.solve(state, testReference(), command));
+  solver.reset();
+  ASSERT_TRUE(solver.solve(state, reference, command));
+  EXPECT_NEAR(command.vx, 0.5, 1e-6);
+  for (double invalid : {-1.0, std::numeric_limits<double>::quiet_NaN(),
+                          std::numeric_limits<double>::infinity()}) {
+    config.control_delta_weight.y() = invalid;
+    solver.setConfig(config);
+    EXPECT_FALSE(solver.solve(state, reference, command));
+    EXPECT_DOUBLE_EQ(command.vx, 0.0);
+    EXPECT_TRUE(solver.getLastControl().isZero());
+  }
+}
+
 TEST(MpcSolver, NonfiniteReferenceFailsClosedAndClearsWarmState) {
   minco_controller::MpcSolver solver(testConfig());
   minco_controller::State state;
@@ -245,4 +329,65 @@ TEST(MpcSolver, InvalidRadialSpeedLimitFailsClosed) {
   EXPECT_FALSE(solver.solve(state, testReference(), control));
   EXPECT_DOUBLE_EQ(control.vx, 0.0);
   EXPECT_TRUE(solver.getLastControl().isZero(0.0));
+}
+
+TEST(OdometryPrediction, UsesWorldVelocityAndMeasuredAgeWithoutChangingVelocity) {
+  minco_controller::State state{1., 2., 3.13, -.4, .6, .5};
+  ASSERT_TRUE(minco_controller::predictOdometryToNow(state, 10., 10.15, .25, .05));
+  EXPECT_NEAR(state.x, .94, 1.e-12); EXPECT_NEAR(state.y, 2.09, 1.e-12);
+  EXPECT_NEAR(state.yaw, std::atan2(std::sin(3.205), std::cos(3.205)), 1.e-12);
+  EXPECT_DOUBLE_EQ(state.vx, -.4); EXPECT_DOUBLE_EQ(state.vy, .6);
+  auto future = state;
+  EXPECT_TRUE(minco_controller::predictOdometryToNow(future, 10.02, 10., .25, .05));
+  EXPECT_DOUBLE_EQ(future.x, state.x); EXPECT_DOUBLE_EQ(future.y, state.y);
+  for (const double stamp : {9.7, 10.06, std::numeric_limits<double>::quiet_NaN()}) {
+    auto invalid = state;
+    EXPECT_FALSE(minco_controller::predictOdometryToNow(invalid, stamp, 10., .25, .05));
+    EXPECT_DOUBLE_EQ(invalid.x, state.x);
+  }
+}
+
+TEST(MpcSolver, TimestampPredictionReducesCrossTrackOvershoot) {
+  // 10 Hz odometry, 100 ms delivery delay, 20 Hz MPC and a 130 ms force
+  // actuator. Start 8 cm beside a straight path. No truth enters the controller;
+  // the simulated plant state is used only to produce delayed observations.
+  auto simulate = [](bool compensate) {
+    auto config = testConfig(); config.dt = .05; config.horizon = 20;
+    config.q_cross = 60.; config.R = Eigen::Vector3d(1.5,1.5,1.);
+    config.control_delta_weight = Eigen::Vector3d(6.,6.,.5);
+    config.use_acc_constraints = true;
+    config.ax_min = config.ay_min = -1.5; config.ax_max = config.ay_max = 1.5;
+    minco_controller::MpcSolver solver(config);
+    minco_controller::State actual; actual.y = .08; actual.vx = .6;
+    std::vector<minco_controller::State> history;
+    double total = 0., min_y = .08;
+    for (int k = 0; k < 200; ++k) {
+      history.push_back(actual);
+      const int sample = std::max(0, (k-2)/2*2);
+      auto state = history[sample];
+      if (compensate) {
+        EXPECT_TRUE(minco_controller::predictOdometryToNow(
+            state, 1.+sample*.05, 1.+k*.05, .25, .05));
+      }
+      state.x += state.vx*.12; state.y += state.vy*.12;
+      std::vector<minco_controller::ReferencePoint> ref(20);
+      for (int i=0; i<20; ++i) {
+        ref[i].pos = Eigen::Vector2d(state.x+.6*(i+1)*.05, 0.);
+        ref[i].vel = Eigen::Vector2d(.6,0.);
+      }
+      minco_controller::Control u;
+      EXPECT_TRUE(solver.solve(state, ref, u));
+      const double decay = std::exp(-.05/.13);
+      actual.vx = decay*actual.vx+(1.-decay)*u.vx;
+      actual.vy = decay*actual.vy+(1.-decay)*u.vy;
+      actual.x += actual.vx*.05; actual.y += actual.vy*.05;
+      total += std::abs(actual.vy)*.05; min_y = std::min(min_y, actual.y);
+    }
+    return std::make_pair(total, std::max(0., -min_y));
+  };
+  const auto delayed = simulate(false), corrected = simulate(true);
+  // Measure the complete transient, including its initial overshoot.
+  EXPECT_GT(delayed.second, .008);
+  EXPECT_LT(corrected.second, .001);
+  EXPECT_LT(corrected.first, delayed.first*.9);
 }

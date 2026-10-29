@@ -1,0 +1,324 @@
+--- a/src/relocalization_manager/CMakeLists.txt
++++ b/src/relocalization_manager/CMakeLists.txt
+@@ -62,12 +62,6 @@
+ #############
+ 
+ if(BUILD_TESTING)
+-  find_package(ament_cmake_gtest REQUIRED)
+-  ament_add_gtest(gravity_registration_test test/gravity_registration_test.cpp)
+-  target_include_directories(gravity_registration_test PRIVATE include ${PCL_INCLUDE_DIRS})
+-  target_link_directories(gravity_registration_test PRIVATE ${FLANN_LIBRARY_DIRS})
+-  target_link_libraries(gravity_registration_test ${PROJECT_NAME} small_gicp OpenMP::OpenMP_CXX ${PCL_LIBRARIES})
+-  ament_target_dependencies(gravity_registration_test rclcpp tf2_ros sensor_msgs geometry_msgs)
+   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
+   set(ament_cmake_clang_tidy_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-tidy")
+   find_package(ament_lint_auto REQUIRED)
+--- a/src/relocalization_manager/include/relocalization_manager/gravity_aligned_registration.hpp
++++ /dev/null
+@@ -1,44 +0,0 @@
+-// Copyright 2026
+-// SPDX-License-Identifier: Apache-2.0
+-#ifndef RELOCALIZATION_MANAGER__GRAVITY_ALIGNED_REGISTRATION_HPP_
+-#define RELOCALIZATION_MANAGER__GRAVITY_ALIGNED_REGISTRATION_HPP_
+-
+-#include <Eigen/Geometry>
+-#include <cmath>
+-
+-namespace relocalization_manager
+-{
+-// The frames must have independently verified matching gravity directions.
+-// Reject inconsistent initial guesses; do not silently project them onto SE(2).
+-inline bool validGravityAlignedInitialGuess(const Eigen::Isometry3d & transform)
+-{
+-  const auto & r = transform.linear();
+-  constexpr double tolerance = 1e-9;
+-  return transform.matrix().allFinite() &&
+-         (r.transpose() * r - Eigen::Matrix3d::Identity()).norm() < tolerance &&
+-         std::abs(r.determinant() - 1.0) < tolerance &&
+-         (r * Eigen::Vector3d::UnitZ() - Eigen::Vector3d::UnitZ()).norm() < tolerance &&
+-         (transform.matrix().row(3) - Eigen::RowVector4d(0, 0, 0, 1)).norm() < tolerance;
+-}
+-
+-// small_gicp uses right-multiplied increments ordered rx, ry, rz, tx, ty, tz.
+-// Decouple and freeze rx/ry, keeping the residual and candidate error unchanged.
+-struct GravityAlignedFactor
+-{
+-  template<typename Target, typename Source, typename Tree>
+-  void update_linearized_system(
+-    const Target &, const Source &, const Tree &, const Eigen::Isometry3d &,
+-    Eigen::Matrix<double, 6, 6> * h, Eigen::Matrix<double, 6, 1> * b, double *) const
+-  {
+-    h->topRows<2>().setZero();
+-    h->leftCols<2>().setZero();
+-    (*h)(0, 0) = 1.0;
+-    (*h)(1, 1) = 1.0;
+-    b->head<2>().setZero();
+-  }
+-
+-  template<typename Target, typename Source>
+-  void update_error(const Target &, const Source &, const Eigen::Isometry3d &, double *) const {}
+-};
+-}  // namespace relocalization_manager
+-#endif  // RELOCALIZATION_MANAGER__GRAVITY_ALIGNED_REGISTRATION_HPP_
+--- a/src/relocalization_manager/include/relocalization_manager/relocalization_manager.hpp
++++ b/src/relocalization_manager/include/relocalization_manager/relocalization_manager.hpp
+@@ -38,7 +38,6 @@
+ #include "tf2_ros/buffer.h"
+ #include "tf2_ros/transform_broadcaster.h"
+ #include "tf2_ros/transform_listener.h"
+-#include "relocalization_manager/gravity_aligned_registration.hpp"
+ 
+ namespace relocalization_manager
+ {
+@@ -56,7 +55,6 @@
+   int min_inliers{1000};
+   double prior_neighbor_max_distance{0.5};
+   bool filter_source_by_prior_map{true};
+-  bool gravity_aligned_registration{false};
+   double max_delta_xy{0.25};
+   double max_delta_z{0.15};
+   double max_delta_yaw{0.17453292519943295};
+@@ -113,9 +111,6 @@
+   std::shared_ptr<
+     small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>
+     register_;
+-  std::shared_ptr<small_gicp::Registration<
+-    small_gicp::GICPFactor, small_gicp::ParallelReductionOMP, GravityAlignedFactor>>
+-    gravity_register_;
+ };
+ 
+ class RelocalizationManagerNode : public rclcpp::Node
+--- a/src/relocalization_manager/package.xml
++++ b/src/relocalization_manager/package.xml
+@@ -24,7 +24,6 @@
+   <depend>libomp-dev</depend>
+ 
+   <test_depend>ament_lint_auto</test_depend>
+-  <test_depend>ament_cmake_gtest</test_depend>
+   <test_depend>ament_cmake_clang_format</test_depend>
+   <test_depend>ament_cmake_clang_tidy</test_depend>
+   <test_depend>ament_cmake_black</test_depend>
+--- a/src/relocalization_manager/src/relocalization_manager.cpp
++++ b/src/relocalization_manager/src/relocalization_manager.cpp
+@@ -21,7 +21,6 @@
+ #include <limits>
+ #include <rclcpp/logging.hpp>
+ #include <sstream>
+-#include <stdexcept>
+ 
+ #include "geometry_msgs/msg/transform_stamped.hpp"
+ #include "pcl/common/common.h"
+@@ -139,8 +138,6 @@
+   prior_kdtree_ = std::make_shared<pcl::KdTreeFLANN<pcl::PointXYZ>>();
+   register_ = std::make_shared<
+     small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>();
+-  gravity_register_ = std::make_shared<small_gicp::Registration<
+-    small_gicp::GICPFactor, small_gicp::ParallelReductionOMP, GravityAlignedFactor>>();
+ }
+ 
+ bool SmallGicpVerifier::loadGlobalMap(const std::string & file_name)
+@@ -290,11 +287,6 @@
+ {
+   VerificationResult verification;
+   verification.transform = initial_guess;
+-
+-  if (params_.gravity_aligned_registration && !validGravityAlignedInitialGuess(initial_guess)) {
+-    RCLCPP_WARN(logger_, "GICP rejected non-rigid or non-horizontal initial transform");
+-    return verification;
+-  }
+ 
+   if (accumulated_cloud.empty()) {
+     RCLCPP_WARN(logger_, "No accumulated points to process.");
+@@ -349,12 +341,7 @@
+   const int bounded_max_iterations = std::max(1, params_.max_iterations);
+   register_->optimizer.max_iterations = bounded_max_iterations;
+ 
+-  gravity_register_->reduction.num_threads = params_.num_threads;
+-  gravity_register_->rejector.max_dist_sq = params_.max_dist_sq;
+-  gravity_register_->optimizer.max_iterations = bounded_max_iterations;
+-  const auto result = params_.gravity_aligned_registration ?
+-    gravity_register_->align(*target_, *source, *target_tree_, initial_guess) :
+-    register_->align(*target_, *source, *target_tree_, initial_guess);
++  const auto result = register_->align(*target_, *source, *target_tree_, initial_guess);
+ 
+   const double inlier_ratio = source->empty() ? 0.0
+                                               : static_cast<double>(result.num_inliers) /
+@@ -579,7 +566,6 @@
+   this->declare_parameter("max_delta_xy", 0.25);
+   this->declare_parameter("max_delta_z", 0.15);
+   this->declare_parameter("max_delta_yaw", 0.17453292519943295);
+-  this->declare_parameter("gravity_aligned_registration", false);
+   this->declare_parameter("map_frame", "map");
+   this->declare_parameter("odom_frame", "odom");
+   this->declare_parameter("base_frame", "");
+@@ -609,7 +595,6 @@
+   this->get_parameter("max_delta_xy", small_gicp_params_.max_delta_xy);
+   this->get_parameter("max_delta_z", small_gicp_params_.max_delta_z);
+   this->get_parameter("max_delta_yaw", small_gicp_params_.max_delta_yaw);
+-  this->get_parameter("gravity_aligned_registration", small_gicp_params_.gravity_aligned_registration);
+   small_gicp_params_.min_inliers = std::max(0, small_gicp_params_.min_inliers);
+   if (
+     !std::isfinite(small_gicp_params_.prior_neighbor_max_distance) ||
+@@ -644,11 +629,6 @@
+   if (!init_pose_.empty() && init_pose_.size() >= 6) {
+     current_map_to_odom_ = poseVectorToIsometry(init_pose_);
+   }
+-  if (
+-    small_gicp_params_.gravity_aligned_registration &&
+-    !validGravityAlignedInitialGuess(current_map_to_odom_)) {
+-    throw std::invalid_argument("gravity_aligned_registration requires a horizontal rigid initial pose");
+-  }
+   previous_map_to_odom_ = current_map_to_odom_;
+ 
+   accumulated_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+@@ -866,13 +846,6 @@
+     const Eigen::Isometry3d robot_base_to_odom = tf2::transformToEigen(transform.transform);
+     const Eigen::Isometry3d map_to_odom = map_to_robot_base * robot_base_to_odom;
+ 
+-    if (
+-      small_gicp_params_.gravity_aligned_registration &&
+-      !validGravityAlignedInitialGuess(map_to_odom)) {
+-      RCLCPP_WARN(this->get_logger(), "Rejected non-horizontal or non-rigid initial pose transform");
+-      return;
+-    }
+-
+     previous_map_to_odom_ = current_map_to_odom_ = map_to_odom;
+     resetAcceptedGicpVerificationStreak();
+     setLocalizationState(LocalizationState::LOCALIZING, "initial pose reset");
+--- a/src/relocalization_manager/test/gravity_registration_test.cpp
++++ /dev/null
+@@ -1,134 +0,0 @@
+-// Copyright 2026
+-// SPDX-License-Identifier: Apache-2.0
+-#include <gtest/gtest.h>
+-
+-#include <cstdio>
+-#include <limits>
+-#include <random>
+-#include <unistd.h>
+-
+-#include "pcl/common/transforms.h"
+-#include "relocalization_manager/relocalization_manager.hpp"
+-
+-namespace rm = relocalization_manager;
+-
+-namespace
+-{
+-using Cloud = pcl::PointCloud<pcl::PointXYZ>;
+-
+-Cloud sampleCloud()
+-{
+-  std::mt19937 generator(42);
+-  std::uniform_real_distribution<float> d(-1.0F, 1.0F);
+-  Cloud cloud;
+-  for (int i = 0; i < 1200; ++i) {
+-    cloud.push_back(pcl::PointXYZ(2.0F * d(generator), d(generator), 0.7F * d(generator)));
+-  }
+-  return cloud;
+-}
+-
+-Eigen::Isometry3d pose(double roll, double pitch, double yaw)
+-{
+-  Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
+-  t.linear() = (Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()) *
+-    Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
+-    Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX())).toRotationMatrix();
+-  t.translation() = Eigen::Vector3d(0.08, -0.06, 0.04);
+-  return t;
+-}
+-
+-bool loadTarget(rm::SmallGicpVerifier & verifier, const Cloud & target)
+-{
+-  char path[] = "/tmp/relocalization_gravity_test_XXXXXX";
+-  const int fd = mkstemp(path);
+-  if (fd < 0) { ADD_FAILURE() << "mkstemp failed"; return false; }
+-  close(fd);
+-  if (pcl::io::savePCDFileBinary(path, target) != 0) {
+-    std::remove(path); ADD_FAILURE() << "PCD write failed"; return false;
+-  }
+-  const bool loaded = verifier.loadGlobalMap(path);
+-  std::remove(path);
+-  return loaded;
+-}
+-
+-rm::SmallGicpParams testParams(bool constrained, double max_mean_error = 0.30)
+-{
+-  rm::SmallGicpParams params;
+-  params.gravity_aligned_registration = constrained;
+-  params.max_mean_error = max_mean_error;
+-  params.global_leaf_size = 0.02F;
+-  params.registered_leaf_size = 0.02F;
+-  params.num_threads = 1;
+-  params.num_neighbors = 20;
+-  params.max_iterations = 80;
+-  params.max_dist_sq = 1.0F;
+-  params.min_inliers = 100;
+-  params.filter_source_by_prior_map = false;
+-  params.max_delta_xy = 1.0;
+-  params.max_delta_z = 1.0;
+-  params.max_delta_yaw = 1.0;
+-  return params;
+-}
+-
+-rm::VerificationResult registerCloud(const Cloud & source, const Eigen::Isometry3d & expected,
+-  bool constrained, double max_mean_error = 0.30)
+-{
+-  Cloud target;
+-  pcl::transformPointCloud(source, target, expected.matrix().cast<float>());
+-  const auto params = testParams(constrained, max_mean_error);
+-  rm::SmallGicpVerifier verifier(rclcpp::get_logger("gravity_test"), params, {});
+-  if (!loadTarget(verifier, target)) { ADD_FAILURE() << "load failed"; return {}; }
+-  return verifier.verify(source, Eigen::Isometry3d::Identity());
+-}
+-}  // namespace
+-
+-TEST(GravityRegistration, RecoversTranslationAndYaw)
+-{
+-  const auto expected = pose(0, 0, 0.07);
+-  const auto result = registerCloud(sampleCloud(), expected, true);
+-  ASSERT_TRUE(result.accepted);
+-  EXPECT_LT((result.transform.matrix() - expected.matrix()).norm(), 0.01);
+-  EXPECT_TRUE(rm::validGravityAlignedInitialGuess(result.transform));
+-}
+-
+-TEST(GravityRegistration, TiltIsNotHiddenAndLegacyRemainsSixDof)
+-{
+-  const auto cloud = sampleCloud();
+-  const auto expected = pose(0.10, -0.08, 0.04);
+-  const auto constrained = registerCloud(cloud, expected, true);
+-  const auto legacy = registerCloud(cloud, expected, false);
+-  ASSERT_TRUE(legacy.accepted);
+-  if (constrained.accepted) {
+-    EXPECT_TRUE(rm::validGravityAlignedInitialGuess(constrained.transform));
+-  }
+-  EXPECT_LT((legacy.transform.matrix() - expected.matrix()).norm(), 0.02);
+-  ASSERT_TRUE(std::isfinite(constrained.mean_error));
+-  ASSERT_GT(constrained.mean_error, legacy.mean_error + 1e-5);
+-  const double threshold = (constrained.mean_error + legacy.mean_error) / 2.0;
+-  const auto constrained_checked = registerCloud(cloud, expected, true, threshold);
+-  const auto legacy_checked = registerCloud(cloud, expected, false, threshold);
+-  EXPECT_TRUE(constrained_checked.converged);
+-  EXPECT_FALSE(constrained_checked.accepted);
+-  EXPECT_GT(constrained_checked.mean_error, threshold);
+-  EXPECT_TRUE(legacy_checked.accepted);
+-  EXPECT_LT(legacy_checked.mean_error, threshold);
+-}
+-
+-TEST(GravityRegistration, InvalidInitialGuessRejected)
+-{
+-  const auto params = testParams(true);
+-  rm::SmallGicpVerifier verifier(rclcpp::get_logger("gravity_test"), params, {});
+-  const auto cloud = sampleCloud();
+-  ASSERT_TRUE(loadTarget(verifier, cloud));
+-  ASSERT_TRUE(verifier.verify(cloud, Eigen::Isometry3d::Identity()).accepted);
+-  EXPECT_FALSE(verifier.verify(cloud, pose(0.03, 0, 0)).accepted);
+-  auto invalid = Eigen::Isometry3d::Identity();
+-  invalid.linear()(0, 0) = 2.0;
+-  EXPECT_FALSE(verifier.verify(cloud, invalid).accepted);
+-  invalid = Eigen::Isometry3d::Identity();
+-  invalid.linear()(0, 0) = -1.0;
+-  EXPECT_FALSE(verifier.verify(cloud, invalid).accepted);
+-  invalid = Eigen::Isometry3d::Identity();
+-  invalid.translation().x() = std::numeric_limits<double>::quiet_NaN();
+-  EXPECT_FALSE(verifier.verify(cloud, invalid).accepted);
+-}

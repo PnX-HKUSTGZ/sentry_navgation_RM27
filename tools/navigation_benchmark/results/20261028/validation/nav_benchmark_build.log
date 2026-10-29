@@ -1,0 +1,321 @@
+[0.401s] WARNING:colcon.colcon_core.package_selection:Some selected packages are already built in one or more underlay workspaces:
+	'minco_controller' is in: /home/zhang/navi/sentry_navgation_RM27/install/minco_controller, /home/zhang/ros_ws_jazzy/sentry_navgation_RM27/install/minco_controller
+	'minco_planner' is in: /home/zhang/navi/sentry_navgation_RM27/install/minco_planner, /home/zhang/ros_ws_jazzy/sentry_navgation_RM27/install/minco_planner
+	'rog_map' is in: /home/zhang/navi/sentry_navgation_RM27/install/rog_map, /home/zhang/ros_ws_jazzy/sentry_navgation_RM27/install/rog_map
+	'pb_nav2_plugins' is in: /home/zhang/navi/sentry_navgation_RM27/install/pb_nav2_plugins, /home/zhang/ros_ws_jazzy/sentry_navgation_RM27/install/pb_nav2_plugins
+	'loam_interface' is in: /home/zhang/navi/sentry_navgation_RM27/install/loam_interface, /home/zhang/ros_ws_jazzy/sentry_navgation_RM27/install/loam_interface
+	'fake_vel_transform' is in: /home/zhang/navi/sentry_navgation_RM27/install/fake_vel_transform, /home/zhang/ros_ws_jazzy/sentry_navgation_RM27/install/fake_vel_transform
+If a package in a merged underlay workspace is overridden and it installs headers, then all packages in the overlay must sort their include directories by workspace order. Failure to do so may result in build failures or undefined behavior at run time.
+If the overridden package is used by another package in any underlay, then the overriding package in the overlay must be API and ABI compatible or undefined behavior at run time may occur.
+
+If you understand the risks and want to override a package anyways, add the following to the command line:
+	--allow-overriding fake_vel_transform loam_interface minco_controller minco_planner pb_nav2_plugins rog_map
+
+This may be promoted to an error in a future release of colcon-override-check.
+Starting >>> fake_vel_transform
+--- stderr: fake_vel_transform
+In this package, headers install destination is set to `include` by ament_auto_package. It is recommended to install `include/fake_vel_transform` instead and will be the default behavior of ament_auto_package from ROS 2 Kilted Kaiju. On distributions before Kilted, ament_auto_package behaves the same way when you use USE_SCOPED_HEADER_INSTALL_DIR option.
+---
+Finished <<< fake_vel_transform [41.5s]
+Starting >>> loam_interface
+--- stderr: loam_interface
+CMake Warning (dev) at /usr/lib/x86_64-linux-gnu/cmake/pcl/Modules/FindFLANN.cmake:45 (find_package):
+  Policy CMP0144 is not set: find_package uses upper-case <PACKAGENAME>_ROOT
+  variables.  Run "cmake --help-policy CMP0144" for policy details.  Use the
+  cmake_policy command to set the policy and suppress this warning.
+
+  CMake variable FLANN_ROOT is set to:
+
+    /usr
+
+  For compatibility, find_package is ignoring the variable, but code in a
+  .cmake module might still use it.
+Call Stack (most recent call first):
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:261 (find_package)
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:306 (find_flann)
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:570 (find_external_library)
+  /opt/ros/jazzy/share/pcl_conversions/cmake/ament_cmake_export_dependencies-extras.cmake:21 (find_package)
+  /opt/ros/jazzy/share/pcl_conversions/cmake/pcl_conversionsConfig.cmake:41 (include)
+  /opt/ros/jazzy/share/pcl_ros/cmake/ament_cmake_export_dependencies-extras.cmake:21 (find_package)
+  /opt/ros/jazzy/share/pcl_ros/cmake/pcl_rosConfig.cmake:41 (include)
+  /opt/ros/jazzy/share/ament_cmake_auto/cmake/ament_auto_find_build_dependencies.cmake:67 (find_package)
+  CMakeLists.txt:20 (ament_auto_find_build_dependencies)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+In this package, headers install destination is set to `include` by ament_auto_package. It is recommended to install `include/loam_interface` instead and will be the default behavior of ament_auto_package from ROS 2 Kilted Kaiju. On distributions before Kilted, ament_auto_package behaves the same way when you use USE_SCOPED_HEADER_INSTALL_DIR option.
+---
+Finished <<< loam_interface [1min 38s]
+Starting >>> pb_nav2_plugins
+Finished <<< pb_nav2_plugins [2.14s]
+Starting >>> rog_map
+--- stderr: rog_map
+CMake Warning (dev) at /usr/lib/x86_64-linux-gnu/cmake/pcl/Modules/FindFLANN.cmake:45 (find_package):
+  Policy CMP0144 is not set: find_package uses upper-case <PACKAGENAME>_ROOT
+  variables.  Run "cmake --help-policy CMP0144" for policy details.  Use the
+  cmake_policy command to set the policy and suppress this warning.
+
+  CMake variable FLANN_ROOT is set to:
+
+    /usr
+
+  For compatibility, find_package is ignoring the variable, but code in a
+  .cmake module might still use it.
+Call Stack (most recent call first):
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:261 (find_package)
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:306 (find_flann)
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:570 (find_external_library)
+  CMakeLists.txt:26 (find_package)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+** WARNING ** io features related to pcap will be disabled
+In file included from /home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/format.h:48,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/color.h:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/rog_map/rog_map.h:29,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/src/rog_map/rog_map.cpp:24:
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h: In substitution of ‘template<class T, class Context> using fmt::v9::detail::mapped_type_constant = fmt::v9::detail::type_constant<decltype (fmt::v9::detail::arg_mapper<Context>().map(declval<const T&>())), typename Context::char_type> [with T = super_utils::GridType; Context = fmt::v9::basic_format_context<fmt::v9::appender, char>]’:
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1730:41:   recursively required from ‘constexpr long long unsigned int fmt::v9::detail::encode_types() [with Context = fmt::v9::basic_format_context<fmt::v9::appender, char>; Arg = Eigen::Transpose<const Eigen::Matrix<double, 3, 1> >; Args = {super_utils::GridType, bool}]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1730:41:   required from ‘constexpr long long unsigned int fmt::v9::detail::encode_types() [with Context = fmt::v9::basic_format_context<fmt::v9::appender, char>; Arg = long unsigned int; Args = {Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >, super_utils::GridType, bool}]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1886:58:   required from ‘constexpr const long long unsigned int fmt::v9::format_arg_store<fmt::v9::basic_format_context<fmt::v9::appender, char>, long unsigned int, Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >, super_utils::GridType, bool>::desc’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1999:63:   required from ‘constexpr fmt::v9::basic_format_args<Context>::basic_format_args(const fmt::v9::format_arg_store<Context, Args ...>&) [with Args = {long unsigned int, Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >, super_utils::GridType, bool}; Context = fmt::v9::basic_format_context<fmt::v9::appender, char>]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/color.h:510:9:   required from ‘void fmt::v9::print(FILE*, const text_style&, const S&, const Args& ...) [with S = char [111]; Args = {long unsigned int, Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >, super_utils::GridType, bool}; typename std::enable_if<detail::is_string<S>::value, int>::type <anonymous> = 0; FILE = FILE]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/color.h:528:15:   required from ‘void fmt::v9::print(const text_style&, const S&, const Args& ...) [with S = char [111]; Args = {long unsigned int, Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >, super_utils::GridType, bool}; typename std::enable_if<detail::is_string<S>::value, int>::type <anonymous> = 0]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/src/rog_map/rog_map.cpp:158:13:   required from here
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1530:53: warning: ‘constexpr decltype (declval<fmt::v9::detail::arg_mapper<Context> >().map(static_cast<fmt::v9::underlying_t<T> >(val))) fmt::v9::detail::arg_mapper<Context>::map(const T&) [with T = super_utils::GridType; typename std::enable_if<((((std::is_enum<U>::value && std::is_convertible<T, int>::value) && (! fmt::v9::detail::has_format_as<T>::value)) && (! std::is_constructible<typename Context::formatter_type<T> >::value)) && (! fmt::v9::detail::has_fallback_formatter<T, typename Context::char_type>::value)), int>::type <anonymous> = 0; Context = fmt::v9::basic_format_context<fmt::v9::appender, char>; decltype (declval<fmt::v9::detail::arg_mapper<Context> >().map(static_cast<fmt::v9::underlying_t<T> >(val))) = unsigned int; fmt::v9::detail::arg_mapper<Context> = fmt::v9::detail::arg_mapper<fmt::v9::basic_format_context<fmt::v9::appender, char> >; fmt::v9::underlying_t<T> = unsigned int]’ is deprecated [-Wdeprecated-declarations]
+ 1530 |     type_constant<decltype(arg_mapper<Context>().map(std::declval<const T&>())),
+      |                            ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1470:48: note: declared here
+ 1470 |   FMT_DEPRECATED FMT_CONSTEXPR FMT_INLINE auto map(const T& val)
+      |                                                ^~~
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h: In instantiation of ‘constexpr fmt::v9::detail::value<Context> fmt::v9::detail::make_value(T&&) [with Context = fmt::v9::basic_format_context<fmt::v9::appender, char>; T = const super_utils::GridType&]’:
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1777:29:   required from ‘constexpr fmt::v9::detail::value<Context> fmt::v9::detail::make_arg(T&&) [with bool IS_PACKED = true; Context = fmt::v9::basic_format_context<fmt::v9::appender, char>; type <anonymous> = fmt::v9::detail::type::uint_type; T = const super_utils::GridType&; typename std::enable_if<IS_PACKED, int>::type <anonymous> = 0]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1901:77:   required from ‘constexpr fmt::v9::format_arg_store<Context, Args>::format_arg_store(T&& ...) [with T = {const long unsigned int&, const Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >&, const super_utils::GridType&, const bool&}; Context = fmt::v9::basic_format_context<fmt::v9::appender, char>; Args = {long unsigned int, Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >, super_utils::GridType, bool}]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1918:31:   required from ‘constexpr fmt::v9::format_arg_store<Context, typename std::remove_cv<typename std::remove_reference<Args>::type>::type ...> fmt::v9::make_format_args(Args&& ...) [with Context = basic_format_context<appender, char>; Args = {const long unsigned int&, const Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >&, const super_utils::GridType&, const bool&}]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/color.h:511:58:   required from ‘void fmt::v9::print(FILE*, const text_style&, const S&, const Args& ...) [with S = char [111]; Args = {long unsigned int, Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >, super_utils::GridType, bool}; typename std::enable_if<detail::is_string<S>::value, int>::type <anonymous> = 0; FILE = FILE]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/color.h:528:15:   required from ‘void fmt::v9::print(const text_style&, const S&, const Args& ...) [with S = char [111]; Args = {long unsigned int, Eigen::Transpose<const Eigen::Matrix<double, 3, 1, 0, 3, 1> >, super_utils::GridType, bool}; typename std::enable_if<detail::is_string<S>::value, int>::type <anonymous> = 0]’
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/src/rog_map/rog_map.cpp:158:13:   required from here
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1735:46: warning: ‘constexpr decltype (declval<fmt::v9::detail::arg_mapper<Context> >().map(static_cast<fmt::v9::underlying_t<T> >(val))) fmt::v9::detail::arg_mapper<Context>::map(const T&) [with T = super_utils::GridType; typename std::enable_if<((((std::is_enum<U>::value && std::is_convertible<T, int>::value) && (! fmt::v9::detail::has_format_as<T>::value)) && (! std::is_constructible<typename Context::formatter_type<T> >::value)) && (! fmt::v9::detail::has_fallback_formatter<T, typename Context::char_type>::value)), int>::type <anonymous> = 0; Context = fmt::v9::basic_format_context<fmt::v9::appender, char>; decltype (declval<fmt::v9::detail::arg_mapper<Context> >().map(static_cast<fmt::v9::underlying_t<T> >(val))) = unsigned int; fmt::v9::detail::arg_mapper<Context> = fmt::v9::detail::arg_mapper<fmt::v9::basic_format_context<fmt::v9::appender, char> >; fmt::v9::underlying_t<T> = unsigned int]’ is deprecated [-Wdeprecated-declarations]
+ 1735 |   const auto& arg = arg_mapper<Context>().map(FMT_FORWARD(val));
+      |                     ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/src/perception/rog_map/include/fmt/core.h:1470:48: note: declared here
+ 1470 |   FMT_DEPRECATED FMT_CONSTEXPR FMT_INLINE auto map(const T& val)
+      |                                                ^~~
+---
+Finished <<< rog_map [2min 31s]
+Starting >>> minco_controller
+Finished <<< minco_controller [5.08s]
+Starting >>> minco_planner
+--- stderr: minco_planner
+CMake Warning (dev) at /usr/lib/x86_64-linux-gnu/cmake/pcl/Modules/FindFLANN.cmake:45 (find_package):
+  Policy CMP0144 is not set: find_package uses upper-case <PACKAGENAME>_ROOT
+  variables.  Run "cmake --help-policy CMP0144" for policy details.  Use the
+  cmake_policy command to set the policy and suppress this warning.
+
+  CMake variable FLANN_ROOT is set to:
+
+    /usr
+
+  For compatibility, find_package is ignoring the variable, but code in a
+  .cmake module might still use it.
+Call Stack (most recent call first):
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:261 (find_package)
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:306 (find_flann)
+  /usr/lib/x86_64-linux-gnu/cmake/pcl/PCLConfig.cmake:570 (find_external_library)
+  /opt/ros/jazzy/share/pcl_conversions/cmake/ament_cmake_export_dependencies-extras.cmake:21 (find_package)
+  /opt/ros/jazzy/share/pcl_conversions/cmake/pcl_conversionsConfig.cmake:41 (include)
+  /home/zhang/navi/sentry_navgation_RM27/install/rog_map/share/rog_map/cmake/ament_cmake_export_dependencies-extras.cmake:21 (find_package)
+  /home/zhang/navi/sentry_navgation_RM27/install/rog_map/share/rog_map/cmake/rog_mapConfig.cmake:41 (include)
+  CMakeLists.txt:38 (find_package)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp: In constructor ‘minco_planner::Astar::Astar(unsigned int, unsigned int)’:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:18:44: warning: declaration of ‘ny’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+   18 | Astar::Astar(unsigned int nx, unsigned int ny) : nx(nx), ny(ny), ns(nx * ny)
+      |                               ~~~~~~~~~~~~~^~
+In file included from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:1:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:44:11: note: shadowed declaration is here
+   44 |   int nx, ny, ns;
+      |           ^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:18:27: warning: declaration of ‘nx’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+   18 | Astar::Astar(unsigned int nx, unsigned int ny) : nx(nx), ny(ny), ns(nx * ny)
+      |              ~~~~~~~~~~~~~^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:44:7: note: shadowed declaration is here
+   44 |   int nx, ny, ns;
+      |       ^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp: In constructor ‘minco_planner::Astar::Astar(unsigned int, unsigned int)’:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:18:44: warning: declaration of ‘ny’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+   18 | Astar::Astar(unsigned int nx, unsigned int ny) : nx(nx), ny(ny), ns(nx * ny)
+      |                               ~~~~~~~~~~~~~^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:44:11: note: shadowed declaration is here
+   44 |   int nx, ny, ns;
+      |           ^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:18:27: warning: declaration of ‘nx’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+   18 | Astar::Astar(unsigned int nx, unsigned int ny) : nx(nx), ny(ny), ns(nx * ny)
+      |              ~~~~~~~~~~~~~^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:44:7: note: shadowed declaration is here
+   44 |   int nx, ny, ns;
+      |       ^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp: In constructor ‘minco_planner::Astar::Astar(unsigned int, unsigned int)’:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:18:44: warning: declaration of ‘ny’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+   18 | Astar::Astar(unsigned int nx, unsigned int ny) : nx(nx), ny(ny), ns(nx * ny)
+      |                               ~~~~~~~~~~~~~^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:44:11: note: shadowed declaration is here
+   44 |   int nx, ny, ns;
+      |           ^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:18:27: warning: declaration of ‘nx’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+   18 | Astar::Astar(unsigned int nx, unsigned int ny) : nx(nx), ny(ny), ns(nx * ny)
+      |              ~~~~~~~~~~~~~^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:44:7: note: shadowed declaration is here
+   44 |   int nx, ny, ns;
+      |       ^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp: In member function ‘void minco_planner::Astar::setCostmap(const unsigned char*, bool, bool)’:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:63:76: warning: declaration of ‘allow_unknown’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+   63 | void Astar::setCostmap(const unsigned char * costmap, bool /*isROS*/, bool allow_unknown)
+      |                                                                       ~~~~~^~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:55:8: note: shadowed declaration is here
+   55 |   bool allow_unknown;
+      |        ^~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp: In member function ‘void minco_planner::Astar::setSize(int, int)’:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:181:33: warning: declaration of ‘ny’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+  181 | void Astar::setSize(int nx, int ny)
+      |                             ~~~~^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:44:11: note: shadowed declaration is here
+   44 |   int nx, ny, ns;
+      |           ^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:181:25: warning: declaration of ‘nx’ shadows a member of ‘minco_planner::Astar’ [-Wshadow]
+  181 | void Astar::setSize(int nx, int ny)
+      |                     ~~~~^~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/astar.hpp:44:7: note: shadowed declaration is here
+   44 |   int nx, ny, ns;
+      |       ^~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/projection_layer.hpp:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/components/dynamic_obstacle_evidence.hpp:7,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/astar.cpp:2:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp: At global scope:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/prob_map.h:30,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map.h:34,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:45,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:9:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/esdf_map.h: In member function ‘virtual void rog_map::ESDFMap::triggerJumpingEdge(const super_utils::Vec3i&, const super_utils::GridType&, const super_utils::GridType&)’:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/esdf_map.h:89:55: warning: unused parameter ‘id_g’ [-Wunused-parameter]
+   89 |         void triggerJumpingEdge(const rog_map::Vec3i &id_g, const rog_map::GridType &from_type,
+      |                                 ~~~~~~~~~~~~~~~~~~~~~~^~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/esdf_map.h:89:86: warning: unused parameter ‘from_type’ [-Wunused-parameter]
+   89 |         void triggerJumpingEdge(const rog_map::Vec3i &id_g, const rog_map::GridType &from_type,
+      |                                                             ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/esdf_map.h:90:58: warning: unused parameter ‘to_type’ [-Wunused-parameter]
+   90 |                                 const rog_map::GridType &to_type) override {}
+      |                                 ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map.h: At global scope:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map.h:52:11: warning: type qualifiers ignored on function return type [-Wignored-qualifiers]
+   52 |   virtual const double getSystemWalltimeNow() = 0;
+      |           ^~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:90:3: warning: type qualifiers ignored on function return type [-Wignored-qualifiers]
+   90 |   const double getSystemWalltimeNow() override { return now().seconds(); }
+      |   ^~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp: In static member function ‘static void rog_map::ROGMapROS::visualizeBoundingBox(visualization_msgs::msg::MarkerArray&, const double&, const super_utils::Vec3f&, const super_utils::Vec3f&, const std::string&, const Color&, const double&, const double&, const bool&)’:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1379:48: warning: unused parameter ‘print_ns’ [-Wunused-parameter]
+ 1379 |                                    const bool &print_ns = true) {
+      |                                    ~~~~~~~~~~~~^~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp: In static member function ‘static void rog_map::ROGMapROS::visualizeText(visualization_msgs::msg::MarkerArray&, const double&, const std::string&, const std::string&, const super_utils::Vec3f&, const Color&, const double&, const int&)’:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1459:18: warning: declaration of ‘int id’ shadows a parameter [-Wshadow]
+ 1459 |       static int id = 0;
+      |                  ^~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1449:66: note: shadowed declaration is here
+ 1449 |                             const double &size = 0.6, const int &id = -1) {
+      |                                                       ~~~~~~~~~~~^~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp: In static member function ‘static void rog_map::ROGMapROS::visualizePoint(visualization_msgs::msg::MarkerArray&, const double&, const super_utils::Vec3f&, Color, std::string, double, int, const bool&)’:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1515:20: warning: declaration of ‘int id’ shadows a parameter [-Wshadow]
+ 1515 |         static int id = 0;
+      |                    ^~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map_ros/rog_map_ros2.hpp:1476:53: note: shadowed declaration is here
+ 1476 |                              double size = 0.1, int id = -1,
+      |                                                 ~~~~^~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp: In lambda function:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:1174:14: warning: declaration of ‘node’ shadows a previous local [-Wshadow]
+ 1174 |         auto node = node_.lock();
+      |              ^~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:327:8: note: shadowed declaration is here
+  327 |   auto node = parent.lock();
+      |        ^~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp: In member function ‘minco_planner::MincoPlanner::PlanningState minco_planner::MincoPlanner::determinePlanningState(const geometry_msgs::msg::Pose&, const std::vector<Eigen::Matrix<double, 3, 1> >&, const Eigen::Vector3d&)’:
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:2727:21: warning: declaration of ‘pred_vel’ shadows a previous local [-Wshadow]
+ 2727 |     Eigen::Vector3d pred_vel = last_traj_.getVel(t_dur);
+      |                     ^~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:2703:19: note: shadowed declaration is here
+ 2703 |   Eigen::Vector3d pred_vel = last_traj_.getVel(t_dur);
+      |                   ^~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/projection_layer.hpp:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/components/dynamic_obstacle_evidence.hpp:7,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/smac_search/smac_planner_2d_simple.cpp:25:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/projection_layer.hpp:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/src/minco_core/components/trajectory_safety_checker.cpp:5:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/config.hpp:32,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/sliding_map.h:26,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/counter_map.h:27,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/inf_map.h:26,
+                 from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/prob_map.h:28:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp: At global scope:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/projection_layer.hpp:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/include/minco_core/components/dynamic_obstacle_evidence.hpp:7,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/test/smac_global_search_policy_test.cpp:4:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+In file included from /home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/projection_layer.hpp:11,
+                 from /home/zhang/navi/sentry_navgation_RM27/src/navigation/minco_planner/test/trajectory_safety_checker_test.cpp:6:
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:129:13: warning: ‘bool rog_map::lineIntersectBox(super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f, super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+  129 | static bool lineIntersectBox(super_utils::Vec3f L1,
+      |             ^~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:76:27: warning: ‘super_utils::Vec3f rog_map::lineBoxIntersectPoint(const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&, const super_utils::Vec3f&)’ defined but not used [-Wunused-function]
+   76 | static super_utils::Vec3f lineBoxIntersectPoint(const super_utils::Vec3f & pt,
+      |                           ^~~~~~~~~~~~~~~~~~~~~
+/home/zhang/navi/sentry_navgation_RM27/install/rog_map/include/rog_map/rog_map_core/common_lib.hpp:64:15: warning: ‘double rog_map::computePathLength(super_utils::vec_E<Eigen::Matrix<double, 3, 1> >&)’ defined but not used [-Wunused-function]
+   64 | static double computePathLength(const super_utils::vec_E<super_utils::Vec3f> & path)
+      |               ^~~~~~~~~~~~~~~~~
+---
+Finished <<< minco_planner [2min 26s]
+
+Summary: 6 packages finished [7min 24s]
+  4 packages had stderr output: fake_vel_transform loam_interface minco_planner rog_map

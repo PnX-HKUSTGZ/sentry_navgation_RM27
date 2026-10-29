@@ -212,6 +212,32 @@ TEST(LocalPathProcessorTest, SafeSubcellPoseCanConnectToSnappedGlobalStart)
   EXPECT_FALSE(processor.buildSeed(path, start, makeContext(long_mask), exact_body_is_safe).valid);
 }
 
+TEST(LocalPathProcessorTest, SafePoseCanLeaveConservativeTerrainBufferWithoutOverlapEscape)
+{
+  auto query = std::make_shared<TestGridQuery>([](double x, double) {
+    return x < 0.20 ? nav2_costmap_2d::LETHAL_OBSTACLE : nav2_costmap_2d::FREE_SPACE;
+  });
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  const std::vector<geometry_msgs::msg::PoseStamped> path{
+    pose(0.225, 0.025), pose(0.275, 0.025), pose(0.325, 0.025), pose(0.8, 0.025)};
+  const auto start = pose(0.025, 0.025);
+  const auto safe = [](const Eigen::Vector3d &, double) {return true;};
+  const auto seed = processor.buildSeed(path, start, context, safe);
+  ASSERT_TRUE(seed.valid);
+  ASSERT_GE(seed.sparse_waypoints.size(), 2U);
+  EXPECT_NEAR(seed.sparse_waypoints.front().x(), 0.025, 1e-9);
+  EXPECT_NEAR(seed.sparse_waypoints[1].x(), 0.225, 1e-9);
+  // Safe endpoints are insufficient: a body-band obstacle/unknown in between
+  // must truncate the seed before it reaches the snapped route.
+  EXPECT_FALSE(processor.buildSeed(path, start, context,
+    [](const Eigen::Vector3d & p, double) {return p.x() < .10 || p.x() > .15;}).valid);
+  auto wide_buffer = std::make_shared<TestGridQuery>([](double x, double) {
+    return x < .40 ? nav2_costmap_2d::LETHAL_OBSTACLE : nav2_costmap_2d::FREE_SPACE;
+  });
+  EXPECT_FALSE(processor.buildSeed(path, start, makeContext(wide_buffer), safe).valid);
+}
+
 TEST(LocalPathProcessorTest, ObservedPrefixStopKeepsMeasuredOmniYaw)
 {
   LocalPathSeed rolling_seed;
@@ -489,8 +515,13 @@ TEST(LocalPathProcessorTest, RollingReplanSeedStartsAtMeasuredPoseNotOldGlobalWa
   ASSERT_EQ(checked_positions.size(), checked_yaws.size());
   for (size_t i = 0U; i < checked_positions.size(); ++i) {
     const auto & checked = checked_positions[i];
-    EXPECT_GE(checked.x(), 0.35 - 1e-9);
+    // Smoothing's half-cell lateral guard probes are safety queries,
+    // not commanded positions behind the robot.
+    EXPECT_GE(checked.x(), 0.35 - 0.5 * query->resolution() - 1e-9);
     EXPECT_NEAR(checked_yaws[i], 0.0, 1e-9);
+  }
+  for (const auto & point : seed.sparse_waypoints) {
+    EXPECT_GE(point.x(), 0.35 - 1e-9);
   }
 }
 
@@ -515,6 +546,161 @@ TEST(LocalPathProcessorTest, ChoosesNearestPolylineSegmentOverNearbyCornerVertex
   EXPECT_NEAR(seed.dense_path.front().y(), 0.2, 1e-9);
   EXPECT_NEAR(seed.dense_path[1].x(), 3.5, 1e-9);
   EXPECT_NEAR(seed.dense_path[1].y(), 0.0, 1e-9);
+}
+
+
+TEST(LocalPathProcessorTest, TurnSpeedDoesNotDependOnWaypointDensity)
+{
+  const std::vector<Eigen::Vector3d> sparse{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}};
+  std::vector<Eigen::Vector3d> dense;
+  for (int i = 0; i <= 20; ++i) {dense.emplace_back(0.05 * i, 0, 0);}
+  for (int i = 1; i <= 20; ++i) {dense.emplace_back(1, 0.05 * i, 0);}
+  const auto limit = [](const std::vector<Eigen::Vector3d> & path, int segment) {
+      return utils::LimitLocalVel(path, segment, 2.0, 0.1, 1.57, 0.3, 1.0);
+    };
+  EXPECT_LT(limit(dense, 19), 1.0);
+  EXPECT_NEAR(limit(dense, 19), limit(sparse, 0), 1e-8);
+  EXPECT_LT(limit(dense, 17), 2.0);  // anticipate the corner before reaching it
+  EXPECT_NEAR(limit(dense, 2), 2.0, 1e-8);
+}
+
+TEST(LocalPathProcessorTest, ObstacleApproachSpeedIsContinuousAndKeepsTunnelLimit)
+{
+  const auto limit = [](double distance) {
+      return utils::obstacleVelocityLimit(distance, 0.33, 0.50, 0.8, 1.5);
+    };
+  EXPECT_DOUBLE_EQ(limit(-0.1), 0.8);
+  EXPECT_DOUBLE_EQ(limit(0.33), 0.8);
+  EXPECT_DOUBLE_EQ(limit(0.50), 1.5);
+  EXPECT_DOUBLE_EQ(limit(1.0), 1.5);
+  EXPECT_NEAR(limit(0.415), 1.15, 1e-9);
+  // Millimetre-scale ESDF noise must not cause the old 0.7 m/s step.
+  EXPECT_LT(limit(0.501) - limit(0.499), 0.001);
+  for (int i = 1; i <= 170; ++i) {
+    EXPECT_GE(limit(0.33 + i * 0.001), limit(0.33 + (i - 1) * 0.001));
+  }
+  EXPECT_DOUBLE_EQ(utils::obstacleVelocityLimit(0.2, 0.33, 0., 0.8, 1.5), 1.5);
+  EXPECT_DOUBLE_EQ(utils::obstacleVelocityLimit(0.2, 0.5, 0.5, 0.8, 1.5), 0.8);
+  EXPECT_DOUBLE_EQ(utils::obstacleVelocityLimit(0.4, 0.33, 0.5, 2.0, 1.5), 1.5);
+}
+
+TEST(LocalPathProcessorTest, RepairsObservedCornerWithoutRelaxingFootprintSafety)
+{
+  auto query = std::make_shared<TestGridQuery>([](double, double) {return nav2_costmap_2d::FREE_SPACE;});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  processor.setRepairMaxOffset(0.20);
+  const std::vector<geometry_msgs::msg::PoseStamped> path{pose(0, 0), pose(0.5, 0), pose(1, 0), pose(1.5, 0)};
+  const auto safe = [](const Eigen::Vector3d & p, double) {
+      return !(p.x() >= 0.45 && p.x() <= 0.85 && p.y() < 0.08);
+    };
+  const auto seed = processor.buildSeed(path, pose(0, 0), context, safe);
+  ASSERT_TRUE(seed.valid);
+  EXPECT_FALSE(seed.observed_prefix_clipped);
+  EXPECT_TRUE(seed.local_end_is_goal);
+  EXPECT_TRUE(seed.stop_at_local_end);
+  EXPECT_TRUE(seed.dense_path.front().isApprox(Eigen::Vector3d(0, 0, 0)));
+  EXPECT_TRUE(seed.dense_path.back().isApprox(Eigen::Vector3d(1.5, 0, 0)));
+  double max_offset = 0.0;
+  for (size_t i = 1; i < seed.dense_path.size(); ++i) {
+    max_offset = std::max(max_offset, std::abs(seed.dense_path[i].y()));
+    for (int k = 0; k <= 20; ++k) {
+      EXPECT_TRUE(safe(seed.dense_path[i-1] + (seed.dense_path[i]-seed.dense_path[i-1])*(k/20.0), 0.0));
+    }
+  }
+  EXPECT_GT(max_offset, 0.08);
+  EXPECT_LE(max_offset, 0.20 + 1e-9);
+}
+
+TEST(LocalPathProcessorTest, RepairCannotCrossUnknownStripOrMoveBlockedGoal)
+{
+  auto query = std::make_shared<TestGridQuery>([](double, double) {return nav2_costmap_2d::FREE_SPACE;});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  processor.setRepairMaxOffset(0.20);
+  const std::vector<geometry_msgs::msg::PoseStamped> path{pose(0, 0), pose(0.5, 0), pose(1.5, 0)};
+  for (const auto & safe : std::vector<LocalPathProcessor::FootprintSafetyCheck>{
+      [](const Eigen::Vector3d & p, double) {return p.x() < 0.45;},
+      [](const Eigen::Vector3d & p, double) {return p.x() < 1.45 || p.y() > 0.1;}}) {
+    const auto seed = processor.buildSeed(path, pose(0, 0), context, safe);
+    ASSERT_TRUE(seed.valid);
+    EXPECT_TRUE(seed.observed_prefix_clipped);
+    EXPECT_TRUE(seed.stop_at_local_end);
+    EXPECT_FALSE(seed.local_end_is_goal);
+    for (const auto & p : seed.dense_path) {EXPECT_TRUE(safe(p, 0.0));}
+  }
+  EXPECT_THROW(processor.setRepairMaxOffset(0.3), std::invalid_argument);
+}
+
+TEST(LocalPathProcessorTest, RepairPrefersMarginBeforeBoundaryBandBecomesBlocked)
+{
+  auto query = std::make_shared<TestGridQuery>([](double, double) {return nav2_costmap_2d::FREE_SPACE;});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  processor.setRepairMaxOffset(0.20);
+  const std::vector<geometry_msgs::msg::PoseStamped> path{pose(0, 0), pose(0.5, 0), pose(1, 0), pose(1.5, 0)};
+  const auto safe = [](const Eigen::Vector3d & p, double) {
+      return !(p.x() >= 0.45 && p.x() <= 0.85 && p.y() < -0.01);
+    };
+  const auto seed = processor.buildSeed(path, pose(0, 0), context, safe);
+  ASSERT_TRUE(seed.valid);
+  EXPECT_FALSE(seed.observed_prefix_clipped);
+  for (const auto & p : seed.dense_path) {
+    if (p.x() >= 0.45 && p.x() <= 0.85) {EXPECT_GE(p.y(), 0.04);}
+  }
+}
+
+TEST(LocalPathProcessorTest, RepairsNearbyCornerButStillStopsBeforeDistantUnknown)
+{
+  auto query = std::make_shared<TestGridQuery>([](double, double) {return nav2_costmap_2d::FREE_SPACE;});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  processor.setRepairMaxOffset(0.20);
+  const std::vector<geometry_msgs::msg::PoseStamped> path{
+    pose(0, 0), pose(0.5, 0), pose(1, 0), pose(1.5, 0), pose(2, 0)};
+  const auto safe = [](const Eigen::Vector3d & p, double) {
+      return p.x() < 1.45 && !(p.x() >= 0.45 && p.x() <= 0.85 && p.y() < 0.08);
+    };
+  const auto seed = processor.buildSeed(path, pose(0, 0), context, safe);
+  ASSERT_TRUE(seed.valid);
+  EXPECT_TRUE(seed.observed_prefix_clipped);
+  EXPECT_TRUE(seed.stop_at_local_end);
+  EXPECT_FALSE(seed.local_end_is_goal);
+  EXPECT_GT(seed.dense_path.back().x(), 1.2);
+  EXPECT_LT(seed.dense_path.back().x(), 1.45);
+  for (size_t i = 1; i < seed.dense_path.size(); ++i) {
+    for (int k = 0; k <= 20; ++k) {
+      EXPECT_TRUE(safe(seed.dense_path[i-1] + (seed.dense_path[i]-seed.dense_path[i-1])*(k/20.0), 0.0));
+    }
+  }
+}
+
+TEST(LocalPathProcessorTest, PartialRepairCannotJumpAnUnsafeConnectingSegment)
+{
+  auto query = std::make_shared<TestGridQuery>([](double, double) {return nav2_costmap_2d::FREE_SPACE;});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  processor.setRepairMaxOffset(0.20);
+  const std::vector<geometry_msgs::msg::PoseStamped> path{
+    pose(0, 0), pose(0.5, 0), pose(1, 0), pose(1.5, 0), pose(2, 0)};
+  const auto safe = [](const Eigen::Vector3d & p, double) {
+      return !(p.x() > 0.72 && p.x() < 0.78) &&
+        !(p.x() >= 0.45 && p.x() <= 0.65 && p.y() < 0.08) && p.x() < 1.45;
+    };
+  const auto seed = processor.buildSeed(path, pose(0, 0), context, safe);
+  ASSERT_TRUE(seed.valid);
+  EXPECT_TRUE(seed.stop_at_local_end);
+  EXPECT_LT(seed.dense_path.back().x(), .72);
+}
+
+TEST(LocalPathProcessorTest, RouteProgressCountsForwardArcRatherThanLateralMotion)
+{
+  const std::vector<geometry_msgs::msg::PoseStamped> path{
+    pose(0, 0), pose(2, 0), pose(2, 2)};
+  EXPECT_NEAR(projectedRouteProgress(path, .7, .2), .7, 1e-9);
+  EXPECT_NEAR(projectedRouteProgress(path, .7, -.2), .7, 1e-9);
+  EXPECT_NEAR(projectedRouteProgress(path, 2.1, 1.3), 3.3, 1e-9);
+  EXPECT_FALSE(std::isfinite(projectedRouteProgress({}, 0., 0.)));
 }
 
 }  // namespace

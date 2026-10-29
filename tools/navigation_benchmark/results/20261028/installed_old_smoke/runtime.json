@@ -1,0 +1,51 @@
+{
+  "mode_label": "gt",
+  "mode_label_is_verified": false,
+  "nodes": {
+    "planner_server": {
+      "lifecycle_state": "active",
+      "parameters": {
+        "planner_plugins": [
+          "MincoPlanner"
+        ],
+        "MincoPlanner.plugin": "minco_planner/MincoPlanner",
+        "MincoPlanner.odom_topic": "/odometry",
+        "MincoPlanner.trajectory_topic": "minco/opt_path"
+      }
+    },
+    "controller_server": {
+      "lifecycle_state": "active",
+      "parameters": {
+        "controller_plugins": [
+          "MincoMpc"
+        ],
+        "MincoMpc.plugin": "minco_controller::MincoMpcController",
+        "MincoMpc.odom_topic": "/odometry",
+        "MincoMpc.opt_path_topic": "minco/opt_path",
+        "MincoMpc.cmd_vel_mpc_topic": "minco/cmd_vel_mpc"
+      }
+    },
+    "rm27_ground_truth_localizer": {
+      "parameters": {
+        "ground_truth_odom_topic": "ground_truth/odometry"
+      }
+    }
+  },
+  "topic_publishers": {
+    "/odometry": [
+      "/rm27_ground_truth_localizer"
+    ],
+    "/ground_truth/odometry": [
+      "/rm_27_ros_gz_bridge"
+    ],
+    "/minco/opt_path": [
+      "/planner_server"
+    ],
+    "/minco/cmd_vel_mpc": [
+      "/controller_server"
+    ],
+    "/cmd_vel": [
+      "/fake_vel_transform"
+    ]
+  }
+}
