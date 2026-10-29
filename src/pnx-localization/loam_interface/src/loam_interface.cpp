@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "loam_interface/loam_interface.hpp"
+#include "loam_interface/world_alignment.hpp"
 
 #include "pcl_ros/transforms.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -45,7 +46,7 @@ LoamInterfaceNode::LoamInterfaceNode(const rclcpp::NodeOptions & options)
   odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("lidar_odometry", 5);
 
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    registered_scan_topic_, 5,
+    registered_scan_topic_, rclcpp::SensorDataQoS().keep_last(2),
     std::bind(&LoamInterfaceNode::pointCloudCallback, this, std::placeholders::_1));
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
     state_estimation_topic_, 5,
@@ -70,6 +71,8 @@ void LoamInterfaceNode::pointCloudCallback(const sensor_msgs::msg::PointCloud2::
 
 void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
 {
+  tf2::Transform tf_lidar_odom_to_lidar;
+  tf2::fromMsg(msg->pose.pose, tf_lidar_odom_to_lidar);
   // NOTE: Input odometry message is based on the `lidar_odom`
   // Here we transform it to the `odom` frame
   if (!base_frame_to_lidar_initialized_) {
@@ -78,7 +81,8 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
         base_frame_, lidar_frame_, msg->header.stamp, rclcpp::Duration::from_seconds(0.5));
       tf2::Transform tf_base_frame_to_lidar;
       tf2::fromMsg(tf_stamped.transform, tf_base_frame_to_lidar);
-      tf_odom_to_lidar_odom_ = tf_base_frame_to_lidar;
+      tf_odom_to_lidar_odom_ = initialWorldAlignment(
+        tf_base_frame_to_lidar, tf_lidar_odom_to_lidar);
       base_frame_to_lidar_initialized_ = true;
 
       if (!msg->header.frame_id.empty() && msg->header.frame_id != odom_frame_) {
@@ -99,8 +103,6 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
   }
 
   // Transform the odometry_msg (based lidar_odom) to the odom frame
-  tf2::Transform tf_lidar_odom_to_lidar;
-  tf2::fromMsg(msg->pose.pose, tf_lidar_odom_to_lidar);
   tf2::Transform tf_odom_to_lidar = tf_odom_to_lidar_odom_ * tf_lidar_odom_to_lidar;
 
   nav_msgs::msg::Odometry out;
@@ -113,6 +115,8 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
   out.pose.pose.position.y = origin.y();
   out.pose.pose.position.z = origin.z();
   out.pose.pose.orientation = tf2::toMsg(tf_odom_to_lidar.getRotation());
+  out.pose.covariance = tf2::transformCovariance(
+    msg->pose.covariance, tf_odom_to_lidar_odom_);
 
   // Point-LIO publishes twist in its child body frame. In the current robot
   // model body/imu_link and left_mid360 are co-oriented, so the components are

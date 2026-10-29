@@ -69,8 +69,9 @@ controller_server:
       fixed_wz: 0.0
       deadzone_speed_threshold: 0.05
       # The 10.2 kg force-driven chassis has about 0.13 s planar response
-      # time at an 80 N/(m/s) velocity gain. Predict the coast into gate turns.
-      control_delay_compensation: 0.12
+      # time at an 80 N/(m/s) velocity gain. Include the measured LIO transport
+      # age when predicting the coast into gate turns.
+      control_delay_compensation: 0.2
       # Break cold-start zero velocity without allowing the time cursor to
       # outrun the physical robot on a short observed-safe stopping prefix.
       reference_progress_max_lead_time: 0.05
@@ -78,12 +79,12 @@ controller_server:
       # inside the startup deadzone, search this bounded future interval for
       # the first reference sample above the command deadzone; normal tracking keeps the
       # tighter lead limit above as soon as the chassis moves.
-      # 0.85 s startup lead + 1.00 s MPC horizon + 0.12 s delay compensation
+      # 0.75 s startup lead + 1.00 s MPC horizon + 0.20 s delay compensation
       # remains inside the planner's 2.00 s freshly validated horizon.
-      reference_startup_max_lead_time: 0.85
+      reference_startup_max_lead_time: 0.75
       # Must be strictly greater than deadzone_speed_threshold (0.05).
       reference_startup_target_speed: 0.08
-      reference_startup_min_command_speed: 0.60
+      reference_startup_min_command_speed: 0.40
       # Bounded overlap escape bypasses startup/uphill speed assistance.
       recovery_max_speed: 0.20
       recovery_max_distance: 0.20
@@ -97,35 +98,35 @@ controller_server:
       uphill_startup_min_command_speed: 1.0
       # Ramp transitions are abrupt in the collision STL. Blend down only
       # after measured roll/pitch shows that the chassis is entering a slope;
-      # flat-ground travel retains the 1.5 m/s limit.
+      # flat-ground travel retains the 1.2 m/s limit.
       slope_slowdown_start_angle: 0.06
       slope_full_slowdown_angle: 0.18
       # Keep a climbing/downhill transition moving without imposing a second
       # low speed cap on the already collision-checked MINCO trajectory.
-      slope_speed_limit: 1.15
+      slope_speed_limit: 0.95
       Q: [3.0, 3.0, 2.0]
       q_along: 3.0
       # The narrow gate has only centimetres of lateral tracking margin.
       q_cross: 120.0
       R: [1.5, 1.5, 1.0]
-      # At 1.5 m/s and 1.5 m/s^2, nominal braking needs 0.75 m before
+      # At 1.2 m/s and 1.8 m/s^2, nominal braking needs 0.40 m before
       # latency/margin, within the 1.5 m local planning horizon below.
-      vx_min: -1.5
-      vx_max: 1.5
-      vy_min: -1.5
-      vy_max: 1.5
+      vx_min: -1.2
+      vx_max: 1.2
+      vy_min: -1.2
+      vy_max: 1.2
       # Hard radial limit shared with MINCO. Independent vx/vy box limits alone
-      # permit 2.12 m/s at a diagonal and invalidate the radial brake model.
-      max_planar_speed: 1.5
+      # permit 1.70 m/s at a diagonal and invalidate the radial brake model.
+      max_planar_speed: 1.2
       omega_min: -1.2
       omega_max: 1.2
       use_acc_constraints: true
-      ax_min: -1.8
-      ax_max: 1.8
-      ay_min: -1.8
-      ay_max: 1.8
-      alpha_min: -3.0
-      alpha_max: 3.0
+      ax_min: -1.0
+      ax_max: 1.0
+      ay_min: -1.0
+      ay_max: 1.0
+      alpha_min: -2.0
+      alpha_max: 2.0
       odom_frame: odom
       map_frame: map
       lidar_offset_x: 0.0
@@ -312,7 +313,7 @@ planner_server:
         # Low-clearance ROG cells within the polygon boundary band may use
         # this ESDF interpolation tolerance (metres, either sign). This is
         # not a measured physical clearance. Interior hits and walls block.
-        dynamic_edge_overlap_tolerance: 0.03
+        dynamic_edge_overlap_tolerance: 0.04
         # Rectangle values remain as a compatibility fallback. Active safety
         # sampling uses the CAD-derived folded-sentry polygon below.
         footprint_length: 0.592
@@ -426,7 +427,7 @@ planner_server:
           local_update_box: [6.0, 6.0, 2.0]
           unk_thresh: 0.70
           p_hit: 0.90
-          p_miss: 0.45
+          p_miss: 0.4
           p_min: 0.12
           p_max: 0.97
           p_occ: 0.85
@@ -554,7 +555,7 @@ planner_server:
           # coverage gate: there is no finite occupied height to turn into a
           # downhill-hole obstacle. Unknown columns and every finite occupied
           # return still remain fail-closed below.
-          min_headroom_known_ratio: 0.10
+          min_headroom_known_ratio: 0.1
           # At the leading roof face, finite roof returns replace every
           # no-return ray in that XY voxel, so the body band can report 0% known
           # even though the measured lower roof boundary clears the vehicle.
@@ -582,7 +583,7 @@ planner_server:
           # and delayed-snapshot gaps.
           # This applies only to zero-hit columns with connected surveyed
           # support; any occupied return still blocks in the same update.
-          clearance_dropout_hold_time: 1.50
+          clearance_dropout_hold_time: 1.5
           # Fill at most a 20 cm (four 5 cm cells) zero-hit ray hole enclosed by
           # an opposing pair of clearance-verified cells. Candidate selection
           # is one-shot, so this cannot spread across a wider unknown strip.
@@ -669,7 +670,7 @@ planner_server:
         # The simulated LiDAR exposes the next section continuously.  A
         # clipped prefix should therefore slow down briefly, not crawl at a
         # speed which makes every frontier refresh look like a stop.
-        observed_prefix_max_velocity: 1.00
+        observed_prefix_max_velocity: 0.85
       hot_start:
         # The larger simulated chassis can lag the rolling polynomial briefly
         # during contact transitions without making that seed unusable.
@@ -707,12 +708,12 @@ planner_server:
         # Receding horizon: stay inside currently verifiable 3D coverage, then
         # extend the trajectory as the robot moves through the tunnel/ramp.
         lookahead_dist: 1.5
-        max_velocity: 1.5
+        max_velocity: 1.2
         # Slow the approaching local horizon before entering a narrow gate.
         # Distance is from the centerline to ROG ESDF obstacles, in metres.
         obstacle_slowdown_distance: 0.50
-        obstacle_max_velocity: 1.0
-        max_acceleration: 1.8
+        obstacle_max_velocity: 0.85
+        max_acceleration: 1.0
         terminal_velocity_ratio: 0.85
         terminal_tangent_lookahead: 0.30
         max_trajectory_duration: 20.0
@@ -946,7 +947,7 @@ loam_interface:
   ros__parameters:
     use_sim_time: true
     state_estimation_topic: "aft_mapped_to_init"
-    registered_scan_topic: "cloud_registered"
+    registered_scan_topic: "/cloud_registered_full"  # Dense deskewed returns retain geometry for GICP.
     odom_frame: "odom"
     base_frame: "base_footprint"
     lidar_frame: "left_mid360"
@@ -1017,17 +1018,20 @@ relocalization_manager:
     use_sim_time: true
     num_threads: 4
     num_neighbors: 20
-    max_iterations: 30
+    gravity_aligned: true  # Preserve map/odom gravity; optimize xyz and yaw.
+    max_iterations: 60
+    translation_epsilon: 0.005  # 5 mm step convergence; quality gates remain independent.
+    rotation_epsilon: 0.003490658503988659  # 0.2 deg, in radians.
     global_leaf_size: 0.1
     registered_leaf_size: 0.05
     max_dist_sq: 3.0
-    max_mean_error: 0.30
+    max_mean_error: 0.15
     min_inlier_ratio: 0.75
     min_inliers: 300
     prior_neighbor_max_distance: 0.5
-    max_delta_xy: 0.60
-    max_delta_z: 0.25
-    max_delta_yaw: 0.1745329252 # 10 deg
+    max_delta_xy: 0.25
+    max_delta_z: 0.12
+    max_delta_yaw: 0.08726646259971647 # 5 deg
     map_frame: "map"
     odom_frame: "odom"
     base_frame: "base_footprint"
@@ -1039,7 +1043,7 @@ relocalization_manager:
     moving_linear_speed_threshold: 0.05
     motion_command_timeout: 0.5
     required_consecutive_gicp_acceptances: 3
-    init_pose: [-11.7, 2.9, 0.26, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
+    init_pose: [-11.7, 3.1, 0.08, 0.0, 0.0, 0.0]   # Initial base_footprint pose; matches RMUC2026 spawn_poses.yaml.
     prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
     transform_prior_map_with_lidar_offset: false # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
@@ -1178,7 +1182,7 @@ velocity_smoother:
     feedback: "OPEN_LOOP"
     max_velocity: [2.5, 2.5, 1.5]
     min_velocity: [-2.5, -2.5, -1.5]
-    max_accel: [4.5, 4.5, 5.0]
+    max_accel: [2.5, 2.5, 3.5]
     max_decel: [-4.5, -4.5, -5.0]
     odom_topic: "odometry"
     odom_duration: 0.1
@@ -1207,6 +1211,9 @@ simulation_world_profiles:
 minco_input_profiles:
   ros__parameters:
     point_lio:
+      # Scan-based pose output is 10 Hz with measured transport age up to 0.12 s.
+      # Allow bounded scan/GUI jitter; the 0.50 s stale-data stop stays active.
+      odom_timeout: 0.5
       # Point-LIO does not preserve the organized 360 x 192 no-return lattice;
       # its empty columns therefore keep the conservative body-band gate.
       projection:

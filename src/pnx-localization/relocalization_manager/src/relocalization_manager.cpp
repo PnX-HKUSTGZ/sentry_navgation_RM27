@@ -21,6 +21,7 @@
 #include <limits>
 #include <rclcpp/logging.hpp>
 #include <sstream>
+#include <stdexcept>
 
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "pcl/common/common.h"
@@ -125,7 +126,19 @@ SmallGicpVerifier::SmallGicpVerifier(
   prior_filter_map_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
   prior_kdtree_ = std::make_shared<pcl::KdTreeFLANN<pcl::PointXYZ>>();
   register_ = std::make_shared<
-    small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>();
+    small_gicp::Registration<
+      small_gicp::GICPFactor, small_gicp::ParallelReductionOMP, small_gicp::RestrictDoFFactor>>();
+  if (!std::isfinite(params_.translation_epsilon) || params_.translation_epsilon <= 0.0 ||
+      !std::isfinite(params_.rotation_epsilon) || params_.rotation_epsilon <= 0.0) {
+    throw std::invalid_argument("GICP convergence tolerances must be finite and positive");
+  }
+  register_->criteria.translation_eps = params_.translation_epsilon;
+  register_->criteria.rotation_eps = params_.rotation_epsilon;
+  // Both map and the LIO world are gravity-aligned. Constrain roll/pitch in
+  // the optimizer, rather than changing the pose after evaluating its quality.
+  if (params_.gravity_aligned) {
+    register_->general_factor.set_rotation_mask(Eigen::Array3d(0.0, 0.0, 1.0));
+  }
 }
 
 bool SmallGicpVerifier::loadGlobalMap(const std::string & file_name)
@@ -540,6 +553,9 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("num_threads", 4);
   this->declare_parameter("num_neighbors", 20);
   this->declare_parameter("max_iterations", 10);
+  this->declare_parameter("gravity_aligned", false);
+  this->declare_parameter("translation_epsilon", 0.001);
+  this->declare_parameter("rotation_epsilon", 0.0017453292519943296);
   this->declare_parameter("global_leaf_size", 0.25);
   this->declare_parameter("registered_leaf_size", 0.25);
   this->declare_parameter("max_dist_sq", 1.0);
@@ -568,6 +584,9 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("num_threads", small_gicp_params_.num_threads);
   this->get_parameter("num_neighbors", small_gicp_params_.num_neighbors);
   this->get_parameter("max_iterations", small_gicp_params_.max_iterations);
+  this->get_parameter("gravity_aligned", small_gicp_params_.gravity_aligned);
+  this->get_parameter("translation_epsilon", small_gicp_params_.translation_epsilon);
+  this->get_parameter("rotation_epsilon", small_gicp_params_.rotation_epsilon);
   this->get_parameter("global_leaf_size", small_gicp_params_.global_leaf_size);
   this->get_parameter("registered_leaf_size", small_gicp_params_.registered_leaf_size);
   this->get_parameter("max_dist_sq", small_gicp_params_.max_dist_sq);

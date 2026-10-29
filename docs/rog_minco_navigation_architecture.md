@@ -1653,14 +1653,14 @@ hash 位图和 touched-ID 列表合并 miss，保持“每帧每体素一次 mis
 
 | 文件/目录 | 责任 |
 | --- | --- |
-| `src/point_lio/src/laserMapping.cpp` | `/cloud_registered_full`、`/aft_mapped_to_init` 和 twist 合同 |
-| `src/loam_interface/src/loam_interface.cpp` | Point-LIO 输出整理为 registered scan/lidar odom |
+| `src/pnx-localization/point_lio/src/laserMapping.cpp` | `/cloud_registered_full`、`/aft_mapped_to_init` 和 twist 合同 |
+| `src/pnx-localization/loam_interface/src/pnx-localization/loam_interface.cpp` | Point-LIO 输出整理为 registered scan/lidar odom |
 | `src/sensor_scan_generation/src/sensor_scan_generation.cpp` | 底盘 `/odometry`、`/sensor_scan` 和 TF |
 | `src/sensor_scan_generation/include/sensor_scan_generation/twist_estimator.hpp` | child-frame twist 估计 |
 | `src/sensor_scan_generation/include/sensor_scan_generation/transform_sample_gate.hpp` | 必需 TF 任一失败时整组样本 fail-closed，恢复后 twist 冷启动 |
 | `src/sensor_scan_generation/test/test_twist_estimator.cpp` | child-frame 有限差分 twist 测试 |
 | `src/sensor_scan_generation/test/test_transform_sample_gate.cpp` | 双 TF 原子发布门、单边失败和恢复冷启动测试 |
-| `src/relocalization_manager/src/relocalization_manager.cpp` | prior PCD 重定位和 `map -> odom` |
+| `src/pnx-localization/relocalization_manager/src/pnx-localization/relocalization_manager.cpp` | prior PCD 重定位和 `map -> odom` |
 | `src/terrain_analysis/src/terrainAnalysis.cpp` | legacy local terrain |
 | `src/terrain_analysis_ext/src/terrainAnalysisExt.cpp` | legacy global/extended terrain |
 | `src/pb_nav2_plugins/src/layers/intensity_voxel_layer.cpp` | legacy terrain 到 costmap |

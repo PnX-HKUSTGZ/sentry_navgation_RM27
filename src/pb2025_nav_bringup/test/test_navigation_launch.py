@@ -580,6 +580,14 @@ def test_simulation_pointlio_selects_inputs_from_same_profile():
         point_lio["projection"]["min_headroom_known_ratio"]
     )
     assert planner["rog_map"]["projection"]["min_headroom_known_ratio"] > 0.0
+    resolved = yaml.safe_load(selected.read_text())
+    # Both velocity gates must use the scan-based LIO timing budget.
+    assert resolved["controller_server"]["ros__parameters"]["MincoMpc"][
+        "odom_timeout"
+    ] == pytest.approx(point_lio["odom_timeout"])
+    assert resolved["fake_vel_transform"]["ros__parameters"][
+        "odom_timeout"
+    ] == pytest.approx(point_lio["odom_timeout"])
     assert planner["frames"]["rog_frame"] == point_lio["frames"]["rog_frame"]
     assert planner["odom_topic"] == point_lio["odom_topic"]
     assert planner["lidar_offset_x"] == point_lio["lidar_offset_x"]

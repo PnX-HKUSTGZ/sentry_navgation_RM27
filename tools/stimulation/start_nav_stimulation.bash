@@ -6,7 +6,7 @@ pkill -SIGKILL -u "$(id -u)" -f 'ros2 launch rm_27_stimulation|gz sim|parameter_
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
   world:=RMUC2026 \
   nav_world:=auto \
-  use_ground_truth_odom:=true \
+  use_ground_truth_odom:=false \
   navigation_mode:=minco \
   enable_legacy_terrain:=auto \
   gui:=true \

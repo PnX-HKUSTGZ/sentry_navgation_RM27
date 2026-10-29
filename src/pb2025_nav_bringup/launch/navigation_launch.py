@@ -140,6 +140,12 @@ def _configure_navigation_mode(context, bringup_dir):
                 ) from exc
             planner = "planner_server.ros__parameters.MincoPlanner"
             rewrites = {
+                "controller_server.ros__parameters.MincoMpc.odom_timeout": point_lio[
+                    "odom_timeout"
+                ],
+                "fake_vel_transform.ros__parameters.odom_timeout": point_lio[
+                    "odom_timeout"
+                ],
                 f"{planner}.frames.rog_frame": point_lio["frames"]["rog_frame"],
                 f"{planner}.odom_topic": point_lio["odom_topic"],
                 f"{planner}.lidar_offset_x": point_lio["lidar_offset_x"],

@@ -47,6 +47,9 @@ struct SmallGicpParams
   int num_threads{4};
   int num_neighbors{20};
   int max_iterations{10};
+  bool gravity_aligned{false};
+  double translation_epsilon{0.001};
+  double rotation_epsilon{0.0017453292519943296};
   float global_leaf_size{0.25F};
   float registered_leaf_size{0.25F};
   float max_dist_sq{1.0F};
@@ -109,7 +112,8 @@ private:
   pcl::PointCloud<pcl::PointCovariance>::Ptr target_;
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> target_tree_;
   std::shared_ptr<
-    small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>
+    small_gicp::Registration<
+      small_gicp::GICPFactor, small_gicp::ParallelReductionOMP, small_gicp::RestrictDoFFactor>>
     register_;
 };
 

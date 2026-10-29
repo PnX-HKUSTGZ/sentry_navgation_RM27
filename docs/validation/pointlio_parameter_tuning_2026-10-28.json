@@ -1,0 +1,2854 @@
+{
+  "date": "2026-10-28",
+  "branch": "replace_gicp",
+  "world": "RMUC2026",
+  "use_ground_truth_odom": false,
+  "gui": true,
+  "rviz": true,
+  "height_parameter_unchanged": 0.05,
+  "stop_definition": "Ground-truth planar speed below 0.05 m/s for at least 0.4 simulated seconds after movement began; successful terminal parking excluded. Each route has a wall-clock timeout.",
+  "selected_runs": [
+    "candidate-d-clean",
+    "confirmation"
+  ],
+  "parameter_changes": [
+    {
+      "parameter": "controller_server.ros__parameters.MincoMpc.control_delay_compensation",
+      "before": 0.12,
+      "after": 0.2
+    },
+    {
+      "parameter": "controller_server.ros__parameters.MincoMpc.max_planar_speed",
+      "before": 1.5,
+      "after": 1.2
+    },
+    {
+      "parameter": "controller_server.ros__parameters.MincoMpc.reference_startup_max_lead_time",
+      "before": 0.85,
+      "after": 0.75
+    },
+    {
+      "parameter": "controller_server.ros__parameters.MincoMpc.slope_speed_limit",
+      "before": 1.15,
+      "after": 0.95
+    },
+    {
+      "parameter": "controller_server.ros__parameters.MincoMpc.vx_max",
+      "before": 1.5,
+      "after": 1.2
+    },
+    {
+      "parameter": "controller_server.ros__parameters.MincoMpc.vx_min",
+      "before": -1.5,
+      "after": -1.2
+    },
+    {
+      "parameter": "controller_server.ros__parameters.MincoMpc.vy_max",
+      "before": 1.5,
+      "after": 1.2
+    },
+    {
+      "parameter": "controller_server.ros__parameters.MincoMpc.vy_min",
+      "before": -1.5,
+      "after": -1.2
+    },
+    {
+      "parameter": "minco_input_profiles.ros__parameters.point_lio.odom_timeout",
+      "before": 0.35,
+      "after": 0.5
+    },
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.local_path.observed_prefix_max_velocity",
+      "before": 1.0,
+      "after": 0.85
+    },
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.minco_optimizer.max_velocity",
+      "before": 1.5,
+      "after": 1.2
+    },
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.minco_optimizer.obstacle_max_velocity",
+      "before": 1.0,
+      "after": 0.85
+    },
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.rog_map.raycasting.p_miss",
+      "before": 0.45,
+      "after": 0.4
+    },
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.safety.dynamic_edge_overlap_tolerance",
+      "before": 0.03,
+      "after": 0.04
+    },
+    {
+      "parameter": "relocalization_manager.ros__parameters.max_delta_xy",
+      "before": 0.6,
+      "after": 0.25
+    },
+    {
+      "parameter": "relocalization_manager.ros__parameters.max_delta_yaw",
+      "before": 0.1745329252,
+      "after": 0.08726646259971647
+    },
+    {
+      "parameter": "relocalization_manager.ros__parameters.max_delta_z",
+      "before": 0.25,
+      "after": 0.12
+    },
+    {
+      "parameter": "relocalization_manager.ros__parameters.max_iterations",
+      "before": 30,
+      "after": 60
+    },
+    {
+      "parameter": "relocalization_manager.ros__parameters.max_mean_error",
+      "before": 0.3,
+      "after": 0.15
+    },
+    {
+      "parameter": "relocalization_manager.ros__parameters.rotation_epsilon",
+      "before": null,
+      "after": 0.003490658503988659
+    },
+    {
+      "parameter": "relocalization_manager.ros__parameters.translation_epsilon",
+      "before": null,
+      "after": 0.005
+    }
+  ],
+  "rviz_frame_rate_change": [
+    20,
+    10
+  ],
+  "rejected_parallel_settings": [
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.rog_map.projection.prior_free_uncertain_obstacle_confirmations",
+      "rejected_value": 6,
+      "selected_value": 4
+    },
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.rog_map.projection.min_headroom_known_ratio",
+      "rejected_value": 0.05,
+      "selected_value": 0.1
+    },
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.rog_map.projection.obstacle_hold_time",
+      "rejected_value": 0.3,
+      "selected_value": 0.0
+    },
+    {
+      "parameter": "planner_server.ros__parameters.MincoPlanner.rog_map.projection.clearance_dropout_hold_time",
+      "rejected_value": 2.0,
+      "selected_value": 1.5
+    }
+  ],
+  "excluded_runs": {
+    "candidate-c": "First route shared GPU with another simulator; not a single-instance comparison.",
+    "candidate-d": "Duplicate benchmark publishers preempted each other; run discarded."
+  },
+  "runs": {
+    "baseline": {
+      "tag": "baseline",
+      "wait_localized_wall_s": 0.7671315000043251,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 0,
+        "accepted": 0,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "north_long",
+          "goal": [
+            5.5,
+            4.9
+          ],
+          "status": 4,
+          "wall_s": 32.66651076100243,
+          "sim_s": 28.56,
+          "path_length_m": 22.74963465340549,
+          "stop_count": 2,
+          "stop_time_s": 2.94,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.52,
+              "xy": [
+                -1.1655923780806274,
+                7.507391349426365
+              ],
+              "mean_command": 0.02828427124751493
+            },
+            {
+              "duration_s": 2.42,
+              "xy": [
+                2.2078255471266237,
+                7.283895101153059
+              ],
+              "mean_command": 0.011773738549650607
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 4,
+            "ODOMETRY_STAMP_STALE": 4,
+            "VELOCITY_ODOM_STALE": 4,
+            "SAFETY_COSTMAP_LETHAL": 6,
+            "BLOCKED": 1,
+            "GICP_REJECTED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 1.1260000000000006,
+          "arrival_age_p50_p95_max": [
+            0.1109999999999999,
+            0.21655000000000438,
+            0.32500000000000284
+          ],
+          "last_xyz": [
+            5.381061547444611,
+            4.8577800863264295,
+            0.07999961042404174
+          ],
+          "gicp": {
+            "attempts": 6,
+            "accepted": 4,
+            "rejected": 2
+          }
+        },
+        {
+          "name": "north_down",
+          "goal": [
+            -3.2,
+            7.52
+          ],
+          "status": 4,
+          "wall_s": 25.264053777005756,
+          "sim_s": 22.18,
+          "path_length_m": 12.102933571684064,
+          "stop_count": 2,
+          "stop_time_s": 7.279999999999999,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 3.32,
+              "xy": [
+                4.739988835604047,
+                6.97592411595583
+              ],
+              "mean_command": 0.003556127934639595
+            },
+            {
+              "duration_s": 3.96,
+              "xy": [
+                -1.0700088757268391,
+                7.576056960226962
+              ],
+              "mean_command": 0.0031979703671753405
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 4,
+            "SAFETY_COSTMAP_LETHAL": 10,
+            "VELOCITY_ODOM_STALE": 8,
+            "BLOCKED": 6,
+            "ODOMETRY_STAMP_STALE": 2,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.6120000000000033,
+          "arrival_age_p50_p95_max": [
+            0.11399999999999855,
+            0.21160000000000193,
+            0.3070000000000064
+          ],
+          "last_xyz": [
+            -3.347379355825302,
+            7.513694297233714,
+            0.07999919319152832
+          ],
+          "gicp": {
+            "attempts": 16,
+            "accepted": 14,
+            "rejected": 2
+          }
+        },
+        {
+          "name": "north_up",
+          "goal": [
+            1.825,
+            7.315
+          ],
+          "status": 4,
+          "wall_s": 8.302953295991756,
+          "sim_s": 7.280000000000001,
+          "path_length_m": 5.737550302741678,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 3,
+            "SAFETY_COSTMAP_LETHAL": 2,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.3200000000000016,
+          "arrival_age_p50_p95_max": [
+            0.11200000000000329,
+            0.1266999990000078,
+            0.13199999999999923
+          ],
+          "last_xyz": [
+            1.8509260443375157,
+            7.37689494787416,
+            0.27999989652633667
+          ],
+          "gicp": {
+            "attempts": 20,
+            "accepted": 18,
+            "rejected": 2
+          }
+        },
+        {
+          "name": "south_approach",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 18.49472083999717,
+          "sim_s": 15.900000000000006,
+          "path_length_m": 16.763313480051767,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "ODOMETRY_STAMP_STALE": 1,
+            "VELOCITY_ODOM_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.502999999,
+          "arrival_age_p50_p95_max": [
+            0.11499999900001191,
+            0.13099999900000148,
+            0.1369999990000061
+          ],
+          "last_xyz": [
+            2.717674873611154,
+            -3.9484426935125296,
+            0.07999718153476715
+          ],
+          "gicp": {
+            "attempts": 23,
+            "accepted": 21,
+            "rejected": 2
+          }
+        },
+        {
+          "name": "south_up",
+          "goal": [
+            -1.449,
+            -3.943
+          ],
+          "status": 4,
+          "wall_s": 6.152292386992485,
+          "sim_s": 5.280000000000001,
+          "path_length_m": 4.49490902860159,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.3309999990000059,
+          "arrival_age_p50_p95_max": [
+            0.11449999950000668,
+            0.12669999900001222,
+            0.1309999990000058
+          ],
+          "last_xyz": [
+            -1.5169652159197042,
+            -4.012588432274231,
+            0.27999924087524414
+          ],
+          "gicp": {
+            "attempts": 26,
+            "accepted": 24,
+            "rejected": 2
+          }
+        },
+        {
+          "name": "south_down",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 7.063123618994723,
+          "sim_s": 6.200000000000003,
+          "path_length_m": 4.5835363727866,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "ODOMETRY_STAMP_STALE": 1,
+            "VELOCITY_ODOM_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.4069999990000135,
+          "arrival_age_p50_p95_max": [
+            0.1189999990000139,
+            0.13019999900000603,
+            0.13199999900001058
+          ],
+          "last_xyz": [
+            2.645650137323394,
+            -3.9530942364133055,
+            0.07999989354610443
+          ],
+          "gicp": {
+            "attempts": 29,
+            "accepted": 27,
+            "rejected": 2
+          }
+        }
+      ],
+      "gicp_total": {
+        "attempts": 32,
+        "accepted": 30,
+        "rejected": 2
+      },
+      "events_total": {
+        "BLOCK_COMMAND": 14,
+        "ODOMETRY_STAMP_STALE": 8,
+        "VELOCITY_ODOM_STALE": 15,
+        "SAFETY_COSTMAP_LETHAL": 20,
+        "BLOCKED": 7,
+        "GICP_REJECTED": 1,
+        "GOAL_REACHED": 6
+      },
+      "full_log_gicp": {
+        "attempts": 44,
+        "accepted": 36,
+        "not_converged": 7,
+        "rejected_by_quality_or_delta": 1,
+        "first_verification_to_localized_wall_s": 5.516870975494385,
+        "last_logged_state": "LOCALIZED"
+      },
+      "summary": {
+        "successes": 6,
+        "routes": 6,
+        "stops": 4,
+        "stop_sim_seconds": 10.22,
+        "path_length_m": 66.4318774092712,
+        "stalls_with_command": 0
+      },
+      "comparable": true,
+      "selected": false
+    },
+    "candidate-a": {
+      "tag": "candidate-a",
+      "wait_localized_wall_s": 1.0975796580023598,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 0,
+        "accepted": 0,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "north_long",
+          "goal": [
+            5.5,
+            4.9
+          ],
+          "status": 4,
+          "wall_s": 31.05613146199903,
+          "sim_s": 27.320000000000007,
+          "path_length_m": 21.95973650523518,
+          "stop_count": 2,
+          "stop_time_s": 3.18,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.54,
+              "xy": [
+                -1.2643451750055041,
+                7.518556115157884
+              ],
+              "mean_command": 0.027274118702870713
+            },
+            {
+              "duration_s": 2.64,
+              "xy": [
+                0.616046067610383,
+                7.565296169076049
+              ],
+              "mean_command": 0.00478493310577363
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 3,
+            "VELOCITY_ODOM_STALE": 3,
+            "SAFETY_COSTMAP_LETHAL": 4,
+            "ODOMETRY_STAMP_STALE": 2,
+            "BLOCKED": 2,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.8140000000000072,
+          "arrival_age_p50_p95_max": [
+            0.11500000000000055,
+            0.12800000000000153,
+            0.13700000000000467
+          ],
+          "last_xyz": [
+            5.406324188988312,
+            4.89286994693117,
+            0.07999868655204773
+          ],
+          "gicp": {
+            "attempts": 3,
+            "accepted": 3,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "north_down",
+          "goal": [
+            -3.2,
+            7.52
+          ],
+          "status": 4,
+          "wall_s": 24.404872212995542,
+          "sim_s": 21.33999999999999,
+          "path_length_m": 12.338201131085565,
+          "stop_count": 5,
+          "stop_time_s": 3.74,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.84,
+              "xy": [
+                -0.28886142405867576,
+                7.689310740904475
+              ],
+              "mean_command": 0.009302325464688073
+            },
+            {
+              "duration_s": 1.28,
+              "xy": [
+                -0.29910308255255225,
+                7.678320986944833
+              ],
+              "mean_command": 0.004895354638983791
+            },
+            {
+              "duration_s": 0.64,
+              "xy": [
+                -0.9225331853097497,
+                7.696137441613359
+              ],
+              "mean_command": 0.012121211969035275
+            },
+            {
+              "duration_s": 0.52,
+              "xy": [
+                -0.8967129040197845,
+                7.683631900055221
+              ],
+              "mean_command": 0.023570226039551584
+            },
+            {
+              "duration_s": 0.46,
+              "xy": [
+                -0.9270080981872427,
+                7.6144976646400435
+              ],
+              "mean_command": 0.051642395756624826
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 4,
+            "VELOCITY_ODOM_STALE": 2,
+            "ODOMETRY_STAMP_STALE": 2,
+            "SAFETY_COSTMAP_LETHAL": 8,
+            "BLOCKED": 4,
+            "GICP_REJECTED": 3,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.515999999000011,
+          "arrival_age_p50_p95_max": [
+            0.11299999900000518,
+            0.13109999990000837,
+            0.14699999900001115
+          ],
+          "last_xyz": [
+            -3.237635294093503,
+            7.520525061430968,
+            0.07999508047103882
+          ],
+          "gicp": {
+            "attempts": 16,
+            "accepted": 13,
+            "rejected": 3
+          }
+        },
+        {
+          "name": "north_up",
+          "goal": [
+            1.825,
+            7.315
+          ],
+          "status": 4,
+          "wall_s": 13.903592147995369,
+          "sim_s": 12.239999999999995,
+          "path_length_m": 6.037593697197724,
+          "stop_count": 2,
+          "stop_time_s": 0.9,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.46,
+              "xy": [
+                -1.4326748855319784,
+                7.696425438934183
+              ],
+              "mean_command": 0.024999159779683654
+            },
+            {
+              "duration_s": 0.44,
+              "xy": [
+                -1.434747930654738,
+                7.67564106272101
+              ],
+              "mean_command": 0.02500833734434155
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "SAFETY_COSTMAP_LETHAL": 4,
+            "BLOCKED": 2,
+            "VELOCITY_ODOM_STALE": 2,
+            "ODOMETRY_STAMP_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.6149999990000006,
+          "arrival_age_p50_p95_max": [
+            0.11299999899999955,
+            0.12619999990001196,
+            0.13400000000000878
+          ],
+          "last_xyz": [
+            1.818782082387495,
+            7.354066849489268,
+            0.27999989652633667
+          ],
+          "gicp": {
+            "attempts": 21,
+            "accepted": 18,
+            "rejected": 3
+          }
+        },
+        {
+          "name": "south_approach",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 22.903690830004052,
+          "sim_s": 19.299999999999997,
+          "path_length_m": 16.521245581905195,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 4,
+            "VELOCITY_ODOM_STALE": 1,
+            "ODOMETRY_STAMP_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.42000000000000454,
+          "arrival_age_p50_p95_max": [
+            0.11999999900001018,
+            0.14029999970000934,
+            0.15200000000000946
+          ],
+          "last_xyz": [
+            2.62262297073893,
+            -3.9270795644926113,
+            0.07999940180778503
+          ],
+          "gicp": {
+            "attempts": 24,
+            "accepted": 21,
+            "rejected": 3
+          }
+        },
+        {
+          "name": "south_up",
+          "goal": [
+            -1.449,
+            -3.943
+          ],
+          "status": 4,
+          "wall_s": 9.803584384004353,
+          "sim_s": 8.460000000000008,
+          "path_length_m": 4.571497979180921,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "ODOMETRY_STAMP_STALE": 1,
+            "VELOCITY_ODOM_STALE": 2,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "BLOCKED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.5229999990000075,
+          "arrival_age_p50_p95_max": [
+            0.12200000000001976,
+            0.13550000000001033,
+            0.140000000000009
+          ],
+          "last_xyz": [
+            -1.8200217515686838,
+            -4.2940297111290855,
+            0.2799992706775665
+          ],
+          "gicp": {
+            "attempts": 28,
+            "accepted": 25,
+            "rejected": 3
+          }
+        },
+        {
+          "name": "south_down",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": "timeout",
+          "wall_s": 35.005147859992576,
+          "sim_s": 29.95999999999998,
+          "path_length_m": 1.9851580639776916,
+          "stop_count": 17,
+          "stop_time_s": 16.82,
+          "stalls_with_command": 1,
+          "stops": [
+            {
+              "duration_s": 3.62,
+              "xy": [
+                -0.980507983551268,
+                -4.4169178032322325
+              ],
+              "mean_command": 0.04395604266505256
+            },
+            {
+              "duration_s": 2.18,
+              "xy": [
+                -0.9979593319609633,
+                -4.416917811252424
+              ],
+              "mean_command": 0.018140973997306752
+            },
+            {
+              "duration_s": 0.92,
+              "xy": [
+                -1.0178507296463728,
+                -4.416917815147719
+              ],
+              "mean_command": 0.02553190130441811
+            },
+            {
+              "duration_s": 0.9,
+              "xy": [
+                -0.8969239321493723,
+                -4.416917813376664
+              ],
+              "mean_command": 0.04289029308705033
+            },
+            {
+              "duration_s": 0.58,
+              "xy": [
+                -0.9218324908306599,
+                -4.416917815293226
+              ],
+              "mean_command": 0.026666656259697684
+            },
+            {
+              "duration_s": 0.4,
+              "xy": [
+                -0.944722343352857,
+                -4.416917815315567
+              ],
+              "mean_command": 0.038095228170452536
+            },
+            {
+              "duration_s": 0.52,
+              "xy": [
+                -0.997488725735971,
+                -4.41691778666795
+              ],
+              "mean_command": 0.13566567381957764
+            },
+            {
+              "duration_s": 0.48,
+              "xy": [
+                -0.9936985261781438,
+                -4.416917786697658
+              ],
+              "mean_command": 0.05217610057553844
+            },
+            {
+              "duration_s": 0.94,
+              "xy": [
+                -1.0442141184720752,
+                -4.416917815288909
+              ],
+              "mean_command": 0.04166665700213002
+            },
+            {
+              "duration_s": 0.8,
+              "xy": [
+                -1.1163189297656488,
+                -4.416917803620536
+              ],
+              "mean_command": 0.029268276222308452
+            },
+            {
+              "duration_s": 0.54,
+              "xy": [
+                -1.106480586196784,
+                -4.416917814809271
+              ],
+              "mean_command": 0.13579597284985492
+            },
+            {
+              "duration_s": 0.5,
+              "xy": [
+                -1.0929050327072531,
+                -4.416917786705163
+              ],
+              "mean_command": 0.045907563670850846
+            },
+            {
+              "duration_s": 1.58,
+              "xy": [
+                -1.1105275036871414,
+                -4.416917815089057
+              ],
+              "mean_command": 0.014877470771036492
+            },
+            {
+              "duration_s": 0.58,
+              "xy": [
+                -1.0403188367019707,
+                -4.41691778795491
+              ],
+              "mean_command": 0.11557267075148872
+            },
+            {
+              "duration_s": 0.62,
+              "xy": [
+                -1.0830576335824995,
+                -4.416917792089928
+              ],
+              "mean_command": 0.1561547136519588
+            },
+            {
+              "duration_s": 1.08,
+              "xy": [
+                -1.092072852879449,
+                -4.416917793151938
+              ],
+              "mean_command": 0.010909074011188642
+            },
+            {
+              "duration_s": 0.58,
+              "xy": [
+                -1.1098398043602837,
+                -4.416917811281434
+              ],
+              "mean_command": 0.0
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 8,
+            "VELOCITY_ODOM_STALE": 1,
+            "SAFETY_COSTMAP_LETHAL": 23,
+            "RECOVERY_TRACKING_ERROR": 4,
+            "BLOCKED": 15
+          },
+          "max_latest_odom_age_s": 0.42699999900000385,
+          "arrival_age_p50_p95_max": [
+            0.12699999999999811,
+            0.14100000000000276,
+            0.14699999999999702
+          ],
+          "last_xyz": [
+            -1.1119569608670816,
+            -4.416917797356592,
+            0.27999968791007995
+          ],
+          "gicp": {
+            "attempts": 63,
+            "accepted": 52,
+            "rejected": 11
+          }
+        }
+      ],
+      "gicp_total": {
+        "attempts": 65,
+        "accepted": 54,
+        "rejected": 11
+      },
+      "events_total": {
+        "BLOCK_COMMAND": 19,
+        "VELOCITY_ODOM_STALE": 11,
+        "SAFETY_COSTMAP_LETHAL": 44,
+        "ODOMETRY_STAMP_STALE": 7,
+        "BLOCKED": 24,
+        "GOAL_REACHED": 5,
+        "GICP_REJECTED": 3,
+        "RECOVERY_TRACKING_ERROR": 4
+      },
+      "full_log_gicp": {
+        "attempts": 68,
+        "accepted": 57,
+        "not_converged": 8,
+        "rejected_by_quality_or_delta": 3,
+        "first_verification_to_localized_wall_s": 1.0155816078186035,
+        "last_logged_state": "LOCALIZED"
+      },
+      "summary": {
+        "successes": 5,
+        "routes": 6,
+        "stops": 26,
+        "stop_sim_seconds": 24.64,
+        "path_length_m": 63.41343295858228,
+        "stalls_with_command": 1
+      },
+      "comparable": true,
+      "selected": false
+    },
+    "candidate-b": {
+      "tag": "candidate-b",
+      "wait_localized_wall_s": 0.21818507999705616,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 0,
+        "accepted": 0,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "north_long",
+          "goal": [
+            5.5,
+            4.9
+          ],
+          "status": 4,
+          "wall_s": 28.95670961200085,
+          "sim_s": 25.759999999999998,
+          "path_length_m": 22.14349067463926,
+          "stop_count": 3,
+          "stop_time_s": 1.58,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.72,
+              "xy": [
+                2.8490893388689873,
+                7.281477084198035
+              ],
+              "mean_command": 0.04864864864689299
+            },
+            {
+              "duration_s": 0.42,
+              "xy": [
+                2.844139066008491,
+                7.279637234210968
+              ],
+              "mean_command": 0.036363636361401025
+            },
+            {
+              "duration_s": 0.44,
+              "xy": [
+                2.8345496430145576,
+                7.279485009558499
+              ],
+              "mean_command": 0.027669395785560554
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 4,
+            "ODOMETRY_STAMP_STALE": 2,
+            "VELOCITY_ODOM_STALE": 1,
+            "SAFETY_COSTMAP_LETHAL": 4,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.7039999990000005,
+          "arrival_age_p50_p95_max": [
+            0.10599999900000157,
+            0.1213999990000009,
+            0.20899999999999885
+          ],
+          "last_xyz": [
+            5.3623013483530695,
+            4.8227262436152065,
+            0.0799999680519104
+          ],
+          "gicp": {
+            "attempts": 4,
+            "accepted": 2,
+            "rejected": 2
+          }
+        },
+        {
+          "name": "north_down",
+          "goal": [
+            -3.2,
+            7.52
+          ],
+          "status": 4,
+          "wall_s": 23.954169812990585,
+          "sim_s": 21.42,
+          "path_length_m": 12.247446945467523,
+          "stop_count": 4,
+          "stop_time_s": 3.94,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 1.52,
+              "xy": [
+                4.586949621038308,
+                6.923960925370455
+              ],
+              "mean_command": 0.008264884455427179
+            },
+            {
+              "duration_s": 0.9,
+              "xy": [
+                4.726235212591322,
+                7.23843094095774
+              ],
+              "mean_command": 0.020752046839170413
+            },
+            {
+              "duration_s": 0.98,
+              "xy": [
+                -0.6690796025240955,
+                7.674333570712265
+              ],
+              "mean_command": 0.007908403132670168
+            },
+            {
+              "duration_s": 0.54,
+              "xy": [
+                -0.6154915044285832,
+                7.620318890297906
+              ],
+              "mean_command": 0.022728432252424744
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 5,
+            "SAFETY_COSTMAP_LETHAL": 10,
+            "VELOCITY_ODOM_STALE": 5,
+            "BLOCKED": 5,
+            "ODOMETRY_STAMP_STALE": 1,
+            "GICP_REJECTED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.6960000000000022,
+          "arrival_age_p50_p95_max": [
+            0.11000000000000221,
+            0.2140000000000043,
+            0.4870000000000032
+          ],
+          "last_xyz": [
+            -3.277611889276132,
+            7.464787550221551,
+            0.07999974453449249
+          ],
+          "gicp": {
+            "attempts": 20,
+            "accepted": 15,
+            "rejected": 5
+          }
+        },
+        {
+          "name": "north_up",
+          "goal": [
+            1.825,
+            7.315
+          ],
+          "status": 4,
+          "wall_s": 10.263982767995913,
+          "sim_s": 9.280000000000001,
+          "path_length_m": 5.767918862165881,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 4,
+            "SAFETY_COSTMAP_LETHAL": 3,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.31399999899999853,
+          "arrival_age_p50_p95_max": [
+            0.10599999900000875,
+            0.11999999900000419,
+            0.12699999900000097
+          ],
+          "last_xyz": [
+            1.8048726283194862,
+            7.31595896869205,
+            0.27999992632865905
+          ],
+          "gicp": {
+            "attempts": 24,
+            "accepted": 19,
+            "rejected": 5
+          }
+        },
+        {
+          "name": "south_approach",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 16.404195000999607,
+          "sim_s": 14.36,
+          "path_length_m": 15.953946770051157,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.4049999989999983,
+          "arrival_age_p50_p95_max": [
+            0.10899999950000598,
+            0.12634999900000704,
+            0.13199999900000492
+          ],
+          "last_xyz": [
+            2.754204994468319,
+            -3.9369404373458066,
+            0.0799999531507492
+          ],
+          "gicp": {
+            "attempts": 27,
+            "accepted": 22,
+            "rejected": 5
+          }
+        },
+        {
+          "name": "south_up",
+          "goal": [
+            -1.449,
+            -3.943
+          ],
+          "status": 4,
+          "wall_s": 10.503267842999776,
+          "sim_s": 9.120000000000005,
+          "path_length_m": 4.93212340237371,
+          "stop_count": 1,
+          "stop_time_s": 0.52,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.52,
+              "xy": [
+                0.8306437767337257,
+                -4.255383965602958
+              ],
+              "mean_command": 0.011785113019775792
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 3,
+            "SAFETY_COSTMAP_LETHAL": 4,
+            "GICP_REJECTED": 1,
+            "ODOMETRY_RX_STALE": 1,
+            "VELOCITY_ODOM_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.5129999999999996,
+          "arrival_age_p50_p95_max": [
+            0.11099999900000412,
+            0.12419999990000383,
+            0.131999999000005
+          ],
+          "last_xyz": [
+            -1.3664512413481424,
+            -3.975794190024957,
+            0.28284361636638644
+          ],
+          "gicp": {
+            "attempts": 33,
+            "accepted": 26,
+            "rejected": 7
+          }
+        },
+        {
+          "name": "south_down",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 10.853303757990943,
+          "sim_s": 9.819999999999993,
+          "path_length_m": 5.102762733969789,
+          "stop_count": 1,
+          "stop_time_s": 0.78,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.78,
+              "xy": [
+                1.1639755905362927,
+                -4.407375342096736
+              ],
+              "mean_command": 0.009999999912580304
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "ODOMETRY_STAMP_STALE": 2,
+            "VELOCITY_ODOM_STALE": 2,
+            "SAFETY_COSTMAP_LETHAL": 4,
+            "RECOVERY_TRACKING_ERROR": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.5109999990000013,
+          "arrival_age_p50_p95_max": [
+            0.11199999900000895,
+            0.1259999990000067,
+            0.13099999900001158
+          ],
+          "last_xyz": [
+            2.5966649986851613,
+            -3.9234938662207277,
+            0.0799994912147522
+          ],
+          "gicp": {
+            "attempts": 40,
+            "accepted": 30,
+            "rejected": 10
+          }
+        }
+      ],
+      "gicp_total": {
+        "attempts": 45,
+        "accepted": 33,
+        "rejected": 12
+      },
+      "events_total": {
+        "BLOCK_COMMAND": 19,
+        "ODOMETRY_STAMP_STALE": 5,
+        "VELOCITY_ODOM_STALE": 9,
+        "SAFETY_COSTMAP_LETHAL": 26,
+        "GOAL_REACHED": 6,
+        "BLOCKED": 5,
+        "GICP_REJECTED": 2,
+        "ODOMETRY_RX_STALE": 1,
+        "RECOVERY_TRACKING_ERROR": 1
+      },
+      "full_log_gicp": {
+        "attempts": 57,
+        "accepted": 42,
+        "not_converged": 13,
+        "rejected_by_quality_or_delta": 2,
+        "first_verification_to_localized_wall_s": 2.5138397216796875,
+        "last_logged_state": "LOCALIZED"
+      },
+      "summary": {
+        "successes": 6,
+        "routes": 6,
+        "stops": 9,
+        "stop_sim_seconds": 6.82,
+        "path_length_m": 66.14768938866732,
+        "stalls_with_command": 0
+      },
+      "comparable": true,
+      "selected": false
+    },
+    "candidate-c": {
+      "tag": "candidate-c",
+      "wait_localized_wall_s": 13.581204307993175,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 6,
+        "accepted": 4,
+        "rejected": 2
+      },
+      "routes": [
+        {
+          "name": "north_long",
+          "goal": [
+            5.5,
+            4.9
+          ],
+          "status": "timeout",
+          "wall_s": 55.00516010799038,
+          "sim_s": 15.42,
+          "path_length_m": 11.958293518177198,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "ODOMETRY_RX_STALE": 11,
+            "SAFETY_COSTMAP_LETHAL": 1
+          },
+          "max_latest_odom_age_s": 0.481999999,
+          "arrival_age_p50_p95_max": [
+            0.09699999899999995,
+            0.10999999935000102,
+            0.11300000000000021
+          ],
+          "last_xyz": [
+            -1.4802858997353179,
+            7.521642696153105,
+            0.07999600434303283
+          ],
+          "gicp": {
+            "attempts": 7,
+            "accepted": 5,
+            "rejected": 2
+          }
+        },
+        {
+          "name": "north_down",
+          "goal": [
+            -3.2,
+            7.52
+          ],
+          "status": 4,
+          "wall_s": 14.803352973001893,
+          "sim_s": 4.16,
+          "path_length_m": 2.0419905079282934,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCKED": 1,
+            "ODOMETRY_RX_STALE": 3
+          },
+          "max_latest_odom_age_s": 0.5059999990000001,
+          "arrival_age_p50_p95_max": [
+            0.09400000000000042,
+            0.10600000000000061,
+            0.11099999900000065
+          ],
+          "last_xyz": [
+            -3.3053824399990956,
+            7.4532279947300735,
+            0.07999981904029846
+          ],
+          "gicp": {
+            "attempts": 12,
+            "accepted": 9,
+            "rejected": 3
+          }
+        },
+        {
+          "name": "north_up",
+          "goal": [
+            1.825,
+            7.315
+          ],
+          "status": 4,
+          "wall_s": 10.963466514003812,
+          "sim_s": 9.420000000000002,
+          "path_length_m": 7.196186608070084,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 2,
+            "ODOMETRY_STAMP_STALE": 1,
+            "VELOCITY_ODOM_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.6070000000000021,
+          "arrival_age_p50_p95_max": [
+            0.10499999950000072,
+            0.1227499998499999,
+            0.19299999999999926
+          ],
+          "last_xyz": [
+            1.8463506234099496,
+            7.168611908696592,
+            0.29322325694561
+          ],
+          "gicp": {
+            "attempts": 15,
+            "accepted": 12,
+            "rejected": 3
+          }
+        },
+        {
+          "name": "south_approach",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 18.403533812001115,
+          "sim_s": 15.480000000000004,
+          "path_length_m": 16.63470748159453,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.4109999999999999,
+          "arrival_age_p50_p95_max": [
+            0.1080000000000048,
+            0.1944500000000035,
+            0.31099999999999994
+          ],
+          "last_xyz": [
+            2.5570890869693836,
+            -4.035468583621097,
+            0.0799999531507492
+          ],
+          "gicp": {
+            "attempts": 22,
+            "accepted": 17,
+            "rejected": 5
+          }
+        },
+        {
+          "name": "south_up",
+          "goal": [
+            -1.449,
+            -3.943
+          ],
+          "status": 4,
+          "wall_s": 7.1143939059984405,
+          "sim_s": 6.199999999999996,
+          "path_length_m": 4.884455696332788,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.41500000000000337,
+          "arrival_age_p50_p95_max": [
+            0.11100000000000276,
+            0.12635000000000354,
+            0.2150000000000034
+          ],
+          "last_xyz": [
+            -1.5175099507344514,
+            -4.127532000937306,
+            0.27999968791007995
+          ],
+          "gicp": {
+            "attempts": 25,
+            "accepted": 20,
+            "rejected": 5
+          }
+        },
+        {
+          "name": "south_down",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 5.852535651996732,
+          "sim_s": 5.1200000000000045,
+          "path_length_m": 4.390519663895527,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.41399999900000145,
+          "arrival_age_p50_p95_max": [
+            0.11399999900000285,
+            0.1289499990000052,
+            0.13100000000000867
+          ],
+          "last_xyz": [
+            2.69684529416761,
+            -4.037244319913311,
+            0.07999989354610443
+          ],
+          "gicp": {
+            "attempts": 28,
+            "accepted": 23,
+            "rejected": 5
+          }
+        }
+      ],
+      "gicp_total": {
+        "attempts": 31,
+        "accepted": 26,
+        "rejected": 5
+      },
+      "events_total": {
+        "GICP_REJECTED": 1,
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 5,
+        "ODOMETRY_RX_STALE": 14,
+        "SAFETY_COSTMAP_LETHAL": 4,
+        "BLOCKED": 1,
+        "ODOMETRY_STAMP_STALE": 1,
+        "VELOCITY_ODOM_STALE": 1,
+        "GOAL_REACHED": 4
+      },
+      "load_note": "First routes overlapped with another user simulation; not comparable to single-instance baseline.",
+      "full_log_gicp": {
+        "attempts": 31,
+        "accepted": 26,
+        "not_converged": 4,
+        "rejected_by_quality_or_delta": 1,
+        "first_verification_to_localized_wall_s": 3.514376401901245,
+        "last_logged_state": "LOCALIZED"
+      },
+      "summary": {
+        "successes": 5,
+        "routes": 6,
+        "stops": 0,
+        "stop_sim_seconds": 0,
+        "path_length_m": 47.10615347599842,
+        "stalls_with_command": 0
+      },
+      "comparable": false,
+      "selected": false
+    },
+    "candidate-c-single": {
+      "tag": "candidate-c-single",
+      "wait_localized_wall_s": 4.5646426400053315,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 0,
+        "accepted": 0,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "north_long",
+          "goal": [
+            5.5,
+            4.9
+          ],
+          "status": 4,
+          "wall_s": 23.454546459994162,
+          "sim_s": 21.160000000000004,
+          "path_length_m": 22.146135211335128,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "SAFETY_COSTMAP_LETHAL": 2,
+            "VELOCITY_ODOM_STALE": 1,
+            "ODOMETRY_STAMP_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.6039999990000006,
+          "arrival_age_p50_p95_max": [
+            0.1060000000000002,
+            0.11899999999999977,
+            0.12400000000000155
+          ],
+          "last_xyz": [
+            5.271948277372681,
+            4.892850868580689,
+            0.07999974453449249
+          ],
+          "gicp": {
+            "attempts": 0,
+            "accepted": 0,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "north_down",
+          "goal": [
+            -3.2,
+            7.52
+          ],
+          "status": 4,
+          "wall_s": 22.813420182996197,
+          "sim_s": 20.619999999999997,
+          "path_length_m": 11.754308412231207,
+          "stop_count": 3,
+          "stop_time_s": 4.16,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.8,
+              "xy": [
+                -0.09783331975340843,
+                7.690899426654912
+              ],
+              "mean_command": 0.015512902994403353
+            },
+            {
+              "duration_s": 0.8,
+              "xy": [
+                -0.18319517070055008,
+                7.690265362825245
+              ],
+              "mean_command": 0.01552185617238763
+            },
+            {
+              "duration_s": 2.56,
+              "xy": [
+                -1.911913865870333,
+                7.675882813611381
+              ],
+              "mean_command": 0.005771892278786613
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 5,
+            "SAFETY_COSTMAP_LETHAL": 10,
+            "GICP_REJECTED": 3,
+            "BLOCKED": 5,
+            "VELOCITY_ODOM_STALE": 3,
+            "ODOMETRY_STAMP_STALE": 1,
+            "ODOMETRY_RX_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.6230000000000061,
+          "arrival_age_p50_p95_max": [
+            0.11100000000000415,
+            0.2102500000000031,
+            0.32100000000000506
+          ],
+          "last_xyz": [
+            -3.1771178085927456,
+            7.386560259383514,
+            0.07999932730197906
+          ],
+          "gicp": {
+            "attempts": 16,
+            "accepted": 12,
+            "rejected": 4
+          }
+        },
+        {
+          "name": "north_up",
+          "goal": [
+            1.825,
+            7.315
+          ],
+          "status": 4,
+          "wall_s": 18.254238806010108,
+          "sim_s": 16.71999999999999,
+          "path_length_m": 5.792363678575762,
+          "stop_count": 2,
+          "stop_time_s": 7.4,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 3.8,
+              "xy": [
+                -1.4184266387475906,
+                7.6841506985753245
+              ],
+              "mean_command": 0.0033319167699889674
+            },
+            {
+              "duration_s": 3.6,
+              "xy": [
+                -0.5453756229920972,
+                7.68830455629859
+              ],
+              "mean_command": 0.003516000569435872
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 4,
+            "SAFETY_COSTMAP_LETHAL": 10,
+            "GICP_REJECTED": 12,
+            "BLOCKED": 8,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.5130000000000023,
+          "arrival_age_p50_p95_max": [
+            0.11000000000000795,
+            0.12299999999999897,
+            0.2210000000000064
+          ],
+          "last_xyz": [
+            1.8061165421894985,
+            7.234436722293496,
+            0.28692511141300203
+          ],
+          "gicp": {
+            "attempts": 38,
+            "accepted": 21,
+            "rejected": 17
+          }
+        },
+        {
+          "name": "south_approach",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": "timeout",
+          "wall_s": 55.0031781509897,
+          "sim_s": 49.58,
+          "path_length_m": 7.258011724819781,
+          "stop_count": 1,
+          "stop_time_s": 41.62,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 41.62,
+              "xy": [
+                4.7132296546011485,
+                3.558050158724723
+              ],
+              "mean_command": 0.0
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 3,
+            "SAFETY_COSTMAP_LETHAL": 21,
+            "BLOCKED": 39,
+            "NO_PROGRESS": 2
+          },
+          "max_latest_odom_age_s": 0.4179999990000035,
+          "arrival_age_p50_p95_max": [
+            0.1149999990000119,
+            0.13099999900001158,
+            0.1369999990000118
+          ],
+          "last_xyz": [
+            4.758759504407334,
+            3.610458854051953,
+            0.07999986374378204
+          ],
+          "gicp": {
+            "attempts": 44,
+            "accepted": 27,
+            "rejected": 17
+          }
+        },
+        {
+          "name": "south_up",
+          "goal": [
+            -1.449,
+            -3.943
+          ],
+          "status": "timeout",
+          "wall_s": 35.00449894199846,
+          "sim_s": 32.18000000000001,
+          "path_length_m": 0.0,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "SAFETY_COSTMAP_LETHAL": 15,
+            "BLOCKED": 30,
+            "NO_PROGRESS": 2
+          },
+          "max_latest_odom_age_s": 0.4330000000000097,
+          "arrival_age_p50_p95_max": [
+            0.11999999999999886,
+            0.13239999960002166,
+            0.13599999999999568
+          ],
+          "last_xyz": [
+            4.758759504407334,
+            3.610458854051953,
+            0.07999986374378204
+          ],
+          "gicp": {
+            "attempts": 44,
+            "accepted": 27,
+            "rejected": 17
+          }
+        },
+        {
+          "name": "south_down",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": "timeout",
+          "wall_s": 35.00457973200537,
+          "sim_s": 32.04000000000002,
+          "path_length_m": 0.0,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "SAFETY_COSTMAP_LETHAL": 16,
+            "BLOCKED": 30,
+            "NO_PROGRESS": 2
+          },
+          "max_latest_odom_age_s": 0.4310000000000116,
+          "arrival_age_p50_p95_max": [
+            0.11900000000001962,
+            0.13300000000000978,
+            0.13799999900001658
+          ],
+          "last_xyz": [
+            4.758759504407334,
+            3.610458854051953,
+            0.07999986374378204
+          ],
+          "gicp": {
+            "attempts": 44,
+            "accepted": 27,
+            "rejected": 17
+          }
+        }
+      ],
+      "gicp_total": {
+        "attempts": 44,
+        "accepted": 27,
+        "rejected": 17
+      },
+      "events_total": {
+        "BLOCK_COMMAND": 20,
+        "SAFETY_COSTMAP_LETHAL": 75,
+        "VELOCITY_ODOM_STALE": 4,
+        "ODOMETRY_STAMP_STALE": 2,
+        "GOAL_REACHED": 3,
+        "GICP_REJECTED": 15,
+        "BLOCKED": 112,
+        "ODOMETRY_RX_STALE": 1,
+        "NO_PROGRESS": 6
+      },
+      "full_log_gicp": {
+        "attempts": 57,
+        "accepted": 36,
+        "not_converged": 6,
+        "rejected_by_quality_or_delta": 15,
+        "first_verification_to_localized_wall_s": 6.002948045730591,
+        "last_logged_state": "LOCALIZED"
+      },
+      "summary": {
+        "successes": 3,
+        "routes": 6,
+        "stops": 6,
+        "stop_sim_seconds": 53.18,
+        "path_length_m": 46.95081902696188,
+        "stalls_with_command": 0
+      },
+      "comparable": true,
+      "selected": false
+    },
+    "candidate-d-clean": {
+      "tag": "candidate-d-clean",
+      "wait_localized_wall_s": 0.5802892599895131,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 0,
+        "accepted": 0,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "north_long",
+          "goal": [
+            5.5,
+            4.9
+          ],
+          "status": 4,
+          "wall_s": 29.004750043008244,
+          "sim_s": 25.939999999999998,
+          "path_length_m": 22.539070324942532,
+          "stop_count": 1,
+          "stop_time_s": 0.76,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.76,
+              "xy": [
+                -1.221996069907747,
+                7.685125824455128
+              ],
+              "mean_command": 0.008158924398306318
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 3,
+            "SAFETY_COSTMAP_LETHAL": 7,
+            "GICP_REJECTED": 2,
+            "BLOCKED": 2,
+            "VELOCITY_ODOM_STALE": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.5220000000000006,
+          "arrival_age_p50_p95_max": [
+            0.10500000000000058,
+            0.11800000000000122,
+            0.20800000000000263
+          ],
+          "last_xyz": [
+            5.4739346998049925,
+            4.907671824776422,
+            0.07999621295928955
+          ],
+          "gicp": {
+            "attempts": 3,
+            "accepted": 0,
+            "rejected": 3
+          }
+        },
+        {
+          "name": "north_down",
+          "goal": [
+            -3.2,
+            7.52
+          ],
+          "status": 4,
+          "wall_s": 22.253776181009016,
+          "sim_s": 19.939999999999998,
+          "path_length_m": 12.050124320782905,
+          "stop_count": 2,
+          "stop_time_s": 3.6,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 3.0,
+              "xy": [
+                4.446393491802225,
+                7.846320151170902
+              ],
+              "mean_command": 0.004214543728926442
+            },
+            {
+              "duration_s": 0.6,
+              "xy": [
+                -1.8969363031632882,
+                7.592397680862574
+              ],
+              "mean_command": 0.033600564978716836
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 5,
+            "SAFETY_COSTMAP_LETHAL": 9,
+            "BLOCKED": 4,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.40800000000000125,
+          "arrival_age_p50_p95_max": [
+            0.10600000000000165,
+            0.12950000000000228,
+            0.21800000000000494
+          ],
+          "last_xyz": [
+            -3.2318120017563796,
+            7.429425249124617,
+            0.07999999785423278
+          ],
+          "gicp": {
+            "attempts": 14,
+            "accepted": 6,
+            "rejected": 8
+          }
+        },
+        {
+          "name": "north_up",
+          "goal": [
+            1.825,
+            7.315
+          ],
+          "status": 4,
+          "wall_s": 7.652277489993139,
+          "sim_s": 6.820000000000007,
+          "path_length_m": 5.439174400434321,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.4040000000000049,
+          "arrival_age_p50_p95_max": [
+            0.10499999900000678,
+            0.11709999900000968,
+            0.1219999989999998
+          ],
+          "last_xyz": [
+            1.824894820175541,
+            7.22410547439754,
+            0.2869972794055939
+          ],
+          "gicp": {
+            "attempts": 20,
+            "accepted": 8,
+            "rejected": 12
+          }
+        },
+        {
+          "name": "south_approach",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 19.18517967200023,
+          "sim_s": 16.720000000000013,
+          "path_length_m": 16.332455088459607,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.33099999900000865,
+          "arrival_age_p50_p95_max": [
+            0.107999999500004,
+            0.12794999900000034,
+            0.13699999900000326
+          ],
+          "last_xyz": [
+            2.597085959786017,
+            -3.887836936562568,
+            0.0799999531507492
+          ],
+          "gicp": {
+            "attempts": 26,
+            "accepted": 10,
+            "rejected": 16
+          }
+        },
+        {
+          "name": "south_up",
+          "goal": [
+            -1.449,
+            -3.943
+          ],
+          "status": 4,
+          "wall_s": 6.762163881008746,
+          "sim_s": 5.959999999999994,
+          "path_length_m": 4.633344606863834,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.40499999900000105,
+          "arrival_age_p50_p95_max": [
+            0.11099999900000135,
+            0.12340000000000084,
+            0.1259999990000104
+          ],
+          "last_xyz": [
+            -1.5858578623872723,
+            -4.119036188642491,
+            0.27999924087524414
+          ],
+          "gicp": {
+            "attempts": 29,
+            "accepted": 13,
+            "rejected": 16
+          }
+        },
+        {
+          "name": "south_down",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 5.952677476001554,
+          "sim_s": 5.299999999999997,
+          "path_length_m": 4.528584711038587,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.40799999900000405,
+          "arrival_age_p50_p95_max": [
+            0.11100000000001264,
+            0.12279999900000874,
+            0.13199999900001064
+          ],
+          "last_xyz": [
+            2.5174012343232093,
+            -3.7774328538589264,
+            0.07999938690662384
+          ],
+          "gicp": {
+            "attempts": 32,
+            "accepted": 16,
+            "rejected": 16
+          }
+        }
+      ],
+      "gicp_total": {
+        "attempts": 35,
+        "accepted": 19,
+        "rejected": 16
+      },
+      "events_total": {
+        "BLOCK_COMMAND": 13,
+        "SAFETY_COSTMAP_LETHAL": 17,
+        "GICP_REJECTED": 10,
+        "BLOCKED": 6,
+        "VELOCITY_ODOM_STALE": 1,
+        "GOAL_REACHED": 6
+      },
+      "full_log_gicp": {
+        "attempts": 38,
+        "accepted": 22,
+        "not_converged": 6,
+        "rejected_by_quality_or_delta": 10,
+        "first_verification_to_localized_wall_s": 1.0017805099487305,
+        "last_logged_state": "LOCALIZED"
+      },
+      "summary": {
+        "successes": 6,
+        "routes": 6,
+        "stops": 3,
+        "stop_sim_seconds": 4.36,
+        "path_length_m": 65.52275345252178,
+        "stalls_with_command": 0
+      },
+      "comparable": true,
+      "selected": true
+    },
+    "confirmation": {
+      "tag": "confirmation",
+      "wait_localized_wall_s": 1.6901236230041832,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 0,
+        "accepted": 0,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "north_long",
+          "goal": [
+            5.5,
+            4.9
+          ],
+          "status": 4,
+          "wall_s": 29.004600900996593,
+          "sim_s": 25.759999999999998,
+          "path_length_m": 22.484211249015285,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 4,
+            "SAFETY_COSTMAP_LETHAL": 4,
+            "VELOCITY_ODOM_STALE": 2,
+            "ODOMETRY_STAMP_STALE": 1,
+            "GICP_REJECTED": 2,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.7129999990000009,
+          "arrival_age_p50_p95_max": [
+            0.10400000000000026,
+            0.19849999999999993,
+            0.30800000000000266
+          ],
+          "last_xyz": [
+            5.32813405336032,
+            4.892924103811262,
+            0.0799987610578537
+          ],
+          "gicp": {
+            "attempts": 4,
+            "accepted": 2,
+            "rejected": 2
+          }
+        },
+        {
+          "name": "north_down",
+          "goal": [
+            -3.2,
+            7.52
+          ],
+          "status": 4,
+          "wall_s": 18.153550862989505,
+          "sim_s": 15.86,
+          "path_length_m": 11.565024839112183,
+          "stop_count": 1,
+          "stop_time_s": 3.26,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 3.26,
+              "xy": [
+                4.549763274037512,
+                7.203040531367064
+              ],
+              "mean_command": 0.005971168048795863
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 5,
+            "ODOMETRY_STAMP_STALE": 1,
+            "VELOCITY_ODOM_STALE": 1,
+            "GICP_REJECTED": 5,
+            "BLOCKED": 3,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.6990000000000023,
+          "arrival_age_p50_p95_max": [
+            0.10300000000000575,
+            0.1986000000000029,
+            0.4930000000000063
+          ],
+          "last_xyz": [
+            -3.290755935800782,
+            7.238396124006909,
+            0.07999440991878509
+          ],
+          "gicp": {
+            "attempts": 15,
+            "accepted": 5,
+            "rejected": 10
+          }
+        },
+        {
+          "name": "north_up",
+          "goal": [
+            1.825,
+            7.315
+          ],
+          "status": 4,
+          "wall_s": 6.942979853003635,
+          "sim_s": 6.1200000000000045,
+          "path_length_m": 5.266142068647642,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.40999999900000794,
+          "arrival_age_p50_p95_max": [
+            0.10299999900000578,
+            0.11229999900000612,
+            0.11399999999999863
+          ],
+          "last_xyz": [
+            1.7107400381932967,
+            7.156425920829177,
+            0.2950981240272522
+          ],
+          "gicp": {
+            "attempts": 21,
+            "accepted": 5,
+            "rejected": 16
+          }
+        },
+        {
+          "name": "south_approach",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 18.265479039007914,
+          "sim_s": 16.0,
+          "path_length_m": 16.16814392510187,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.31299999900000797,
+          "arrival_age_p50_p95_max": [
+            0.1079999999999984,
+            0.1219999990000027,
+            0.13199999900000214
+          ],
+          "last_xyz": [
+            2.794368262839283,
+            -3.927012924510393,
+            0.07999987864494323
+          ],
+          "gicp": {
+            "attempts": 27,
+            "accepted": 6,
+            "rejected": 21
+          }
+        },
+        {
+          "name": "south_up",
+          "goal": [
+            -1.449,
+            -3.943
+          ],
+          "status": 4,
+          "wall_s": 8.16381402699335,
+          "sim_s": 7.259999999999991,
+          "path_length_m": 4.816768017622377,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 3,
+            "SAFETY_COSTMAP_LETHAL": 2,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.5079999990000013,
+          "arrival_age_p50_p95_max": [
+            0.10949999950000412,
+            0.12199999900000548,
+            0.1249999990000028
+          ],
+          "last_xyz": [
+            -1.5611452575164149,
+            -3.9709137805998327,
+            0.2837690371274948
+          ],
+          "gicp": {
+            "attempts": 35,
+            "accepted": 10,
+            "rejected": 25
+          }
+        },
+        {
+          "name": "south_down",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 10.56289053898945,
+          "sim_s": 9.36,
+          "path_length_m": 4.941734669834619,
+          "stop_count": 1,
+          "stop_time_s": 1.24,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 1.24,
+              "xy": [
+                2.1381124339186823,
+                -4.408829604697195
+              ],
+              "mean_command": 0.015152288168283163
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "SAFETY_COSTMAP_LETHAL": 5,
+            "ODOMETRY_STAMP_STALE": 1,
+            "VELOCITY_ODOM_STALE": 1,
+            "GICP_REJECTED": 1,
+            "BLOCKED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.6129999990000023,
+          "arrival_age_p50_p95_max": [
+            0.11099999900000421,
+            0.12119999980000282,
+            0.1249999990000028
+          ],
+          "last_xyz": [
+            2.552871709635216,
+            -3.7785596920719224,
+            0.07999980413913726
+          ],
+          "gicp": {
+            "attempts": 44,
+            "accepted": 16,
+            "rejected": 28
+          }
+        }
+      ],
+      "gicp_total": {
+        "attempts": 47,
+        "accepted": 19,
+        "rejected": 28
+      },
+      "events_total": {
+        "BLOCK_COMMAND": 12,
+        "SAFETY_COSTMAP_LETHAL": 16,
+        "VELOCITY_ODOM_STALE": 4,
+        "ODOMETRY_STAMP_STALE": 3,
+        "GICP_REJECTED": 19,
+        "GOAL_REACHED": 6,
+        "BLOCKED": 4
+      },
+      "full_log_gicp": {
+        "attempts": 50,
+        "accepted": 22,
+        "not_converged": 9,
+        "rejected_by_quality_or_delta": 19,
+        "first_verification_to_localized_wall_s": 1.0161890983581543,
+        "last_logged_state": "LOCALIZED"
+      },
+      "summary": {
+        "successes": 6,
+        "routes": 6,
+        "stops": 2,
+        "stop_sim_seconds": 4.5,
+        "path_length_m": 65.24202476933398,
+        "stalls_with_command": 0
+      },
+      "comparable": true,
+      "selected": true
+    },
+    "final-integrated": {
+      "tag": "final-integrated",
+      "wait_localized_wall_s": 4.641404527996201,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 0,
+        "accepted": 0,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "north_long",
+          "goal": [
+            5.5,
+            4.9
+          ],
+          "status": 4,
+          "wall_s": 25.316381826996803,
+          "sim_s": 22.42,
+          "path_length_m": 22.265257564863028,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "VELOCITY_ODOM_STALE": 1,
+            "ODOMETRY_STAMP_STALE": 1,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.8159999990000032,
+          "arrival_age_p50_p95_max": [
+            0.10800000000000265,
+            0.1933000000000008,
+            0.30500000000000105
+          ],
+          "last_xyz": [
+            5.135586267272676,
+            4.541160170808731,
+            0.07999847793579101
+          ],
+          "gicp": {
+            "attempts": 0,
+            "accepted": 0,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "north_down",
+          "goal": [
+            -3.2,
+            7.52
+          ],
+          "status": 4,
+          "wall_s": 23.453905366011895,
+          "sim_s": 20.619999999999997,
+          "path_length_m": 12.043680230920817,
+          "stop_count": 5,
+          "stop_time_s": 4.5,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 0.58,
+              "xy": [
+                4.634941500763409,
+                6.885936104595661
+              ],
+              "mean_command": 0.011206284629489046
+            },
+            {
+              "duration_s": 1.62,
+              "xy": [
+                4.660566156397573,
+                7.228563607312739
+              ],
+              "mean_command": 0.01263876851431453
+            },
+            {
+              "duration_s": 0.76,
+              "xy": [
+                0.5436302002072334,
+                7.695655961051584
+              ],
+              "mean_command": 0.010256347660675331
+            },
+            {
+              "duration_s": 0.66,
+              "xy": [
+                0.49276503643393516,
+                7.6958242388106886
+              ],
+              "mean_command": 0.0
+            },
+            {
+              "duration_s": 0.88,
+              "xy": [
+                0.4700880140066147,
+                7.69607000228297
+              ],
+              "mean_command": 0.014142135623730949
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 4,
+            "SAFETY_COSTMAP_LETHAL": 9,
+            "BLOCKED": 6,
+            "GICP_REJECTED": 6,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.5200000000000031,
+          "arrival_age_p50_p95_max": [
+            0.10900000000000529,
+            0.20775000000000504,
+            0.42000000000000315
+          ],
+          "last_xyz": [
+            -3.127146977602326,
+            7.5576148461528545,
+            0.07999902927875518
+          ],
+          "gicp": {
+            "attempts": 17,
+            "accepted": 10,
+            "rejected": 7
+          }
+        },
+        {
+          "name": "north_up",
+          "goal": [
+            1.825,
+            7.315
+          ],
+          "status": 4,
+          "wall_s": 7.062987967990921,
+          "sim_s": 6.299999999999997,
+          "path_length_m": 5.462215898160824,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.3059999990000002,
+          "arrival_age_p50_p95_max": [
+            0.10699999899999924,
+            0.11909999900000248,
+            0.12299999900000466
+          ],
+          "last_xyz": [
+            1.8366967462325234,
+            7.3294062558777995,
+            0.27999989652633667
+          ],
+          "gicp": {
+            "attempts": 20,
+            "accepted": 13,
+            "rejected": 7
+          }
+        },
+        {
+          "name": "south_approach",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": 4,
+          "wall_s": 18.40527110900439,
+          "sim_s": 15.659999999999997,
+          "path_length_m": 16.095231902321046,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.4040000000000049,
+          "arrival_age_p50_p95_max": [
+            0.11099999900000412,
+            0.12579999900000263,
+            0.13599999900000703
+          ],
+          "last_xyz": [
+            2.676210168946359,
+            -3.8349588046754097,
+            0.0799999531507492
+          ],
+          "gicp": {
+            "attempts": 23,
+            "accepted": 16,
+            "rejected": 7
+          }
+        },
+        {
+          "name": "south_up",
+          "goal": [
+            -1.449,
+            -3.943
+          ],
+          "status": 4,
+          "wall_s": 7.112352244992508,
+          "sim_s": 6.260000000000005,
+          "path_length_m": 4.571389300782063,
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.3170000000000016,
+          "arrival_age_p50_p95_max": [
+            0.10999999900000507,
+            0.12529999900000222,
+            0.13499999999999934
+          ],
+          "last_xyz": [
+            -1.5352626021697502,
+            -4.274280544911629,
+            0.2799993898868561
+          ],
+          "gicp": {
+            "attempts": 26,
+            "accepted": 19,
+            "rejected": 7
+          }
+        },
+        {
+          "name": "south_down",
+          "goal": [
+            2.609,
+            -3.813
+          ],
+          "status": "timeout",
+          "wall_s": 35.0052067200013,
+          "sim_s": 31.639999999999986,
+          "path_length_m": 4.3664334189359515,
+          "stop_count": 10,
+          "stop_time_s": 21.12,
+          "stalls_with_command": 0,
+          "stops": [
+            {
+              "duration_s": 10.16,
+              "xy": [
+                -0.7495828529666125,
+                -4.4143533625861755
+              ],
+              "mean_command": 0.027490584065572303
+            },
+            {
+              "duration_s": 4.16,
+              "xy": [
+                -0.7569726752239112,
+                -4.414353351718938
+              ],
+              "mean_command": 0.0430622004596911
+            },
+            {
+              "duration_s": 0.46,
+              "xy": [
+                -0.8047666234802636,
+                -4.4143533528633325
+              ],
+              "mean_command": 0.04999999951358223
+            },
+            {
+              "duration_s": 0.44,
+              "xy": [
+                -0.862203448112783,
+                -4.414359073922946
+              ],
+              "mean_command": 0.026086956360060608
+            },
+            {
+              "duration_s": 0.74,
+              "xy": [
+                -0.8984500454153531,
+                -4.414359399457999
+              ],
+              "mean_command": 0.02631578936974228
+            },
+            {
+              "duration_s": 1.26,
+              "xy": [
+                -0.9155612872306665,
+                -4.414359561971691
+              ],
+              "mean_command": 0.021874999933826453
+            },
+            {
+              "duration_s": 0.98,
+              "xy": [
+                -0.9399033473240397,
+                -4.4143595621549725
+              ],
+              "mean_command": 0.015999999924083762
+            },
+            {
+              "duration_s": 1.4,
+              "xy": [
+                -0.9580555412358935,
+                -4.414355942039946
+              ],
+              "mean_command": 0.046324084727988296
+            },
+            {
+              "duration_s": 1.1,
+              "xy": [
+                -0.9675802781659759,
+                -4.4143559852610705
+              ],
+              "mean_command": 0.010714285625272203
+            },
+            {
+              "duration_s": 0.42,
+              "xy": [
+                -1.053597204499806,
+                -4.414355974248596
+              ],
+              "mean_command": 0.02892709559399513
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 11,
+            "SAFETY_COSTMAP_LETHAL": 22,
+            "RECOVERY_TRACKING_ERROR": 4,
+            "BLOCKED": 11,
+            "GICP_REJECTED": 18,
+            "NO_PROGRESS": 1
+          },
+          "max_latest_odom_age_s": 0.5219999990000027,
+          "arrival_age_p50_p95_max": [
+            0.11599999900001101,
+            0.12909999990001264,
+            0.13599999900001272
+          ],
+          "last_xyz": [
+            2.01507601971711,
+            -4.411520461254366,
+            0.07999813520908355
+          ],
+          "gicp": {
+            "attempts": 67,
+            "accepted": 37,
+            "rejected": 30
+          }
+        }
+      ],
+      "gicp_total": {
+        "attempts": 72,
+        "accepted": 37,
+        "rejected": 35
+      },
+      "events_total": {
+        "BLOCK_COMMAND": 20,
+        "VELOCITY_ODOM_STALE": 1,
+        "ODOMETRY_STAMP_STALE": 1,
+        "SAFETY_COSTMAP_LETHAL": 32,
+        "GOAL_REACHED": 5,
+        "GICP_REJECTED": 35,
+        "BLOCKED": 17,
+        "RECOVERY_TRACKING_ERROR": 4,
+        "NO_PROGRESS": 1
+      },
+      "full_log_gicp": {
+        "attempts": 546,
+        "accepted": 40,
+        "not_converged": 56,
+        "rejected_by_quality_or_delta": 450,
+        "first_verification_to_localized_wall_s": 1.5070314407348633,
+        "last_logged_state": "LOCALIZING"
+      },
+      "summary": {
+        "successes": 5,
+        "routes": 6,
+        "stops": 15,
+        "stop_sim_seconds": 25.62,
+        "path_length_m": 64.80420831598373,
+        "stalls_with_command": 0
+      },
+      "comparable": true,
+      "selected": false
+    }
+  },
+  "tests": {
+    "gicp_integration": {
+      "passed": 3
+    },
+    "related_launch_contracts": {
+      "passed": 6
+    },
+    "known_preexisting_failure": "reality overlap recovery speed: planner 0.15 versus controller 0.20, also present at HEAD; no reality settings modified."
+  }
+}

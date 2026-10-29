@@ -62,6 +62,13 @@ rclcpp_components_register_node(${PROJECT_NAME}
 #############
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_gicp_verification test/test_gicp_verification.cpp)
+  target_link_libraries(test_gicp_verification ${PROJECT_NAME} small_gicp ${PCL_LIBRARIES})
+  target_include_directories(test_gicp_verification PRIVATE include ${PCL_INCLUDE_DIRS})
+  target_link_directories(test_gicp_verification PRIVATE ${FLANN_LIBRARY_DIRS})
+  ament_target_dependencies(test_gicp_verification rclcpp sensor_msgs geometry_msgs tf2_ros)
+
   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
   set(ament_cmake_clang_tidy_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-tidy")
   find_package(ament_lint_auto REQUIRED)
