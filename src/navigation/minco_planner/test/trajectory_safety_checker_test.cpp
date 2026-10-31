@@ -893,6 +893,144 @@ TEST(TrajectorySafetyCheckerTest, UnknownMotionNeverBypassesPendingRoof) {
             TrajectorySafetyChecker::FailureReason::COSTMAP_LETHAL);
 }
 
+TEST(TrajectorySafetyCheckerTest, WeightedTerrainCannotUseUnknownOrEdgeBypass) {
+  class WeightedQuery : public UnknownProjectionQuery {
+  public:
+    bool admitted{false};
+    bool obstacle{false};
+    bool stale{false};
+    uint8_t cost{nav2_costmap_2d::NO_INFORMATION};
+    rog_map::QueryResult query(const Eigen::Vector3d &pos) const override {
+      auto result = UnknownProjectionQuery::query(pos);
+      result.projected_cost = cost;
+      result.projection.terrain_policy_active = true;
+      result.projection.terrain_admissible = admitted;
+      result.projection.hard_obstacle = obstacle;
+      result.projection.prior_known_free = true;
+      result.projection.prior_traversability_weight = 1.0F;
+      if (stale)
+        result.snapshot_stamp -= 10.0;
+      return result;
+    }
+  };
+  TrajectorySafetyChecker::Config config;
+  config.allow_unknown_motion = true;
+  config.safe_dist = 0.0;
+  config.dynamic_edge_overlap_tolerance = 0.03;
+  auto query = std::make_shared<WeightedQuery>();
+  auto checker = makeChecker(config, query);
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  query->cost = nav2_costmap_2d::FREE_SPACE;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  query->admitted = true;
+  EXPECT_TRUE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  query->obstacle = true;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  query->obstacle = false;
+  query->cost = nav2_costmap_2d::LETHAL_OBSTACLE;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  query->cost = nav2_costmap_2d::FREE_SPACE;
+  query->stale = true;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+}
+
+TEST(TrajectorySafetyCheckerTest,
+     OriginalWhitePointReconcilesConservativeTerrainBoundary) {
+  class BoundaryQuery : public UnknownProjectionQuery {
+  public:
+    double weight{1.0};
+    bool hard{false};
+    bool hold{false};
+    bool stale{false};
+    float evidence{0.0F};
+    rog_map::QueryResult query(const Eigen::Vector3d &pos) const override {
+      auto result = UnknownProjectionQuery::query(pos);
+      result.projected_cost = 254U;
+      result.distance = -.02; // Interpolated conservative raster distance.
+      auto &p = result.projection;
+      p.dynamic_cost = 254U;
+      p.terrain_policy_active = true;
+      p.terrain_admissible = false;
+      p.prior_known_free = false;
+      p.prior_occupied = true;
+      p.hard_obstacle = hard;
+      p.prior_weight_setting = weight;
+      p.ground_evidence = p.clearance_evidence = p.slope_evidence = evidence;
+      p.obstacle_hold_remaining = hold ? .2F : 0.0F;
+      p.raw_reason = static_cast<uint8_t>(
+          rog_map::ProjectionClassReason::GROUND_UNVERIFIED);
+      p.candidate_reason = static_cast<uint8_t>(
+          rog_map::ProjectionClassReason::INSUFFICIENT_OBSERVATION);
+      if (stale)
+        result.snapshot_stamp -= 10.0;
+      return result;
+    }
+  };
+  nav2_costmap_2d::Costmap2D original(100, 100, .1, -5.0, -5.0, 0U);
+  auto prior = std::make_shared<Nav2CostmapQuery>(&original);
+  auto dynamic = std::make_shared<BoundaryQuery>();
+  TrajectorySafetyChecker::Config config;
+  config.safe_dist = 0.0;
+  config.allow_unknown_motion = false;
+  auto checker = makeChecker(config, dynamic);
+  checker->setQuery(dynamic, prior);
+  EXPECT_TRUE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->weight = 0.5;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->evidence = .5F;
+  EXPECT_TRUE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->weight = 0.0;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->weight = 1.0;
+  dynamic->hard = true;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->hard = false;
+  dynamic->hold = true;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->hold = false;
+  dynamic->stale = true;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->stale = false;
+  original.setCost(50, 50, 254U);
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  original.setCost(50, 50, 255U);
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+}
+
+TEST(TrajectorySafetyCheckerTest, FullPriorAuthorityRequiresStaticPGMAndPreservesVehicleVeto) {
+  class VehicleQuery : public UnknownProjectionQuery {
+  public:
+    bool vehicle{false};
+    rog_map::QueryResult query(const Eigen::Vector3d &pos) const override {
+      auto result = UnknownProjectionQuery::query(pos);
+      result.projected_cost = vehicle ? 254U : 0U;
+      result.projection.dynamic_cost = result.projected_cost;
+      result.projection.static_prior_authoritative = true;
+      result.projection.terrain_policy_active = true;
+      result.projection.terrain_admissible = !vehicle;
+      result.projection.hard_obstacle = vehicle;
+      result.projection.live_vehicle_obstacle = vehicle;
+      return result;
+    }
+  };
+  auto dynamic = std::make_shared<VehicleQuery>();
+  TrajectorySafetyChecker::Config config;
+  config.safe_dist = 0.0;
+  auto checker = makeChecker(config, dynamic);
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  nav2_costmap_2d::Costmap2D original(100, 100, .1, -5.0, -5.0, 0U);
+  auto prior = std::make_shared<Nav2CostmapQuery>(&original);
+  checker->setQuery(dynamic, prior);
+  EXPECT_TRUE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->vehicle = true;
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  dynamic->vehicle = false;
+  original.setCost(50, 50, 254U);
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+  original.setCost(50, 50, 255U);
+  EXPECT_FALSE(checker->checkFootprint(Eigen::Vector3d::Zero(), 0.0));
+}
+
 TEST(TrajectorySafetyCheckerTest, ExpandsMarginOnEachSide) {
   TrajectorySafetyChecker::Config config;
   config.safe_dist = 0.01;

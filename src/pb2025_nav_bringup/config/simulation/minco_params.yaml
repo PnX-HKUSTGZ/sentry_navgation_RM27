@@ -312,8 +312,8 @@ planner_server:
       safety:
         # Original PGM only: both area and boundary-depth limits must pass.
         # Measured ROG obstacles, unknown policy and headroom stay independent.
-        static_overlap_max_ratio: 0.04
-        static_overlap_max_depth: 0.03
+        static_overlap_max_ratio: 0.08
+        static_overlap_max_depth: 0.06
         # Low-clearance ROG cells within the polygon boundary band may use
         # this ESDF interpolation tolerance (metres, either sign). This is
         # not a measured physical clearance. Interior hits and walls block.
@@ -461,11 +461,9 @@ planner_server:
           # In no-elevation mode, empty columns still need observed body-volume
           # clearance. UNKNOWN and occupied returns remain fail-closed.
           observed_empty_as_free: true
-          # A white prior-map cell with an unsupported downward/ramp return is
-          # uncertain, not an immediate global obstacle. Require four
-          # consecutive projections of the same cell before a hard veto; a
-          # real low roof or wall remains blocked once it persists.
-          prior_free_uncertain_obstacle_confirmations: 4
+          # Weighted terrain policy handles missing evidence; measured obstacles
+          # block immediately without the old multi-frame white-cell exemption.
+          prior_free_uncertain_obstacle_confirmations: 1
           # Without surveyed ground support, bridge only clearance-verified
           # EMPTY columns in the MID360 near-field blind band. The bridge is
           # length/height bounded and needs a continuing measured ramp at its
@@ -528,6 +526,7 @@ planner_server:
           # Reference is now the chassis axle, not the moving lidar centre.
           robot_origin_to_ground: 0.080
           # Folded Gazebo collision envelope measured from the contact plane.
+          # Match folded_vehicle_height in simulation_waking_robot.xacro.
           vehicle_height: 0.040
           headroom_margin: 0.0
           headroom_voxel_inset_fraction: 0.0
@@ -595,12 +594,42 @@ planner_server:
           mask_filter_en: true
           fill_occ_min: 7
           denoise_occ_max: 0
+          # At weight 1, fixed-map subtraction supplies a separate vehicle layer.
+          # Zero velocity is not a clearing condition; FOV gaps retain tracks.
+          vehicle_obstacles:
+            background_topic: /prior_pcd_map
+            background_voxel: 0.04
+            background_distance: 0.15
+            # Prefer static passage: absorb <=8 cm survey/registration residuals,
+            # even when a sparse tunnel-edge normal disagrees with the prior.
+            surface_distance: 0.08
+            normal_angle_deg: 45.0
+            # Match a local fixed surface over 50 cm along it, but only 10 cm
+            # normal to it. No requirement to observe ground/headroom completeness.
+            # Ignore a 10 cm fringe around surveyed black cells as static
+            # boundary residuals. Original static footprint blocking is unchanged.
+            prior_boundary_distance: 0.10
+            static_surface_radius: 0.50
+            static_surface_distance: 0.15
+            static_surface_min_support: 3
+            static_surface_max_curvature: 0.10
+            # Discard surveyed ramp/platform faces below its driving surface;
+            # missing elevation evidence does not block or suppress live targets.
+            ground_surface_tolerance: 0.05
+            min_points: 20
+            min_span: 0.25
+            hold_time: 3.0
+            max_range: 8.0
+            padding: 0.10
+            min_extent: 0.45
           prior_map:
             enable: true
             frame_id: map
             yaml_path: "<rog_prior_map_yaml>"
             pgm_path: ""
-            free_fills_unknown: true
+            # Below 1: each terrain score must reach 1 - weight in known white.
+            # At 1: original PGM checks static space; the separate vehicle layer blocks live targets.
+            traversability_weight: 1.0
             # Retain 2D static occupancy; local terrain does not need to match
             # the map's surveyed ground-elevation grid or patches.
             require_ground_support: false

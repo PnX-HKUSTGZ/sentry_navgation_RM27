@@ -38,14 +38,27 @@ enum class ProjectionClassReason : uint8_t {
   CLEARANCE_BOUNDED_HOLE_FILL,
   SURVEYED_NEAR_FIELD_CLEAR,
   GROUND_CONNECTIVITY_HOLD,
-  OVERHEAD_GROUND_UNVERIFIED
+  OVERHEAD_GROUND_UNVERIFIED,
+  PRIOR_ASSISTED_CLEARANCE,
+  PRIOR_STATIC_CLEAR,
+  VEHICLE_OBSTACLE,
+  VEHICLE_DETECTION_UNAVAILABLE
 };
 
 inline bool isMeasuredObstacleReason(ProjectionClassReason reason) {
-  return reason == ProjectionClassReason::SOLID_VERTICAL_WALL ||
+  return reason == ProjectionClassReason::VEHICLE_OBSTACLE ||
+         reason == ProjectionClassReason::SOLID_VERTICAL_WALL ||
          reason == ProjectionClassReason::AMBIGUOUS_OCCUPIED ||
          reason == ProjectionClassReason::HEADROOM_BLOCKED;
 }
+
+enum class GroundReferenceSource : uint8_t {
+  NONE = 0,
+  MEASURED_HISTORY,
+  MEASURED_NEIGHBORS,
+  CONTACT_TANGENT,
+  PRIOR_ASSISTED_NEIGHBORS
+};
 
 enum class VerticalVoxelState : uint8_t {
   UNKNOWN = 0,
@@ -76,6 +89,16 @@ struct CellData {
   float ceiling_z_abs{std::numeric_limits<float>::quiet_NaN()};
   float headroom{std::numeric_limits<float>::infinity()};
   float headroom_known_ratio{0.0f};
+  float prior_traversability_weight{0.0F};
+  float ground_evidence{0.0F};
+  float clearance_evidence{0.0F};
+  float slope_evidence{0.0F};
+  uint8_t terrain_policy_active{0U};
+  uint8_t static_prior_authoritative{0U};
+  uint8_t live_vehicle_obstacle{0U};
+  uint8_t terrain_admissible{0U};
+  uint8_t prior_assisted{0U};
+  uint8_t hard_obstacle{0U};
   uint8_t traversable{0};
   uint8_t ground_candidate{0};
   uint8_t ground_verified{0};
@@ -109,6 +132,9 @@ struct CellData {
   double ground_connectivity_deadline{0.0};
   float connected_ground_z_abs{std::numeric_limits<float>::quiet_NaN()};
   uint8_t local_overhead_candidate{0};
+  uint8_t local_ground_prior_assisted{0};
+  GroundReferenceSource ground_reference_source{GroundReferenceSource::NONE};
+  uint8_t body_obstacle_verified{0};
   double ground_hit_stamp{0.0};
   double observed_ground_stamp{0.0};
   float observed_ground_z_abs{std::numeric_limits<float>::quiet_NaN()};
@@ -157,6 +183,12 @@ struct ProjectionLayerConfig {
   int fill_occ_min{5};
   int denoise_occ_max{0};
   bool clearance_check_en{false};
+  // Internal switch: the shared ROS configuration enables the evidence gate.
+  // No prior-white evidence is used at weight zero or outside known white.
+  bool terrain_policy_enabled{false};
+  bool static_prior_authoritative{false};
+  bool vehicle_detection_ready{false};
+  double prior_traversability_weight{0.0};
   bool observed_empty_as_free{false};
   // A prior-map-free cell can still contain a transient, unsupported return
   // while the sensor looks down a ramp. Keep that evidence UNKNOWN until it
@@ -214,6 +246,7 @@ struct ProjectionLayerConfig {
 };
 
 struct ColumnStats {
+  bool live_vehicle_obstacle{false};
   int observed_count{0};
   int occupied_count{0};
   int occupied_z_index_min{std::numeric_limits<int>::max()};
@@ -288,6 +321,12 @@ public:
 
   bool matchesGeometry(int width, int height, double resolution,
                        const Eigen::Vector2d &origin) const;
+
+  // Refresh map evidence independently of LiDAR dirty columns after TF or
+  // sliding-window changes. Empty arrays revoke all prior permission.
+  void setPriorTerrainEvidence(const std::vector<uint8_t> &known_free,
+                               const std::vector<uint8_t> &support_known,
+                               const std::vector<float> &support_z);
 
   int width() const { return width_; }
   int height() const { return height_; }

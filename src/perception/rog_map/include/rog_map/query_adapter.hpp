@@ -17,6 +17,7 @@ struct MapSnapshot
   uint64_t snapshot_sequence{0};
   double stamp{0.0};
   double commit_stamp{0.0};
+  float prior_weight_setting{0.0F};
   int width{0};
   int height{0};
   double resolution{0.0};
@@ -36,6 +37,16 @@ struct MapSnapshot
   std::vector<uint8_t> hole_filled;
   std::vector<double> distances;
   std::vector<float> height_deltas;
+  std::vector<float> prior_traversability_weight;
+  std::vector<float> ground_evidence;
+  std::vector<float> clearance_evidence;
+  std::vector<float> slope_evidence;
+  std::vector<uint8_t> static_prior_authoritative;
+  std::vector<uint8_t> live_vehicle_obstacle;
+  std::vector<uint8_t> terrain_policy_active;
+  std::vector<uint8_t> terrain_admissible;
+  std::vector<uint8_t> prior_assisted;
+  std::vector<uint8_t> hard_obstacle;
   std::vector<float> confidence;
   std::vector<float> occupied_z_min;
   std::vector<float> occupied_z_max;
@@ -46,6 +57,8 @@ struct MapSnapshot
   std::vector<float> headroom;
   std::vector<float> headroom_known_ratio;
   std::vector<float> obstacle_hold_remaining;
+  std::vector<uint8_t> ground_reference_source;
+  std::vector<uint8_t> body_obstacle_verified;
   std::vector<uint8_t> prior_known_free;
   std::vector<uint8_t> ground_candidate;
   std::vector<uint8_t> ground_verified;

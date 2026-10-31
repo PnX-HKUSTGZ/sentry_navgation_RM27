@@ -215,6 +215,13 @@ bool OverlapEscapeGuard::validate(Context & context, const Eigen::Vector3d & sta
   if (results.size() != centers.size()) {
     return reject("INCOMPLETE_QUERY");
   }
+  const auto prior_results = dynamic_only && context.static_query
+                                 ? context.static_query->queryBatch(centers)
+                                 : std::vector<rog_map::QueryResult>{};
+  if (dynamic_only && context.static_query &&
+      prior_results.size() != centers.size()) {
+    return reject("INCOMPLETE_STATIC_QUERY");
+  }
   std::vector<double> previous_areas(centers.size(), 0.0);
   double initial_total = 0.0;
   std::vector<double> actual_areas(context.allowed_cells.size(), 0.0);
@@ -237,7 +244,11 @@ bool OverlapEscapeGuard::validate(Context & context, const Eigen::Vector3d & sta
       if (area <= 1.0e-9 && !static_grid) {
         continue;
       }
-      const auto result = dynamic_only ? dynamicEvidenceOnly(results[index]) : results[index];
+      auto result =
+          dynamic_only ? dynamicEvidenceOnly(results[index]) : results[index];
+      if (!prior_results.empty()) {
+        result = reconcilePriorTerrainEvidence(result, prior_results[index]);
+      }
       const double age = now - result.snapshot_stamp;
       if (!result.ok || !result.projected_cost_valid || !std::isfinite(result.distance) ||
         (!static_grid && (!std::isfinite(age) || result.snapshot_stamp <= 0.0 ||

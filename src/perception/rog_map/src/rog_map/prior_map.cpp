@@ -414,7 +414,8 @@ void rebuildPriorProjection(PriorMapData &prior_map, int min_global_x,
           samplePriorCellConservative(prior_map, rog_x, rog_y, resolution);
       if (prior_state == 2U) {
         prior_map.cached_mask[index] = 0U;
-      } else if (prior_state == 1U) {
+      }
+      if (samplePriorAtRogPointFast(prior_map, rog_x, rog_y) == 1U) {
         prior_map.cached_free_mask[index] = 1U;
         double support_z_rog = 0.0;
         if (priorMapGroundSupport(prior_map, rog_x, rog_y, support_z_rog)) {
@@ -642,11 +643,44 @@ PriorMapData loadPriorMap(const std::string &yaml_path,
   return prior;
 }
 
+bool priorMapKnownFree(const PriorMapData &prior_map, double map_x, double map_y) {
+  return priorMapStateWithRotation(prior_map, map_x, map_y,
+      std::cos(prior_map.origin_yaw), std::sin(prior_map.origin_yaw)) == 1U;
+}
+
 bool priorMapOccupied(const PriorMapData &prior_map, double map_x,
                       double map_y) {
   const double c = std::cos(prior_map.origin_yaw);
   const double s = std::sin(prior_map.origin_yaw);
   return priorMapStateWithRotation(prior_map, map_x, map_y, c, s) == 2U;
+}
+
+bool priorMapNearOccupied(const PriorMapData &map, double map_x,
+                          double map_y, double distance) {
+  if (!map.loaded || map.resolution <= 0.0 || map.width <= 0 || map.height <= 0 ||
+      map.occupied.size() != static_cast<size_t>(map.width)*map.height ||
+      !std::isfinite(map_x) || !std::isfinite(map_y) ||
+      !std::isfinite(distance) || distance < 0.0) {return false;}
+  if (distance == 0.0) {return priorMapOccupied(map, map_x, map_y);}
+  const double c = std::cos(map.origin_yaw), s = std::sin(map.origin_yaw);
+  const double dx = map_x-map.origin_x, dy = map_y-map.origin_y;
+  const double x = c*dx+s*dy, y = -s*dx+c*dy;
+  if (x < -distance || y < -distance ||
+      x > map.width*map.resolution+distance || y > map.height*map.resolution+distance) {return false;}
+  const int xmin = static_cast<int>(std::floor(std::max(0.0,x-distance)/map.resolution));
+  const int ymin = static_cast<int>(std::floor(std::max(0.0,y-distance)/map.resolution));
+  const int xmax = static_cast<int>(std::floor(std::min(map.width*map.resolution,x+distance)/map.resolution));
+  const int ymax = static_cast<int>(std::floor(std::min(map.height*map.resolution,y+distance)/map.resolution));
+  for (int iy=ymin; iy<=std::min(map.height-1,ymax); ++iy) {
+    for (int ix=xmin; ix<=std::min(map.width-1,xmax); ++ix) {
+      const size_t index = static_cast<size_t>(map.height-1-iy)*map.width+ix;
+      if (!map.occupied[index]) continue;
+      const double ex = std::max({ix*map.resolution-x, x-(ix+1)*map.resolution, 0.0});
+      const double ey = std::max({iy*map.resolution-y, y-(iy+1)*map.resolution, 0.0});
+      if (ex*ex+ey*ey <= distance*distance) {return true;}
+    }
+  }
+  return false;
 }
 
 bool priorMapGroundSupportAtMapPoint(const PriorMapData &prior_map,
@@ -872,7 +906,8 @@ bool refreshPriorMapProjectionCache(PriorMapData &prior_map, int min_global_x,
           samplePriorCellConservative(prior_map, rog_x, rog_y, resolution);
       if (prior_state == 2U) {
         prior_map.scratch_mask[index] = 0U;
-      } else if (prior_state == 1U) {
+      }
+      if (samplePriorAtRogPointFast(prior_map, rog_x, rog_y) == 1U) {
         prior_map.scratch_free_mask[index] = 1U;
         double support_z_rog = 0.0;
         if (priorMapGroundSupport(prior_map, rog_x, rog_y, support_z_rog)) {
@@ -894,24 +929,14 @@ bool refreshPriorMapProjectionCache(PriorMapData &prior_map, int min_global_x,
   return true;
 }
 
-void fusePriorMapProjection(
-    bool prior_enabled, bool free_fills_unknown, const PriorMapData &prior_map,
-    const std::vector<uint8_t> &dynamic_mask,
-    const std::vector<uint8_t> &dynamic_values,
-    const std::vector<uint8_t> &dynamic_unknown_mask,
-    const std::vector<uint8_t> &dynamic_near_field_prior_fill_mask,
-    const std::vector<uint8_t> &dynamic_prior_clearance_override_mask,
-    std::vector<uint8_t> &fused_mask, std::vector<uint8_t> &fused_values,
-    bool require_ground_support) {
-  if (dynamic_mask.size() != dynamic_values.size() ||
-      dynamic_mask.size() != dynamic_unknown_mask.size() ||
-      dynamic_mask.size() != dynamic_near_field_prior_fill_mask.size() ||
-      dynamic_mask.size() != dynamic_prior_clearance_override_mask.size()) {
-    fused_mask.clear();
-    fused_values.clear();
+void fusePriorMapProjection(bool prior_enabled, const PriorMapData &prior_map,
+                            const std::vector<uint8_t> &dynamic_mask,
+                            const std::vector<uint8_t> &dynamic_values,
+                            std::vector<uint8_t> &fused_mask,
+                            std::vector<uint8_t> &fused_values) {
+  if (dynamic_mask.size() != dynamic_values.size()) {
     throw std::invalid_argument(
-        "fusePriorMapProjection: dynamic mask, value, unknown-mask, "
-        "near-field-mask, and clearance-override-mask sizes differ");
+        "fusePriorMapProjection: dynamic mask/value sizes differ");
   }
 
   fused_mask = dynamic_mask;
@@ -929,24 +954,12 @@ void fusePriorMapProjection(
   }
 
   for (size_t index = 0; index < prior_map.cached_mask.size(); ++index) {
-    if (dynamic_prior_clearance_override_mask[index] != 0U) {
-      // A 2D occupancy projection cannot represent an overhead platform and
-      // the drivable surface below it at the same XY. Let a current, measured
-      // 3D navigation-clearance proof supersede only that cell. Every other
-      // prior occupied/unknown cell remains fail-closed.
-      fused_mask[index] = dynamic_mask[index];
-      fused_values[index] = dynamic_values[index];
-    } else if (prior_map.cached_mask[index] == 0U) {
+    // Positive prior evidence is resolved by the weighted terrain gate.
+    // Fusion only adds static vetoes: neither white nor a measured roof may
+    // erase a dynamic obstacle or a PGM black/boundary cell here.
+    if (prior_map.cached_mask[index] == 0U) {
       fused_mask[index] = 0U;
       fused_values[index] = 254U;
-    } else if (!require_ground_support &&
-               prior_map.cached_free_mask[index] != 0U &&
-               ((free_fills_unknown && dynamic_unknown_mask[index] != 0U) ||
-                dynamic_near_field_prior_fill_mask[index] != 0U)) {
-      // Global unknown filling is optional. The bounded near-field path is
-      // independent and has already rejected every column with a dynamic hit.
-      fused_mask[index] = 1U;
-      fused_values[index] = 0U;
     }
   }
 }

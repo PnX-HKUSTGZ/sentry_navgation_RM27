@@ -224,6 +224,10 @@ QueryResult querySnapshotValue(
         return values.size() == cell_count ? values[cell_index] : fallback;
       };
     const float nan = std::numeric_limits<float>::quiet_NaN();
+    diagnostic.ground_reference_source =
+        byte_at(snap->ground_reference_source, 0U);
+    diagnostic.body_obstacle_verified = flag_at(snap->body_obstacle_verified);
+    diagnostic.prior_weight_setting = snap->prior_weight_setting;
     diagnostic.prior_known_free = flag_at(snap->prior_known_free);
     diagnostic.ground_candidate = flag_at(snap->ground_candidate);
     diagnostic.ground_verified = flag_at(snap->ground_verified);
@@ -240,6 +244,17 @@ QueryResult querySnapshotValue(
         flag_at(snap->inside_surveyed_near_field);
     diagnostic.continuous_ground_support =
         flag_at(snap->continuous_ground_support);
+    diagnostic.prior_traversability_weight =
+        float_at(snap->prior_traversability_weight, 0.0F);
+    diagnostic.ground_evidence = float_at(snap->ground_evidence, 0.0F);
+    diagnostic.clearance_evidence = float_at(snap->clearance_evidence, 0.0F);
+    diagnostic.slope_evidence = float_at(snap->slope_evidence, 0.0F);
+    diagnostic.static_prior_authoritative = flag_at(snap->static_prior_authoritative);
+    diagnostic.live_vehicle_obstacle = flag_at(snap->live_vehicle_obstacle);
+    diagnostic.terrain_policy_active = flag_at(snap->terrain_policy_active);
+    diagnostic.terrain_admissible = flag_at(snap->terrain_admissible);
+    diagnostic.prior_assisted = flag_at(snap->prior_assisted);
+    diagnostic.hard_obstacle = flag_at(snap->hard_obstacle);
     diagnostic.confidence = float_at(snap->confidence, 0.0F);
     diagnostic.occupied_z_min = float_at(snap->occupied_z_min, nan);
     diagnostic.occupied_z_max = float_at(snap->occupied_z_max, nan);

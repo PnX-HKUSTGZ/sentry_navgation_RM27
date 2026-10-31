@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rog_map/map_query_interface.hpp"
+#include "rog_map/projection_layer.hpp"
 #include <Eigen/Geometry>
 #include <algorithm>
 #include <cmath>
@@ -131,6 +132,50 @@ inline StaticFootprintResult checkStaticFootprint(
       result.cost = 0U;
     }
   }
+  return result;
+}
+
+// Reconcile only missing terrain evidence against the original PGM at the
+// actual query point. The conservative local-grid raster is not a second
+// static footprint test. Real occupied evidence and obstacle clearing holds
+// remain authoritative, and the caller still validates the full static body.
+inline rog_map::QueryResult
+reconcilePriorTerrainEvidence(rog_map::QueryResult result,
+                              const rog_map::QueryResult &prior) {
+  auto &p = result.projection;
+  const float weight = p.prior_weight_setting;
+  if (!result.ok || !p.valid || !p.terrain_policy_active ||
+      p.terrain_admissible || p.hard_obstacle ||
+      p.obstacle_hold_remaining > 0.0F || p.dynamic_cost == 253U ||
+      p.cost_cause == rog_map::ProjectedCostCause::HYSTERESIS || !prior.ok ||
+      !prior.projected_cost_valid || prior.projected_cost >= 253U ||
+      !std::isfinite(weight) || weight < 0.0F || weight > 1.0F)
+    return result;
+  const auto reason = static_cast<rog_map::ProjectionClassReason>(p.raw_reason);
+  const auto candidate =
+      static_cast<rog_map::ProjectionClassReason>(p.candidate_reason);
+  if ((reason != rog_map::ProjectionClassReason::GROUND_UNVERIFIED &&
+       reason != rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED) ||
+      rog_map::isMeasuredObstacleReason(candidate) ||
+      candidate == rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED)
+    return result;
+  const float required = 1.0F - weight;
+  if (!std::isfinite(p.ground_evidence) ||
+      !std::isfinite(p.clearance_evidence) ||
+      !std::isfinite(p.slope_evidence) ||
+      p.ground_evidence + 1e-6F < required ||
+      p.clearance_evidence + 1e-6F < required ||
+      p.slope_evidence + 1e-6F < required)
+    return result;
+  p.prior_boundary_reconciled = true;
+  p.prior_known_free = true;
+  p.prior_occupied = false;
+  p.prior_traversability_weight = weight;
+  p.terrain_admissible = true;
+  p.prior_assisted = true;
+  p.dynamic_cost = 0U;
+  result.projected_cost_valid = true;
+  result.projected_cost = 0U;
   return result;
 }
 

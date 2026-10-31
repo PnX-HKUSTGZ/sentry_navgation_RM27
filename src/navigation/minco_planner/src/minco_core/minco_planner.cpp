@@ -1564,6 +1564,9 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
   const auto is_configure_time_param = [this, &planner_mode_param](
                                            const std::string &param_name) {
     return param_name == planner_mode_param ||
+           param_name ==
+               name_ + ".rog_map.projection.prior_map.traversability_weight" ||
+           param_name.rfind(name_ + ".rog_map.projection.vehicle_obstacles.", 0) == 0 ||
            param_name.rfind(name_ + ".recovery_server.", 0) == 0 ||
            param_name == name_ + ".frames.map_frame" ||
            param_name == name_ + ".frames.rog_frame" ||
@@ -1597,15 +1600,15 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".minco_optimizer.safe_dist" ||
            param_name == name_ + ".minco_optimizer.collision_dist" ||
            param_name == name_ + ".minco_optimizer.guide_lateral_weight" ||
-           param_name == name_ + ".minco_optimizer.terminal_tangent_lookahead" ||
-           param_name == name_ + ".minco_optimizer.obstacle_slowdown_distance" ||
+           param_name ==
+               name_ + ".minco_optimizer.terminal_tangent_lookahead" ||
+           param_name ==
+               name_ + ".minco_optimizer.obstacle_slowdown_distance" ||
            param_name == name_ + ".minco_optimizer.obstacle_max_velocity" ||
            param_name == name_ + ".minco_optimizer.segment_obstacle_slowdown" ||
            param_name == name_ + ".minco_optimizer.guide_lateral_tolerance" ||
-           param_name ==
-               name_ + ".minco_optimizer.terminal_velocity_ratio" ||
-           param_name ==
-               name_ + ".minco_optimizer.max_trajectory_duration" ||
+           param_name == name_ + ".minco_optimizer.terminal_velocity_ratio" ||
+           param_name == name_ + ".minco_optimizer.max_trajectory_duration" ||
            param_name == name_ + ".safety.footprint_length" ||
            param_name == name_ + ".safety.footprint_width" ||
            param_name == name_ + ".safety.footprint_margin" ||

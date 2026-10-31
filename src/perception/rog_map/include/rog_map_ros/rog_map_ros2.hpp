@@ -36,6 +36,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <sstream>
 #include <tf2/exceptions.h>
 #include <tf2/time.h>
 #include <tf2_ros/buffer.h>
@@ -80,6 +82,10 @@ class ROGMapROS : public ROGMap {
   std::unique_ptr<ROGMapVisualizer> visualizer_driver_;
   std::unique_ptr<CloudRegisteredCropFilter> cloud_filter_;
   std::mutex map_data_mutex_;
+  std::mutex vehicle_background_callback_mutex_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr vehicle_background_sub_;
+  rclcpp::CallbackGroup::SharedPtr vehicle_background_group_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr vehicle_stats_pub_;
   std::mutex odom_callback_execution_mutex_;
   std::mutex cloud_callback_execution_mutex_;
   std::mutex update_callback_execution_mutex_;
@@ -566,6 +572,27 @@ class ROGMapROS : public ROGMap {
     size_t verified_clearance_count = 0U;
     const bool publish_dynamic_obstacles = fillDynamicObstacleGrid(
         dynamic_obstacles, dynamic_obstacle_count, verified_clearance_count);
+    if (staticPriorAuthoritative()) {
+      const auto stats = vehicle_obstacles_->stats();
+      std::ostringstream data;
+      data << "{\"stamp\":" << std::fixed << current_update_time_
+           << ",\"ready\":" << (vehicle_detection_ready_ ? "true" : "false")
+           << ",\"background_points\":" << stats.background << ",\"novel_points\":" << stats.novel
+           << ",\"ground_filtered\":" << stats.ground_filtered << ",\"boundary_filtered\":" << stats.boundary_filtered << ",\"surface_filtered\":" << stats.surface_filtered << ",\"clusters\":" << stats.clusters << ",\"tracks\":[";
+      bool first = true;
+      for (const auto &track : vehicle_obstacles_->tracks()) {
+        if (!first) data << ',';
+        first = false;
+        const Eigen::Vector3f center = .5F * (track.minimum + track.maximum);
+        data << "{\"id\":" << track.id << ",\"x\":" << center.x() << ",\"y\":" << center.y()
+             << ",\"z\":" << center.z() << ",\"z_min\":" << track.minimum.z() << ",\"z_max\":" << track.maximum.z() << ",\"age\":" << current_update_time_ - track.seen << '}';
+      }
+      data << "]}";
+      std_msgs::msg::String message; message.data = data.str(); vehicle_stats_pub_->publish(message);
+      RCLCPP_INFO_THROTTLE(node_logging_->get_logger(), *node_clock_->get_clock(), 1000,
+        "[VehicleObstacles] ready=%d sampled=%zu background=%zu novel=%zu clusters=%zu tracks=%zu ray_cleared=%zu surface_filtered=%zu boundary_filtered=%zu ground_filtered=%zu",
+        vehicle_detection_ready_, stats.sampled, stats.background, stats.novel, stats.clusters, stats.tracks, stats.ray_cleared, stats.surface_filtered, stats.boundary_filtered, stats.ground_filtered);
+    }
     map_lock.unlock();
     if (publish_dynamic_obstacles) {
       dynamic_obstacles_pub_->publish(std::move(dynamic_obstacles));
@@ -573,7 +600,7 @@ class ROGMapROS : public ROGMap {
           node_logging_->get_logger(), *node_clock_->get_clock(), 5000,
           "[ROGMap] dynamic obstacle grid published: frame='%s' "
           "measured_obstacles=%zu verified_clearances=%zu subscribers=%zu",
-          cfg_.visualization_frame_id.c_str(), dynamic_obstacle_count,
+          (staticPriorAuthoritative() ? cfg_.prior_map_frame : cfg_.visualization_frame_id).c_str(), dynamic_obstacle_count,
           verified_clearance_count,
           dynamic_obstacles_pub_->get_subscription_count());
     }
@@ -1032,6 +1059,32 @@ class ROGMapROS : public ROGMap {
       return false;
     }
 
+    if (staticPriorAuthoritative()) {
+      const double resolution = cfg_.resolution;
+      const double range = cfg_.vehicle_obstacles.max_range;
+      grid.header.stamp = rclcpp::Time(static_cast<int64_t>(current_update_time_ * 1e9));
+      grid.header.frame_id = cfg_.prior_map_frame;
+      grid.info.resolution = resolution;
+      grid.info.width = grid.info.height = static_cast<unsigned>(std::ceil(2.0 * range / resolution));
+      grid.info.origin.position.x = std::floor((vehicle_robot_ground_map_.x() - range) / resolution) * resolution;
+      grid.info.origin.position.y = std::floor((vehicle_robot_ground_map_.y() - range) / resolution) * resolution;
+      grid.info.origin.orientation.w = 1.0;
+      grid.data.assign(static_cast<size_t>(grid.info.width) * grid.info.height, -1);
+      if (vehicle_detection_ready_) {
+        for (const auto &box : vehicle_obstacles_->boxes(current_update_time_, resolution * .7072)) {
+          const int xmin = std::max(0, static_cast<int>(std::floor((box.minimum.x() - grid.info.origin.position.x) / resolution)));
+          const int ymin = std::max(0, static_cast<int>(std::floor((box.minimum.y() - grid.info.origin.position.y) / resolution)));
+          const int xmax = std::min(static_cast<int>(grid.info.width) - 1, static_cast<int>(std::floor((box.maximum.x() - grid.info.origin.position.x) / resolution)));
+          const int ymax = std::min(static_cast<int>(grid.info.height) - 1, static_cast<int>(std::floor((box.maximum.y() - grid.info.origin.position.y) / resolution)));
+          for (int y = ymin; y <= ymax; ++y) for (int x = xmin; x <= xmax; ++x) {
+            auto &value = grid.data[static_cast<size_t>(y) * grid.info.width + x];
+            if (value != 100) { value = 100; ++obstacle_count; }
+          }
+        }
+      }
+      return true; // Never publish a zero that could clear an original PGM wall.
+    }
+
     // Tri-state contract for the Nav2 layer: -1 leaves the static master
     // untouched, 0 is a measured overhead-clearance override, and 100 is a
     // measured obstacle. Empty columns stay neutral so rolling observations
@@ -1245,6 +1298,36 @@ class ROGMapROS : public ROGMap {
       }
     }
     init();
+    if (staticPriorAuthoritative()) {
+      vehicle_stats_pub_ = createPublisher<std_msgs::msg::String>("/rog_map/vehicle_obstacles", rclcpp::QoS(1));
+      vehicle_background_group_ = createCallbackGroup(rclcpp::CallbackGroupType::MutuallyExclusive);
+      rclcpp::SubscriptionOptions background_options;
+      background_options.callback_group = vehicle_background_group_;
+      vehicle_background_sub_ = createSubscription<sensor_msgs::msg::PointCloud2>(
+          cfg_.vehicle_background_topic, rclcpp::QoS(1).reliable().transient_local(),
+          [this](sensor_msgs::msg::PointCloud2::ConstSharedPtr message) {
+            std::lock_guard<std::mutex> execution(vehicle_background_callback_mutex_);
+            if (callbacks_stopping_.load(std::memory_order_acquire)) return;
+            if (message->header.frame_id != cfg_.prior_map_frame) {
+              RCLCPP_ERROR(node_logging_->get_logger(), "[VehicleObstacles] fixed map frame '%s' must match '%s'",
+                message->header.frame_id.c_str(), cfg_.prior_map_frame.c_str());
+              return;
+            }
+            try {
+              PriorDynamicObstacles::Cloud cloud;
+              pcl::fromROSMsg(*message, cloud);
+              vehicle_obstacles_->setBackground(cloud);
+              RCLCPP_INFO(node_logging_->get_logger(),
+                "[VehicleObstacles] fixed background ready: points=%zu frame=%s; parked and moving targets both block",
+                cloud.size(), message->header.frame_id.c_str());
+            } catch (const std::exception &error) {
+              RCLCPP_ERROR(node_logging_->get_logger(), "[VehicleObstacles] background rejected: %s", error.what());
+            }
+          }, background_options);
+      RCLCPP_INFO(node_logging_->get_logger(),
+        "[ROGMap] weight=1: original PGM is the static authority; terrain/headroom do not stop motion. Waiting for vehicle background '%s'",
+        cfg_.vehicle_background_topic.c_str());
+    }
     /// Initialize visualization module
     if (cfg_.visualization_en) {
       visualizer_driver_ = std::make_unique<ROGMapVisualizer>();
@@ -1340,6 +1423,7 @@ public:
     }
     rc_.odom_sub.reset();
     rc_.cloud_sub.reset();
+    vehicle_background_sub_.reset();
 
     // MultiThreadedExecutor may already be running one callback while the
     // planner lifecycle cleanup removes the plugin. Wait for all ROG callbacks
@@ -1347,7 +1431,7 @@ public:
     {
       std::scoped_lock execution_locks(
           odom_callback_execution_mutex_, cloud_callback_execution_mutex_,
-          update_callback_execution_mutex_, viz_callback_execution_mutex_);
+          update_callback_execution_mutex_, viz_callback_execution_mutex_, vehicle_background_callback_mutex_);
     }
     {
       std::lock_guard<mutex> lock(rc_.updete_lock);
@@ -1358,6 +1442,8 @@ public:
     rc_.odom_me_cbk_group.reset();
     rc_.cloud_me_cbk_group.reset();
     rc_.update_cbk_group.reset();
+    vehicle_background_group_.reset();
+    vehicle_stats_pub_.reset();
     visualizer_driver_.reset();
     vm_ = ROGMapVisualizer::Publishers{};
     cloud_filter_.reset();

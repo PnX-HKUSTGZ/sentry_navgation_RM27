@@ -101,6 +101,11 @@ const char *projectionClassReasonName(uint8_t reason) {
     return "HEADROOM_UNVERIFIED";
   case ProjectionClassReason::HEADROOM_BLOCKED:
     return "HEADROOM_BLOCKED";
+  case ProjectionClassReason::PRIOR_STATIC_CLEAR: return "PRIOR_STATIC_CLEAR";
+  case ProjectionClassReason::VEHICLE_OBSTACLE: return "VEHICLE_OBSTACLE";
+  case ProjectionClassReason::VEHICLE_DETECTION_UNAVAILABLE: return "VEHICLE_DETECTION_UNAVAILABLE";
+  case ProjectionClassReason::PRIOR_ASSISTED_CLEARANCE:
+    return "PRIOR_ASSISTED_CLEARANCE";
   case ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED:
     return "OVERHEAD_GROUND_UNVERIFIED";
   case ProjectionClassReason::OVERHEAD_CLEARANCE_OK:

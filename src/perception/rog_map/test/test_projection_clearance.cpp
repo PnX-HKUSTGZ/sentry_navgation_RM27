@@ -6,11 +6,13 @@
 #include <initializer_list>
 #include <memory>
 #include <vector>
+#include <yaml-cpp/yaml.h>
 
 #include <rog_map/prior_map.hpp>
-#include <rog_map/projection_layer.hpp>
 #include <rog_map/projection_ground_reference.hpp>
+#include <rog_map/projection_layer.hpp>
 #include <rog_map/query_adapter.hpp>
+#include <rog_map/rog_map_core/config.hpp>
 
 namespace {
 
@@ -1756,7 +1758,8 @@ TEST(ProjectionClearance, EmptyHeadroomGapRespectsUnknownPolicy) {
   }
 }
 
-TEST(PriorMapFusion, EmptyHeadroomGapFillPreservesMeasuredAndStaticObstacles) {
+TEST(PriorMapFusion,
+     EmptyHeadroomRejectionPreservesMeasuredAndStaticObstacles) {
   rog_map::ProjectionLayer layer;
   auto config = clearanceConfig();
   config.observed_empty_as_free = true;
@@ -1783,19 +1786,13 @@ TEST(PriorMapFusion, EmptyHeadroomGapFillPreservesMeasuredAndStaticObstacles) {
   prior.cached_mask[row + 3U] = 0U;
   prior.cached_free_mask[row + 3U] = 0U;
   prior.cached_free_mask[row + 4U] = 0U;
-  std::vector<uint8_t> unknown_mask;
-  for (const auto &cell : layer.cells()) {
-    unknown_mask.push_back(cell.type == rog_map::CellType::UNKNOWN ? 1U : 0U);
-  }
-  const std::vector<uint8_t> no_override(layer.cells().size(), 0U);
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
-  rog_map::fusePriorMapProjection(
-      true, true, prior, layer.mask(), layer.values(), unknown_mask,
-      no_override, no_override, fused_mask, fused_values);
+  rog_map::fusePriorMapProjection(true, prior, layer.mask(), layer.values(),
+                                  fused_mask, fused_values);
 
-  EXPECT_EQ(fused_mask[row], 1U);
-  EXPECT_EQ(fused_values[row], 0U);
+  EXPECT_EQ(fused_mask[row], 0U);
+  EXPECT_EQ(fused_values[row], 254U);
   for (size_t x = 1U; x < kWidth; ++x) {
     SCOPED_TRACE(x);
     EXPECT_EQ(fused_mask[row + x], 0U);
@@ -2998,9 +2995,9 @@ TEST(ProjectionClearance, FootprintClearNeverOverridesAnOccupiedReturn) {
         return stats;
       });
 
-  EXPECT_EQ(center(layer).type, rog_map::CellType::UNKNOWN);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
   EXPECT_EQ(center(layer).raw_reason,
-            rog_map::ProjectionClassReason::INSUFFICIENT_OBSERVATION);
+            rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED);
   EXPECT_EQ(center(layer).traversable, 0U);
   EXPECT_EQ(center(layer).near_field_prior_fill_eligible, 0U);
 }
@@ -3047,6 +3044,15 @@ TEST(QueryAdapter, ExposesSnapshotTimestamp) {
   snapshot->headroom.assign(4U, 1.0F);
   snapshot->headroom[0] = 0.18F;
   snapshot->obstacle_hold_remaining = {0.30F, 0.0F, 0.0F, 0.0F};
+  snapshot->prior_traversability_weight.assign(4U, 0.5F);
+  snapshot->ground_evidence.assign(4U, 0.6F);
+  snapshot->clearance_evidence.assign(4U, 0.7F);
+  snapshot->slope_evidence.assign(4U, 0.8F);
+  snapshot->terrain_policy_active.assign(4U, 1U);
+  snapshot->terrain_admissible.assign(4U, 0U);
+  snapshot->hard_obstacle.assign(4U, 1U);
+  snapshot->prior_assisted.assign(4U, 0U);
+
   snapshot->distances.assign(4U, 1.0);
 
   rog_map::QueryAdapter adapter;
@@ -3074,6 +3080,15 @@ TEST(QueryAdapter, ExposesSnapshotTimestamp) {
             static_cast<uint8_t>(rog_map::CellType::OCCUPIED));
   EXPECT_EQ(result.projection.pending_count, 1U);
   EXPECT_FLOAT_EQ(result.projection.obstacle_hold_remaining, 0.30F);
+  EXPECT_FLOAT_EQ(result.projection.prior_traversability_weight, 0.5F);
+  EXPECT_FLOAT_EQ(result.projection.ground_evidence, 0.6F);
+  EXPECT_FLOAT_EQ(result.projection.clearance_evidence, 0.7F);
+  EXPECT_FLOAT_EQ(result.projection.slope_evidence, 0.8F);
+  EXPECT_TRUE(result.projection.terrain_policy_active);
+  EXPECT_TRUE(result.projection.hard_obstacle);
+  EXPECT_FALSE(result.projection.terrain_admissible);
+  EXPECT_FALSE(result.projection.prior_assisted);
+
   EXPECT_STREQ(rog_map::projectionClassReasonName(result.projection.raw_reason),
                "HEADROOM_BLOCKED");
 }
@@ -3226,7 +3241,7 @@ TEST(DynamicLayer, EvaluateMatchesStoredDistanceAtCellCenter) {
   EXPECT_DOUBLE_EQ(distance, distances.at(static_cast<size_t>(y * width + x)));
 }
 
-TEST(PriorMapFusion, KnownFreeFillsOnlyDynamicUnknown) {
+TEST(PriorMapFusion, KnownFreeNeverBypassesTerrainGate) {
   rog_map::PriorMapData prior;
   prior.loaded = true;
   prior.transform_ready = true;
@@ -3239,18 +3254,16 @@ TEST(PriorMapFusion, KnownFreeFillsOnlyDynamicUnknown) {
   // it.
   const std::vector<uint8_t> dynamic_mask = {0U, 0U, 1U, 0U};
   const std::vector<uint8_t> dynamic_values = {254U, 254U, 0U, 254U};
-  const std::vector<uint8_t> dynamic_unknown_mask = {1U, 0U, 0U, 1U};
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
-  rog_map::fusePriorMapProjection(
-      true, true, prior, dynamic_mask, dynamic_values, dynamic_unknown_mask,
-      {0U, 0U, 0U, 0U}, {0U, 0U, 0U, 0U}, fused_mask, fused_values);
+  rog_map::fusePriorMapProjection(true, prior, dynamic_mask, dynamic_values,
+                                  fused_mask, fused_values);
 
-  EXPECT_EQ(fused_mask, (std::vector<uint8_t>{1U, 0U, 0U, 0U}));
-  EXPECT_EQ(fused_values, (std::vector<uint8_t>{0U, 254U, 254U, 254U}));
+  EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U, 0U, 0U, 0U}));
+  EXPECT_EQ(fused_values, (std::vector<uint8_t>{254U, 254U, 254U, 254U}));
 }
 
-TEST(PriorMapFusion, DoesNotTrustStaticFreeUnlessExplicitlyEnabled) {
+TEST(PriorMapFusion, StaticFreePreservesTerrainRejection) {
   rog_map::PriorMapData prior;
   prior.loaded = true;
   prior.transform_ready = true;
@@ -3260,14 +3273,14 @@ TEST(PriorMapFusion, DoesNotTrustStaticFreeUnlessExplicitlyEnabled) {
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
 
-  rog_map::fusePriorMapProjection(true, false, prior, {0U}, {254U}, {1U}, {0U},
-                                  {0U}, fused_mask, fused_values);
+  rog_map::fusePriorMapProjection(true, prior, {0U}, {254U}, fused_mask,
+                                  fused_values);
 
   EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U}));
   EXPECT_EQ(fused_values, (std::vector<uint8_t>{254U}));
 }
 
-TEST(PriorMapFusion, VerifiedNavigationClearanceOverridesOnlyItsPriorCell) {
+TEST(PriorMapFusion, StaticBlackAlwaysBlocksEvenVerifiedRoof) {
   rog_map::PriorMapData prior;
   prior.loaded = true;
   prior.transform_ready = true;
@@ -3277,15 +3290,14 @@ TEST(PriorMapFusion, VerifiedNavigationClearanceOverridesOnlyItsPriorCell) {
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
 
-  rog_map::fusePriorMapProjection(true, false, prior, {1U, 1U, 0U},
-                                  {0U, 50U, 254U}, {0U, 0U, 0U}, {0U, 0U, 0U},
-                                  {1U, 0U, 0U}, fused_mask, fused_values);
+  rog_map::fusePriorMapProjection(true, prior, {1U, 1U, 0U}, {0U, 50U, 254U},
+                                  fused_mask, fused_values);
 
-  EXPECT_EQ(fused_mask, (std::vector<uint8_t>{1U, 0U, 0U}));
-  EXPECT_EQ(fused_values, (std::vector<uint8_t>{0U, 254U, 254U}));
+  EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U, 0U, 0U}));
+  EXPECT_EQ(fused_values, (std::vector<uint8_t>{254U, 254U, 254U}));
 }
 
-TEST(PriorMapFusion, RequiredSupportDisablesEveryTwoDimensionalFreeFill) {
+TEST(PriorMapFusion, RejectedTerrainCannotBeFilledAtFusion) {
   rog_map::PriorMapData prior;
   prior.loaded = true;
   prior.transform_ready = true;
@@ -3295,14 +3307,14 @@ TEST(PriorMapFusion, RequiredSupportDisablesEveryTwoDimensionalFreeFill) {
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
 
-  rog_map::fusePriorMapProjection(true, true, prior, {0U}, {254U}, {1U}, {1U},
-                                  {0U}, fused_mask, fused_values, true);
+  rog_map::fusePriorMapProjection(true, prior, {0U}, {254U}, fused_mask,
+                                  fused_values);
 
   EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U}));
   EXPECT_EQ(fused_values, (std::vector<uint8_t>{254U}));
 }
 
-TEST(PriorMapFusion, BoundedNearFieldFillRequiresKnownStaticFree) {
+TEST(PriorMapFusion, NearFieldHasNoIndependentWhiteFill) {
   rog_map::PriorMapData prior;
   prior.loaded = true;
   prior.transform_ready = true;
@@ -3312,12 +3324,11 @@ TEST(PriorMapFusion, BoundedNearFieldFillRequiresKnownStaticFree) {
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
 
-  rog_map::fusePriorMapProjection(
-      true, false, prior, {0U, 0U, 0U}, {254U, 254U, 254U}, {0U, 0U, 0U},
-      {1U, 1U, 1U}, {0U, 0U, 0U}, fused_mask, fused_values);
+  rog_map::fusePriorMapProjection(true, prior, {0U, 0U, 0U}, {254U, 254U, 254U},
+                                  fused_mask, fused_values);
 
-  EXPECT_EQ(fused_mask, (std::vector<uint8_t>{1U, 0U, 0U}));
-  EXPECT_EQ(fused_values, (std::vector<uint8_t>{0U, 254U, 254U}));
+  EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U, 0U, 0U}));
+  EXPECT_EQ(fused_values, (std::vector<uint8_t>{254U, 254U, 254U}));
 }
 
 TEST(PriorMapFusion, MissingTransformBlocksEveryCell) {
@@ -3326,8 +3337,7 @@ TEST(PriorMapFusion, MissingTransformBlocksEveryCell) {
   std::vector<uint8_t> fused_mask;
   std::vector<uint8_t> fused_values;
 
-  rog_map::fusePriorMapProjection(true, false, prior, {1U, 1U}, {0U, 0U},
-                                  {0U, 0U}, {0U, 0U}, {0U, 0U}, fused_mask,
+  rog_map::fusePriorMapProjection(true, prior, {1U, 1U}, {0U, 0U}, fused_mask,
                                   fused_values);
 
   EXPECT_EQ(fused_mask, (std::vector<uint8_t>{0U, 0U}));
@@ -3867,6 +3877,665 @@ TEST(ProjectionClearance, ThinRoofUsesSameDownhillContactTangentAsThickLeadingFa
   });
   EXPECT_EQ(layer.cells().at(6 * 25 + 10).type, rog_map::CellType::OCCUPIED);
   EXPECT_EQ(layer.cells().at(6 * 25 + 10).clearance_verified, 0U);
+}
+
+rog_map::ProjectionLayerConfig weightedConfig(double weight) {
+  auto config = downhillTunnelConfig();
+  config.reference_ground_z_abs = 0.0;
+  config.terrain_policy_enabled = true;
+  config.prior_traversability_weight = weight;
+  config.min_headroom_known_ratio = 0.8;
+  config.clear_robot_footprint_unknown = true;
+  config.near_field_prior_fill_en = true;
+  config.prior_free_uncertain_obstacle_confirmations = 4;
+  config.mask_filter_en = true;
+  config.denoise_occ_max = 8; // Filtering may never erase a real obstacle.
+  return config;
+}
+
+TEST(PriorWeightedTerrain, HalfWeightRelaxesEachEvidenceRequirement) {
+  for (double weight : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+    SCOPED_TRACE(weight);
+    rog_map::ProjectionLayer layer;
+    const auto config = weightedConfig(weight);
+    layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int x, int y) {
+      auto stats = preciseTunnelColumn(true, false);
+      if (x == 6 && y == 6) {
+        for (size_t i = 3; i < stats.vertical_states.size(); ++i)
+          stats.vertical_states[i] = rog_map::VerticalVoxelState::UNKNOWN;
+        stats.observed_count = 3;
+      }
+      return stats;
+    });
+    const auto &cell = layer.cells().at(84);
+    EXPECT_EQ(cell.hard_obstacle, 0U);
+    EXPECT_FLOAT_EQ(cell.ground_evidence, 1.0F);
+    EXPECT_FLOAT_EQ(cell.slope_evidence, 1.0F);
+    EXPECT_GT(cell.clearance_evidence, 0.5F);
+    EXPECT_LT(cell.clearance_evidence, 0.75F);
+    EXPECT_EQ(cell.terrain_admissible != 0U, weight >= 0.5);
+    EXPECT_EQ(cell.type != rog_map::CellType::OCCUPIED, weight >= 0.5);
+    EXPECT_EQ(cell.prior_assisted != 0U, weight >= 0.5);
+  }
+}
+
+TEST(PriorWeightedTerrain, FullyBlindWhiteNeedsFullPriorWeight) {
+  for (double weight : {0.0, 0.5, 1.0}) {
+    for (bool white : {false, true}) {
+      rog_map::ProjectionLayer layer;
+      const auto config = weightedConfig(weight);
+      layer.update(13, 13, 0.05, kOrigin, 1.0, config, [white](int, int) {
+        rog_map::ColumnStats stats;
+        stats.prior_known_free = white;
+        return stats;
+      });
+      const auto &cell = layer.cells().at(84);
+      EXPECT_EQ(cell.terrain_admissible != 0U, white && weight == 1.0);
+      EXPECT_EQ(cell.type != rog_map::CellType::OCCUPIED,
+                white && weight == 1.0);
+      EXPECT_FLOAT_EQ(cell.ground_evidence, 0.0F);
+      EXPECT_FLOAT_EQ(cell.clearance_evidence, 0.0F);
+      EXPECT_FLOAT_EQ(cell.slope_evidence, 0.0F);
+    }
+  }
+}
+
+TEST(PriorWeightedTerrain, UnknownMapCannotBorrowWhitePermission) {
+  rog_map::ProjectionLayer layer;
+  const auto config = weightedConfig(1.0);
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int x, int y) {
+    auto stats = preciseTunnelColumn(true, false);
+    stats.prior_known_free = 0U;
+    if (x == 6 && y == 6) {
+      for (size_t i = 3; i < stats.vertical_states.size(); ++i)
+        stats.vertical_states[i] = rog_map::VerticalVoxelState::UNKNOWN;
+      stats.observed_count = 3;
+    }
+    return stats;
+  });
+  EXPECT_EQ(layer.cells().at(84).terrain_admissible, 0U);
+  EXPECT_FLOAT_EQ(layer.cells().at(84).prior_traversability_weight, 0.0F);
+}
+
+TEST(PriorWeightedTerrain, MissingGroundCannotBeHiddenByCompleteHeadroom) {
+  for (double weight : {0.0, 0.5, 1.0}) {
+    rog_map::ProjectionLayer layer;
+    layer.update(13, 13, 0.05, kOrigin, 1.0, weightedConfig(weight),
+                 [](int, int) { return preciseTunnelColumn(false, false); });
+    const auto &cell = layer.cells().at(84);
+    EXPECT_FLOAT_EQ(cell.clearance_evidence, 1.0F);
+    EXPECT_FLOAT_EQ(cell.ground_evidence, 0.0F);
+    EXPECT_EQ(cell.terrain_admissible != 0U, weight == 1.0);
+  }
+}
+
+TEST(PriorWeightedTerrain, SparseSupportUsesMeasuredNeighborsWithoutSpreading) {
+  rog_map::ProjectionLayer layer;
+  auto config = weightedConfig(0.5);
+  config.bridge_observed_empty_for_ground_connectivity = false;
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int x, int) {
+    // A single blind stripe can borrow partial support; a wide blind region
+    // cannot manufacture a chain of connected ground out of prior permission.
+    return preciseTunnelColumn(x < 6, false);
+  });
+  const auto &edge = layer.cells().at(6 * 13 + 6);
+  const auto &far = layer.cells().at(6 * 13 + 9);
+  EXPECT_FLOAT_EQ(edge.ground_evidence, 0.5F);
+  EXPECT_EQ(edge.terrain_admissible, 1U);
+  EXPECT_EQ(far.terrain_admissible, 0U);
+  EXPECT_FLOAT_EQ(far.ground_evidence, 0.0F);
+}
+
+TEST(PriorWeightedTerrain, MovingObstacleBlocksOnFirstFrameAtEveryWeight) {
+  for (double weight : {0.0, 0.5, 1.0}) {
+    for (bool has_floor : {false, true}) {
+      SCOPED_TRACE(weight);
+      SCOPED_TRACE(has_floor);
+      rog_map::ProjectionLayer layer;
+      auto config = weightedConfig(weight);
+      layer.update(13, 13, 0.05, kOrigin, 1.0, config,
+                   [](int, int) { return preciseTunnelColumn(true, false); });
+      // A low beam / box moves across three columns and disappears again.
+      for (int obstacle_x : {5, 6, 7}) {
+        layer.update(13, 13, 0.05, kOrigin, 1.1 + 0.1 * obstacle_x, config,
+                     [=](int x, int y) {
+                       return preciseTunnelColumn(
+                           x == obstacle_x && y == 6 ? has_floor : true,
+                           x == obstacle_x && y == 6, 0.12);
+                     });
+        const auto &cell = layer.cells().at(6 * 13 + obstacle_x);
+        EXPECT_EQ(cell.hard_obstacle, 1U);
+        EXPECT_EQ(cell.terrain_admissible, 0U);
+        EXPECT_EQ(cell.type, rog_map::CellType::OCCUPIED);
+        EXPECT_EQ(cell.value, 254U);
+        EXPECT_EQ(rog_map::navigationOverlayValue(cell), 100);
+      }
+      layer.update(13, 13, 0.05, kOrigin, 3.0, config,
+                   [](int, int) { return preciseTunnelColumn(true, false); });
+      EXPECT_NE(layer.cells().at(84).type, rog_map::CellType::OCCUPIED);
+    }
+  }
+}
+
+TEST(PriorWeightedTerrain, OccupiedReturnCannotHideBehindObservationCount) {
+  rog_map::ProjectionLayer layer;
+  auto config = weightedConfig(1.0);
+  config.min_observed_voxels = 100;
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config,
+               [](int, int) { return preciseTunnelColumn(true, true, 0.12); });
+  EXPECT_EQ(layer.cells().at(84).hard_obstacle, 1U);
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::OCCUPIED);
+}
+
+TEST(PriorWeightedTerrain, DirtyUpdateCannotRenewAssistedEvidence) {
+  rog_map::ProjectionLayer layer;
+  auto config = weightedConfig(1.0);
+  const auto scan = [](int, int) { return preciseTunnelColumn(false, false); };
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, scan);
+  EXPECT_EQ(layer.cells().at(84).terrain_admissible, 1U);
+  config.prior_traversability_weight = 0.0;
+  layer.updateDirty(13, 13, 0.05, kOrigin, 1.1, config, scan, {}, false);
+  EXPECT_EQ(layer.cells().at(84).terrain_admissible, 0U);
+  EXPECT_FLOAT_EQ(layer.cells().at(84).ground_evidence, 0.0F);
+}
+
+TEST(PriorWeightedTerrain, RejectsInvalidWeight) {
+  for (double weight : {-0.01, 1.01, std::numeric_limits<double>::quiet_NaN(),
+                        std::numeric_limits<double>::infinity()}) {
+    rog_map::ProjectionLayer layer;
+    EXPECT_THROW(
+        layer.update(13, 13, 0.05, kOrigin, 1.0, weightedConfig(weight),
+                     [](int, int) { return preciseTunnelColumn(true, false); }),
+        std::invalid_argument);
+  }
+}
+
+TEST(PriorWeightedTerrain, CurrentContactIsOnlyPartialAndNeverSpreads) {
+  for (double weight : {0.0, 0.5, 1.0}) {
+    rog_map::ProjectionLayer layer;
+    auto config = weightedConfig(weight);
+    config.reference_ground_plane_valid = true;
+    config.robot_footprint_clear_length = 0.3;
+    config.robot_footprint_clear_width = 0.3;
+    const auto scan = [](int, int) {
+      rog_map::ColumnStats stats;
+      stats.prior_known_free = 1U;
+      return stats;
+    };
+    layer.update(13, 13, 0.05, kOrigin, 1.0, config, scan);
+    EXPECT_FLOAT_EQ(layer.cells().at(84).ground_evidence, 0.5F);
+    EXPECT_FLOAT_EQ(layer.cells().at(84).clearance_evidence, 0.5F);
+    EXPECT_EQ(layer.cells().at(84).terrain_admissible != 0U, weight >= 0.5);
+    EXPECT_EQ(layer.cells().at(0).terrain_admissible != 0U, weight == 1.0);
+    config.robot_x = -10.0;
+    layer.updateDirty(13, 13, 0.05, kOrigin, 1.1, config, scan, {}, false);
+    EXPECT_FLOAT_EQ(layer.cells().at(84).ground_evidence, 0.0F);
+    EXPECT_EQ(layer.cells().at(84).terrain_admissible != 0U, weight == 1.0);
+  }
+}
+
+TEST(PriorWeightedTerrain, TiltedRampKeepsItsIndependentMeasuredConnection) {
+  for (double weight : {0.0, 0.5, 1.0}) {
+    rog_map::ProjectionLayer layer;
+    auto config = weightedConfig(weight);
+    config.reference_ground_z_abs = 0.15;
+    config.reference_ground_plane_valid = true;
+    config.reference_ground_slope_x = 0.2;
+    config.clear_robot_footprint_unknown = false;
+    layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int x, int) {
+      auto stats = groundColumn(0.10 + 0.2 * 0.05 * x, 0.05);
+      stats.prior_known_free = 1U;
+      return stats;
+    });
+    const auto &cell = layer.cells().at(84);
+    EXPECT_EQ(cell.hard_obstacle, 0U);
+    EXPECT_EQ(cell.terrain_admissible, 1U);
+    EXPECT_FLOAT_EQ(cell.ground_evidence, 1.0F);
+    EXPECT_FLOAT_EQ(cell.slope_evidence, 1.0F);
+    EXPECT_EQ(cell.prior_assisted, 0U);
+  }
+}
+
+TEST(PriorWeightedTerrain, PriorPermissionDoesNotCancelMeasuredObstacleHold) {
+  rog_map::ProjectionLayer layer;
+  auto config = weightedConfig(1.0);
+  config.obstacle_hold_time = 0.5;
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config,
+               [](int, int) { return preciseTunnelColumn(true, true, 0.12); });
+  const auto clear = [](int, int) {
+    auto stats = rog_map::ColumnStats{};
+    stats.prior_known_free = 1U;
+    return stats;
+  };
+  layer.update(13, 13, 0.05, kOrigin, 1.1, config, clear);
+  EXPECT_EQ(layer.cells().at(84).terrain_admissible, 1U);
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::OCCUPIED);
+  layer.update(13, 13, 0.05, kOrigin, 1.7, config, clear);
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::FREE);
+}
+
+TEST(PriorWeightedTerrain, TransformChangeRevokesCachedWhiteWithoutNewScan) {
+  rog_map::ProjectionLayer layer;
+  auto config = weightedConfig(1.0);
+  const auto scan = [](int, int) {
+    auto stats = rog_map::ColumnStats{};
+    stats.prior_known_free = 1U;
+    return stats;
+  };
+  layer.update(13, 13, 0.05, kOrigin, 1.0, config, scan);
+  EXPECT_EQ(layer.cells().at(84).terrain_admissible, 1U);
+  layer.setPriorTerrainEvidence({}, {}, {});
+  layer.updateDirty(13, 13, 0.05, kOrigin, 1.1, config, scan, {}, false);
+  EXPECT_EQ(layer.cells().at(84).prior_known_free, 0U);
+  EXPECT_EQ(layer.cells().at(84).terrain_admissible, 0U);
+}
+
+class PriorWeightedConfig : public ::testing::Test {
+protected:
+  void SetUp() override {
+    context = std::make_shared<rclcpp::Context>();
+    context->init(0, nullptr);
+  }
+  void TearDown() override { context->shutdown("config test complete"); }
+  rclcpp::NodeOptions options() {
+    return rclcpp::NodeOptions().context(context).use_global_arguments(false);
+  }
+  std::shared_ptr<rclcpp::Context> context;
+};
+
+TEST_F(PriorWeightedConfig,
+       ActualRealAndSimulationFilesLoadTheirConfiguredWeight) {
+  auto source = std::filesystem::path(__FILE__)
+                    .parent_path()
+                    .parent_path()
+                    .parent_path()
+                    .parent_path();
+  for (const auto mode : {"reality", "simulation"}) {
+    SCOPED_TRACE(mode);
+    auto opts = options();
+    const auto file =
+        source / "pb2025_nav_bringup/config" / mode / "minco_params.yaml";
+    opts.arguments({"--ros-args", "--params-file", file.string()});
+    auto node = std::make_shared<rclcpp::Node>("planner_server", opts);
+    rog_map::Config config;
+    ASSERT_NO_THROW(config.loadFromRosNode(node, "MincoPlanner.rog_map"));
+    const auto yaml = YAML::LoadFile(file.string());
+    const double configured_weight =
+        yaml["planner_server"]["ros__parameters"]["MincoPlanner"]["rog_map"]
+            ["projection"]["prior_map"]["traversability_weight"]
+                .as<double>();
+    EXPECT_DOUBLE_EQ(config.prior_map_traversability_weight, configured_weight);
+    EXPECT_TRUE(config.prior_map_enable);
+    EXPECT_TRUE(config.clearance_check_en);
+    if (std::string(mode) == "simulation" && config.prior_map_traversability_weight < 1.0) {
+      std::ifstream model(
+          source / "rm_27_stimulation/urdf/simulation_waking_robot.xacro");
+      const std::string xml((std::istreambuf_iterator<char>(model)),
+                            std::istreambuf_iterator<char>());
+      std::smatch match;
+      ASSERT_TRUE(std::regex_search(
+          xml, match,
+          std::regex(R"rx(name="folded_vehicle_height" value="([0-9.]+)")rx")));
+      EXPECT_GE(config.vehicle_height + 1.0e-6, std::stod(match[1].str()));
+    }
+  }
+}
+
+TEST_F(PriorWeightedConfig, RejectsOldBooleanInsteadOfSilentlyIgnoringIt) {
+  for (bool old_value : {false, true}) {
+    auto opts = options();
+    opts.parameter_overrides({rclcpp::Parameter(
+        "rog_map.projection.prior_map.free_fills_unknown", old_value)});
+    auto node = std::make_shared<rclcpp::Node>("old_prior_config", opts);
+    rog_map::Config config;
+    try {
+      config.loadFromRosNode(node, "rog_map");
+      FAIL() << "obsolete boolean was accepted";
+    } catch (const std::invalid_argument &error) {
+      EXPECT_NE(std::string(error.what()).find("was removed"),
+                std::string::npos);
+    }
+  }
+}
+
+TEST_F(PriorWeightedConfig, RejectsOutOfRangeAndNonfiniteRosParameters) {
+  for (double weight : {-0.01, 1.01, std::numeric_limits<double>::quiet_NaN(),
+                        std::numeric_limits<double>::infinity()}) {
+    auto opts = options();
+    opts.parameter_overrides({rclcpp::Parameter(
+        "rog_map.projection.prior_map.traversability_weight", weight)});
+    auto node = std::make_shared<rclcpp::Node>("invalid_prior_config", opts);
+    rog_map::Config config;
+    try {
+      config.loadFromRosNode(node, "rog_map");
+      FAIL() << "invalid weight was accepted";
+    } catch (const std::invalid_argument &error) {
+      EXPECT_NE(std::string(error.what()).find("traversability_weight"),
+                std::string::npos);
+    }
+  }
+}
+
+TEST(PriorWeightedAudit, ZeroWeightCannotBorrowOneSidedPriorRoofProof) {
+  auto config = clearanceConfig();
+  config.terrain_policy_enabled = true;
+  config.prior_traversability_weight = 0.0;
+  config.robot_x = 0.125;
+  config.robot_y = 0.225;
+  config.reference_ground_z_abs = 0.15;
+  config.vehicle_height = 0.17;
+  config.headroom_margin = 0.0;
+  config.headroom_voxel_inset_fraction = 0.0;
+  config.surface_height_delta_max = 0.12;
+  config.ground_seed_radius = 1.0;
+  config.ground_seed_tolerance = 0.18;
+  config.observed_empty_as_free = true;
+  config.min_observed_overhead_headroom_known_ratio = 0.0;
+  for (bool white : {false, true}) {
+    rog_map::ProjectionLayer layer;
+    layer.update(13, 9, 0.05, kOrigin, 1.0, config, [white](int x, int y) {
+      auto stats = x < 4 ? groundColumn(0.0, 0.05) : emptyColumn(0.05, false);
+      if (x == 4 && y == 4) {
+        stats = groundColumn(0.0, 0.05);
+        for (int i : {5, 6, 7, 8})
+          stats.vertical_states[i] = rog_map::VerticalVoxelState::OCCUPIED;
+        stats.vertical_states[0] = rog_map::VerticalVoxelState::KNOWN_FREE;
+        stats.occupied_count = 4;
+        stats.occupied_z_index_min = 5;
+        stats.occupied_z_index_max = 8;
+        stats.occupied_z_min_abs = 0.225;
+        stats.occupied_z_max_abs = 0.375;
+      }
+      stats.prior_known_free = white;
+      return stats;
+    });
+    SCOPED_TRACE(white);
+    EXPECT_EQ(layer.cells().at(4 * 13 + 4).type, rog_map::CellType::OCCUPIED);
+    EXPECT_EQ(layer.cells().at(4 * 13 + 4).terrain_admissible, 0U);
+  }
+}
+
+TEST(PriorWeightedAudit, ConnectedGroundHoldStillWorksBeforeItsDeadline) {
+  auto config = clearanceConfig();
+  config.terrain_policy_enabled = true;
+  config.prior_traversability_weight = 0.0;
+  config.reference_ground_z_abs = 0.0;
+  config.ground_connectivity_hold_time = 0.8;
+  rog_map::ProjectionLayer layer;
+  const auto scan = [](int, int) { return groundColumn(0.0, kResolution); };
+  layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config, scan);
+  ASSERT_EQ(center(layer).type, rog_map::CellType::PASSABLE);
+  config.reference_ground_z_abs = 0.20;
+  for (double time : {1.1, 1.4, 1.7}) {
+    layer.updateDirty(kWidth, kHeight, kResolution, kOrigin, time, config, scan,
+                      {}, false);
+    EXPECT_EQ(center(layer).type, rog_map::CellType::PASSABLE);
+    EXPECT_EQ(center(layer).terrain_admissible, 1U);
+    EXPECT_EQ(center(layer).raw_reason,
+              rog_map::ProjectionClassReason::GROUND_CONNECTIVITY_HOLD);
+  }
+  layer.updateDirty(kWidth, kHeight, kResolution, kOrigin, 1.81, config, scan,
+                    {}, false);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+}
+
+TEST(PriorWeightedAudit, FloatingObstaclePatchCannotVerifyItselfAsGround) {
+  for (double weight : {0.0, 0.5, 1.0}) {
+    auto config = weightedConfig(weight);
+    config.robot_x = 0.075;
+    config.robot_y = 0.325;
+    config.reference_ground_plane_valid = true;
+    config.robot_footprint_clear_length = 0.15;
+    config.robot_footprint_clear_width = 0.15;
+    rog_map::ProjectionLayer layer;
+    layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int x, int y) {
+      auto stats = preciseTunnelColumn(x < 2, false);
+      if (x >= 8 && x <= 10 && y >= 5 && y <= 7) {
+        stats.vertical_states[2] = rog_map::VerticalVoxelState::OCCUPIED;
+        stats.hit_z_min[2] = 0.12F;
+        stats.hit_z_max[2] = 0.12F;
+        stats.hit_stamps[2] = 1.0;
+        stats.occupied_count = 1;
+        stats.occupied_z_index_min = stats.occupied_z_index_max = 2;
+        stats.occupied_z_min_abs = stats.occupied_z_max_abs = 0.12;
+      }
+      return stats;
+    });
+    const auto &cell = layer.cells().at(6 * 13 + 9);
+    SCOPED_TRACE(weight);
+    EXPECT_EQ(cell.ground_verified, 0U);
+    EXPECT_EQ(cell.hard_obstacle, 1U);
+    EXPECT_EQ(cell.terrain_admissible, 0U);
+    EXPECT_EQ(cell.type, rog_map::CellType::OCCUPIED);
+    EXPECT_EQ(rog_map::navigationOverlayValue(cell), 100);
+  }
+}
+
+TEST_F(PriorWeightedConfig,
+       RuntimeWeightChangeIsRejectedInsteadOfSilentlyIgnored) {
+  auto opts = options();
+  opts.parameter_overrides(
+      {rclcpp::Parameter("rog_map.decay.keep_time", 0.5),
+       rclcpp::Parameter("rog_map.decay.clear_time", 3.0)});
+  auto node = std::make_shared<rclcpp::Node>("readonly_prior_weight", opts);
+  rog_map::Config config;
+  config.loadFromRosNode(node, "rog_map");
+  const auto name = "rog_map.projection.prior_map.traversability_weight";
+  EXPECT_TRUE(node->describe_parameter(name).read_only);
+  const auto result =
+      node->set_parameters_atomically({rclcpp::Parameter(name, 1.0)});
+  EXPECT_FALSE(result.successful);
+  EXPECT_DOUBLE_EQ(node->get_parameter(name).as_double(),
+                   config.prior_map_traversability_weight);
+}
+
+TEST(PriorWeightedAudit, RejectsLegacyGroundSupportBypassAndDisabledClearance) {
+  auto config = weightedConfig(0.0);
+  const auto scan = [](int, int) { return preciseTunnelColumn(true, false); };
+  rog_map::ProjectionLayer layer;
+  config.require_ground_support = true;
+  EXPECT_THROW(layer.update(13, 13, 0.05, kOrigin, 1.0, config, scan),
+               std::invalid_argument);
+  config.require_ground_support = false;
+  config.clearance_check_en = false;
+  EXPECT_THROW(layer.update(13, 13, 0.05, kOrigin, 1.0, config, scan),
+               std::invalid_argument);
+}
+
+TEST_F(PriorWeightedConfig, RejectsIncompatiblePriorTerrainConfiguration) {
+  for (bool clearance : {false, true}) {
+    auto opts = options();
+    opts.parameter_overrides(
+        {rclcpp::Parameter("rog_map.projection.prior_map.enable", true),
+         rclcpp::Parameter("rog_map.projection.prior_map.yaml_path",
+                           "test.yaml"),
+         rclcpp::Parameter("rog_map.projection.clearance_check_enable",
+                           clearance),
+         rclcpp::Parameter(
+             "rog_map.projection.prior_map.require_ground_support",
+             clearance)});
+    auto node =
+        std::make_shared<rclcpp::Node>("incompatible_prior_config", opts);
+    rog_map::Config config;
+    EXPECT_THROW(config.loadFromRosNode(node, "rog_map"),
+                 std::invalid_argument);
+  }
+}
+
+TEST(PriorWeightedAudit, GroundHoldCannotHideChangedSurfaceOrNewObstacle) {
+  for (bool low_ceiling : {false, true}) {
+    auto config = clearanceConfig();
+    config.terrain_policy_enabled = true;
+    config.prior_traversability_weight = 0.0;
+    config.reference_ground_z_abs = 0.0;
+    config.ground_connectivity_hold_time = 0.8;
+    rog_map::ProjectionLayer layer;
+    layer.update(kWidth, kHeight, kResolution, kOrigin, 1.0, config,
+                 [](int, int) { return groundColumn(0.0, kResolution); });
+    ASSERT_EQ(center(layer).type, rog_map::CellType::PASSABLE);
+    config.reference_ground_z_abs = 0.30;
+    layer.update(kWidth, kHeight, kResolution, kOrigin, 1.1, config,
+                 [low_ceiling](int, int) {
+                   return low_ceiling ? column({0, 2})
+                                      : groundColumn(0.10, kResolution);
+                 });
+    EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+    EXPECT_EQ(center(layer).terrain_admissible, 0U);
+  }
+}
+
+TEST(PriorWeightedAudit,
+     ThinRampMatchingIndependentChassisPlaneIsNotAnObstacle) {
+  for (double weight : {0.5, 1.0}) {
+    auto config = weightedConfig(weight);
+    config.robot_x = 0.075;
+    config.robot_y = 0.325;
+    config.reference_ground_z_abs = 0.115;
+    config.reference_ground_plane_valid = true;
+    config.reference_ground_slope_x = 0.2;
+    config.ground_seed_radius = 0.05;
+    config.robot_footprint_clear_length = config.robot_footprint_clear_width =
+        0.15;
+    rog_map::ProjectionLayer layer;
+    layer.update(13, 13, 0.05, kOrigin, 1.0, config, [](int x, int y) {
+      auto stats = x >= 8 && x <= 10 && y >= 5 && y <= 7
+                       ? groundColumn(0.10 + 0.2 * (x + 0.5) * 0.05, 0.05)
+                       : emptyColumn(0.05);
+      stats.prior_known_free = 1U;
+      return stats;
+    });
+    const auto &cell = layer.cells().at(6 * 13 + 9);
+    EXPECT_EQ(cell.ground_verified, 0U);
+    EXPECT_EQ(cell.hard_obstacle, 0U);
+    EXPECT_EQ(cell.terrain_admissible, 1U);
+  }
+}
+
+TEST(TunnelBoundaryFix,
+     WhiteCenterRetainsEvidenceBesideConservativeBlackCorner) {
+  rog_map::PriorMapData prior;
+  prior.loaded = prior.transform_ready = true;
+  prior.width = prior.height = 2;
+  prior.resolution = 1.0;
+  prior.occupied = {0U, 1U, 0U, 1U};
+  prior.known_free = {1U, 0U, 1U, 0U};
+  ASSERT_TRUE(
+      rog_map::refreshPriorMapProjectionCache(prior, 0, 0, 1, 1, .5, .70, .25));
+  EXPECT_EQ(prior.cached_mask[0], 0U);
+  EXPECT_EQ(prior.cached_free_mask[0], 1U);
+  std::vector<uint8_t> mask, values;
+  rog_map::fusePriorMapProjection(true, prior, {1U}, {0U}, mask, values);
+  EXPECT_EQ(values[0],
+            254U); // The standalone conservative static veto survives.
+  ASSERT_TRUE(rog_map::refreshPriorMapProjectionCache(prior, 1, 0, 1, 1, .5,
+                                                      1.20, .25));
+  EXPECT_EQ(prior.cached_free_mask[0], 0U);
+}
+
+TEST(TunnelGroundFix, MeasuredLocalFloorPrecedesDescendingChassisTangent) {
+  for (double roof : {0.2499, 0.12}) {
+    auto config = weightedConfig(1.0);
+    config.reference_ground_z_abs = 0.15;
+    config.reference_ground_plane_valid = true;
+    config.robot_footprint_clear_length = config.robot_footprint_clear_width =
+        0.12;
+    rog_map::ProjectionLayer layer;
+    layer.update(13, 13, .05, kOrigin, 1.0, config, [roof](int x, int y) {
+      const double r = std::hypot(x - 6, y - 6) * .05;
+      return preciseTunnelColumn(r >= .15 && r <= .25, x == 6 && y == 6, roof);
+    });
+    const auto &cell = layer.cells().at(84);
+    EXPECT_EQ(cell.ground_reference_source,
+              rog_map::GroundReferenceSource::MEASURED_NEIGHBORS);
+    EXPECT_NEAR(cell.reference_ground_z_abs, 0.0, 1e-6);
+    EXPECT_EQ(cell.hard_obstacle != 0U, roof < .24);
+    EXPECT_EQ(cell.terrain_admissible != 0U, roof >= .24);
+  }
+}
+
+TEST(TunnelGroundFix, BelowBodyTerrainIsNotACeilingButBodyHitStillBlocks) {
+  for (bool body_hit : {false, true}) {
+    auto config = weightedConfig(1.0);
+    config.reference_ground_z_abs = .15;
+    config.reference_ground_plane_valid = true;
+    rog_map::ProjectionLayer layer;
+    const auto scan = [body_hit](int x, int y) {
+      auto stats = preciseTunnelColumn(true, false);
+      if (x != 6 || y != 6) {
+        stats.scan_z_min_abs += .15;
+        stats.hit_z_min[0] = stats.hit_z_max[0] = .15F;
+        return stats;
+      }
+      stats = preciseTunnelColumn(false, false);
+      stats.scan_z_min_abs = -.10;
+      for (int i = 0; i <= 6; ++i) {
+        if (i == 5 || (i == 6 && !body_hit))
+          continue;
+        stats.vertical_states[i] = rog_map::VerticalVoxelState::OCCUPIED;
+        stats.hit_z_min[i] = stats.hit_z_max[i] =
+            static_cast<float>(-.1 + .05 * i);
+        stats.hit_stamps[i] = 1.0;
+        ++stats.occupied_count;
+      }
+      return stats;
+    };
+    layer.update(13, 13, .05, kOrigin, 1.0, config, scan);
+    for (int i = 0; i < 3; ++i) {
+      const auto &cell = layer.cells().at(84);
+      EXPECT_EQ(cell.body_obstacle_verified != 0U, body_hit);
+      EXPECT_EQ(cell.hard_obstacle != 0U, body_hit);
+      EXPECT_EQ(cell.terrain_admissible != 0U, !body_hit);
+      layer.updateDirty(13, 13, .05, kOrigin, 1.1 + .1 * i, config, scan, {},
+                        false);
+    }
+  }
+}
+
+TEST(TunnelGroundFix, UnresolvedRoofBlocksLocallyWithoutCreatingGlobalWall) {
+  auto config = weightedConfig(1.0);
+  config.reference_ground_z_abs = .15;
+  rog_map::ProjectionLayer layer;
+  layer.update(13, 13, .05, kOrigin, 1.0, config, [](int x, int y) {
+    return preciseTunnelColumn(false, x == 6 && y == 6);
+  });
+  const auto &cell = layer.cells().at(84);
+  EXPECT_EQ(cell.hard_obstacle, 1U);
+  EXPECT_EQ(cell.type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(cell.raw_reason,
+            rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
+  EXPECT_EQ(rog_map::navigationOverlayValue(cell), -1);
+}
+
+
+TEST(FullPriorAuthority, TerrainAndHeadroomCannotBlockButLiveVehiclesDo) {
+  auto config = weightedConfig(1.0);
+  config.static_prior_authoritative = true;
+  config.vehicle_detection_ready = true;
+  rog_map::ProjectionLayer layer;
+  for (bool vehicle : {false, true}) {
+    layer.update(13, 13, .05, kOrigin, 1.0 + vehicle, config, [vehicle](int, int) {
+      auto stats = preciseTunnelColumn(true, true, .02); // Deliberately impossible clearance.
+      stats.live_vehicle_obstacle = vehicle;
+      stats.occupied_z_min_abs = .1;
+      stats.occupied_z_max_abs = .6;
+      return stats;
+    });
+    EXPECT_EQ(layer.cells().at(84).terrain_admissible != 0U, !vehicle);
+    EXPECT_EQ(layer.cells().at(84).hard_obstacle != 0U, vehicle);
+    EXPECT_EQ(rog_map::navigationOverlayValue(layer.cells().at(84)), vehicle ? 100 : -1);
+  }
+}
+
+TEST(FullPriorAuthority, MissingDetectorCannotBecomeWhitePermission) {
+  auto config = weightedConfig(1.0);
+  config.static_prior_authoritative = true;
+  config.vehicle_detection_ready = false;
+  rog_map::ProjectionLayer layer;
+  layer.update(13, 13, .05, kOrigin, 1.0, config, [](int, int) {
+    return preciseTunnelColumn(false, false);
+  });
+  EXPECT_EQ(layer.cells().at(84).type, rog_map::CellType::OCCUPIED);
+  EXPECT_EQ(layer.cells().at(84).raw_reason, rog_map::ProjectionClassReason::VEHICLE_DETECTION_UNAVAILABLE);
 }
 
 } // namespace

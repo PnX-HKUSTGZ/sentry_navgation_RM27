@@ -54,6 +54,7 @@ InterpolationMode parseInterpolationMode(const std::string &mode) {
 
 void ROGMap::init() {
   initProbMap();
+  vehicle_obstacles_ = std::make_unique<PriorDynamicObstacles>(cfg_.vehicle_obstacles);
 
   layer_ = std::make_shared<ProjectionLayer>();
   field_ = std::make_shared<DynamicLayer>();
@@ -325,6 +326,32 @@ void ROGMap::updateMapInternal(const PointCloud &cloud, const Pose &pose,
   const uint64_t mask_sequence_before = mask_sequence_;
   const uint64_t field_sequence_before = field_sequence_;
   setUpdateTime(update_stamp);
+  vehicle_detection_ready_ = false;
+  if (staticPriorAuthoritative() && vehicle_obstacles_->backgroundReady()) {
+    PriorMapTransform2D transform;
+    if (getPriorMapTransform(transform)) {
+      vehicle_map_from_cloud_.linear() = (
+          Eigen::AngleAxisd(transform.yaw, Eigen::Vector3d::UnitZ()) *
+          Eigen::AngleAxisd(transform.pitch, Eigen::Vector3d::UnitY()) *
+          Eigen::AngleAxisd(transform.roll, Eigen::Vector3d::UnitX())).toRotationMatrix();
+      vehicle_map_from_cloud_.translation() = Eigen::Vector3d(transform.tx, transform.ty, transform.tz);
+      const auto body_pose = cfg_.projection_robot_pose_frame.empty() ? sensor_pose.first : projection_robot_state_.p;
+      vehicle_robot_ground_map_ = vehicle_map_from_cloud_ * body_pose;
+      vehicle_robot_ground_map_.z() -= cfg_.robot_origin_to_ground;
+      vehicle_obstacles_->update(cloud, vehicle_map_from_cloud_,
+          vehicle_map_from_cloud_ * sensor_pose.first, vehicle_robot_ground_map_, update_stamp,
+          [this](double x, double y) {
+            // Unknown/outside-prior static returns cannot grow a synthetic
+            // vehicle into an adjacent white passage. The original PGM still
+            // validates the entire chassis footprint independently.
+            return priorMapKnownFree(prior_map_, x, y) &&
+                !priorMapNearOccupied(prior_map_, x, y, cfg_.vehicle_obstacles.prior_boundary_distance);
+          }, [this](double x, double y, double &ground_z) {
+            return priorMapGroundSupportAtMapPoint(prior_map_, x, y, ground_z);
+          });
+      vehicle_detection_ready_ = true;
+    }
+  }
   updateProbMap(cloud, sensor_pose, map_center_pos);
   runtime_stats_.stamp = update_stamp;
   runtime_stats_.update_seq = static_cast<double>(this_update_sequence);
@@ -378,9 +405,6 @@ void ROGMap::refreshLayers() {
   if (!cfg_.layer_en || !layer_) {
     fused_projection_mask_.clear();
     fused_projection_values_.clear();
-    dynamic_unknown_mask_.clear();
-    dynamic_near_field_prior_fill_mask_.clear();
-    dynamic_prior_clearance_override_mask_.clear();
     prior_projection_mask_.clear();
     runtime_stats_.projection_refresh_reason = "layer_disabled";
     return;
@@ -408,6 +432,11 @@ void ROGMap::refreshLayers() {
   layer_cfg.fill_occ_min = cfg_.layer_fill_occ_min;
   layer_cfg.denoise_occ_max = cfg_.layer_denoise_occ_max;
   layer_cfg.clearance_check_en = cfg_.clearance_check_en;
+  layer_cfg.terrain_policy_enabled = cfg_.clearance_check_en;
+  layer_cfg.static_prior_authoritative = staticPriorAuthoritative();
+  layer_cfg.vehicle_detection_ready = vehicle_detection_ready_;
+  layer_cfg.prior_traversability_weight =
+      cfg_.prior_map_enable ? cfg_.prior_map_traversability_weight : 0.0;
   layer_cfg.observed_empty_as_free = cfg_.observed_empty_as_free;
   layer_cfg.prior_free_uncertain_obstacle_confirmations =
       cfg_.prior_free_uncertain_obstacle_confirmations;
@@ -533,6 +562,15 @@ void ROGMap::refreshLayers() {
       width, height, res, Eigen::Vector2i(min_id.x(), min_id.y()), origin,
       layer_cfg);
   const bool geometry_changed = slide_result.full_refresh_required;
+  if (layer_cfg.terrain_policy_enabled && prior_changed) {
+    if (support_cache_ready) {
+      layer_->setPriorTerrainEvidence(prior_map_.cached_free_mask,
+                                      prior_map_.cached_ground_support_mask,
+                                      prior_map_.cached_ground_support_z);
+    } else {
+      layer_->setPriorTerrainEvidence({}, {}, {});
+    }
+  }
   const size_t cell_count = static_cast<size_t>(std::max(0, width)) *
                             static_cast<size_t>(std::max(0, height));
   const auto &dirty_columns = dirtyColumnIds();
@@ -552,11 +590,13 @@ void ROGMap::refreshLayers() {
   const bool explicit_full_refresh =
       fullLayerRefreshRequired() && !slide_result.window_moved;
   const bool force_full_refresh =
-      geometry_changed || explicit_full_refresh || !cfg_.dirty_column_en ||
+      layer_cfg.static_prior_authoritative || geometry_changed || explicit_full_refresh || !cfg_.dirty_column_en ||
       dirty_over_ratio || (cfg_.require_ground_support && transform_changed);
-  const bool has_dirty_update = cfg_.dirty_column_en &&
-                                !projection_dirty_columns.empty() &&
-                                !force_full_refresh;
+  const bool has_dirty_update =
+      cfg_.dirty_column_en &&
+      (!projection_dirty_columns.empty() ||
+       (layer_cfg.terrain_policy_enabled && prior_changed)) &&
+      !force_full_refresh;
   runtime_stats_.projection_config_time = elapsedMs(config_start);
   runtime_stats_.projection_cell_count = static_cast<double>(cell_count);
   runtime_stats_.projection_z_min_id = static_cast<double>(z_min);
@@ -612,6 +652,24 @@ void ROGMap::refreshLayers() {
         stats.ground_support_z_abs =
             prior_map_.cached_ground_support_z[prior_index];
       }
+    }
+    if (staticPriorAuthoritative()) {
+      stats.last_update_time = current_update_time_;
+      if (vehicle_detection_ready_) {
+        Vec3f center;
+        globalIndexToPos(Vec3i(gx, gy, 0), center);
+        const Eigen::Vector3d map_point = vehicle_map_from_cloud_ * center;
+        float low = 0.0F, high = 0.0F;
+        stats.live_vehicle_obstacle = vehicle_obstacles_->occupied(map_point.head<2>(),
+            cfg_.resolution * 0.7072, current_update_time_, &low, &high);
+        if (stats.live_vehicle_obstacle) {
+          stats.occupied_count = 1;
+          stats.occupied_z_min_abs = (vehicle_map_from_cloud_.inverse() * Eigen::Vector3d(map_point.x(), map_point.y(), low)).z();
+          stats.occupied_z_max_abs = (vehicle_map_from_cloud_.inverse() * Eigen::Vector3d(map_point.x(), map_point.y(), high)).z();
+          stats.last_hit_time = current_update_time_;
+        }
+      }
+      return stats;
     }
     for (int gz = z_min; gz <= z_max; ++gz) {
       Vec3i id_g(gx, gy, gz);
@@ -854,6 +912,8 @@ void ROGMap::refreshLayers() {
     case ProjectionClassReason::SURVEYED_NEAR_FIELD_CLEAR:
       runtime_stats_.projection_insufficient_observation_count += 1.0;
       break;
+    case ProjectionClassReason::PRIOR_ASSISTED_CLEARANCE:
+    case ProjectionClassReason::PRIOR_STATIC_CLEAR:
     case ProjectionClassReason::THIN_SURFACE:
     case ProjectionClassReason::OVERHEAD_CLEARANCE_OK:
     case ProjectionClassReason::CLEARANCE_OK:
@@ -861,12 +921,14 @@ void ROGMap::refreshLayers() {
     case ProjectionClassReason::GROUND_CONNECTIVITY_HOLD:
       runtime_stats_.projection_thin_surface_count += 1.0;
       break;
+    case ProjectionClassReason::VEHICLE_OBSTACLE:
     case ProjectionClassReason::SOLID_VERTICAL_WALL:
       runtime_stats_.projection_vertical_wall_count += 1.0;
       break;
     case ProjectionClassReason::HOLLOW_TUNNEL:
       runtime_stats_.projection_hollow_tunnel_count += 1.0;
       break;
+    case ProjectionClassReason::VEHICLE_DETECTION_UNAVAILABLE:
     case ProjectionClassReason::AMBIGUOUS_OCCUPIED:
     case ProjectionClassReason::GROUND_UNVERIFIED:
     case ProjectionClassReason::HEADROOM_UNVERIFIED:
@@ -990,41 +1052,22 @@ void ROGMap::rebuildFusedProjection(bool prior_enabled) {
   if (!layer_ || layer_->empty()) {
     fused_projection_mask_.clear();
     fused_projection_values_.clear();
-    dynamic_unknown_mask_.clear();
-    dynamic_near_field_prior_fill_mask_.clear();
-    dynamic_prior_clearance_override_mask_.clear();
     prior_projection_mask_.clear();
     return;
   }
 
-  dynamic_unknown_mask_.resize(layer_->cells().size());
-  std::transform(layer_->cells().begin(), layer_->cells().end(),
-                 dynamic_unknown_mask_.begin(), [](const CellData &cell) {
-                   return cell.type == CellType::UNKNOWN ? 1U : 0U;
-                 });
-  dynamic_near_field_prior_fill_mask_.resize(layer_->cells().size());
-  std::transform(layer_->cells().begin(), layer_->cells().end(),
-                 dynamic_near_field_prior_fill_mask_.begin(),
-                 [](const CellData &cell) {
-                   return cell.near_field_prior_fill_eligible != 0U ? 1U : 0U;
-                 });
-  if (cfg_.require_ground_support) {
-    std::fill(dynamic_near_field_prior_fill_mask_.begin(),
-              dynamic_near_field_prior_fill_mask_.end(), 0U);
+  fusePriorMapProjection(prior_enabled, prior_map_, layer_->mask(),
+                         layer_->values(), fused_projection_mask_,
+                         fused_projection_values_);
+  if (staticPriorAuthoritative() && prior_map_.projection_cache_ready &&
+      prior_map_.cached_free_mask.size() == fused_projection_mask_.size()) {
+    for (size_t i = 0; i < fused_projection_mask_.size(); ++i) {
+      if (prior_map_.cached_free_mask[i] == 0U) {
+        fused_projection_mask_[i] = 0U;
+        fused_projection_values_[i] = 254U;
+      }
+    }
   }
-  dynamic_prior_clearance_override_mask_.resize(layer_->cells().size());
-  std::transform(layer_->cells().begin(), layer_->cells().end(),
-                 dynamic_prior_clearance_override_mask_.begin(),
-                 [](const CellData &cell) {
-                   return hasVerifiedOverheadClearance(cell) ? 1U : 0U;
-                 });
-
-  fusePriorMapProjection(
-      prior_enabled, cfg_.prior_map_free_fills_unknown, prior_map_,
-      layer_->mask(), layer_->values(), dynamic_unknown_mask_,
-      dynamic_near_field_prior_fill_mask_,
-      dynamic_prior_clearance_override_mask_, fused_projection_mask_,
-      fused_projection_values_, cfg_.require_ground_support);
 }
 
 void ROGMap::refreshQuery() {
@@ -1040,6 +1083,10 @@ void ROGMap::refreshQuery() {
   snapshot->projection_sequence = projection_sequence_;
   snapshot->mask_sequence = mask_sequence_;
   snapshot->stamp = current_update_time_;
+  snapshot->prior_weight_setting =
+      cfg_.prior_map_enable
+          ? static_cast<float>(cfg_.prior_map_traversability_weight)
+          : 0.0F;
   snapshot->width = layer_->width();
   snapshot->height = layer_->height();
   snapshot->resolution = layer_->resolution();
@@ -1080,6 +1127,18 @@ void ROGMap::refreshQuery() {
                             std::numeric_limits<float>::infinity());
   snapshot->headroom_known_ratio.resize(layer_->cells().size(), 0.0f);
   snapshot->obstacle_hold_remaining.resize(layer_->cells().size(), 0.0f);
+  snapshot->prior_traversability_weight.resize(layer_->cells().size());
+  snapshot->ground_evidence.resize(layer_->cells().size());
+  snapshot->clearance_evidence.resize(layer_->cells().size());
+  snapshot->slope_evidence.resize(layer_->cells().size());
+  snapshot->static_prior_authoritative.resize(layer_->cells().size());
+  snapshot->live_vehicle_obstacle.resize(layer_->cells().size());
+  snapshot->terrain_policy_active.resize(layer_->cells().size());
+  snapshot->terrain_admissible.resize(layer_->cells().size());
+  snapshot->prior_assisted.resize(layer_->cells().size());
+  snapshot->hard_obstacle.resize(layer_->cells().size());
+  snapshot->ground_reference_source.resize(layer_->cells().size());
+  snapshot->body_obstacle_verified.resize(layer_->cells().size());
   snapshot->prior_known_free.resize(layer_->cells().size(), 0U);
   snapshot->ground_candidate.resize(layer_->cells().size(), 0U);
   snapshot->ground_verified.resize(layer_->cells().size(), 0U);
@@ -1130,6 +1189,22 @@ void ROGMap::refreshQuery() {
     snapshot->obstacle_hold_remaining[i] = static_cast<float>(
         std::max(0.0, layer_->cells()[i].occupied_clear_deadline -
                           current_update_time_));
+    snapshot->prior_traversability_weight[i] =
+        layer_->cells()[i].prior_traversability_weight;
+    snapshot->ground_evidence[i] = layer_->cells()[i].ground_evidence;
+    snapshot->clearance_evidence[i] = layer_->cells()[i].clearance_evidence;
+    snapshot->slope_evidence[i] = layer_->cells()[i].slope_evidence;
+    snapshot->static_prior_authoritative[i] = layer_->cells()[i].static_prior_authoritative;
+    snapshot->live_vehicle_obstacle[i] = layer_->cells()[i].live_vehicle_obstacle;
+    snapshot->terrain_policy_active[i] =
+        layer_->cells()[i].terrain_policy_active;
+    snapshot->terrain_admissible[i] = layer_->cells()[i].terrain_admissible;
+    snapshot->prior_assisted[i] = layer_->cells()[i].prior_assisted;
+    snapshot->hard_obstacle[i] = layer_->cells()[i].hard_obstacle;
+    snapshot->ground_reference_source[i] =
+        static_cast<uint8_t>(layer_->cells()[i].ground_reference_source);
+    snapshot->body_obstacle_verified[i] =
+        layer_->cells()[i].body_obstacle_verified;
     snapshot->prior_known_free[i] = layer_->cells()[i].prior_known_free;
     snapshot->ground_candidate[i] = layer_->cells()[i].ground_candidate;
     snapshot->ground_verified[i] = layer_->cells()[i].ground_verified;

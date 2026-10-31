@@ -72,32 +72,13 @@ bool isLowClearanceProjection(
            reason == static_cast<uint8_t>(
                          rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
   };
-  return projection.valid &&
-         projection.cost_source == rog_map::ProjectedCostSource::DYNAMIC_PROJECTION &&
+  return projection.valid && !projection.terrain_policy_active &&
+         projection.cost_source ==
+             rog_map::ProjectedCostSource::DYNAMIC_PROJECTION &&
          projection.dynamic_cost == nav2_costmap_2d::LETHAL_OBSTACLE &&
          matches(projection.raw_reason) && !blocks(projection.candidate_reason);
 }
 
-bool isUnsupportedPriorFreeClearance(
-    const rog_map::ProjectionDiagnostic &projection) {
-  if (!projection.valid || projection.cell_type ==
-                              static_cast<uint8_t>(rog_map::CellType::OCCUPIED) ||
-      !projection.prior_known_free || projection.ground_support_known ||
-      projection.ground_support_verified) {
-    return false;
-  }
-  const auto matches = [](uint8_t reason) {
-    return reason == static_cast<uint8_t>(
-                         rog_map::ProjectionClassReason::GROUND_UNVERIFIED) ||
-           reason == static_cast<uint8_t>(
-                         rog_map::ProjectionClassReason::HEADROOM_UNVERIFIED) ||
-           reason == static_cast<uint8_t>(
-                         rog_map::ProjectionClassReason::HEADROOM_BLOCKED) ||
-           reason == static_cast<uint8_t>(
-                         rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED);
-  };
-  return matches(projection.raw_reason) || matches(projection.candidate_reason);
-}
 
 } // namespace
 
@@ -256,7 +237,21 @@ TrajectorySafetyChecker::evaluateQueryResult(
     const Eigen::Vector3d &pos, const rog_map::QueryResult &fused_result,
     double query_time, bool static_footprint_checked) const {
   const auto static_query = staticQuerySnapshot();
-  const auto result = static_query ? dynamicEvidenceOnly(fused_result) : fused_result;
+  auto result = static_query ? dynamicEvidenceOnly(fused_result) : fused_result;
+  if (static_query && pos.allFinite()) {
+    result = reconcilePriorTerrainEvidence(result, static_query->query(pos));
+    if (result.projection.prior_boundary_reconciled && clock_) {
+      RCLCPP_INFO_THROTTLE(
+          logger_, *clock_, 2000,
+          "[MincoPlanner] Reconciled original-PGM white point (%.3f,%.3f): "
+          "weight=%.3f evidence=(%.3f,%.3f,%.3f); full static footprint and "
+          "live obstacles remain checked",
+          pos.x(), pos.y(), result.projection.prior_weight_setting,
+          result.projection.ground_evidence,
+          result.projection.clearance_evidence,
+          result.projection.slope_evidence);
+    }
+  }
   PointCheckResult check;
   check.diagnostic.query_point = pos;
   check.diagnostic.safe_distance = safe_dist_;
@@ -267,7 +262,7 @@ TrajectorySafetyChecker::evaluateQueryResult(
   // enforces the configured clearance. Keep the exact first failed stage so a
   // fail-closed rejection can be diagnosed without repeating any successful
   // map query.
-  if (!query) {
+  if (!query || (result.projection.static_prior_authoritative && !static_query)) {
     check.diagnostic.reason = FailureReason::QUERY_UNAVAILABLE;
     return check;
   }
@@ -314,15 +309,19 @@ TrajectorySafetyChecker::evaluateQueryResult(
 
   check.diagnostic.cost = cost;
   check.diagnostic.cost_checked = true;
-  const bool allow_unsupported_prior_free_clearance =
-      allow_unknown_motion_ &&
-      isUnsupportedPriorFreeClearance(result.projection);
-  if (result.projection.valid &&
-      (result.projection.raw_reason == static_cast<uint8_t>(
-           rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED) ||
-       result.projection.candidate_reason == static_cast<uint8_t>(
-           rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED)) &&
-      !allow_unsupported_prior_free_clearance) {
+  if (result.projection.valid && result.projection.terrain_policy_active &&
+      (result.projection.hard_obstacle ||
+       !result.projection.terrain_admissible)) {
+    check.diagnostic.reason = FailureReason::COSTMAP_LETHAL;
+    return check;
+  }
+  if (result.projection.valid && !result.projection.terrain_policy_active &&
+      (result.projection.raw_reason ==
+           static_cast<uint8_t>(
+               rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED) ||
+       result.projection.candidate_reason ==
+           static_cast<uint8_t>(
+               rog_map::ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED))) {
     check.diagnostic.reason = FailureReason::COSTMAP_LETHAL;
     return check;
   }
@@ -343,8 +342,7 @@ TrajectorySafetyChecker::evaluateQueryResult(
       return check;
     }
   }
-  if (cost == nav2_costmap_2d::LETHAL_OBSTACLE &&
-      !allow_unsupported_prior_free_clearance) {
+  if (cost == nav2_costmap_2d::LETHAL_OBSTACLE) {
     check.diagnostic.reason = FailureReason::COSTMAP_LETHAL;
     return check;
   }
@@ -1119,6 +1117,9 @@ void TrajectorySafetyChecker::recordTrajectoryFailure(
       "inside_near_field=%d envelope_body=(%.3f,%.3f) "
       "continuous_support=%d support_ref=%.3f "
       "support_error=%.3f support_tolerance=%.3f confidence=%.3f "
+      "prior_weight=%.3f evidence=(%.3f,%.3f,%.3f) terrain_allowed=%d "
+      "prior_assisted=%d hard_obstacle=%d "
+      "prior_setting=%.3f boundary_reconciled=%d ground_source=%u body_hit=%d "
       "planning_frame='%s' "
       "rog_frame='%s'.",
       failureReasonName(diagnostic.reason), diagnostic.trajectory_time,
@@ -1132,18 +1133,16 @@ void TrajectorySafetyChecker::recordTrajectoryFailure(
       diagnostic.static_overlap_ratio, static_overlap_.max_ratio,
       diagnostic.static_depth_exceeded ? 1 : 0, static_overlap_.max_depth,
       diagnostic.snapshot_commit_age, diagnostic.snapshot_processing_age_ms,
-      cost_source, cost_cause, dynamic_cost, cell_type, raw_type, candidate_type,
-      base_type, pending_type, static_cast<unsigned>(projection.pending_count),
+      cost_source, cost_cause, dynamic_cost, cell_type, raw_type,
+      candidate_type, base_type, pending_type,
+      static_cast<unsigned>(projection.pending_count),
       projection.hole_filled ? 1 : 0, projection.obstacle_hold_remaining,
-      raw_reason, candidate_reason,
-      projection.prior_occupied ? 1 : 0,
-      projection.prior_known_free ? 1 : 0,
-      projection.occupied_z_min, projection.occupied_z_max,
-      projection.height_delta, projection.vertical_occupancy_ratio,
-      projection.ground_z, projection.ground_support_z,
-      projection.ceiling_z, projection.headroom,
-      projection.headroom_known_ratio,
-      projection.ground_candidate ? 1 : 0,
+      raw_reason, candidate_reason, projection.prior_occupied ? 1 : 0,
+      projection.prior_known_free ? 1 : 0, projection.occupied_z_min,
+      projection.occupied_z_max, projection.height_delta,
+      projection.vertical_occupancy_ratio, projection.ground_z,
+      projection.ground_support_z, projection.ceiling_z, projection.headroom,
+      projection.headroom_known_ratio, projection.ground_candidate ? 1 : 0,
       projection.ground_verified ? 1 : 0,
       projection.ground_support_known ? 1 : 0,
       projection.ground_support_verified ? 1 : 0,
@@ -1151,12 +1150,17 @@ void TrajectorySafetyChecker::recordTrajectoryFailure(
       projection.clearance_verified ? 1 : 0,
       projection.footprint_clear_eligible ? 1 : 0,
       projection.inside_current_footprint ? 1 : 0,
-      projection.inside_surveyed_near_field ? 1 : 0,
-      projection.envelope_body_x, projection.envelope_body_y,
-      projection.continuous_ground_support ? 1 : 0,
+      projection.inside_surveyed_near_field ? 1 : 0, projection.envelope_body_x,
+      projection.envelope_body_y, projection.continuous_ground_support ? 1 : 0,
       projection.reference_ground_z, projection.support_match_error,
       projection.support_match_tolerance, projection.confidence,
-      diagnostic.planning_frame.c_str(),
+      projection.prior_traversability_weight, projection.ground_evidence,
+      projection.clearance_evidence, projection.slope_evidence,
+      projection.terrain_admissible, projection.prior_assisted,
+      projection.hard_obstacle, projection.prior_weight_setting,
+      projection.prior_boundary_reconciled,
+      static_cast<unsigned>(projection.ground_reference_source),
+      projection.body_obstacle_verified, diagnostic.planning_frame.c_str(),
       diagnostic.rog_frame.c_str());
 }
 

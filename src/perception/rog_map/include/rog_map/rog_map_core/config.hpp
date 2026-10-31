@@ -30,6 +30,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <rog_map/rog_map_core/common_lib.hpp>
+#include <rog_map/prior_dynamic_obstacles.hpp>
 
 #ifndef ORIGIN_AT_CORNER
 #ifndef ORIGIN_AT_CENTER
@@ -77,8 +78,10 @@ public:
   void loadFromRosNode(const NodeT &node, const string &prefix) {
     auto load = [&node, &prefix](const string &key, auto &value) {
       const string param_name = prefix + "." + key;
+      rcl_interfaces::msg::ParameterDescriptor descriptor;
+      descriptor.read_only = key.rfind("projection.vehicle_obstacles.", 0) == 0;
       nav2_util::declare_parameter_if_not_declared(
-          node, param_name, rclcpp::ParameterValue(value));
+          node, param_name, rclcpp::ParameterValue(value), descriptor);
       if (!node->get_parameter(param_name, value)) {
         RCLCPP_WARN(node->get_logger(),
                     "[ROGMap Config] parameter '%s' not found after "
@@ -495,7 +498,7 @@ public:
     prior_map_yaml_path.clear();
     prior_map_pgm_path.clear();
     prior_map_frame = "map";
-    prior_map_free_fills_unknown = false;
+    prior_map_traversability_weight = 0.5;
     require_ground_support = false;
     ground_support_tolerance = 0.08;
     prior_map_transform_timeout = 0.50;
@@ -505,8 +508,67 @@ public:
     load("projection.prior_map.yaml_path", prior_map_yaml_path);
     load("projection.prior_map.pgm_path", prior_map_pgm_path);
     load("projection.prior_map.frame_id", prior_map_frame);
-    load("projection.prior_map.free_fills_unknown",
-         prior_map_free_fills_unknown);
+    const string obsolete_prior_key =
+        prefix + ".projection.prior_map.free_fills_unknown";
+    const auto &overrides =
+        node->get_node_parameters_interface()->get_parameter_overrides();
+    if (node->has_parameter(obsolete_prior_key) ||
+        overrides.count(obsolete_prior_key)) {
+      throw std::invalid_argument(
+          obsolete_prior_key +
+          " was removed; use projection.prior_map.traversability_weight in "
+          "[0,1].");
+    }
+    rcl_interfaces::msg::ParameterDescriptor prior_weight_descriptor;
+    prior_weight_descriptor.read_only = true;
+    prior_weight_descriptor.description =
+        "Prior-white terrain evidence weight in [0,1]; configure before "
+        "navigation startup.";
+    nav2_util::declare_parameter_if_not_declared(
+        node, prefix + ".projection.prior_map.traversability_weight",
+        rclcpp::ParameterValue(prior_map_traversability_weight),
+        prior_weight_descriptor);
+    node->get_parameter(prefix + ".projection.prior_map.traversability_weight",
+                        prior_map_traversability_weight);
+    if (!std::isfinite(prior_map_traversability_weight) ||
+        prior_map_traversability_weight < 0.0 ||
+        prior_map_traversability_weight > 1.0) {
+      throw std::invalid_argument("projection.prior_map.traversability_weight "
+                                  "must be finite and in [0,1].");
+    }
+    RCLCPP_INFO(
+        node->get_logger(),
+        "[ROGMap] prior traversability weight=%.3f; each terrain evidence >= "
+        "%.3f in known white; observed obstacles remain blocking",
+        prior_map_traversability_weight, 1.0 - prior_map_traversability_weight);
+    load("projection.vehicle_obstacles.background_topic", vehicle_background_topic);
+    load("projection.vehicle_obstacles.background_voxel", vehicle_obstacles.background_voxel);
+    load("projection.vehicle_obstacles.background_distance", vehicle_obstacles.background_distance);
+    load("projection.vehicle_obstacles.surface_distance", vehicle_obstacles.surface_distance);
+    load("projection.vehicle_obstacles.normal_angle_deg", vehicle_obstacles.normal_angle_deg);
+    load("projection.vehicle_obstacles.normal_neighbors", vehicle_obstacles.normal_neighbors);
+    load("projection.vehicle_obstacles.prior_boundary_distance", vehicle_obstacles.prior_boundary_distance);
+    load("projection.vehicle_obstacles.static_surface_radius", vehicle_obstacles.static_surface_radius);
+    load("projection.vehicle_obstacles.static_surface_distance", vehicle_obstacles.static_surface_distance);
+    load("projection.vehicle_obstacles.static_surface_min_support", vehicle_obstacles.static_surface_min_support);
+    load("projection.vehicle_obstacles.static_surface_max_curvature", vehicle_obstacles.static_surface_max_curvature);
+    load("projection.vehicle_obstacles.ground_surface_tolerance", vehicle_obstacles.ground_surface_tolerance);
+    load("projection.vehicle_obstacles.live_voxel", vehicle_obstacles.live_voxel);
+    load("projection.vehicle_obstacles.cluster_distance", vehicle_obstacles.cluster_distance);
+    load("projection.vehicle_obstacles.min_points", vehicle_obstacles.min_points);
+    load("projection.vehicle_obstacles.min_span", vehicle_obstacles.min_span);
+    load("projection.vehicle_obstacles.max_range", vehicle_obstacles.max_range);
+    load("projection.vehicle_obstacles.min_relative_z", vehicle_obstacles.min_relative_z);
+    load("projection.vehicle_obstacles.max_relative_z", vehicle_obstacles.max_relative_z);
+    load("projection.vehicle_obstacles.association_distance", vehicle_obstacles.association_distance);
+    load("projection.vehicle_obstacles.hold_time", vehicle_obstacles.hold_time);
+    load("projection.vehicle_obstacles.max_speed", vehicle_obstacles.max_speed);
+    load("projection.vehicle_obstacles.padding", vehicle_obstacles.padding);
+    load("projection.vehicle_obstacles.min_extent", vehicle_obstacles.min_extent);
+    load("projection.vehicle_obstacles.clear_ray_count", vehicle_obstacles.clear_ray_count);
+    load("projection.vehicle_obstacles.clear_frames", vehicle_obstacles.clear_frames);
+    vehicle_obstacles.validate();
+    if (vehicle_background_topic.empty()) throw std::invalid_argument("vehicle obstacle background topic is empty");
     load("projection.prior_map.require_ground_support", require_ground_support);
     load("projection.prior_map.ground_support_tolerance",
          ground_support_tolerance);
@@ -523,6 +585,18 @@ public:
       throw std::invalid_argument("projection.prior_map.frame_id must not be "
                                   "empty when prior map fusion is enabled.");
     }
+    if (prior_map_enable && !clearance_check_en) {
+      throw std::invalid_argument(
+          "projection.prior_map.traversability_weight requires "
+          "projection.clearance_check_enable=true when the prior map is "
+          "enabled.");
+    }
+    if (clearance_check_en && require_ground_support) {
+      throw std::invalid_argument(
+          "weighted terrain policy requires "
+          "projection.prior_map.require_ground_support=false; "
+          "the legacy surveyed-support gate bypasses traversability_weight.");
+    }
     if (require_ground_support && !prior_map_enable) {
       throw std::invalid_argument(
           "projection.prior_map.require_ground_support requires prior-map "
@@ -533,12 +607,10 @@ public:
           "projection.prior_map.require_ground_support requires "
           "projection.clearance_check_enable=true.");
     }
-    if (require_ground_support &&
-        (!unknown_as_occupied || prior_map_free_fills_unknown)) {
+    if (require_ground_support && !unknown_as_occupied) {
       throw std::invalid_argument(
           "projection.prior_map.require_ground_support requires "
-          "projection.unknown_as_occupied=true and "
-          "projection.prior_map.free_fills_unknown=false.");
+          "projection.unknown_as_occupied=true.");
     }
     if (!std::isfinite(ground_support_tolerance) ||
         ground_support_tolerance < 0.0) {
@@ -939,7 +1011,9 @@ public:
   string prior_map_yaml_path{};
   string prior_map_pgm_path{};
   string prior_map_frame{"map"};
-  bool prior_map_free_fills_unknown{false};
+  double prior_map_traversability_weight{0.5};
+  PriorDynamicConfig vehicle_obstacles;
+  std::string vehicle_background_topic{"/prior_pcd_map"};
   bool require_ground_support{false};
   double ground_support_tolerance{0.08};
   double prior_map_transform_timeout{0.50};

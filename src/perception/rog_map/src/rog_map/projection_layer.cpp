@@ -18,6 +18,26 @@ double elapsedMs(const std::chrono::steady_clock::time_point &start) {
       .count();
 }
 
+void validateTerrainPolicy(const ProjectionLayerConfig &config) {
+  if (!std::isfinite(config.prior_traversability_weight) ||
+      config.prior_traversability_weight < 0.0 ||
+      config.prior_traversability_weight > 1.0) {
+    throw std::invalid_argument(
+        "prior traversability weight must be finite and in [0,1]");
+  }
+  if (config.static_prior_authoritative &&
+      (!config.terrain_policy_enabled || config.prior_traversability_weight != 1.0)) {
+    throw std::invalid_argument("static prior authority requires weight exactly one");
+  }
+  if (config.terrain_policy_enabled &&
+      (!config.clearance_check_en || config.require_ground_support)) {
+    throw std::invalid_argument(
+        "weighted terrain policy requires clearance_check_en=true and "
+        "require_ground_support=false; surveyed support must not bypass the "
+        "weight");
+  }
+}
+
 struct VerticalRun {
   int begin{0};
   int end{0};
@@ -137,7 +157,7 @@ CellType classifyLegacyCell(const ColumnStats &stats, CellData &cell,
                                         static_cast<double>(min_observed),
                                     0.0, 1.0));
 
-  if (stats.observed_count < min_observed) {
+  if (stats.observed_count < min_observed && stats.occupied_count == 0) {
     cell.candidate_reason = ProjectionClassReason::INSUFFICIENT_OBSERVATION;
     cell.traversable = 0U;
     return CellType::UNKNOWN;
@@ -208,7 +228,7 @@ CellType classifyClearanceCell(const ColumnStats &stats, CellData &cell,
                                         static_cast<double>(min_observed),
                                     0.0, 1.0));
 
-  if (stats.observed_count < min_observed) {
+  if (stats.observed_count < min_observed && stats.occupied_count == 0) {
     cell.candidate_reason = ProjectionClassReason::INSUFFICIENT_OBSERVATION;
     return CellType::UNKNOWN;
   }
@@ -501,6 +521,26 @@ ProjectionSlideResult ProjectionLayer::syncSlidingWindow(
   return result;
 }
 
+void ProjectionLayer::setPriorTerrainEvidence(
+    const std::vector<uint8_t> &known_free,
+    const std::vector<uint8_t> &support_known,
+    const std::vector<float> &support_z) {
+  const size_t count = static_cast<size_t>(width_) * height_;
+  for (int y = 0; y < height_; ++y) {
+    for (int x = 0; x < width_; ++x) {
+      const size_t index = static_cast<size_t>(y) * width_ + x;
+      auto &cell = cell_buffer_[static_cast<size_t>(hashIndexFromLocal(x, y))];
+      cell.prior_known_free =
+          known_free.size() == count ? known_free[index] : 0U;
+      cell.ground_support_known =
+          support_known.size() == count ? support_known[index] : 0U;
+      cell.ground_support_z_abs = support_z.size() == count
+                                      ? support_z[index]
+                                      : std::numeric_limits<float>::quiet_NaN();
+    }
+  }
+}
+
 void ProjectionLayer::update(int width, int height, double resolution,
                              const Eigen::Vector2d &origin, double now,
                              const ProjectionLayerConfig &config,
@@ -514,6 +554,7 @@ void ProjectionLayer::updateFull(int width, int height, double resolution,
                                  const ProjectionLayerConfig &config,
                                  const ColumnScanner &scanner,
                                  ProjectionUpdateStats *stats) {
+  validateTerrainPolicy(config);
   const auto full_start = std::chrono::steady_clock::now();
   if (width <= 0 || height <= 0 || resolution <= 0.0 || !scanner) {
     width_ = 0;
@@ -567,6 +608,7 @@ void ProjectionLayer::updateDirty(int width, int height, double resolution,
                                   const std::vector<int> &dirty_columns,
                                   bool force_full_refresh,
                                   ProjectionUpdateStats *stats) {
+  validateTerrainPolicy(config);
   const auto dirty_start = std::chrono::steady_clock::now();
   const bool geometry_changed =
       !matchesGeometry(width, height, resolution, origin);
@@ -710,6 +752,8 @@ void ProjectionLayer::collectClassificationStats(
     case ProjectionClassReason::SURVEYED_NEAR_FIELD_CLEAR:
       stats->insufficient_observation_count += 1.0;
       break;
+    case ProjectionClassReason::PRIOR_ASSISTED_CLEARANCE:
+    case ProjectionClassReason::PRIOR_STATIC_CLEAR:
     case ProjectionClassReason::THIN_SURFACE:
     case ProjectionClassReason::OVERHEAD_CLEARANCE_OK:
     case ProjectionClassReason::CLEARANCE_OK:
@@ -717,12 +761,14 @@ void ProjectionLayer::collectClassificationStats(
     case ProjectionClassReason::GROUND_CONNECTIVITY_HOLD:
       stats->thin_surface_count += 1.0;
       break;
+    case ProjectionClassReason::VEHICLE_OBSTACLE:
     case ProjectionClassReason::SOLID_VERTICAL_WALL:
       stats->vertical_wall_count += 1.0;
       break;
     case ProjectionClassReason::HOLLOW_TUNNEL:
       stats->hollow_tunnel_count += 1.0;
       break;
+    case ProjectionClassReason::VEHICLE_DETECTION_UNAVAILABLE:
     case ProjectionClassReason::AMBIGUOUS_OCCUPIED:
     case ProjectionClassReason::GROUND_UNVERIFIED:
     case ProjectionClassReason::HEADROOM_UNVERIFIED:
@@ -742,6 +788,35 @@ void ProjectionLayer::stageOneCell(int x, int y, double now,
   const int hash_id = hashIndexFromLocal(x, y);
   const CellData previous = cell_buffer_[static_cast<size_t>(hash_id)];
 
+  if (config.static_prior_authoritative) {
+    CellData cell;
+    cell.base_type = previous.base_type;
+    cell.raw_type = previous.raw_type;
+    cell.raw_reason = previous.raw_reason;
+    cell.occupied_clear_deadline = previous.occupied_clear_deadline;
+    cell.terrain_policy_active = 1U;
+    cell.static_prior_authoritative = 1U;
+    cell.prior_known_free = stats.prior_known_free;
+    cell.prior_traversability_weight = 1.0F;
+    cell.live_vehicle_obstacle = stats.live_vehicle_obstacle ? 1U : 0U;
+    cell.hard_obstacle = cell.live_vehicle_obstacle;
+    cell.last_update_time = static_cast<float>(now);
+    cell.last_hit_time = static_cast<float>(stats.last_hit_time);
+    cell.terrain_admissible = config.vehicle_detection_ready && !stats.live_vehicle_obstacle;
+    cell.prior_assisted = cell.terrain_admissible;
+    cell.traversable = cell.terrain_admissible;
+    cell.candidate_traversable = cell.traversable;
+    cell.candidate_type = cell.terrain_admissible ? CellType::FREE : CellType::OCCUPIED;
+    cell.candidate_reason = !config.vehicle_detection_ready ?
+        ProjectionClassReason::VEHICLE_DETECTION_UNAVAILABLE : stats.live_vehicle_obstacle ?
+        ProjectionClassReason::VEHICLE_OBSTACLE : ProjectionClassReason::PRIOR_STATIC_CLEAR;
+    if (stats.live_vehicle_obstacle) {
+      cell.occupied_z_min_abs = stats.occupied_z_min_abs;
+      cell.occupied_z_max_abs = stats.occupied_z_max_abs;
+    }
+    cell_buffer_[static_cast<size_t>(hash_id)] = cell;
+    return;
+  }
   CellData cell = previous;
   cell.last_hit_time = static_cast<float>(stats.last_hit_time);
   cell.last_update_time = static_cast<float>(stats.last_update_time);
@@ -753,9 +828,19 @@ void ProjectionLayer::stageOneCell(int x, int y, double now,
   cell.ground_z_abs = std::numeric_limits<float>::quiet_NaN();
   cell.ground_hit_stamp = 0.0;
   cell.local_overhead_candidate = 0U;
+  cell.local_ground_prior_assisted = 0U;
+  cell.ground_reference_source = GroundReferenceSource::NONE;
+  cell.body_obstacle_verified = 0U;
   cell.ceiling_z_abs = std::numeric_limits<float>::quiet_NaN();
   cell.headroom = std::numeric_limits<float>::infinity();
   cell.headroom_known_ratio = 0.0F;
+  cell.terrain_policy_active = config.terrain_policy_enabled ? 1U : 0U;
+  cell.terrain_admissible = 0U;
+  cell.prior_assisted = 0U;
+  cell.hard_obstacle = 0U;
+  cell.ground_evidence = cell.clearance_evidence = cell.slope_evidence = 0.0F;
+  cell.prior_traversability_weight =
+      static_cast<float>(config.prior_traversability_weight);
   cell.ground_candidate = 0U;
   cell.ground_verified = 0U;
   cell.ground_bridge_verified = 0U;
@@ -780,6 +865,10 @@ void ProjectionLayer::stageOneCell(int x, int y, double now,
   cell.traversable = 0U;
   cell.candidate_reason = ProjectionClassReason::INSUFFICIENT_OBSERVATION;
   cell.candidate_type = classifyCell(stats, cell, config, resolution_);
+  if (config.terrain_policy_enabled && stats.occupied_count == 0) {
+    cell.headroom_known_ratio = static_cast<float>(knownRatioInBodyVolume(
+        stats, config.reference_ground_z_abs, config, resolution_));
+  }
   cell.candidate_clearance_verified = cell.clearance_verified;
   cell.candidate_traversable = cell.traversable;
   const bool contains_occupied_voxel =
@@ -829,7 +918,7 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
   // started, keep it active even though raw_reason follows the new free proof.
   const bool hold_active = cell.occupied_clear_deadline > 0.0;
   const bool zero_hit_headroom_dropout =
-      config.require_ground_support &&
+      !config.terrain_policy_enabled && config.require_ground_support &&
       config.clearance_dropout_hold_time > 0.0 &&
       raw_type == CellType::OCCUPIED &&
       raw_reason == ProjectionClassReason::HEADROOM_UNVERIFIED &&
@@ -872,7 +961,7 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
   const bool unsupported_prior_free_return =
       raw_type == CellType::OCCUPIED && cell.prior_known_free != 0U &&
       !cell.ground_support_known && isUncertainPriorFreeReason(raw_reason);
-  if (unsupported_prior_free_return &&
+  if (!config.terrain_policy_enabled && unsupported_prior_free_return &&
       config.prior_free_uncertain_obstacle_confirmations > 1) {
     const bool same_return =
         previous_raw_type == CellType::OCCUPIED &&
@@ -930,7 +1019,9 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
     }
   } else if ((cell.clearance_verified != 0U &&
               isClearanceProofReason(raw_reason)) ||
-             raw_reason == ProjectionClassReason::CLEARANCE_DROPOUT_HOLD) {
+             raw_reason == ProjectionClassReason::CLEARANCE_DROPOUT_HOLD ||
+             (cell.terrain_policy_active != 0U &&
+              cell.terrain_admissible != 0U)) {
     // These classifications already carry an explicit clearance proof (or its
     // bounded zero-hit continuation). Keep the wall-clock obstacle hold above
     // authoritative when configured, but do not add a second frame-count
@@ -949,12 +1040,25 @@ void ProjectionLayer::commitCell(CellData &cell, CellType raw_type,
 
 void ProjectionLayer::resolveGroundConnectivityAndCommit(
     double now, const ColumnScanner &scanner, const ProjectionLayerConfig &config) {
+  if (config.static_prior_authoritative) {
+    for (auto &cell : cell_buffer_) {
+      commitCell(cell, cell.candidate_type, cell.candidate_reason, now, config);
+    }
+    return;
+  }
   // Connectivity failure must not erase the column's independent clearance
   // evidence. Dirty updates may change the robot pose without rescanning it.
   for (auto &cell : cell_buffer_) {
+    cell.local_ground_prior_assisted = 0U;
+    cell.ground_reference_source = GroundReferenceSource::NONE;
+    cell.body_obstacle_verified = 0U;
     cell.clearance_verified = cell.candidate_clearance_verified;
     cell.traversable = cell.candidate_traversable;
     if (cell.local_overhead_candidate != 0U) {
+      cell.ceiling_z_abs =
+          cell.occupied_z_min_abs -
+          static_cast<float>(config.headroom_voxel_inset_fraction *
+                             resolution_);
       cell.candidate_type = CellType::OCCUPIED;
       cell.candidate_reason = ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED;
       cell.clearance_verified = 0U;
@@ -1726,26 +1830,56 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
           continue;
         }
 
-        const auto apply_ground = [&](double ground_z) {
+        const auto apply_ground = [&](double ground_z,
+                                      GroundReferenceSource source) {
           cell.candidate_type = CellType::OCCUPIED;
           cell.clearance_verified = 0U;
           cell.traversable = 0U;
           cell.reference_ground_z_abs = static_cast<float>(ground_z);
-          cell.headroom = cell.ceiling_z_abs - static_cast<float>(ground_z);
-          if (cell.headroom + 1.0e-6 < required_headroom) {
+          cell.ground_reference_source = source;
+          const auto column = scanner(x, y);
+          const double inset =
+              config.headroom_voxel_inset_fraction * resolution_;
+          const double body_bottom = ground_z + config.body_bottom_clearance;
+          double ceiling = std::numeric_limits<double>::infinity();
+          bool body_hit = false;
+          // The lowest occupied run may be terrain below the estimated floor,
+          // not a ceiling. Ignore only measured intervals wholly below the body
+          // bottom; any interval entering the body band remains a hard veto.
+          for (size_t z = 0; z < column.vertical_states.size(); ++z) {
+            if (column.vertical_states[z] != VerticalVoxelState::OCCUPIED)
+              continue;
+            const double low =
+                surfaceZ(column, static_cast<int>(z), resolution_, false) -
+                inset;
+            const double high =
+                surfaceZ(column, static_cast<int>(z), resolution_, true) +
+                inset;
+            if (high <= body_bottom + 1.0e-6)
+              continue;
+            ceiling = std::min(ceiling, low);
+            if (low < ground_z + required_headroom - 1.0e-6)
+              body_hit = true;
+          }
+          cell.ceiling_z_abs = static_cast<float>(ceiling);
+          cell.headroom = static_cast<float>(ceiling - ground_z);
+          cell.body_obstacle_verified = body_hit ? 1U : 0U;
+          cell.headroom_known_ratio = static_cast<float>(
+              knownRatioInBodyVolume(column, ground_z, config, resolution_));
+          if (body_hit) {
             cell.candidate_reason = ProjectionClassReason::HEADROOM_BLOCKED;
             return;
           }
-          const auto column = scanner(x, y);
-          cell.headroom_known_ratio = static_cast<float>(
-              knownRatioInBodyVolume(column, ground_z, config, resolution_));
           if (cell.headroom_known_ratio + 1.0e-6 <
               config.min_observed_overhead_headroom_known_ratio) {
             cell.candidate_reason = ProjectionClassReason::HEADROOM_UNVERIFIED;
             return;
           }
           cell.candidate_type = CellType::PASSABLE;
-          cell.candidate_reason = ProjectionClassReason::OVERHEAD_CLEARANCE_OK;
+          cell.candidate_reason =
+              std::isfinite(ceiling)
+                  ? ProjectionClassReason::OVERHEAD_CLEARANCE_OK
+                  : ProjectionClassReason::CLEARANCE_OK;
           cell.clearance_verified = 1U;
           cell.traversable = 1U;
         };
@@ -1760,18 +1894,14 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
         if (recent_ground(cell) &&
             cell.observed_ground_z_abs + config.body_bottom_clearance <
                 cell.ceiling_z_abs) {
-          apply_ground(cell.observed_ground_z_abs);
+          apply_ground(cell.observed_ground_z_abs,
+                       GroundReferenceSource::MEASURED_HISTORY);
           continue;
         }
 
-        if (has_contact_ground) {
-          // Inside the current ground envelope, use the contact tangent at the
-          // query position. On the last part of a descent the sensor cannot see
-          // the floor at its own front wheels. A remote roof must never use
-          // this bounded extrapolation while the robot is still on a platform.
-          apply_ground(reference_ground_at(wx, wy));
-          continue;
-        }
+        // A chassis tangent can be above the local landing during a descent.
+        // Prefer an independently measured local floor before extrapolating it.
+        bool local_floor_applied = false;
 
         // Start nearby so a ramp and the lower landing do not unnecessarily
         // share one plane; widen only if the smaller neighborhood has no fit.
@@ -1846,6 +1976,8 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
               max_angular_gap <= kPi + 1.0e-6;
           const bool one_sided_static_free_support =
               cell.prior_known_free != 0U &&
+              (!config.terrain_policy_enabled ||
+               config.prior_traversability_weight > 0.0) &&
               connected_sample_count >= static_cast<size_t>(min_samples);
           if (!surrounded_by_observed_ground &&
               !one_sided_static_free_support) {
@@ -1923,7 +2055,6 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
           // fit.
           const double inferred_ground = fitted_ground + max_positive_residual;
           if (!std::isfinite(inferred_ground) ||
-              inferred_ground > static_cast<double>(cell.ceiling_z_abs) + 1.0e-6 ||
               std::abs(inferred_ground - config.reference_ground_z_abs) >
                   config.max_ground_height_delta + 1.0e-6) {
             if (radius >= search_radius) {
@@ -1931,8 +2062,21 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
             }
             continue;
           }
-          apply_ground(inferred_ground);
+          const auto source =
+              !surrounded_by_observed_ground && one_sided_static_free_support
+                  ? GroundReferenceSource::PRIOR_ASSISTED_NEIGHBORS
+                  : GroundReferenceSource::MEASURED_NEIGHBORS;
+          apply_ground(inferred_ground, source);
+          local_floor_applied = true;
+          cell.local_ground_prior_assisted =
+              !surrounded_by_observed_ground && one_sided_static_free_support
+                  ? 1U
+                  : 0U;
           break;
+        }
+        if (!local_floor_applied && has_contact_ground) {
+          apply_ground(reference_ground_at(wx, wy),
+                       GroundReferenceSource::CONTACT_TANGENT);
         }
       }
     }
@@ -2034,6 +2178,185 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
       cell.footprint_clear_eligible = 0U;
       cell.clearance_dropout_eligible = 0U;
       cell.traversable = 1U;
+    }
+  }
+
+  // Score the independently measured terrain before applying any prior
+  // assistance. Assisted cells must never seed the connectivity walk or lend
+  // their score to a neighbor, including during dirty-only updates.
+  if (config.terrain_policy_enabled) {
+    for (int y = 0; y < height_; ++y) {
+      for (int x = 0; x < width_; ++x) {
+        auto &cell =
+            cell_buffer_[static_cast<size_t>(hashIndexFromLocal(x, y))];
+        cell.terrain_policy_active = 1U;
+        cell.terrain_admissible = cell.prior_assisted = 0U;
+        cell.prior_traversability_weight = static_cast<float>(
+            cell.prior_known_free != 0U ? config.prior_traversability_weight
+                                        : 0.0);
+        const bool measured_ground =
+            cell.ground_candidate != 0U && std::isfinite(cell.ground_z_abs);
+        const bool local_floor_proof =
+            (cell.candidate_reason ==
+                 ProjectionClassReason::OVERHEAD_CLEARANCE_OK ||
+             (cell.candidate_reason == ProjectionClassReason::CLEARANCE_OK &&
+              cell.local_overhead_candidate != 0U)) &&
+            std::isfinite(cell.reference_ground_z_abs);
+        const bool connected_ground =
+            measured_ground && cell.ground_verified != 0U;
+        int compatible_samples = 0;
+        int connected_samples = 0;
+        int clearance_samples = 0;
+        bool incompatible_connected_ground = false;
+        double independent_ground = std::numeric_limits<double>::quiet_NaN();
+        double independent_ground_distance =
+            std::numeric_limits<double>::infinity();
+        double local_ground = std::numeric_limits<double>::quiet_NaN();
+        // The existing bounded terrain strip supplies partial evidence at a
+        // missing column. Three compatible returns supply local slope evidence;
+        // only the independent robot-connected walk supplies full connectivity.
+        const double evidence_radius = std::max(
+            resolution_,
+            std::min(config.overhead_ground_search_radius,
+                     config.ground_connectivity_quantile_lateral_radius));
+        const int evidence_cells =
+            static_cast<int>(std::ceil(evidence_radius / resolution_));
+        for (int dy = -evidence_cells; dy <= evidence_cells; ++dy) {
+          for (int dx = -evidence_cells; dx <= evidence_cells; ++dx) {
+            if ((dx == 0 && dy == 0) || x + dx < 0 || x + dx >= width_ ||
+                y + dy < 0 || y + dy >= height_ ||
+                std::hypot(dx, dy) * resolution_ > evidence_radius + 1.0e-6)
+              continue;
+            const auto &neighbor = cell_buffer_[static_cast<size_t>(
+                hashIndexFromLocal(x + dx, y + dy))];
+            if (neighbor.candidate_clearance_verified != 0U &&
+                isTraversableCellType(neighbor.candidate_type) &&
+                neighbor.headroom_known_ratio + 1.0e-6 >=
+                    config.min_headroom_known_ratio) {
+              ++clearance_samples;
+            }
+            if (neighbor.ground_candidate == 0U ||
+                !std::isfinite(neighbor.ground_z_abs) ||
+                neighbor.candidate_reason ==
+                    ProjectionClassReason::HEADROOM_BLOCKED)
+              continue;
+            const double neighbor_distance = resolution_ * std::hypot(dx, dy);
+            if (neighbor.ground_verified != 0U &&
+                neighbor_distance < independent_ground_distance) {
+              independent_ground = neighbor.ground_z_abs;
+              independent_ground_distance = neighbor_distance;
+            }
+            const double allowed_step =
+                std::max(config.max_ground_step,
+                         slope * resolution_ * std::hypot(dx, dy)) +
+                1.0e-6;
+            const double target_z =
+                measured_ground
+                    ? cell.ground_z_abs
+                    : (std::isfinite(local_ground) ? local_ground
+                                                   : neighbor.ground_z_abs);
+            if (std::abs(neighbor.ground_z_abs - target_z) <= allowed_step) {
+              ++compatible_samples;
+              if (!std::isfinite(local_ground))
+                local_ground = neighbor.ground_z_abs;
+              if (neighbor.ground_verified != 0U)
+                ++connected_samples;
+            } else if (measured_ground && neighbor.ground_verified != 0U &&
+                       cell.ground_z_abs > neighbor.ground_z_abs) {
+              incompatible_connected_ground = true;
+            }
+          }
+        }
+        cell.ground_evidence =
+            connected_ground || (local_floor_proof &&
+                                 cell.local_ground_prior_assisted == 0U &&
+                                 cell.ground_reference_source !=
+                                     GroundReferenceSource::CONTACT_TANGENT)
+                ? 1.0F
+                : (measured_ground ? 0.5F
+                                   : std::min(0.5F, 0.25F * connected_samples));
+        cell.slope_evidence =
+            connected_ground || (local_floor_proof &&
+                                 cell.local_ground_prior_assisted == 0U &&
+                                 cell.ground_reference_source !=
+                                     GroundReferenceSource::CONTACT_TANGENT)
+                ? 1.0F
+                : static_cast<float>(std::min(
+                      1.0,
+                      static_cast<double>(compatible_samples) /
+                          std::max(
+                              1,
+                              config
+                                  .ground_connectivity_quantile_min_samples)));
+        if (local_floor_proof && (cell.local_ground_prior_assisted != 0U ||
+                                  cell.ground_reference_source ==
+                                      GroundReferenceSource::CONTACT_TANGENT)) {
+          cell.ground_evidence = std::max(cell.ground_evidence, 0.5F);
+          cell.slope_evidence = std::max(cell.slope_evidence, 0.5F);
+        }
+        cell.clearance_evidence = static_cast<float>(std::min<double>(
+            cell.confidence,
+            config.min_headroom_known_ratio <= 0.0
+                ? 1.0
+                : std::clamp(cell.headroom_known_ratio /
+                                 config.min_headroom_known_ratio,
+                             0.0, 1.0)));
+        // Neighboring measured free columns are partial coverage of the local
+        // body band, never a full proof of this column. Their contribution is
+        // capped at one half and is not derived from an assisted cell's score.
+        cell.clearance_evidence = std::max(
+            cell.clearance_evidence,
+            static_cast<float>(
+                0.5 *
+                std::min(
+                    1.0,
+                    static_cast<double>(clearance_samples) /
+                        std::max(
+                            1,
+                            config.ground_connectivity_quantile_min_samples))));
+        const auto reason = cell.candidate_reason;
+        cell.hard_obstacle =
+            (reason == ProjectionClassReason::SOLID_VERTICAL_WALL ||
+             reason == ProjectionClassReason::AMBIGUOUS_OCCUPIED ||
+             reason == ProjectionClassReason::HEADROOM_BLOCKED ||
+             reason == ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED ||
+             (!connected_ground && incompatible_connected_ground))
+                ? 1U
+                : 0U;
+        // A lone thin return in the predicted body band is not positive
+        // ground evidence. A weight of one cannot turn a floating obstacle
+        // into a floor merely because the map underneath it is white.
+        const double wx = origin_.x() + (x + 0.5) * resolution_;
+        const double wy = origin_.y() + (y + 0.5) * resolution_;
+        // Unverified thin returns cannot establish each other's floor height.
+        // Otherwise a floating plate patch inside the body band would be
+        // accepted as ground at weights 0.5 and 1.0.
+        const double floor_z = std::isfinite(independent_ground)
+                                   ? independent_ground
+                                   : reference_ground_at(wx, wy);
+        // Current chassis occupancy/contact is partial physical evidence, not
+        // a PGM free fill. It can cover the sensor's self-occluded footprint
+        // at weight >= 0.5, but cannot pass strict weight zero, spread forward,
+        // leave a free trail, or override any occupied return.
+        if (config.clear_robot_footprint_unknown &&
+            config.reference_ground_plane_valid &&
+            !std::isfinite(cell.occupied_z_min_abs) &&
+            insideRobotEnvelope(
+                wx, wy, config, config.robot_footprint_clear_length,
+                config.robot_footprint_clear_width, resolution_)) {
+          cell.ground_evidence = std::max(cell.ground_evidence, 0.5F);
+          cell.clearance_evidence = std::max(cell.clearance_evidence, 0.5F);
+          cell.slope_evidence = std::max(cell.slope_evidence, 0.5F);
+        }
+        if (measured_ground && !connected_ground &&
+            cell.ground_z_abs >
+                floor_z + std::max(config.max_ground_step,
+                                   config.body_bottom_clearance) &&
+            cell.occupied_z_min_abs <
+                floor_z + config.vehicle_height + config.headroom_margin) {
+          cell.hard_obstacle = 1U;
+        }
+      }
     }
   }
 
@@ -2214,6 +2537,50 @@ void ProjectionLayer::resolveGroundConnectivityAndCommit(
           cell.near_field_prior_fill_eligible = 1U;
         }
       }
+      if (config.terrain_policy_enabled) {
+        // The independent measured-ground hold is resolved after scoring.
+        // Carry that bounded proof into the gate without renewing its deadline
+        // or overriding an occupied return.
+        if (held_ground && cell.hard_obstacle == 0U) {
+          cell.ground_evidence = 1.0F;
+          cell.slope_evidence = 1.0F;
+        }
+        const float required = 1.0F - cell.prior_traversability_weight;
+        cell.terrain_admissible =
+            cell.hard_obstacle == 0U &&
+            cell.ground_evidence + 1.0e-6F >= required &&
+            cell.clearance_evidence + 1.0e-6F >= required &&
+            cell.slope_evidence + 1.0e-6F >= required;
+        if (cell.hard_obstacle != 0U) {
+          final_type = CellType::OCCUPIED;
+          final_reason =
+              isMeasuredObstacleReason(cell.candidate_reason) ||
+                      cell.candidate_reason ==
+                          ProjectionClassReason::OVERHEAD_GROUND_UNVERIFIED
+                  ? cell.candidate_reason
+                  : ProjectionClassReason::AMBIGUOUS_OCCUPIED;
+          cell.traversable = cell.clearance_verified = 0U;
+        } else if (cell.terrain_admissible != 0U) {
+          cell.prior_assisted = cell.ground_evidence < 1.0F - 1.0e-6F ||
+                                cell.clearance_evidence < 1.0F - 1.0e-6F ||
+                                cell.slope_evidence < 1.0F - 1.0e-6F;
+          final_type =
+              cell.ground_candidate != 0U ? CellType::PASSABLE : CellType::FREE;
+          if (cell.prior_assisted != 0U)
+            final_reason = ProjectionClassReason::PRIOR_ASSISTED_CLEARANCE;
+          cell.traversable = 1U;
+          // Preserve the sensor-only clearance/ground diagnostics. Prior
+          // permission must not be published as measured clearance evidence.
+        } else {
+          final_type = CellType::OCCUPIED;
+          final_reason = cell.ground_evidence + 1.0e-6F < required ||
+                                 cell.slope_evidence + 1.0e-6F < required
+                             ? ProjectionClassReason::GROUND_UNVERIFIED
+                             : ProjectionClassReason::HEADROOM_UNVERIFIED;
+          cell.traversable = 0U;
+        }
+        cell.near_field_prior_fill_eligible = 0U;
+      }
       commitCell(cell, final_type, final_reason, now, config);
     }
   }
@@ -2369,7 +2736,8 @@ void ProjectionLayer::fillMask(const ProjectionLayerConfig &config,
     CellData &cell =
         cell_buffer_[static_cast<size_t>(hashIndexFromLocal(x, y))];
     cell.hole_filled = false;
-    if (x <= 0 || y <= 0 || x >= width_ - 1 || y >= height_ - 1 ||
+    if (cell.terrain_policy_active != 0U || x <= 0 || y <= 0 ||
+        x >= width_ - 1 || y >= height_ - 1 ||
         cell.raw_reason == ProjectionClassReason::ROBOT_FOOTPRINT_CLEAR ||
         cell.raw_reason == ProjectionClassReason::SURVEYED_NEAR_FIELD_CLEAR ||
         (cell.base_type != CellType::UNKNOWN &&
@@ -2404,8 +2772,8 @@ void ProjectionLayer::denoiseMask(const ProjectionLayerConfig &config,
     const CellType filled_type =
         cell.hole_filled ? CellType::OCCUPIED : cell.base_type;
     cell.type = filled_type;
-    if (filled_type != CellType::OCCUPIED || x <= 0 || y <= 0 ||
-        x >= width_ - 1 || y >= height_ - 1) {
+    if (cell.terrain_policy_active != 0U || filled_type != CellType::OCCUPIED ||
+        x <= 0 || y <= 0 || x >= width_ - 1 || y >= height_ - 1) {
       continue;
     }
 

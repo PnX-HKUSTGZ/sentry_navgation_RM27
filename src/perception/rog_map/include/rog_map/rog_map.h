@@ -122,6 +122,13 @@ public:
   }
 
 protected:
+  bool staticPriorAuthoritative() const {
+    return cfg_.prior_map_enable && cfg_.prior_map_traversability_weight == 1.0;
+  }
+  std::unique_ptr<PriorDynamicObstacles> vehicle_obstacles_;
+  bool vehicle_detection_ready_{false};
+  Eigen::Isometry3d vehicle_map_from_cloud_{Eigen::Isometry3d::Identity()};
+  Eigen::Vector3d vehicle_robot_ground_map_{Eigen::Vector3d::Zero()};
   std::shared_ptr<ProjectionLayer> layer_;
   std::shared_ptr<DynamicLayer> field_;
   std::shared_ptr<QueryAdapter> query_;
@@ -136,9 +143,6 @@ protected:
   PriorMapData prior_map_;
   std::vector<uint8_t> fused_projection_mask_;
   std::vector<uint8_t> fused_projection_values_;
-  std::vector<uint8_t> dynamic_unknown_mask_;
-  std::vector<uint8_t> dynamic_near_field_prior_fill_mask_;
-  std::vector<uint8_t> dynamic_prior_clearance_override_mask_;
   std::vector<uint8_t> prior_projection_mask_;
 
   void updateMapInternal(

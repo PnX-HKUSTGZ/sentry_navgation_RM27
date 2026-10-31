@@ -79,8 +79,15 @@ struct PriorMapData {
 PriorMapData loadPriorMap(const std::string &yaml_path,
                           const std::string &pgm_path);
 
+bool priorMapKnownFree(const PriorMapData &prior_map, double map_x, double map_y);
+
 bool priorMapOccupied(const PriorMapData &prior_map, double map_x,
                       double map_y);
+
+// Only for associating live residual points to a surveyed static boundary.
+// Does not change the original PGM footprint collision mask.
+bool priorMapNearOccupied(const PriorMapData &prior_map, double map_x,
+                          double map_y, double distance);
 
 // Query surveyed support directly in the prior map frame. Unlike
 // priorMapGroundSupport(), this does not require the runtime prior-to-ROG TF.
@@ -105,14 +112,10 @@ bool refreshPriorMapProjectionCache(PriorMapData &prior_map, int min_global_x,
                                     double resolution, double origin_x,
                                     double origin_y);
 
-void fusePriorMapProjection(
-    bool prior_enabled, bool free_fills_unknown, const PriorMapData &prior_map,
-    const std::vector<uint8_t> &dynamic_mask,
-    const std::vector<uint8_t> &dynamic_values,
-    const std::vector<uint8_t> &dynamic_unknown_mask,
-    const std::vector<uint8_t> &dynamic_near_field_prior_fill_mask,
-    const std::vector<uint8_t> &dynamic_prior_clearance_override_mask,
-    std::vector<uint8_t> &fused_mask, std::vector<uint8_t> &fused_values,
-    bool require_ground_support = false);
+void fusePriorMapProjection(bool prior_enabled, const PriorMapData &prior_map,
+                            const std::vector<uint8_t> &dynamic_mask,
+                            const std::vector<uint8_t> &dynamic_values,
+                            std::vector<uint8_t> &fused_mask,
+                            std::vector<uint8_t> &fused_values);
 
 } // namespace rog_map

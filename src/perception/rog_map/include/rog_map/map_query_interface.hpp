@@ -61,6 +61,8 @@ struct ProjectionDiagnostic
   uint8_t candidate_reason{0U};
   bool hole_filled{false};
   bool prior_occupied{false};
+  uint8_t ground_reference_source{0U};
+  bool body_obstacle_verified{false};
   bool prior_known_free{false};
   bool ground_candidate{false};
   bool ground_verified{false};
@@ -72,6 +74,18 @@ struct ProjectionDiagnostic
   bool inside_current_footprint{false};
   bool inside_surveyed_near_field{false};
   bool continuous_ground_support{false};
+  float prior_traversability_weight{0.0F};
+  float prior_weight_setting{0.0F};
+  bool prior_boundary_reconciled{false};
+  float ground_evidence{0.0F};
+  float clearance_evidence{0.0F};
+  float slope_evidence{0.0F};
+  bool static_prior_authoritative{false};
+  bool live_vehicle_obstacle{false};
+  bool terrain_policy_active{false};
+  bool terrain_admissible{false};
+  bool prior_assisted{false};
+  bool hard_obstacle{false};
   float confidence{0.0F};
   float occupied_z_min{std::numeric_limits<float>::quiet_NaN()};
   float occupied_z_max{std::numeric_limits<float>::quiet_NaN()};

@@ -1,0 +1,368 @@
+{
+  "configured_weights": {
+    "simulation": 1.0,
+    "reality": 0.5
+  },
+  "tests": {
+    "rog_map": {
+      "tests": 168,
+      "errors": 0,
+      "failures": 0
+    },
+    "minco_planner": {
+      "tests": 143,
+      "errors": 0,
+      "failures": 0
+    }
+  },
+  "reproduced_before_fix": [
+    "ZeroWeightCannotBorrowOneSidedPriorRoofProof",
+    "ConnectedGroundHoldStillWorksBeforeItsDeadline",
+    "FloatingObstaclePatchCannotVerifyItselfAsGround"
+  ],
+  "simulation_cases": {
+    "prior_weight_audit_half_controlled": {
+      "weight": 0.5,
+      "vehicle_height_m": 0.24,
+      "source": "/tmp/nav_flat_speed_20261031/prior_weight_audit_half_controlled/report.json",
+      "gimbal": "folded",
+      "routes": [
+        {
+          "name": "west_down",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": "timeout",
+          "sim_s": 34.96,
+          "path_length_m": 6.393269063430356,
+          "mean_speed_sim_mps": 0.18287382904549074,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "SAFETY_COSTMAP_LETHAL": 31,
+            "BLOCK_COMMAND": 1
+          }
+        },
+        {
+          "name": "west_up",
+          "goal": [
+            -9.51,
+            2.73
+          ],
+          "status": 4,
+          "sim_s": 7.960000000000001,
+          "path_length_m": 5.347946206663572,
+          "mean_speed_sim_mps": 0.6718525385255742,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 6,
+            "GOAL_REACHED": 1
+          }
+        },
+        {
+          "name": "west_return",
+          "goal": [
+            -11.5,
+            3.1
+          ],
+          "status": 4,
+          "sim_s": 14.86,
+          "path_length_m": 3.0169978661509433,
+          "mean_speed_sim_mps": 0.20302812019858302,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "SAFETY_COSTMAP_LETHAL": 14,
+            "GOAL_REACHED": 1
+          }
+        }
+      ],
+      "mean_speed_mps": 0.25542078809700364
+    },
+    "prior_weight_audit_one_flat": {
+      "weight": 1.0,
+      "vehicle_height_m": 0.24,
+      "source": "/tmp/nav_flat_speed_20261031/prior_weight_audit_one_flat/report.json",
+      "gimbal": "folded",
+      "routes": [
+        {
+          "name": "west_down",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": 4,
+          "sim_s": 4.779999999999999,
+          "path_length_m": 6.145093124857187,
+          "mean_speed_sim_mps": 1.2855843357441816,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          }
+        },
+        {
+          "name": "west_up",
+          "goal": [
+            -9.51,
+            2.73
+          ],
+          "status": 4,
+          "sim_s": 4.280000000000001,
+          "path_length_m": 5.471967626646919,
+          "mean_speed_sim_mps": 1.2784971090296535,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "GOAL_REACHED": 1
+          }
+        },
+        {
+          "name": "west_return",
+          "goal": [
+            -11.5,
+            3.1
+          ],
+          "status": 4,
+          "sim_s": 2.360000000000003,
+          "path_length_m": 2.178485667459421,
+          "mean_speed_sim_mps": 0.923087147228567,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          }
+        }
+      ],
+      "mean_speed_mps": 1.208016323902235
+    },
+    "prior_weight_audit_one_spin": {
+      "weight": 1.0,
+      "vehicle_height_m": 0.24,
+      "source": "/tmp/nav_flat_speed_20261031/prior_weight_audit_one_spin/report.json",
+      "gimbal": "spin",
+      "routes": [
+        {
+          "name": "west_down",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": 4,
+          "sim_s": 4.74,
+          "path_length_m": 6.196878391360464,
+          "mean_speed_sim_mps": 1.3073583104136,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          }
+        },
+        {
+          "name": "west_up",
+          "goal": [
+            -9.51,
+            2.73
+          ],
+          "status": 4,
+          "sim_s": 4.520000000000001,
+          "path_length_m": 5.605990218905964,
+          "mean_speed_sim_mps": 1.2402633227668058,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          }
+        },
+        {
+          "name": "west_return",
+          "goal": [
+            -11.5,
+            3.1
+          ],
+          "status": 4,
+          "sim_s": 2.2799999999999976,
+          "path_length_m": 2.0916888983828126,
+          "mean_speed_sim_mps": 0.91740741157141,
+          "stop_count": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          }
+        }
+      ],
+      "mean_speed_mps": 1.20403444615678
+    },
+    "prior_weight_audit_one_north": {
+      "weight": 1.0,
+      "vehicle_height_m": 0.24,
+      "source": "/tmp/nav_flat_speed_20261031/prior_weight_audit_one_north/report.json",
+      "gimbal": "folded",
+      "routes": [
+        {
+          "name": "north_cross",
+          "goal": [
+            5.712,
+            4.998
+          ],
+          "status": 4,
+          "sim_s": 37.2,
+          "path_length_m": 48.36691057502529,
+          "mean_speed_sim_mps": 1.3001857681458409,
+          "stop_count": 1,
+          "stops": [
+            {
+              "duration_s": 0.62,
+              "xy": [
+                -1.3560746965872235,
+                7.659803864367519
+              ],
+              "mean_command": 0.013336771728019902
+            }
+          ],
+          "events": {
+            "NEW_PLAN_WAITING_FOR_TRAJECTORY": 1,
+            "SAFETY_COSTMAP_LETHAL": 6,
+            "BLOCK_COMMAND": 2,
+            "BLOCKED": 1,
+            "GICP_REJECTED": 3,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          }
+        },
+        {
+          "name": "north_return",
+          "goal": [
+            -3.32,
+            6.789
+          ],
+          "status": "timeout",
+          "sim_s": 44.98,
+          "path_length_m": 2.851912473915575,
+          "mean_speed_sim_mps": 0.0634040123147082,
+          "stop_count": 2,
+          "stops": [
+            {
+              "duration_s": 1.56,
+              "xy": [
+                7.985939259409904,
+                6.593711887210608
+              ],
+              "mean_command": 0.018987341667498114
+            },
+            {
+              "duration_s": 40.2,
+              "xy": [
+                8.005660916931927,
+                6.59370747770369
+              ],
+              "mean_command": 0.0013177523538339276
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 5,
+            "SAFETY_COSTMAP_LETHAL": 40,
+            "BLOCKED": 38,
+            "NO_PROGRESS": 2
+          }
+        }
+      ],
+      "mean_speed_mps": 0.6232516798362236
+    },
+    "prior_weight_audit_one_obstacle": {
+      "weight": 1.0,
+      "vehicle_height_m": 0.24,
+      "source": "/tmp/nav_flat_speed_20261031/prior_weight_audit_one_obstacle/report.json",
+      "gimbal": "folded",
+      "routes": [
+        {
+          "name": "flat_added_obstacle",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": "timeout",
+          "sim_s": 24.96,
+          "path_length_m": 3.1624237918036817,
+          "mean_speed_sim_mps": 0.12669967114598082,
+          "stop_count": 1,
+          "stops": [
+            {
+              "duration_s": 20.9,
+              "xy": [
+                -12.967340330527824,
+                0.9895124641313542
+              ],
+              "mean_command": 0.526969766971689
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "NO_PROGRESS": 1
+          },
+          "added_obstacle": {
+            "created": true,
+            "center_xy": [
+              -12.95,
+              0.5
+            ],
+            "size_xyz": [
+              0.4,
+              0.4,
+              0.8
+            ],
+            "truth_footprint_overlap_count": 1125,
+            "min_sat_separation_m": -0.02840896756462974
+          }
+        }
+      ],
+      "mean_speed_mps": 0.12669967114598082
+    },
+    "prior_weight_audit_obstacle_probe": {
+      "weight": 1.0,
+      "vehicle_height_m": 0.24,
+      "source": "/tmp/nav_flat_speed_20261031/prior_weight_audit_obstacle_probe/report.json",
+      "gimbal": "folded",
+      "routes": [],
+      "mean_speed_mps": null,
+      "obstacle_cloud_probe": {
+        "camera_init": {
+          "count": 0,
+          "example": []
+        },
+        "left_mid360": {
+          "count": 0,
+          "example": []
+        }
+      }
+    }
+  },
+  "north_failure_samples": [
+    "[planner_server_mt-16] [WARN] [1793451159.076035620] [planner_server]: [MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=nan/nan sample=footprint center=(8.033,6.588,0.000) query_point=(7.773,6.866,0.000) footprint_offset=(-0.269,0.269) yaw=-0.035 esdf_distance=-0.012 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.233 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.069 pipeline_age_ms=164.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=FREE base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=GROUND_UNVERIFIED candidate_reason=EMPTY_COLUMN prior_occupied=1 prior_free=0 occupied_z=[nan,nan] height_delta=0.000 vertical_ratio=0.000 ground_z=nan support_z=nan ceiling_z=nan headroom=inf headroom_known=0.266 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=1 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=nan support_error=nan support_tolerance=nan confidence=1.000 prior_weight=0.000 evidence=(0.500,1.000,0.500) terrain_allowed=0 prior_assisted=0 hard_obstacle=0 planning_frame='map' rog_frame='camera_init'.",
+    "[planner_server_mt-16] [WARN] [1793451160.120902600] [planner_server]: [MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=nan/nan sample=footprint center=(8.032,6.583,0.000) query_point=(7.772,6.861,0.000) footprint_offset=(-0.269,0.269) yaw=-0.036 esdf_distance=-0.003 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.178 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.061 pipeline_age_ms=117.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=FREE base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=GROUND_UNVERIFIED candidate_reason=EMPTY_COLUMN prior_occupied=1 prior_free=0 occupied_z=[nan,nan] height_delta=0.000 vertical_ratio=0.000 ground_z=nan support_z=nan ceiling_z=nan headroom=inf headroom_known=0.741 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=1 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=nan support_error=nan support_tolerance=nan confidence=1.000 prior_weight=0.000 evidence=(0.500,1.000,0.500) terrain_allowed=0 prior_assisted=0 hard_obstacle=0 planning_frame='map' rog_frame='camera_init'.",
+    "[planner_server_mt-16] [WARN] [1793451161.121136774] [planner_server]: [MincoPlanner] Trajectory safety rejected: reason=COSTMAP_LETHAL t=nan/nan sample=footprint center=(8.038,6.589,0.000) query_point=(7.778,6.867,0.000) footprint_offset=(-0.269,0.269) yaw=-0.033 esdf_distance=-0.013 safe_distance=0.000 cost=254 query_status=OK snapshot_age=0.179 static_overlap_ratio=nan/0.0400 static_depth_exceeded=0 max_depth=0.030 snapshot_commit_age=0.063 pipeline_age_ms=116.0 cost_source=DYNAMIC_PROJECTION cost_cause=RAW_OCCUPIED dynamic_cost=254 cell_type=OCCUPIED raw_type=OCCUPIED candidate_type=FREE base_type=OCCUPIED pending_type=OCCUPIED pending_count=0 hole_filled=0 hold_remaining=0.000 raw_reason=GROUND_UNVERIFIED candidate_reason=EMPTY_COLUMN prior_occupied=1 prior_free=0 occupied_z=[nan,nan] height_delta=0.000 vertical_ratio=0.000 ground_z=nan support_z=nan ceiling_z=nan headroom=inf headroom_known=0.268 ground_candidate=0 ground_verified=0 support_known=0 support_verified=0 empty_support=0 clearance_verified=1 footprint_eligible=0 inside_footprint=0 inside_near_field=0 envelope_body=(nan,nan) continuous_support=0 support_ref=nan support_error=nan support_tolerance=nan confidence=1.000 prior_weight=0.000 evidence=(0.500,1.000,0.500) terrain_allowed=0 prior_assisted=0 hard_obstacle=0 planning_frame='map' rog_frame='camera_init'."
+  ],
+  "unresolved": [
+    "North return timed out with 40.2 s standstill in non-white prior cells and missing terrain evidence.",
+    "Inserted box test timed out with footprint overlap; stationary raw/registered cloud probe had zero points in the box region."
+  ],
+  "excluded_case": {
+    "name": "prior_weight_audit_half_flat",
+    "reason": "Filename is misleading: startup log confirmed active weight 1.0; use the explicitly frozen half_controlled case for the 0.5 comparison."
+  }
+}

@@ -33,13 +33,19 @@ p.add_argument(
 )
 p.add_argument("--tag", default="test")
 p.add_argument("--gimbal", choices=["folded", "upright", "spin"], default="folded")
+p.add_argument("--vehicle-scenario", choices=["none", "parked", "crossing", "oncoming", "stop", "late_crossing"], default="none")
 args = p.parse_args()
 rclpy.init(signal_handler_options=rclpy.signals.SignalHandlerOptions.NO)
 node = rclpy.create_node(
     "pnx_route_benchmark", parameter_overrides=[Parameter("use_sim_time", value=True)]
 )
+scenario = None
+if args.vehicle_scenario != "none":
+    from vehicle_avoidance_scenario import VehicleScenario
+    scenario = VehicleScenario(node, args.vehicle_scenario)
 latest = {}
 samples = []
+vehicle_samples = []
 active = False
 cmd = (0.0, 0.0, 0.0)
 events = collections.Counter()
@@ -56,6 +62,11 @@ subs = []
 gicp = {"attempts": 0, "accepted": 0, "rejected": 0}
 max_latest_age = 0.0
 start = time.monotonic()
+
+
+def vehicle_diagnostics(m):
+    if active:
+        vehicle_samples.append(json.loads(m.data))
 
 
 def odom(m):
@@ -84,13 +95,16 @@ def truth(m):
         )
     last_truth = (t, pos.x, pos.y)
     latest["truth"] = m
+    if scenario is not None:
+        scenario.record(m)
     if active:
         q = m.pose.pose.orientation
         roll = math.atan2(2 * (q.w * q.x + q.y * q.z),
                           1 - 2 * (q.x * q.x + q.y * q.y))
         pitch = math.asin(max(-1.0, min(1.0, 2 * (q.w * q.y - q.z * q.x))))
         samples.append([t, pos.x, pos.y, pos.z, speed,
-                        math.hypot(cmd[0], cmd[1]), roll, pitch])
+                        math.hypot(cmd[0], cmd[1]), roll, pitch,
+                        math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))])
 
 
 def command(m):
@@ -154,6 +168,7 @@ for typ, topic, cb in [
     (Twist, "/cmd_vel", command),
     (Log, "/rosout", logging),
     (String, "/sim/gimbal/state", gimbal),
+    (String, "/rog_map/vehicle_obstacles", vehicle_diagnostics),
     (Odometry, "/aft_mapped_to_init", input_odometry("point_lio")),
     (Odometry, "/lidar_odometry", input_odometry("loam_interface")),
 ]:
@@ -190,6 +205,8 @@ if not localized or "truth" not in latest or not client.server_is_ready():
         "localization, simulator odometry, or navigation action not ready"
     )
     persist()
+    if scenario is not None:
+        scenario.close()
     node.destroy_node()
     rclpy.shutdown()
     raise SystemExit(1)
@@ -239,23 +256,45 @@ try:
         raise RuntimeError(f"Gimbal did not reach {wanted}: {gimbal_state}")
     if args.gimbal == "spin":
         set_gimbal("/sim/gimbal/set_spin", True)
+    if scenario is not None:
+        if args.gimbal != "spin":
+            raise RuntimeError("Vehicle scenarios require upright spinning gimbal")
+        scenario.spawn()
+        deadline = time.monotonic() + 25.0
+        settle = node.get_clock().now().nanoseconds * 1e-9
+        while time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=.03)
+            if (scenario.other is not None or args.vehicle_scenario == "late_crossing") and scenario.detector.get("ready") and node.get_clock().now().nanoseconds * 1e-9 - settle > 6.0:
+                break
+        if (scenario.other is None and args.vehicle_scenario != "late_crossing") or not scenario.detector.get("ready"):
+            raise RuntimeError("Vehicle perception/truth did not initialize")
+    if scenario is None and args.gimbal == "spin":
+        settle = node.get_clock().now().nanoseconds * 1e-9
+        while node.get_clock().now().nanoseconds * 1e-9 - settle < 6.0:
+            rclpy.spin_once(node, timeout_sec=.03)
     report["gimbal_at_start"] = dict(gimbal_state)
     for route in json.loads(Path(args.routes).read_text()):
         if not client.server_is_ready() or "truth" not in latest:
             break
         samples = []
+        vehicle_samples = []
         age = []
         odom_intervals = []
         input_intervals.clear()
         events.clear()
         active = True
+        route_stamp = node.get_clock().now().nanoseconds * 1e-9
+        if scenario is not None:
+            scenario.begin()
         max_latest_age = 0.0
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = "map"
         goal.pose.header.stamp = node.get_clock().now().to_msg()
         goal.pose.pose.position.x = route["x"]
         goal.pose.pose.position.y = route["y"]
-        goal.pose.pose.orientation.w = 1.0
+        goal_yaw = float(route.get("yaw", 0.0))
+        goal.pose.pose.orientation.z = math.sin(goal_yaw / 2.0)
+        goal.pose.pose.orientation.w = math.cos(goal_yaw / 2.0)
         request = client.send_goal_async(goal)
         future = None
         begin = time.monotonic()
@@ -369,6 +408,11 @@ try:
             "last_xyz": samples[-1][1:4] if samples else None,
             "gicp": dict(gicp),
         }
+        result["truth_samples"] = samples
+        result["vehicle_observations"] = vehicle_samples
+        result["route_start_stamp"] = route_stamp
+        if scenario is not None:
+            result["vehicle_avoidance"] = scenario.result()
         report["routes"].append(result)
         persist()
         print(json.dumps(result), flush=True)
@@ -396,6 +440,8 @@ finally:
         ):
             rclpy.spin_once(node, timeout_sec=0.05)
     persist()
+    if scenario is not None:
+        scenario.close()
     node.destroy_node()
     rclpy.shutdown()
 expected_count = len(json.loads(Path(args.routes).read_text()))
@@ -404,5 +450,6 @@ raise SystemExit(
     if report["localized_at_start"]
     and len(report["routes"]) == expected_count
     and all(r["status"] == 4 for r in report["routes"])
+    and all(r.get("vehicle_avoidance", {}).get("passed", args.vehicle_scenario == "none") for r in report["routes"])
     else 1
 )
