@@ -121,7 +121,7 @@ bool MincoMpcController::snapshotFreshInputs(
     return false;
   }
   if (!std::isfinite(odom_rx_age) || odom_rx_age < 0.0 ||
-      odom_rx_age > odom_timeout_) {
+      odom_rx_age > odom_receive_timeout_) {
     reason = "ODOMETRY_RX_STALE";
     return false;
   }
@@ -408,6 +408,12 @@ void MincoMpcController::configure(
   node->get_parameter(name + ".omega_max", mpc_config_.omega_max);
   node->get_parameter(name + ".fixed_wz", fixed_wz_);
   node->get_parameter(name + ".odom_timeout", odom_timeout_);
+  // Measurement age follows ROS time; transport liveness follows steady time.
+  // Default to the same budget on hardware, but let slower-than-real-time
+  // simulation specify its wall-clock reception budget independently.
+  nav2_util::declare_parameter_if_not_declared(
+      node, name + ".odom_receive_timeout", rclcpp::ParameterValue(odom_timeout_));
+  node->get_parameter(name + ".odom_receive_timeout", odom_receive_timeout_);
   node->get_parameter(name + ".trajectory_timeout", trajectory_timeout_);
   node->get_parameter(name + ".future_stamp_tolerance",
                       future_stamp_tolerance_);
@@ -465,6 +471,7 @@ void MincoMpcController::configure(
       !std::isfinite(recovery_max_distance_) || recovery_max_distance_ <= 0.0 ||
       !std::isfinite(recovery_max_duration_) || recovery_max_duration_ <= 0.0 ||
       !std::isfinite(odom_timeout_) || odom_timeout_ <= 0.0 ||
+      !std::isfinite(odom_receive_timeout_) || odom_receive_timeout_ <= 0.0 ||
       !std::isfinite(trajectory_timeout_) || trajectory_timeout_ <= 0.0 ||
       !std::isfinite(future_stamp_tolerance_) ||
       future_stamp_tolerance_ < 0.0 ||
@@ -557,7 +564,7 @@ void MincoMpcController::configure(
               "uphill_assist=[grade=%.3f..%.3f,ref>=%.3f,max_command=%.3f], "
               "slope_slowdown=[%.3f,%.3f]rad, "
               "slope_speed_limit=%.3f, "
-              "small_gyro=%s, fixed_wz=%.3f, odom_timeout=%.3f, "
+              "small_gyro=%s, fixed_wz=%.3f, odom_timeout=%.3f, odom_receive_timeout=%.3f, "
               "trajectory_timeout=%.3f, future_tolerance=%.3f, "
               "q_along=%.3f, q_cross=%.3f, lidar_offset_x=%.3f, "
               "lidar_offset_y=%.3f, lidar_roll_offset=%.3f, "
@@ -570,6 +577,7 @@ void MincoMpcController::configure(
               uphill_startup_min_command_speed_, slope_slowdown_start_angle_,
               slope_full_slowdown_angle_, slope_speed_limit_,
               use_small_gyro_mode_ ? "true" : "false", fixed_wz_, odom_timeout_,
+              odom_receive_timeout_,
               trajectory_timeout_, future_stamp_tolerance_, mpc_config_.q_along,
               mpc_config_.q_cross, lidar_offset_x_, lidar_offset_y_,
               lidar_roll_offset_, opt_path_topic_.c_str(), odom_topic_.c_str(),
@@ -1622,9 +1630,12 @@ geometry_msgs::msg::TwistStamped MincoMpcController::computeVelocityCommandsImpl
   const double speed_before_uphill_floor = std::hypot(vx, vy);
   double uphill_grade = 0.0;
   double uphill_command_floor = 0.0;
+  const double uphill_assist_limit = tilt_speed_limit::uphillAssistSpeedLimit(
+      uphill_startup_min_command_speed_, peak_reference_speed,
+      stationary_startup_active, reference_startup_min_command_speed_);
   if (!tilt_speed_limit::applyUphillCommandFloor(
           uphill_assist_active, uphill_startup_min_grade_,
-          uphill_full_assist_grade_, uphill_startup_min_command_speed_, roll,
+          uphill_full_assist_grade_, uphill_assist_limit, roll,
           pitch, attitude_yaw, vx, vy, uphill_grade, uphill_command_floor)) {
     return stop("INVALID_UPHILL_COMMAND_FLOOR");
   }

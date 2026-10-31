@@ -30,6 +30,7 @@ PointCloudConverter::PointCloudConverter(const rclcpp::NodeOptions & options)
   this->declare_parameter<float>("ang_bottom", 7.0);
   this->declare_parameter<float>("ang_res_y", 1.0);
   instantaneous_scan_ = this->declare_parameter<bool>("instantaneous_scan", false);
+  const bool reliable_output = this->declare_parameter<bool>("reliable_output", false);
 
   pcd_topic_ = this->get_parameter("pcd_topic").as_string();
   n_scan_ = this->get_parameter("n_scan").as_int();
@@ -40,11 +41,18 @@ PointCloudConverter::PointCloudConverter(const rclcpp::NodeOptions & options)
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
     pcd_topic_, 10, std::bind(&PointCloudConverter::lidarHandle, this, std::placeholders::_1));
 
+  // Large snapshots can lose a complete best-effort sample when a fragment
+  // is lost. The simulation can request retransmission without queuing old
+  // scans; hardware integrations retain the original sensor-data contract.
+  auto output_qos = rclcpp::SensorDataQoS();
+  if (reliable_output) {output_qos.keep_last(1).reliable();}
   pcd_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-    "velodyne_points", rclcpp::SensorDataQoS());
+    "velodyne_points", output_qos);
 
-  RCLCPP_INFO(this->get_logger(), "Listening to lidar topic: %s, instantaneous_scan=%s",
-              pcd_topic_.c_str(), instantaneous_scan_ ? "true" : "false");
+  RCLCPP_INFO(this->get_logger(),
+              "Listening to lidar topic: %s, instantaneous_scan=%s, reliable_output=%s",
+              pcd_topic_.c_str(), instantaneous_scan_ ? "true" : "false",
+              reliable_output ? "true" : "false");
 }
 
 void PointCloudConverter::lidarHandle(const sensor_msgs::msg::PointCloud2::SharedPtr pc_msg)

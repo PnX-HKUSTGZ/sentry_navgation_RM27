@@ -7,11 +7,26 @@
 #include <stdexcept>
 
 #include "relocalization_manager/relocalization_manager.hpp"
+#include "relocalization_manager/refinement_policy.hpp"
 
 namespace
 {
 using relocalization_manager::SmallGicpParams;
 using relocalization_manager::SmallGicpVerifier;
+
+TEST(VerifiedCorrection, BoundsTranslationAndYawWithoutChangingInitialAlignment)
+{
+  const auto from = Eigen::Isometry3d::Identity();
+  Eigen::Isometry3d target = Eigen::Isometry3d::Identity();
+  target.translation() = Eigen::Vector3d(0.20, -0.10, 0.04);
+  target.linear() = Eigen::AngleAxisd(0.08, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  const auto step = relocalization_manager::blendVerifiedCorrection(from, target, 0.25);
+  EXPECT_TRUE(step.translation().isApprox(Eigen::Vector3d(0.05, -0.025, 0.01), 1e-12));
+  EXPECT_NEAR(Eigen::AngleAxisd(step.linear()).angle(), 0.02, 1e-12);
+  EXPECT_TRUE(relocalization_manager::blendVerifiedCorrection(from, target, 1.0).isApprox(target));
+  EXPECT_THROW(relocalization_manager::blendVerifiedCorrection(from, target, 0.0), std::invalid_argument);
+  EXPECT_THROW(relocalization_manager::blendVerifiedCorrection(from, target, 1.01), std::invalid_argument);
+}
 
 class GicpVerification : public ::testing::Test
 {

@@ -20,11 +20,57 @@
 #include <vector>
 
 #include "traj_opt/minco_optimizer.hpp"
+#include "minco_core/components/start_guide_pruning.hpp"
+#include "minco_core/components/segment_speed_limit.hpp"
+#include "minco_core/minco_utils.hpp"
 
 namespace minco_planner
 {
 namespace
 {
+
+TEST(SegmentSpeedLimit, AnObstacleDoesNotSlowTheWholeHorizon)
+{
+  const auto distance = [](const Eigen::Vector3d &p) {
+    return std::hypot(p.x() - 1.5, p.y() - 0.30);
+  };
+  for (int i = 0; i < 3; ++i) {
+    const double limit = segmentObstacleSpeedLimit(
+      Eigen::Vector3d(i, 0, 0), Eigen::Vector3d(i + 1, 0, 0),
+      1.8, 0.45, 1.35, distance);
+    EXPECT_DOUBLE_EQ(limit, i == 1 ? 1.35 : 1.8);
+  }
+}
+
+TEST(SegmentSpeedLimit, ChecksInteriorAndPropagatesNecessaryBraking)
+{
+  const double cap = segmentObstacleSpeedLimit(
+    Eigen::Vector3d(0, 0, 0), Eigen::Vector3d(1, 0, 0), 1.8, 0.20, 1.0,
+    [](const Eigen::Vector3d &p) {return std::abs(p.x() - 0.5);});
+  ASSERT_DOUBLE_EQ(cap, 1.0);
+  std::vector<double> limits{1.8, cap, 1.8};
+  utils::VelPropogation({0.10, 0.10, 1.0}, 2.0, limits);
+  EXPECT_LT(limits.front(), 1.8);
+  EXPECT_LE(limits.front() * limits.front(), 1.0 + 2.0 * 2.0 * 0.10 + 1.0e-9);
+  EXPECT_DOUBLE_EQ(limits[1], 1.0);
+}
+
+TEST(SegmentSpeedLimit, UnknownDistanceDoesNotReplaceCollisionAuthorization)
+{
+  EXPECT_DOUBLE_EQ(segmentObstacleSpeedLimit(
+    Eigen::Vector3d::Zero(), Eigen::Vector3d::UnitX(), 1.8, 0.45, 1.35,
+    [](const Eigen::Vector3d &) {return std::numeric_limits<double>::quiet_NaN();}), 1.8);
+}
+
+TEST(SegmentSpeedLimit, HolonomicTurnTuningKeepsGentleCornersMoving)
+{
+  const double gentle = utils::calCurvatureDecay(0.7853981634, 1.8, 0.20, 1.57, 0.65, 1.0);
+  const double sharp = utils::calCurvatureDecay(1.5707963268, 1.8, 0.20, 1.57, 0.65, 1.0);
+  EXPECT_GT(gentle, 1.4);
+  EXPECT_LT(sharp, gentle);
+  EXPECT_LT(sharp, 1.2);
+  EXPECT_DOUBLE_EQ(utils::calCurvatureDecay(0.10, 1.8, 0.20, 1.57, 0.65, 1.0), 1.8);
+}
 
 MincoOptimizer::Config makeConfig()
 {
@@ -90,6 +136,44 @@ void expectFeasible(const Eigen::Vector3d & start_velocity)
 TEST(MincoOptimizerDynamicsTest, RetimesTrajectoryWithStationaryBoundary)
 {
   expectFeasible(Eigen::Vector3d::Zero());
+}
+
+TEST(MincoOptimizerDynamicsTest, OpenGridPickupDoesNotForceMovingChassisToReverse)
+{
+  auto config = makeConfig();
+  config.max_vel = 1.2;
+  config.magnitudeBounds << 0.33, config.max_vel, config.max_acc;
+  config.guide_lateral_weight = 1000000.0;
+  config.guide_lateral_tolerance = 0.003;
+  config.opt_accuracy = 1.0e-5;
+  std::vector<Eigen::Vector3d> path{{0, 0, 0}, {-0.01, 0.05, 0},
+    {0.25, 0.05, 0}, {0.5, 0.05, 0}, {0.75, 0.05, 0}, {1.0, 0.05, 0}, {1.5, 0.05, 0}};
+  Eigen::Matrix3d start = Eigen::Matrix3d::Zero(), end = Eigen::Matrix3d::Zero();
+  start.col(1) = Eigen::Vector3d(1.0, 0.0, 0.0);
+  end.col(0) = path.back();
+  end.col(1) = Eigen::Vector3d(1.0, 0.0, 0.0);
+  pruneOpenStartGuide(path, start.col(0), start.col(1), 0.025,
+    [](const Eigen::Vector3d &) {return true;});
+  EXPECT_GT(path[1].x(), 0.20);
+  MincoOptimizer optimizer(config);
+  geometry_utils::Trajectory trajectory;
+  const VecDf limits = VecDf::Constant(path.size() - 1U, config.max_vel);
+  ASSERT_TRUE(std::isfinite(optimizer.optimize(path, start, end, limits, trajectory, config.max_vel)));
+  EXPECT_LT(trajectory.getTotalDuration(), 4.0);
+  EXPECT_LE(trajectory.getMaxVelRate(), config.max_vel * 1.02);
+  EXPECT_LE(trajectory.getMaxAccRate(), config.max_acc * 1.02);
+  EXPECT_TRUE(trajectory.getVel(0.0).isApprox(start.col(1), 1.0e-6));
+}
+
+TEST(MincoOptimizerDynamicsTest, PickupPruningPreservesCornerWhenReplacementChordIsBlocked)
+{
+  std::vector<Eigen::Vector3d> path{{0, 0, 0}, {0, 0.1, 0}, {0.3, 0.1, 0}, {1, 0.1, 0}};
+  const auto original = path;
+  // Endpoints are clear, but a wall crosses the middle of the shortcut.
+  pruneOpenStartGuide(path, path.front(), {1, 0, 0}, 0.025,
+    [](const Eigen::Vector3d & point) {return point.x() < 0.10 || point.x() > 0.20;});
+  ASSERT_EQ(path.size(), original.size());
+  EXPECT_TRUE(path[1].isApprox(original[1]));
 }
 
 TEST(MincoOptimizerDynamicsTest, RetimesTrajectoryAndPreservesNonzeroStartVelocity)

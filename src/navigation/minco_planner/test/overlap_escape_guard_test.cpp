@@ -52,6 +52,17 @@ TEST_F(OverlapEscapeTest, SmallOverlapCanRetreatButCannotAdvanceIntoWall) {
   EXPECT_FALSE(guard.begin({0.02, 0.0, 0.0}, 0.0, {0.20, 0.0}, query, 10.0));
 }
 
+TEST_F(OverlapEscapeTest, SimulationRecoveryAllowanceStillRequiresMonotonicExit) {
+  auto config = configuration();
+  config.max_penetration = 0.08;
+  OverlapEscapeGuard simulation_guard(config);
+  query->penetration = -0.075;
+  EXPECT_TRUE(simulation_guard.begin({0.02, 0, 0}, 0, {-0.2, 0}, query, 10.0));
+  EXPECT_FALSE(simulation_guard.begin({0.02, 0, 0}, 0, {0.2, 0}, query, 10.0));
+  query->penetration = -0.10;
+  EXPECT_FALSE(simulation_guard.begin({0.02, 0, 0}, 0, {-0.2, 0}, query, 10.0));
+}
+
 TEST_F(OverlapEscapeTest, StaticOverlapRetreatUsesOriginalCellsAndRechecksBothSources) {
   nav2_costmap_2d::Costmap2D observed(40U, 40U, 0.05, -1.025, -1.025, 0U);
   auto dynamic = std::make_shared<FreshGrid>(&observed);

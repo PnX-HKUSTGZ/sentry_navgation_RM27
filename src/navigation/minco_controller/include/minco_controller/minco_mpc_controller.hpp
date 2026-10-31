@@ -188,6 +188,7 @@ private:
   // Other controller parameters.
   double fixed_wz_{0.0};
   double odom_timeout_{0.25};
+  double odom_receive_timeout_{0.25};
   double trajectory_timeout_{1.5};
   double future_stamp_tolerance_{0.05};
   double deadzone_speed_threshold_{0.02};

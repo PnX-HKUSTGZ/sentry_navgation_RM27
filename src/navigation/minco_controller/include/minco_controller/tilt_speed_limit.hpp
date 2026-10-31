@@ -64,8 +64,14 @@ shouldApplyUphillCommandFloor(bool stationary_startup_active,
       minimum_reference_speed <= 0.0) {
     return false;
   }
-  return stationary_startup_active ||
+  return (stationary_startup_active && peak_reference_speed > 1.0e-6) ||
          peak_reference_speed + 1.0e-9 >= minimum_reference_speed;
+}
+
+inline double uphillAssistSpeedLimit(double configured_limit, double reference_peak,
+                                    bool starting, double startup_floor) noexcept {
+  return std::min(configured_limit,
+    std::max(reference_peak, starting ? startup_floor : 0.0));
 }
 
 inline bool applyUphillCommandFloor(bool assist_active,

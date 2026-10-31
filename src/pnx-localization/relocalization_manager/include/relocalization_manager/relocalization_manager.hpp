@@ -163,6 +163,8 @@ private:
   bool transform_prior_map_with_lidar_offset_;
   double moving_linear_speed_threshold_{0.05};
   double motion_command_timeout_{0.5};
+  bool continuous_refinement_{false};
+  double tracking_correction_alpha_{0.25};
   rclcpp::Time last_scan_time_;
   Eigen::Isometry3d current_map_to_odom_;
   Eigen::Isometry3d previous_map_to_odom_;

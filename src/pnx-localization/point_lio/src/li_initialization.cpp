@@ -106,6 +106,12 @@ void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::SharedPtr & msg)
       if (!ptr->points.empty()) {
         lidar_buffer.emplace_back(ptr);
         time_buffer.emplace_back(rclcpp::Time(msg->header.stamp).seconds());
+      } else {
+        ++dropped_lidar_frames;
+        static rclcpp::Clock diagnostic_clock(RCL_STEADY_TIME);
+        RCLCPP_WARN_THROTTLE(rclcpp::get_logger("li_initialization"), diagnostic_clock,
+          1000, "LiDAR frame empty after preprocessing: input_points=%u blind=%.3f m",
+          msg->width * msg->height, p_pre->blind);
       }
     }
   }

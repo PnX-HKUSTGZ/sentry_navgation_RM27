@@ -35,11 +35,21 @@ TEST(TiltSpeedLimit, InvalidInputFailsClosed) {
 }
 
 TEST(TiltSpeedLimit, UphillFloorActivationPreservesFrontierSpeedLimit) {
+  EXPECT_FALSE(shouldApplyUphillCommandFloor(true, 0.0, 0.30));
   EXPECT_TRUE(shouldApplyUphillCommandFloor(true, 0.20, 0.30));
   EXPECT_FALSE(shouldApplyUphillCommandFloor(false, 0.20, 0.30));
   EXPECT_TRUE(shouldApplyUphillCommandFloor(false, 0.45, 0.30));
   EXPECT_FALSE(shouldApplyUphillCommandFloor(
       false, std::numeric_limits<double>::quiet_NaN(), 0.30));
+}
+
+TEST(TiltSpeedLimit, UphillAssistanceCannotOverrideTheRollingReferenceSpeed) {
+  double vx = 0.30, vy = 0.0, grade = 0.0, floor = 0.0;
+  const double limit = uphillAssistSpeedLimit(1.0, 0.65, false, 0.4);
+  ASSERT_TRUE(applyUphillCommandFloor(true, 0.03, 0.18, limit,
+    0.0, -0.25, 0.0, vx, vy, grade, floor));
+  EXPECT_NEAR(vx, 0.65, 1.0e-12);
+  EXPECT_NEAR(uphillAssistSpeedLimit(1.0, 0.08, true, 0.4), 0.4, 1.0e-12);
 }
 
 TEST(TiltSpeedLimit, SmoothlyBlendsCommandAcrossUphillGradeRange) {

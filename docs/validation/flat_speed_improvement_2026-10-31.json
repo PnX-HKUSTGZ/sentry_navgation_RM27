@@ -1,0 +1,1913 @@
+{
+  "date": "2026-10-31",
+  "definition": "Time-weighted planar Gazebo ground-truth speed. Flat intervals require both ends abs(roll/pitch)<0.04 rad. Means include startup/deceleration/stops during each goal, excluding inter-goal waits.",
+  "summaries": {
+    "baseline": {
+      "goals": 3,
+      "reached": 3,
+      "path_length_m": 13.39376386994001,
+      "sim_s": 15.479999999999997,
+      "wall_s": 18.33132874191506,
+      "mean_speed_sim_mps": 0.8652302241563316,
+      "mean_speed_wall_mps": 0.7306488284897112,
+      "stop_count": 0,
+      "max_goal_error_truth_m": 0.19026666049844285
+    },
+    "faster_flat": {
+      "goals": 3,
+      "reached": 3,
+      "path_length_m": 13.674019674393122,
+      "sim_s": 10.7,
+      "wall_s": 12.960295917000622,
+      "mean_speed_sim_mps": 1.277945763961974,
+      "mean_speed_wall_mps": 1.0550700201571999,
+      "stop_count": 0,
+      "max_goal_error_truth_m": 0.11440219776400713
+    },
+    "faster_flat_repeat": {
+      "goals": 3,
+      "reached": 3,
+      "path_length_m": 13.398464456188035,
+      "sim_s": 10.979999999999999,
+      "wall_s": 13.279158904973883,
+      "mean_speed_sim_mps": 1.2202608794342475,
+      "mean_speed_wall_mps": 1.008984420780556,
+      "stop_count": 0,
+      "max_goal_error_truth_m": 0.15895012461112332
+    },
+    "faster_spin": {
+      "goals": 3,
+      "reached": 3,
+      "path_length_m": 13.835917216781233,
+      "sim_s": 10.919999999999998,
+      "wall_s": 13.45969870191766,
+      "mean_speed_sim_mps": 1.267025386152128,
+      "mean_speed_wall_mps": 1.0279514811731985,
+      "stop_count": 0,
+      "max_goal_error_truth_m": 0.14927719211676538
+    },
+    "faster_north": {
+      "goals": 2,
+      "reached": 2,
+      "path_length_m": 33.52750750201619,
+      "sim_s": 27.64,
+      "wall_s": 33.37221259396756,
+      "mean_speed_sim_mps": 1.2130067837198333,
+      "mean_speed_wall_mps": 1.0046534195960595,
+      "stop_count": 0,
+      "max_goal_error_truth_m": 0.14836081344935842
+    }
+  },
+  "cases": {
+    "baseline": {
+      "tag": "baseline",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 10.511462413007393,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "west_down",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": 4,
+          "wall_s": 7.813548359961715,
+          "sim_s": 6.619999999999999,
+          "path_length_m": 5.989103210901491,
+          "mean_speed_sim_mps": 0.9046983702268114,
+          "moving_mean_speed_sim_mps": 0.9535048425975055,
+          "flat_mean_speed_sim_mps": 0.9046983702268119,
+          "flat_moving_mean_speed_sim_mps": 0.9535048425975055,
+          "flat_sample_time_sim_s": 6.619999999999999,
+          "physical_speed_p50_p95_max_mps": [
+            0.9836736544033393,
+            1.210775791027165,
+            1.2248542096680008
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.2169999999999998,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11613808199763298,
+            0.13704162772046402,
+            0.15782271896023303
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 0.002553804311901331,
+            "roll": -8.864602136782196e-07
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.11696863998076878,
+              0.13700835526105948,
+              0.1574521929724142
+            ],
+            "loam_interface": [
+              0.1164657055051066,
+              0.1377375835145358,
+              0.1574330659932457
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09899999900000045,
+            0.10939999900000053,
+            0.1169999989999998
+          ],
+          "last_xyz": [
+            -12.152225497810518,
+            -1.8625147342397492,
+            0.07999992334842682
+          ],
+          "gicp": {
+            "attempts": 18,
+            "accepted": 18,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "west_up",
+          "goal": [
+            -9.51,
+            2.73
+          ],
+          "status": 4,
+          "wall_s": 7.114103776984848,
+          "sim_s": 5.979999999999999,
+          "path_length_m": 5.4672621095501865,
+          "mean_speed_sim_mps": 0.9142578778512019,
+          "moving_mean_speed_sim_mps": 0.9523311967013756,
+          "flat_mean_speed_sim_mps": 0.9142578778512014,
+          "flat_moving_mean_speed_sim_mps": 0.9523311967013756,
+          "flat_sample_time_sim_s": 5.979999999999999,
+          "physical_speed_p50_p95_max_mps": [
+            0.9884727226830654,
+            1.2167206391277783,
+            1.2202860268981202
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.22899999900000267,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11797155151725747,
+            0.13928146752004977,
+            0.14798415102995932
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": -0.0031005791388452053,
+            "roll": -1.7201595703397743e-09
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.11802744900342077,
+              0.14013286219560542,
+              0.14806316298199818
+            ],
+            "loam_interface": [
+              0.11811682750703767,
+              0.13911070731701328,
+              0.14780355198308825
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.10599999899999982,
+            0.12405000000000159,
+            0.1289999990000027
+          ],
+          "last_xyz": [
+            -9.660556798682665,
+            2.676815512150739,
+            0.07999992334842682
+          ],
+          "gicp": {
+            "attempts": 38,
+            "accepted": 38,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "west_return",
+          "goal": [
+            -11.5,
+            3.1
+          ],
+          "status": 4,
+          "wall_s": 3.4036766049684957,
+          "sim_s": 2.879999999999999,
+          "path_length_m": 1.9373985494883317,
+          "mean_speed_sim_mps": 0.6727078296834488,
+          "moving_mean_speed_sim_mps": 0.7446310835338195,
+          "flat_mean_speed_sim_mps": 0.672707829683449,
+          "flat_moving_mean_speed_sim_mps": 0.7446310835338195,
+          "flat_sample_time_sim_s": 2.879999999999999,
+          "physical_speed_p50_p95_max_mps": [
+            0.826255759592416,
+            0.975046652195392,
+            1.0067301254494614
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.23099999900000234,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.1175055589992553,
+            0.13871678700670598,
+            0.14817173802293837
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": -0.001975753577426076,
+            "roll": -5.672989118465921e-07
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.11789618100738153,
+              0.13834551518084479,
+              0.14716609299648553
+            ],
+            "loam_interface": [
+              0.11745428398717195,
+              0.13932495481567456,
+              0.14721835701493546
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.10299999900000295,
+            0.1243999994000005,
+            0.13100000000000234
+          ],
+          "last_xyz": [
+            -11.445968562764207,
+            2.917566434317957,
+            0.07999916338920593
+          ],
+          "gicp": {
+            "attempts": 51,
+            "accepted": 51,
+            "rejected": 0
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": -7.48653139481803e-09,
+        "roll": -7.464349971453288e-11
+      },
+      "gicp_total": {
+        "attempts": 57,
+        "accepted": 57,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 3,
+        "GOAL_REACHED": 3
+      }
+    },
+    "faster_flat": {
+      "tag": "faster_flat",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 10.844797007972375,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "west_down",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": 4,
+          "wall_s": 5.154252222971991,
+          "sim_s": 4.3,
+          "path_length_m": 5.952817946798074,
+          "mean_speed_sim_mps": 1.3843762666972266,
+          "moving_mean_speed_sim_mps": 1.5029490219133617,
+          "flat_mean_speed_sim_mps": 1.3843762666972266,
+          "flat_moving_mean_speed_sim_mps": 1.5029490219133617,
+          "flat_sample_time_sim_s": 4.3,
+          "physical_speed_p50_p95_max_mps": [
+            1.6450903868363531,
+            1.8573967014489254,
+            1.8598863540131694
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCKED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.2090000000000003,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.12079778400948271,
+            0.13581666080863214,
+            0.14339464402291924
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 0.0027310436125844717,
+            "roll": -3.632387688412564e-07
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12031536299036816,
+              0.13646145551465452,
+              0.14339523599483073
+            ],
+            "loam_interface": [
+              0.12004476599395275,
+              0.13581730451551266,
+              0.14245277899317443
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09599999900000022,
+            0.10889999910000009,
+            0.10900000000000065
+          ],
+          "last_xyz": [
+            -12.139288892186302,
+            -1.9241181557868372,
+            0.07999980413913726
+          ],
+          "gicp": {
+            "attempts": 13,
+            "accepted": 13,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "west_up",
+          "goal": [
+            -9.51,
+            2.73
+          ],
+          "status": 4,
+          "wall_s": 5.102946771017741,
+          "sim_s": 4.200000000000001,
+          "path_length_m": 5.587400631532516,
+          "mean_speed_sim_mps": 1.3303334836982177,
+          "moving_mean_speed_sim_mps": 1.4547908706458408,
+          "flat_mean_speed_sim_mps": 1.3303334836982181,
+          "flat_moving_mean_speed_sim_mps": 1.4547908706458408,
+          "flat_sample_time_sim_s": 4.200000000000001,
+          "physical_speed_p50_p95_max_mps": [
+            1.5343386074148677,
+            1.8460503154528876,
+            1.861078650830576
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.23000000000000148,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11970912403194234,
+            0.13617308206739837,
+            0.14862444397294894
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 0.004116563126444817,
+            "roll": -4.4383546837778454e-10
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.11959788203239441,
+              0.13503428639378398,
+              0.14898117101984099
+            ],
+            "loam_interface": [
+              0.1197251679841429,
+              0.13568256356520578,
+              0.1490221759886481
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.10799999900000046,
+            0.12200000000000094,
+            0.12999999900000148
+          ],
+          "last_xyz": [
+            -9.426548113522639,
+            2.651746274870747,
+            0.07999965512752533
+          ],
+          "gicp": {
+            "attempts": 29,
+            "accepted": 29,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "west_return",
+          "goal": [
+            -11.5,
+            3.1
+          ],
+          "status": 4,
+          "wall_s": 2.7030969230108894,
+          "sim_s": 2.1999999999999993,
+          "path_length_m": 2.1338010960625313,
+          "mean_speed_sim_mps": 0.9699095891193328,
+          "moving_mean_speed_sim_mps": 1.1719030592468789,
+          "flat_mean_speed_sim_mps": 0.9699095891193328,
+          "flat_moving_mean_speed_sim_mps": 1.1719030592468789,
+          "flat_sample_time_sim_s": 2.1999999999999993,
+          "physical_speed_p50_p95_max_mps": [
+            1.0252228635856946,
+            1.8164277149116956,
+            1.8327194348360094
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.22000000000000164,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11854905198561028,
+            0.1386523675872013,
+            0.14529496402246878
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": -0.0044852872379124165,
+            "roll": -1.3663596296065172e-11
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "loam_interface": [
+              0.11949714098591357,
+              0.13909448251943105,
+              0.14555147400824353
+            ],
+            "point_lio": [
+              0.12112914200406522,
+              0.13857375688385218,
+              0.14553227997384965
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.10599999900000157,
+            0.11889999909999993,
+            0.11999999900000169
+          ],
+          "last_xyz": [
+            -11.46224687062808,
+            3.0071656853366573,
+            0.0799999680519104
+          ],
+          "gicp": {
+            "attempts": 41,
+            "accepted": 41,
+            "rejected": 0
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": 1.1620243656196294e-09,
+        "roll": -1.9975381349013333e-08
+      },
+      "gicp_total": {
+        "attempts": 47,
+        "accepted": 47,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCKED": 1,
+        "GOAL_REACHED": 3,
+        "BLOCK_COMMAND": 2,
+        "OPTIMIZER_FAILED": 1
+      }
+    },
+    "faster_flat_repeat": {
+      "tag": "faster_flat_repeat",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 11.004404756007716,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "west_down",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": 4,
+          "wall_s": 5.454455747967586,
+          "sim_s": 4.58,
+          "path_length_m": 5.982445843004132,
+          "mean_speed_sim_mps": 1.3062108827519938,
+          "moving_mean_speed_sim_mps": 1.4377853590258471,
+          "flat_mean_speed_sim_mps": 1.3062108827519943,
+          "flat_moving_mean_speed_sim_mps": 1.4377853590258471,
+          "flat_sample_time_sim_s": 4.58,
+          "physical_speed_p50_p95_max_mps": [
+            1.4794254127607058,
+            1.8521475309431523,
+            1.8554091256500527
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.21199999900000027,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11994971250533126,
+            0.13183051676605828,
+            0.13803530699806288
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 0.008196382783353329,
+            "roll": -8.867044130056456e-07
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12038997054332867,
+              0.13162984249356668,
+              0.1384830580209382
+            ],
+            "loam_interface": [
+              0.12033970849006437,
+              0.13094677752815187,
+              0.13765545596834272
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09799999950000024,
+            0.10649999900000023,
+            0.11199999900000027
+          ],
+          "last_xyz": [
+            -12.088138542146286,
+            -1.9053859779852869,
+            0.07999637687206268
+          ],
+          "gicp": {
+            "attempts": 14,
+            "accepted": 14,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "west_up",
+          "goal": [
+            -9.51,
+            2.73
+          ],
+          "status": 4,
+          "wall_s": 5.312689565005712,
+          "sim_s": 4.34,
+          "path_length_m": 5.497311572686725,
+          "mean_speed_sim_mps": 1.2666616526927938,
+          "moving_mean_speed_sim_mps": 1.3538408616481352,
+          "flat_mean_speed_sim_mps": 1.2666616526927938,
+          "flat_moving_mean_speed_sim_mps": 1.3538408616481352,
+          "flat_sample_time_sim_s": 4.34,
+          "physical_speed_p50_p95_max_mps": [
+            1.3732848566870124,
+            1.8394701604014112,
+            1.8646080655847133
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.23300000000000154,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11984713000128977,
+            0.143875774537446,
+            0.14969616499729455
+          ],
+          "gimbal_at_end": {
+            "status": "Returning to forward",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 0.0003855164104606956,
+            "roll": -2.684787947515588e-09
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12040401800186373,
+              0.14558307699335274,
+              0.1491165820043534
+            ],
+            "loam_interface": [
+              0.12048685349873267,
+              0.14541472618584522,
+              0.14864887902513146
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.10649999950000065,
+            0.1189999990000004,
+            0.1329999990000016
+          ],
+          "last_xyz": [
+            -9.585638052210285,
+            2.6926882213857577,
+            0.07999998295307159
+          ],
+          "gicp": {
+            "attempts": 30,
+            "accepted": 30,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "west_return",
+          "goal": [
+            -11.5,
+            3.1
+          ],
+          "status": 4,
+          "wall_s": 2.512013592000585,
+          "sim_s": 2.0599999999999987,
+          "path_length_m": 1.918707040497178,
+          "mean_speed_sim_mps": 0.9314111847073685,
+          "moving_mean_speed_sim_mps": 1.077177166653739,
+          "flat_mean_speed_sim_mps": 0.931411184707369,
+          "flat_moving_mean_speed_sim_mps": 1.077177166653739,
+          "flat_sample_time_sim_s": 2.0599999999999987,
+          "physical_speed_p50_p95_max_mps": [
+            0.9804573225081163,
+            1.7126734704781528,
+            1.7210276160862314
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.22000000000000097,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.12311635300284252,
+            0.1368276359862648,
+            0.1395360470050946
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": -0.0047050477005541325,
+            "roll": -1.1220535611755622e-09
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12407673796406016,
+              0.13694223097991198,
+              0.1395803089835681
+            ],
+            "loam_interface": [
+              0.1227475599735044,
+              0.13677287596510723,
+              0.13948751101270318
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.1029999989999994,
+            0.11900000000000255,
+            0.11999999900000091
+          ],
+          "last_xyz": [
+            -11.417293552432302,
+            2.964262069985493,
+            0.07999937200546264
+          ],
+          "gicp": {
+            "attempts": 41,
+            "accepted": 41,
+            "rejected": 0
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": 3.5483795901569692e-09,
+        "roll": -7.023651660276187e-10
+      },
+      "gicp_total": {
+        "attempts": 47,
+        "accepted": 47,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 3,
+        "OPTIMIZER_FAILED": 2,
+        "GOAL_REACHED": 3
+      }
+    },
+    "faster_spin": {
+      "tag": "faster_spin",
+      "gimbal_mode": "spin",
+      "wait_localized_wall_s": 10.705171600042377,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "west_down",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": 4,
+          "wall_s": 5.204827855981421,
+          "sim_s": 4.279999999999999,
+          "path_length_m": 5.902594170216353,
+          "mean_speed_sim_mps": 1.3791107874337274,
+          "moving_mean_speed_sim_mps": 1.4903633884704561,
+          "flat_mean_speed_sim_mps": 1.3791107874337272,
+          "flat_moving_mean_speed_sim_mps": 1.4903633884704561,
+          "flat_sample_time_sim_s": 4.279999999999999,
+          "physical_speed_p50_p95_max_mps": [
+            1.6102546233028328,
+            1.8507832465534353,
+            1.8545776085197183
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.2249999989999999,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.12142572400625795,
+            0.14135975207318552,
+            0.14249784097773954
+          ],
+          "gimbal_at_end": {
+            "status": "Rotating",
+            "connected": true,
+            "spinning": true,
+            "upright": true,
+            "want_upright": true,
+            "yaw": 6.0349345207214355,
+            "roll": 1.5707974433898926
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12093632598407567,
+              0.14140116308699363,
+              0.14279453601920977
+            ],
+            "loam_interface": [
+              0.12137819000054151,
+              0.14017261563567446,
+              0.14165523601695895
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09800000000000053,
+            0.11599999900000041,
+            0.124999999
+          ],
+          "last_xyz": [
+            -12.166610716109547,
+            -1.9098804509662748,
+            0.07999959552288055
+          ],
+          "gicp": {
+            "attempts": 16,
+            "accepted": 16,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "west_up",
+          "goal": [
+            -9.51,
+            2.73
+          ],
+          "status": 4,
+          "wall_s": 5.552910542988684,
+          "sim_s": 4.42,
+          "path_length_m": 5.740277026067378,
+          "mean_speed_sim_mps": 1.2987052095175065,
+          "moving_mean_speed_sim_mps": 1.4206474585606113,
+          "flat_mean_speed_sim_mps": 1.298705209517507,
+          "flat_moving_mean_speed_sim_mps": 1.4206474585606113,
+          "flat_sample_time_sim_s": 4.42,
+          "physical_speed_p50_p95_max_mps": [
+            1.5629047596612922,
+            1.8297873466137122,
+            1.852692521097989
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 2,
+            "SAFETY_COSTMAP_LETHAL": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.2319999990000011,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.12508803699165583,
+            0.14547166558913885,
+            0.15941208397271112
+          ],
+          "gimbal_at_end": {
+            "status": "Rotating",
+            "connected": true,
+            "spinning": true,
+            "upright": true,
+            "want_upright": true,
+            "yaw": 16.66564178466797,
+            "roll": 1.5707969665527344
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12674683798104525,
+              0.1460482138209045,
+              0.1595331890275702
+            ],
+            "loam_interface": [
+              0.12517849303549156,
+              0.14550834856927394,
+              0.15952235704753548
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.10599999900000057,
+            0.12059999900000119,
+            0.1320000000000011
+          ],
+          "last_xyz": [
+            -9.417162890120842,
+            2.7303445249347975,
+            0.0799999680519104
+          ],
+          "gicp": {
+            "attempts": 33,
+            "accepted": 33,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "west_return",
+          "goal": [
+            -11.5,
+            3.1
+          ],
+          "status": 4,
+          "wall_s": 2.7019603029475547,
+          "sim_s": 2.219999999999999,
+          "path_length_m": 2.193046020497502,
+          "mean_speed_sim_mps": 0.9878585677916681,
+          "moving_mean_speed_sim_mps": 1.166026199446952,
+          "flat_mean_speed_sim_mps": 0.9878585677916679,
+          "flat_moving_mean_speed_sim_mps": 1.166026199446952,
+          "flat_sample_time_sim_s": 2.219999999999999,
+          "physical_speed_p50_p95_max_mps": [
+            1.0502218786047623,
+            1.8407923932240482,
+            1.8509846755333108
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "SAFETY_COSTMAP_LETHAL": 1
+          },
+          "max_latest_odom_age_s": 0.239,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.12213536250055768,
+            0.14752660839003512,
+            0.15043899201555178
+          ],
+          "gimbal_at_end": {
+            "status": "Rotating",
+            "connected": true,
+            "spinning": true,
+            "upright": true,
+            "want_upright": true,
+            "yaw": 23.900745391845703,
+            "roll": 1.5707969665527344
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12216022898792289,
+              0.14680639530415646,
+              0.14983682497404516
+            ],
+            "loam_interface": [
+              0.12180804947274737,
+              0.14636194675404113,
+              0.1490950009902008
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.11449999900000099,
+            0.13289999995000124,
+            0.13899999900000004
+          ],
+          "last_xyz": [
+            -11.579666132321469,
+            3.2262417817016376,
+            0.07999847793579101
+          ],
+          "gicp": {
+            "attempts": 45,
+            "accepted": 45,
+            "rejected": 0
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Upright",
+        "connected": true,
+        "spinning": false,
+        "upright": true,
+        "want_upright": true,
+        "yaw": 0.0012291802559047937,
+        "roll": 1.5707969665527344
+      },
+      "gicp_total": {
+        "attempts": 51,
+        "accepted": 51,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 4,
+        "OPTIMIZER_FAILED": 3,
+        "GOAL_REACHED": 2,
+        "SAFETY_COSTMAP_LETHAL": 2
+      }
+    },
+    "faster_north": {
+      "tag": "faster_north",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 10.991535865992773,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "north_cross",
+          "goal": [
+            5.712,
+            4.998
+          ],
+          "status": 4,
+          "wall_s": 18.31738270999631,
+          "sim_s": 15.2,
+          "path_length_m": 21.787356367435336,
+          "mean_speed_sim_mps": 1.4333787083839038,
+          "moving_mean_speed_sim_mps": 1.48988525719951,
+          "flat_mean_speed_sim_mps": 1.4379671475118818,
+          "flat_moving_mean_speed_sim_mps": 1.5022142047505183,
+          "flat_sample_time_sim_s": 13.479999999999999,
+          "physical_speed_p50_p95_max_mps": [
+            1.6061119399925028,
+            1.8735612214563868,
+            1.8983028923372753
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "SAFETY_COSTMAP_LETHAL": 3,
+            "BLOCKED": 1,
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.2139999990000004,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11801437701797113,
+            0.14384693608735688,
+            0.1570375440060161
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 0.006382809020578861,
+            "roll": -7.824677017431725e-11
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.11762483100756072,
+              0.14311485123180318,
+              0.15708755695959553
+            ],
+            "loam_interface": [
+              0.11747247152379714,
+              0.14332076178980058,
+              0.1580237930174917
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09499999900000095,
+            0.10945000000000091,
+            0.1140000000000004
+          ],
+          "last_xyz": [
+            5.848161102993182,
+            4.939084085350092,
+            0.0799994912147522
+          ],
+          "gicp": {
+            "attempts": 39,
+            "accepted": 39,
+            "rejected": 0
+          }
+        },
+        {
+          "name": "north_return",
+          "goal": [
+            -3.32,
+            6.789
+          ],
+          "status": 4,
+          "wall_s": 15.054829883971252,
+          "sim_s": 12.440000000000001,
+          "path_length_m": 11.740151134580854,
+          "mean_speed_sim_mps": 0.9437420526190397,
+          "moving_mean_speed_sim_mps": 1.0459750639009677,
+          "flat_mean_speed_sim_mps": 0.945162983347585,
+          "flat_moving_mean_speed_sim_mps": 1.0548483721093747,
+          "flat_sample_time_sim_s": 9.640000000000004,
+          "physical_speed_p50_p95_max_mps": [
+            1.0188727023655797,
+            1.8267853204598377,
+            1.8663624780692427
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 5,
+            "SAFETY_COSTMAP_LETHAL": 6,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.2179999989999999,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.12033872900065035,
+            0.1413653088035062,
+            0.15381508303107694
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 0.0007372043910436332,
+            "roll": -1.0961053176217206e-09
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12074366398155689,
+              0.14244246537564323,
+              0.15388304804218933
+            ],
+            "loam_interface": [
+              0.12070642795879394,
+              0.14163832061458378,
+              0.15261371002998203
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09399999900000255,
+            0.1090000000000009,
+            0.11799999899999991
+          ],
+          "last_xyz": [
+            -3.278041360881187,
+            6.821368697042764,
+            0.0799999531507492
+          ],
+          "gicp": {
+            "attempts": 75,
+            "accepted": 75,
+            "rejected": 0
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": 2.2949204758759834e-09,
+        "roll": -1.625276475902826e-11
+      },
+      "gicp_total": {
+        "attempts": 81,
+        "accepted": 81,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "SAFETY_COSTMAP_LETHAL": 9,
+        "BLOCKED": 1,
+        "BLOCK_COMMAND": 6,
+        "OPTIMIZER_FAILED": 2,
+        "GOAL_REACHED": 2
+      }
+    },
+    "faster_added_obstacle": {
+      "tag": "test",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 11.166420398978516,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "flat_added_obstacle",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": 4,
+          "wall_s": 5.855419230996631,
+          "sim_s": 4.6,
+          "path_length_m": 6.018986888059708,
+          "mean_speed_sim_mps": 1.3084754104477627,
+          "moving_mean_speed_sim_mps": 1.4193713625572009,
+          "flat_mean_speed_sim_mps": 1.3084754104477627,
+          "flat_moving_mean_speed_sim_mps": 1.4193713625572009,
+          "flat_sample_time_sim_s": 4.6,
+          "physical_speed_p50_p95_max_mps": [
+            1.5957115422891,
+            1.8378718438288861,
+            1.8421007962583795
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "OPTIMIZER_FAILED": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.21499999900000055,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.12741189199732617,
+            0.14161588557763025,
+            0.1618596769985743
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 0.009945258498191833,
+            "roll": -3.1132682209999984e-08
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12777872802689672,
+              0.14137592316837982,
+              0.16133793198969215
+            ],
+            "loam_interface": [
+              0.1268952189711854,
+              0.1412672812002711,
+              0.16148370603332296
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.0930000000000013,
+            0.11039999970000014,
+            0.11499999900000052
+          ],
+          "last_xyz": [
+            -12.086088026457542,
+            -1.8733561151467708,
+            0.0799992229938507
+          ],
+          "gicp": {
+            "attempts": 19,
+            "accepted": 19,
+            "rejected": 0
+          },
+          "added_obstacle": {
+            "created": true,
+            "center_xy": [
+              -12.0,
+              0.5
+            ],
+            "size_xyz": [
+              0.4,
+              0.4,
+              0.8
+            ],
+            "truth_footprint_overlap_count": 0,
+            "min_sat_separation_m": 0.3092097227051944
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": -2.3123052361739838e-09,
+        "roll": -2.0170504285488278e-05
+      },
+      "gicp_total": {
+        "attempts": 25,
+        "accepted": 25,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 1,
+        "OPTIMIZER_FAILED": 1,
+        "GOAL_REACHED": 1
+      }
+    },
+    "faster_blocking_obstacle": {
+      "tag": "test",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 10.962220348010305,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "flat_added_obstacle",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": 4,
+          "wall_s": 5.71532608801499,
+          "sim_s": 4.4799999999999995,
+          "path_length_m": 5.95045060977933,
+          "mean_speed_sim_mps": 1.328225582540029,
+          "moving_mean_speed_sim_mps": 1.4370700094130162,
+          "flat_mean_speed_sim_mps": 1.3282255825400284,
+          "flat_moving_mean_speed_sim_mps": 1.4370700094130162,
+          "flat_sample_time_sim_s": 4.4799999999999995,
+          "physical_speed_p50_p95_max_mps": [
+            1.4967818353832678,
+            1.8534849208301245,
+            1.859931564933749
+          ],
+          "stop_count": 0,
+          "stop_time_s": 0,
+          "stalls_with_command": 0,
+          "stops": [],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "GOAL_REACHED": 1
+          },
+          "max_latest_odom_age_s": 0.215999999,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.1286374559858814,
+            0.14625970236957073,
+            0.16081202204804868
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": -0.0017484782729297876,
+            "roll": -1.661770721028688e-11
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.12837386300088838,
+              0.14563897079788146,
+              0.16125291399657726
+            ],
+            "loam_interface": [
+              0.12950603401986882,
+              0.14500717280898243,
+              0.1589627240318805
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09100000000000086,
+            0.10579999900000067,
+            0.11599999899999991
+          ],
+          "last_xyz": [
+            -12.095996871757393,
+            -1.9291485415928524,
+            0.0799999531507492
+          ],
+          "gicp": {
+            "attempts": 19,
+            "accepted": 19,
+            "rejected": 0
+          },
+          "added_obstacle": {
+            "created": true,
+            "center_xy": [
+              -11.15,
+              0.5
+            ],
+            "size_xyz": [
+              0.4,
+              0.4,
+              0.8
+            ],
+            "truth_footprint_overlap_count": 0,
+            "min_sat_separation_m": 1.2837542206005068
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": 2.402723797700901e-09,
+        "roll": -5.497939881138336e-10
+      },
+      "gicp_total": {
+        "attempts": 25,
+        "accepted": 25,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 1,
+        "GOAL_REACHED": 1
+      }
+    },
+    "faster_on_path_obstacle": {
+      "tag": "test",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 11.028143839037511,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "flat_added_obstacle",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": "timeout",
+          "wall_s": 60.012055541039445,
+          "sim_s": 50.9,
+          "path_length_m": 2.946926432859093,
+          "mean_speed_sim_mps": 0.0578963935728702,
+          "moving_mean_speed_sim_mps": 0.9529090219168488,
+          "flat_mean_speed_sim_mps": 0.05796766778603389,
+          "flat_moving_mean_speed_sim_mps": 0.9587940791209553,
+          "flat_sample_time_sim_s": 50.779999999999994,
+          "physical_speed_p50_p95_max_mps": [
+            0.0,
+            0.14263393684141146,
+            1.8600481349590023
+          ],
+          "stop_count": 1,
+          "stop_time_s": 46.88,
+          "stalls_with_command": 1,
+          "stops": [
+            {
+              "duration_s": 46.88,
+              "xy": [
+                -12.975448579295902,
+                0.9883693356796702
+              ],
+              "mean_command": 0.42740140960377415
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "NO_PROGRESS": 3
+          },
+          "max_latest_odom_age_s": 0.2270000000000013,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11698171848547645,
+            0.1400230675091734,
+            0.18174823198933154
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 4.8490123845112976e-06,
+            "roll": -1.1187257342726298e-08
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.11741877047461458,
+              0.1403252365125809,
+              0.17999006900936365
+            ],
+            "loam_interface": [
+              0.11738939603674226,
+              0.140042910471675,
+              0.17999742802930996
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.10000000000000492,
+            0.11199999900000222,
+            0.12699999900000136
+          ],
+          "last_xyz": [
+            -12.975384202044209,
+            0.9883644413172896,
+            0.08001655304431915
+          ],
+          "gicp": {
+            "attempts": 128,
+            "accepted": 128,
+            "rejected": 0
+          },
+          "added_obstacle": {
+            "created": true,
+            "center_xy": [
+              -12.95,
+              0.5
+            ],
+            "size_xyz": [
+              0.4,
+              0.4,
+              0.8
+            ],
+            "truth_footprint_overlap_count": 2426,
+            "min_sat_separation_m": -0.02947454926258586
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": 1.846538921768115e-09,
+        "roll": -1.9978962484401563e-08
+      },
+      "gicp_total": {
+        "attempts": 134,
+        "accepted": 133,
+        "rejected": 1
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 3,
+        "NO_PROGRESS": 3,
+        "GICP_REJECTED": 1
+      }
+    },
+    "physical_height_obstacle": {
+      "tag": "test",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 10.65648758300813,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "flat_added_obstacle",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": "timeout",
+          "wall_s": 60.01781072601443,
+          "sim_s": 51.66,
+          "path_length_m": 2.8463088053630488,
+          "mean_speed_sim_mps": 0.055096957130527466,
+          "moving_mean_speed_sim_mps": 1.303804251741692,
+          "flat_mean_speed_sim_mps": 0.05453488086475064,
+          "flat_moving_mean_speed_sim_mps": 1.3499052503944122,
+          "flat_sample_time_sim_s": 51.559999999999995,
+          "physical_speed_p50_p95_max_mps": [
+            0.0,
+            0.00010002908550135174,
+            1.8555496465384342
+          ],
+          "stop_count": 1,
+          "stop_time_s": 49.06,
+          "stalls_with_command": 1,
+          "stops": [
+            {
+              "duration_s": 49.06,
+              "xy": [
+                -12.976249470232174,
+                0.9886776577316486
+              ],
+              "mean_command": 0.4405465452607375
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 2,
+            "NO_PROGRESS": 3
+          },
+          "max_latest_odom_age_s": 0.21800000000000486,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11544121900806203,
+            0.1354760596062988,
+            0.15789615502581
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": -4.297038231015904e-06,
+            "roll": -4.2204501369269565e-06
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.11567891697632149,
+              0.13519146422622724,
+              0.15944964700611308
+            ],
+            "loam_interface": [
+              0.11569964303635061,
+              0.13563514681300148,
+              0.15842706302646548
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09700000000000131,
+            0.10900000000000176,
+            0.11800000000000488
+          ],
+          "last_xyz": [
+            -12.974956570971838,
+            0.988435900729959,
+            0.08001331949234008
+          ],
+          "gicp": {
+            "attempts": 128,
+            "accepted": 128,
+            "rejected": 0
+          },
+          "added_obstacle": {
+            "created": true,
+            "center_xy": [
+              -12.95,
+              0.5
+            ],
+            "size_xyz": [
+              0.4,
+              0.4,
+              0.8
+            ],
+            "truth_footprint_overlap_count": 2469,
+            "min_sat_separation_m": -0.029442478800374206
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": 2.8774111981988426e-09,
+        "roll": -3.6337033293420973e-07
+      },
+      "gicp_total": {
+        "attempts": 134,
+        "accepted": 134,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 3,
+        "NO_PROGRESS": 3
+      }
+    },
+    "baseline_on_path_obstacle": {
+      "tag": "test",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 10.637516791000962,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [
+        {
+          "name": "flat_added_obstacle",
+          "goal": [
+            -12.15,
+            -1.9
+          ],
+          "status": "timeout",
+          "wall_s": 25.005698013992514,
+          "sim_s": 21.56,
+          "path_length_m": 2.8736886902447476,
+          "mean_speed_sim_mps": 0.1332879726458603,
+          "moving_mean_speed_sim_mps": 0.9202872752803071,
+          "flat_mean_speed_sim_mps": 0.1332879726458602,
+          "flat_moving_mean_speed_sim_mps": 0.9202872752803071,
+          "flat_sample_time_sim_s": 21.56,
+          "physical_speed_p50_p95_max_mps": [
+            0.0,
+            1.1631132303889498,
+            1.2228783612699996
+          ],
+          "stop_count": 1,
+          "stop_time_s": 18.04,
+          "stalls_with_command": 1,
+          "stops": [
+            {
+              "duration_s": 18.04,
+              "xy": [
+                -12.96110138553067,
+                0.9903412381413654
+              ],
+              "mean_command": 0.4749485837607959
+            }
+          ],
+          "events": {
+            "BLOCK_COMMAND": 1,
+            "NO_PROGRESS": 1
+          },
+          "max_latest_odom_age_s": 0.21499999900000055,
+          "odom_receive_interval_p50_p95_max_wall_s": [
+            0.11437376349931583,
+            0.14041866402840242,
+            0.15681330300867558
+          ],
+          "gimbal_at_end": {
+            "status": "Folded",
+            "connected": true,
+            "spinning": false,
+            "upright": false,
+            "want_upright": false,
+            "yaw": 1.3109084875395638e-06,
+            "roll": -2.279070088206936e-08
+          },
+          "input_receive_interval_p50_p95_max_wall_s": {
+            "point_lio": [
+              0.11431359648122452,
+              0.14081689700833522,
+              0.1566015940043144
+            ],
+            "loam_interface": [
+              0.11461624049115926,
+              0.14129588873765897,
+              0.15678681497229263
+            ]
+          },
+          "arrival_age_p50_p95_max": [
+            0.09799999900000288,
+            0.11124999900000171,
+            0.11500000000000055
+          ],
+          "last_xyz": [
+            -12.960443543715192,
+            0.9901388613593299,
+            0.08006619274616242
+          ],
+          "gicp": {
+            "attempts": 58,
+            "accepted": 58,
+            "rejected": 0
+          },
+          "added_obstacle": {
+            "created": true,
+            "center_xy": [
+              -12.95,
+              0.5
+            ],
+            "size_xyz": [
+              0.4,
+              0.4,
+              0.8
+            ],
+            "truth_footprint_overlap_count": 916,
+            "min_sat_separation_m": -0.027832460575003992
+          }
+        }
+      ],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": 1.9482966351347386e-08,
+        "roll": -2.9078389002235028e-11
+      },
+      "gicp_total": {
+        "attempts": 64,
+        "accepted": 64,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1,
+        "BLOCK_COMMAND": 2,
+        "NO_PROGRESS": 1
+      }
+    },
+    "obstacle_probe": {
+      "tag": "test",
+      "gimbal_mode": "folded",
+      "wait_localized_wall_s": 10.74519396800315,
+      "localized_at_start": true,
+      "gicp_start": {
+        "attempts": 3,
+        "accepted": 3,
+        "rejected": 0
+      },
+      "routes": [],
+      "navigator_active_at_start": true,
+      "gimbal_at_start": {
+        "status": "Folded",
+        "connected": true,
+        "spinning": false,
+        "upright": false,
+        "want_upright": false,
+        "yaw": -2.487736960876674e-10,
+        "roll": -4.5419193384077516e-07
+      },
+      "obstacle_cloud_probe": {
+        "camera_init": {
+          "count": 0,
+          "example": []
+        },
+        "left_mid360": {
+          "count": 0,
+          "example": []
+        }
+      },
+      "gicp_total": {
+        "attempts": 20,
+        "accepted": 20,
+        "rejected": 0
+      },
+      "events_total": {
+        "ACTIVATED_WAITING_FOR_PLAN": 1
+      }
+    }
+  },
+  "planner_tests": {
+    "tests": 142,
+    "failures": 0,
+    "errors": 0
+  },
+  "notes": [
+    "Baseline and final vehicle_height remain 0.040 m; 0.240 m was tried only in a temporary obstacle experiment and did not solve that experiment.",
+    "The first two obstacle placements were outside the unmodified route and are not evidence that on-path dynamic avoidance works.",
+    "On-path obstacle at (-12.95,0.5), 0.4x0.4x0.8 m, caused contact/stall with both original and raised speeds. Raw/registered clouds at the starting pose contained zero points within the box neighbourhood; no definite root cause is claimed from this alone.",
+    "The independent obstacle perception/classification limitation is unresolved. Dynamic collision/freshness checks were not disabled.",
+    "All raw launch/ROS/timing logs remain under /tmp/nav_flat_speed_20261031."
+  ]
+}

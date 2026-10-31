@@ -1,0 +1,2037 @@
+{
+  "date": "2026-10-31",
+  "scope": "Point-LIO simulation odometry transport; existing geometry/terrain/velocity settings preserved",
+  "cases": {
+    "baseline_headless": {
+      "navigation": {
+        "tag": "baseline_headless",
+        "gimbal_mode": "folded",
+        "wait_localized_wall_s": 9.616969796014018,
+        "localized_at_start": true,
+        "gicp_start": {
+          "attempts": 3,
+          "accepted": 3,
+          "rejected": 0
+        },
+        "routes": [
+          {
+            "name": "north_cross",
+            "goal": [
+              5.712,
+              4.998
+            ],
+            "status": 4,
+            "wall_s": 21.00224102498032,
+            "sim_s": 20.96,
+            "path_length_m": 21.614500139182578,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "BLOCKED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.3869999990000004,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.10078330000396818,
+              0.1140037506876979,
+              0.31992106599500403
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": 0.0025488589890301228,
+              "roll": 2.3954310757190456e-12
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.10051491297781467,
+                0.1140884595864918,
+                0.31961191800655797
+              ],
+              "loam_interface": [
+                0.10056921700015664,
+                0.11454007577849551,
+                0.3198958180146292
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.08300000000000052,
+              0.1058999991000014,
+              0.12099999900000075
+            ],
+            "last_xyz": [
+              5.707305858128919,
+              5.036779893713052,
+              0.0799985226392746
+            ],
+            "gicp": {
+              "attempts": 45,
+              "accepted": 44,
+              "rejected": 1
+            }
+          },
+          {
+            "name": "north_return",
+            "goal": [
+              -3.32,
+              6.789
+            ],
+            "status": 4,
+            "wall_s": 17.102248095034156,
+            "sim_s": 17.080000000000002,
+            "path_length_m": 11.761844022567544,
+            "stop_count": 2,
+            "stop_time_s": 2.2199999999999998,
+            "stalls_with_command": 0,
+            "stops": [
+              {
+                "duration_s": 1.16,
+                "xy": [
+                  -0.09122666090726853,
+                  7.699630706259282
+                ],
+                "mean_command": 0.015622979874078041
+              },
+              {
+                "duration_s": 1.06,
+                "xy": [
+                  -0.08032282048463821,
+                  7.6838938833075225
+                ],
+                "mean_command": 0.021370017602684574
+              }
+            ],
+            "events": {
+              "BLOCK_COMMAND": 5,
+              "SAFETY_COSTMAP_LETHAL": 6,
+              "GICP_REJECTED": 1,
+              "BLOCKED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.3050000000000025,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.10054269901593216,
+              0.11070958751952276,
+              0.21758006501477212
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": -0.00013644724094774574,
+              "roll": -1.3696777045879571e-09
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.10028651900938712,
+                0.11111612497188617,
+                0.2170433609862812
+              ],
+              "loam_interface": [
+                0.1003549984889105,
+                0.11080079175007995,
+                0.21708243299508467
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.08100000000000301,
+              0.10175000000000192,
+              0.11099999999999988
+            ],
+            "last_xyz": [
+              -3.3148243345009414,
+              6.698793883171239,
+              0.0799999531507492
+            ],
+            "gicp": {
+              "attempts": 85,
+              "accepted": 83,
+              "rejected": 2
+            }
+          }
+        ],
+        "navigator_active_at_start": true,
+        "gimbal_at_start": {
+          "status": "Folded",
+          "connected": true,
+          "spinning": false,
+          "upright": false,
+          "want_upright": false,
+          "yaw": 2.9315749827674153e-09,
+          "roll": -7.038384198382319e-12
+        },
+        "gicp_total": {
+          "attempts": 91,
+          "accepted": 89,
+          "rejected": 2
+        },
+        "events_total": {
+          "ACTIVATED_WAITING_FOR_PLAN": 1,
+          "BLOCKED": 2,
+          "GOAL_REACHED": 2,
+          "BLOCK_COMMAND": 5,
+          "SAFETY_COSTMAP_LETHAL": 6,
+          "GICP_REJECTED": 1
+        }
+      },
+      "aligned_acquisition_window_sim_s": [
+        2.0,
+        47.7
+      ],
+      "source_frames": 327,
+      "missing_acquisition_stamps": {
+        "/livox/lidar": 0,
+        "/velodyne_points": 10,
+        "/aft_mapped_to_init": 12,
+        "/odometry": 12
+      },
+      "timing": {
+        "/livox/imu": {
+          "count": 9344,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.004997360985726118,
+            0.005855277506634593,
+            0.01483654003823176
+          ]
+        },
+        "/livox/lidar": {
+          "count": 334,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.1017913050018251,
+            0.30066831219010054,
+            0.51021907501854
+          ]
+        },
+        "/velodyne_points": {
+          "count": 454,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.10053784598130733,
+            0.11224071700125933,
+            0.22303806903073564
+          ]
+        },
+        "/aft_mapped_to_init": {
+          "count": 444,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.10033352096797898,
+            0.11381181511096657,
+            0.31951440003467724
+          ]
+        },
+        "/lidar_odometry": {
+          "count": 444,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.10047536599449813,
+            0.11395535807823762,
+            0.31955875299172476
+          ]
+        },
+        "/odometry": {
+          "count": 444,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.10045718704350293,
+            0.11404037913889624,
+            0.319449506001547
+          ]
+        },
+        "/point_lio/diagnostics": {
+          "count": 444,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.1004303100053221,
+            0.11423790312837809,
+            0.31930019898572937
+          ]
+        }
+      },
+      "point_lio_max_processing_ms": 12.9537,
+      "point_lio_last_diagnostics": {
+        "raw_points": "4874",
+        "filtered_points": "365",
+        "associated_points": "329",
+        "effective_rows": "718",
+        "effective_points": "379.913",
+        "lidar_updates": "3",
+        "skipped_updates": "4",
+        "mean_abs_residual": "0.00822075",
+        "mean_nis": "0.139768",
+        "information_gain": "9.16365",
+        "pose_cov_logdet": "-75.1359",
+        "min_information_eigenvalue": "38216.7",
+        "information_condition": "45.9893",
+        "scale_0_responsibility": "157.178",
+        "scale_1_responsibility": "97.7383",
+        "scale_2_responsibility": "70.0163",
+        "scheduler_target_points": "40",
+        "information_per_point": "0.0306873",
+        "processing_ms": "4.7372",
+        "lidar_queue": "0",
+        "imu_queue": "10",
+        "dropped_lidar_frames": "0",
+        "dropped_imu_messages": "0",
+        "pending_map_frames": "1",
+        "committed_map_frames": "308",
+        "rejected_map_frames": "55",
+        "map_voxels": "925",
+        "map_points": "13286"
+      },
+      "raw_artifacts": "/tmp/nav_odom_20261031/baseline_headless"
+    },
+    "baseline_gui": {
+      "navigation": {
+        "tag": "baseline_gui",
+        "gimbal_mode": "folded",
+        "wait_localized_wall_s": 10.835574693977833,
+        "localized_at_start": true,
+        "gicp_start": {
+          "attempts": 3,
+          "accepted": 3,
+          "rejected": 0
+        },
+        "routes": [
+          {
+            "name": "north_cross",
+            "goal": [
+              5.712,
+              4.998
+            ],
+            "status": 4,
+            "wall_s": 25.455141276994254,
+            "sim_s": 21.099999999999998,
+            "path_length_m": 21.522955221090374,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "BLOCKED": 1,
+              "SAFETY_COSTMAP_LETHAL": 1,
+              "VELOCITY_ODOM_STALE": 1,
+              "ODOMETRY_STAMP_STALE": 1,
+              "GICP_REJECTED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.691,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12331011149217375,
+              0.24552969174692407,
+              0.7013228620053269
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": 0.002952865557745099,
+              "roll": -1.899250028081223e-11
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.12334130451199599,
+                0.24579969576734584,
+                0.7004128439584747
+              ],
+              "loam_interface": [
+                0.12341040599858388,
+                0.2463834382360801,
+                0.7004204289987683
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.0949999995000006,
+              0.10925000000000037,
+              0.11600000000000033
+            ],
+            "last_xyz": [
+              5.734533337329927,
+              5.020851138993455,
+              0.07999637687206268
+            ],
+            "gicp": {
+              "attempts": 54,
+              "accepted": 53,
+              "rejected": 1
+            }
+          },
+          {
+            "name": "north_return",
+            "goal": [
+              -3.32,
+              6.789
+            ],
+            "status": 4,
+            "wall_s": 20.552504644962028,
+            "sim_s": 16.880000000000003,
+            "path_length_m": 12.440568288767391,
+            "stop_count": 1,
+            "stop_time_s": 0.54,
+            "stalls_with_command": 0,
+            "stops": [
+              {
+                "duration_s": 0.54,
+                "xy": [
+                  -0.27242748545110224,
+                  7.601443919144105
+                ],
+                "mean_command": 0.012626906806902635
+              }
+            ],
+            "events": {
+              "BLOCK_COMMAND": 3,
+              "SAFETY_COSTMAP_LETHAL": 4,
+              "BLOCKED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.41299999900000095,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12255447698407806,
+              0.2348987069708528,
+              0.34575695800594985
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": -0.0017725882353261113,
+              "roll": -5.239903622111797e-09
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.12227253097807989,
+                0.2343927860056283,
+                0.345605980954133
+              ],
+              "loam_interface": [
+                0.12282416599919088,
+                0.2342365065123886,
+                0.3446553200483322
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.09500000000000453,
+              0.1069999992500025,
+              0.1179999990000028
+            ],
+            "last_xyz": [
+              -3.354383878944957,
+              6.644581699158334,
+              0.07999937200546264
+            ],
+            "gicp": {
+              "attempts": 101,
+              "accepted": 100,
+              "rejected": 1
+            }
+          }
+        ],
+        "navigator_active_at_start": true,
+        "gimbal_at_start": {
+          "status": "Folded",
+          "connected": true,
+          "spinning": false,
+          "upright": false,
+          "want_upright": false,
+          "yaw": -1.01863903978483e-08,
+          "roll": -2.1658220248355065e-06
+        },
+        "gicp_total": {
+          "attempts": 107,
+          "accepted": 106,
+          "rejected": 1
+        },
+        "events_total": {
+          "ACTIVATED_WAITING_FOR_PLAN": 1,
+          "BLOCKED": 2,
+          "SAFETY_COSTMAP_LETHAL": 5,
+          "VELOCITY_ODOM_STALE": 1,
+          "ODOMETRY_STAMP_STALE": 1,
+          "GICP_REJECTED": 1,
+          "GOAL_REACHED": 2,
+          "BLOCK_COMMAND": 3
+        }
+      },
+      "aligned_acquisition_window_sim_s": [
+        1.7,
+        46.3
+      ],
+      "source_frames": 198,
+      "missing_acquisition_stamps": {
+        "/livox/lidar": 0,
+        "/velodyne_points": 17,
+        "/aft_mapped_to_init": 28,
+        "/odometry": 28
+      },
+      "timing": {
+        "/livox/imu": {
+          "count": 9067,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.005402394977863878,
+            0.010692902535083704,
+            0.027675597986672074
+          ]
+        },
+        "/velodyne_points": {
+          "count": 411,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12113837251672521,
+            0.22913407264568372,
+            0.5861054399865679
+          ]
+        },
+        "/livox/lidar": {
+          "count": 200,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.21129755699075758,
+            0.6925191358779557,
+            1.6496435219887644
+          ]
+        },
+        "/aft_mapped_to_init": {
+          "count": 393,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12266313450527377,
+            0.24173072124831377,
+            0.7014517509960569
+          ]
+        },
+        "/lidar_odometry": {
+          "count": 393,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12263484401046298,
+            0.24147832023736554,
+            0.7015101460274309
+          ]
+        },
+        "/point_lio/diagnostics": {
+          "count": 393,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12273493700195104,
+            0.24145214229938572,
+            0.7012840500101447
+          ]
+        },
+        "/odometry": {
+          "count": 393,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12239909303025343,
+            0.24101952006167263,
+            0.7015191069804132
+          ]
+        }
+      },
+      "point_lio_max_processing_ms": 17.0648,
+      "point_lio_last_diagnostics": {
+        "raw_points": "4868",
+        "filtered_points": "369",
+        "associated_points": "327",
+        "effective_rows": "733",
+        "effective_points": "379.124",
+        "lidar_updates": "3",
+        "skipped_updates": "4",
+        "mean_abs_residual": "0.00823907",
+        "mean_nis": "0.132239",
+        "information_gain": "9.03337",
+        "pose_cov_logdet": "-74.8488",
+        "min_information_eigenvalue": "33966",
+        "information_condition": "45.0957",
+        "scale_0_responsibility": "160.807",
+        "scale_1_responsibility": "89.7056",
+        "scale_2_responsibility": "74.0138",
+        "scheduler_target_points": "39",
+        "information_per_point": "0.0329614",
+        "processing_ms": "8.24515",
+        "lidar_queue": "0",
+        "imu_queue": "14",
+        "dropped_lidar_frames": "0",
+        "dropped_imu_messages": "0",
+        "pending_map_frames": "0",
+        "committed_map_frames": "274",
+        "rejected_map_frames": "53",
+        "map_voxels": "920",
+        "map_points": "12719"
+      },
+      "raw_artifacts": "/tmp/nav_odom_20261031/baseline_gui"
+    },
+    "baseline_gui_detail": {
+      "navigation": {
+        "tag": "baseline_gui_detail",
+        "gimbal_mode": "folded",
+        "wait_localized_wall_s": 10.595988297020085,
+        "localized_at_start": true,
+        "gicp_start": {
+          "attempts": 3,
+          "accepted": 3,
+          "rejected": 0
+        },
+        "routes": [
+          {
+            "name": "north_cross",
+            "goal": [
+              5.712,
+              4.998
+            ],
+            "status": 4,
+            "wall_s": 28.207084416004363,
+            "sim_s": 23.44,
+            "path_length_m": 21.668884821762294,
+            "stop_count": 1,
+            "stop_time_s": 0.9,
+            "stalls_with_command": 0,
+            "stops": [
+              {
+                "duration_s": 0.9,
+                "xy": [
+                  0.5024286171495914,
+                  7.525721954200418
+                ],
+                "mean_command": 0.015371886547533643
+              }
+            ],
+            "events": {
+              "SAFETY_COSTMAP_LETHAL": 3,
+              "BLOCK_COMMAND": 2,
+              "BLOCKED": 1,
+              "GICP_REJECTED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.40299999900000044,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12107522401493043,
+              0.22415468949475326,
+              0.38734587002545595
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": 0.0023204165045171976,
+              "roll": -3.511066992700762e-10
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.12014232398360036,
+                0.22362609903211705,
+                0.3874695120030083
+              ],
+              "loam_interface": [
+                0.12065254099434242,
+                0.22370672223041765,
+                0.38799616700271145
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.09599999900000059,
+              0.11199999900000013,
+              0.12199999900000014
+            ],
+            "last_xyz": [
+              5.750661846961777,
+              4.9915575937616135,
+              0.07999989354610443
+            ],
+            "gicp": {
+              "attempts": 59,
+              "accepted": 58,
+              "rejected": 1
+            }
+          },
+          {
+            "name": "north_return",
+            "goal": [
+              -3.32,
+              6.789
+            ],
+            "status": 4,
+            "wall_s": 25.103637104970403,
+            "sim_s": 20.400000000000002,
+            "path_length_m": 12.293480210707928,
+            "stop_count": 2,
+            "stop_time_s": 3.34,
+            "stalls_with_command": 0,
+            "stops": [
+              {
+                "duration_s": 1.76,
+                "xy": [
+                  -1.3104513942065796,
+                  7.688600535136943
+                ],
+                "mean_command": 0.007303370776791127
+              },
+              {
+                "duration_s": 1.58,
+                "xy": [
+                  -1.2600679456132609,
+                  7.685757632411415
+                ],
+                "mean_command": 0.013258252147247768
+              }
+            ],
+            "events": {
+              "BLOCK_COMMAND": 4,
+              "SAFETY_COSTMAP_LETHAL": 9,
+              "BLOCKED": 4,
+              "VELOCITY_ODOM_STALE": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.7060000000000016,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.125614519987721,
+              0.2725362920638872,
+              0.6950796039891429
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": -0.0004550761077553034,
+              "roll": -4.182837409771878e-11
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.1252314615121577,
+                0.27326555355684823,
+                0.6946421570028178
+              ],
+              "loam_interface": [
+                0.12556995352497324,
+                0.2727744676114525,
+                0.6944291230174713
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.09299999950000026,
+              0.10700000000000448,
+              0.1120000000000061
+            ],
+            "last_xyz": [
+              -3.3865385090766766,
+              6.867312907278151,
+              0.07999980413913726
+            ],
+            "gicp": {
+              "attempts": 115,
+              "accepted": 114,
+              "rejected": 1
+            }
+          }
+        ],
+        "navigator_active_at_start": true,
+        "gimbal_at_start": {
+          "status": "Folded",
+          "connected": true,
+          "spinning": false,
+          "upright": false,
+          "want_upright": false,
+          "yaw": -1.0386968618547598e-08,
+          "roll": -3.3840899504866684e-06
+        },
+        "gicp_total": {
+          "attempts": 121,
+          "accepted": 120,
+          "rejected": 1
+        },
+        "events_total": {
+          "ACTIVATED_WAITING_FOR_PLAN": 1,
+          "SAFETY_COSTMAP_LETHAL": 12,
+          "BLOCK_COMMAND": 6,
+          "BLOCKED": 5,
+          "GICP_REJECTED": 1,
+          "GOAL_REACHED": 2,
+          "VELOCITY_ODOM_STALE": 1
+        }
+      },
+      "aligned_acquisition_window_sim_s": [
+        1.7,
+        51.7
+      ],
+      "source_frames": 501,
+      "missing_acquisition_stamps": {
+        "/livox/lidar": 0,
+        "/velodyne_points": 43,
+        "/aft_mapped_to_init": 59,
+        "/odometry": 59
+      },
+      "timing": {
+        "/livox/imu": {
+          "count": 10167,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.005495854507898912,
+            0.010984139269567095,
+            0.02399446995696053
+          ]
+        },
+        "/livox/lidar": {
+          "count": 509,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12051634601084515,
+            0.14493807695398572,
+            0.19626926397904754
+          ]
+        },
+        "/velodyne_points": {
+          "count": 465,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12228395199053921,
+            0.23296760908851855,
+            0.588769499969203
+          ]
+        },
+        "/aft_mapped_to_init": {
+          "count": 443,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12325973849510774,
+            0.25516945171402766,
+            0.6940940060303546
+          ]
+        },
+        "/lidar_odometry": {
+          "count": 442,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12290193099761382,
+            0.2556451110285707,
+            0.6948266340186819
+          ]
+        },
+        "/odometry": {
+          "count": 442,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12322733097244054,
+            0.25533344998257235,
+            0.6946634050109424
+          ]
+        },
+        "/point_lio/diagnostics": {
+          "count": 443,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12303955500829034,
+            0.2551868868380552,
+            0.6948058809502982
+          ]
+        }
+      },
+      "point_lio_max_processing_ms": 22.5966,
+      "point_lio_last_diagnostics": {
+        "raw_points": "4808",
+        "filtered_points": "351",
+        "associated_points": "311",
+        "effective_rows": "691",
+        "effective_points": "353.988",
+        "lidar_updates": "3",
+        "skipped_updates": "3",
+        "mean_abs_residual": "0.0106028",
+        "mean_nis": "0.212244",
+        "information_gain": "9.07234",
+        "pose_cov_logdet": "-74.9032",
+        "min_information_eigenvalue": "42389.7",
+        "information_condition": "36.991",
+        "scale_0_responsibility": "155.983",
+        "scale_1_responsibility": "85.4448",
+        "scale_2_responsibility": "66.2635",
+        "scheduler_target_points": "39",
+        "information_per_point": "0.0336613",
+        "processing_ms": "22.5966",
+        "lidar_queue": "0",
+        "imu_queue": "16",
+        "dropped_lidar_frames": "0",
+        "dropped_imu_messages": "0",
+        "pending_map_frames": "1",
+        "committed_map_frames": "304",
+        "rejected_map_frames": "51",
+        "map_voxels": "920",
+        "map_points": "12645"
+      },
+      "raw_artifacts": "/tmp/nav_odom_20261031/baseline_gui_detail"
+    },
+    "reliable_gui": {
+      "navigation": {
+        "tag": "reliable_gui",
+        "gimbal_mode": "folded",
+        "wait_localized_wall_s": 10.69509791902965,
+        "localized_at_start": true,
+        "gicp_start": {
+          "attempts": 3,
+          "accepted": 3,
+          "rejected": 0
+        },
+        "routes": [
+          {
+            "name": "north_cross",
+            "goal": [
+              5.712,
+              4.998
+            ],
+            "status": 4,
+            "wall_s": 24.655300838989206,
+            "sim_s": 20.18,
+            "path_length_m": 21.416255436967404,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.22799999900000079,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12325718349893577,
+              0.14214304689958226,
+              0.16397166502429172
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": 0.0011736361775547266,
+              "roll": -1.1485317372716963e-06
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.12327342599746771,
+                0.1418571420275839,
+                0.16423521999968216
+              ],
+              "loam_interface": [
+                0.12388566098525189,
+                0.141389402616187,
+                0.1650326640228741
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.09699999950000071,
+              0.11494999905000014,
+              0.12800000000000078
+            ],
+            "last_xyz": [
+              5.714757453712742,
+              5.063435598837742,
+              0.07999840342998504
+            ],
+            "gicp": {
+              "attempts": 52,
+              "accepted": 51,
+              "rejected": 1
+            }
+          },
+          {
+            "name": "north_return",
+            "goal": [
+              -3.32,
+              6.789
+            ],
+            "status": 4,
+            "wall_s": 20.353248042985797,
+            "sim_s": 15.620000000000001,
+            "path_length_m": 11.68787210335262,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "BLOCK_COMMAND": 4,
+              "SAFETY_COSTMAP_LETHAL": 6,
+              "BLOCKED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.2210000000000022,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.13029934000223875,
+              0.15558604802936316,
+              0.17305298999417573
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": -0.00013502601359505206,
+              "roll": -1.260697324312332e-09
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.13006637594662607,
+                0.15450762617401778,
+                0.1739929200266488
+              ],
+              "loam_interface": [
+                0.12977691303240135,
+                0.15429545723600313,
+                0.17196312703890726
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.09300000000000352,
+              0.10920000000000298,
+              0.12100000000000222
+            ],
+            "last_xyz": [
+              -3.226904828726822,
+              6.780451781396319,
+              0.07999426090717315
+            ],
+            "gicp": {
+              "attempts": 99,
+              "accepted": 97,
+              "rejected": 2
+            }
+          }
+        ],
+        "navigator_active_at_start": true,
+        "gimbal_at_start": {
+          "status": "Folded",
+          "connected": true,
+          "spinning": false,
+          "upright": false,
+          "want_upright": false,
+          "yaw": -4.730939195951578e-09,
+          "roll": -5.62971558260017e-10
+        },
+        "gicp_total": {
+          "attempts": 105,
+          "accepted": 103,
+          "rejected": 2
+        },
+        "events_total": {
+          "ACTIVATED_WAITING_FOR_PLAN": 1,
+          "GOAL_REACHED": 2,
+          "BLOCK_COMMAND": 4,
+          "SAFETY_COSTMAP_LETHAL": 6,
+          "BLOCKED": 1
+        }
+      },
+      "aligned_acquisition_window_sim_s": [
+        1.7,
+        43.8
+      ],
+      "source_frames": 422,
+      "missing_acquisition_stamps": {
+        "/livox/lidar": 0,
+        "/velodyne_points": 0,
+        "/aft_mapped_to_init": 0,
+        "/odometry": 0
+      },
+      "timing": {
+        "/livox/imu": {
+          "count": 8582,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.005458947969600558,
+            0.012670263997279108,
+            0.032751124002970755
+          ]
+        },
+        "/livox/lidar": {
+          "count": 430,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.1253097330336459,
+            0.14868556357687338,
+            0.17412853299174458
+          ]
+        },
+        "/velodyne_points": {
+          "count": 429,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12506652853335254,
+            0.14958199158136262,
+            0.17257786501431838
+          ]
+        },
+        "/aft_mapped_to_init": {
+          "count": 422,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12504347501089796,
+            0.1486518689780496,
+            0.17439251503674313
+          ]
+        },
+        "/lidar_odometry": {
+          "count": 422,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12473962997319177,
+            0.1493613740312867,
+            0.17330975801451132
+          ]
+        },
+        "/point_lio/diagnostics": {
+          "count": 422,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12500874197576195,
+            0.14922239002771676,
+            0.17398902802960947
+          ]
+        },
+        "/odometry": {
+          "count": 422,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.1247045139898546,
+            0.1492081560427323,
+            0.17407194600673392
+          ]
+        }
+      },
+      "point_lio_max_processing_ms": 16.9676,
+      "point_lio_last_diagnostics": {
+        "raw_points": "4865",
+        "filtered_points": "378",
+        "associated_points": "334",
+        "effective_rows": "738",
+        "effective_points": "384.783",
+        "lidar_updates": "2",
+        "skipped_updates": "1",
+        "mean_abs_residual": "0.00930489",
+        "mean_nis": "0.17975",
+        "information_gain": "9.05749",
+        "pose_cov_logdet": "-74.9337",
+        "min_information_eigenvalue": "37986.6",
+        "information_condition": "50.1753",
+        "scale_0_responsibility": "157.9",
+        "scale_1_responsibility": "102.208",
+        "scale_2_responsibility": "70.4821",
+        "scheduler_target_points": "52",
+        "information_per_point": "0.0181576",
+        "processing_ms": "6.59374",
+        "lidar_queue": "0",
+        "imu_queue": "19",
+        "dropped_lidar_frames": "0",
+        "dropped_imu_messages": "0",
+        "pending_map_frames": "0",
+        "committed_map_frames": "301",
+        "rejected_map_frames": "57",
+        "map_voxels": "926",
+        "map_points": "13472"
+      },
+      "raw_artifacts": "/tmp/nav_odom_20261031/reliable_gui"
+    },
+    "reliable_gui_repeat": {
+      "navigation": {
+        "tag": "reliable_gui_repeat",
+        "gimbal_mode": "folded",
+        "wait_localized_wall_s": 11.332398630969692,
+        "localized_at_start": true,
+        "gicp_start": {
+          "attempts": 3,
+          "accepted": 3,
+          "rejected": 0
+        },
+        "routes": [
+          {
+            "name": "north_cross",
+            "goal": [
+              5.712,
+              4.998
+            ],
+            "status": 4,
+            "wall_s": 27.364557788008824,
+            "sim_s": 20.64,
+            "path_length_m": 21.55854981901669,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "BLOCKED": 1,
+              "GICP_REJECTED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.220999999,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.13284506602212787,
+              0.15964237700682132,
+              0.17860177904367447
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": 0.003022006480023265,
+              "roll": -5.959366333740945e-11
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.13166984595591202,
+                0.16041993148392064,
+                0.17820731300162151
+              ],
+              "loam_interface": [
+                0.1314820609986782,
+                0.15972718760604038,
+                0.17814933799672872
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.09399999900000033,
+              0.11170000000000066,
+              0.12099999900000002
+            ],
+            "last_xyz": [
+              5.661014114748984,
+              5.078069052817885,
+              0.07999385857582092
+            ],
+            "gicp": {
+              "attempts": 57,
+              "accepted": 56,
+              "rejected": 1
+            }
+          },
+          {
+            "name": "north_return",
+            "goal": [
+              -3.32,
+              6.789
+            ],
+            "status": 4,
+            "wall_s": 24.615443683986086,
+            "sim_s": 18.180000000000003,
+            "path_length_m": 11.600676138543214,
+            "stop_count": 4,
+            "stop_time_s": 3.16,
+            "stalls_with_command": 0,
+            "stops": [
+              {
+                "duration_s": 0.54,
+                "xy": [
+                  4.743233932698291,
+                  7.178199513882398
+                ],
+                "mean_command": 0.045841543374065666
+              },
+              {
+                "duration_s": 0.9,
+                "xy": [
+                  4.735511429498292,
+                  7.17702819814533
+                ],
+                "mean_command": 0.026676033303798176
+              },
+              {
+                "duration_s": 0.86,
+                "xy": [
+                  4.734355025601937,
+                  7.171020574629307
+                ],
+                "mean_command": 0.020032992836066476
+              },
+              {
+                "duration_s": 0.86,
+                "xy": [
+                  4.7359379780556194,
+                  7.167736368656159
+                ],
+                "mean_command": 0.016070608663330623
+              }
+            ],
+            "events": {
+              "BLOCK_COMMAND": 4,
+              "SAFETY_COSTMAP_LETHAL": 8,
+              "BLOCKED": 4,
+              "GICP_REJECTED": 3,
+              "OPTIMIZER_FAILED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.2240000000000023,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.13469520799117163,
+              0.16461918861605226,
+              0.19287734100362286
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": -0.000531157769728452,
+              "roll": -9.289956998115301e-11
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.1348822294967249,
+                0.16421608300588558,
+                0.19291287194937468
+              ],
+              "loam_interface": [
+                0.1349259124835953,
+                0.16453695516102015,
+                0.19385212700581178
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.0929999999999992,
+              0.11100000000000414,
+              0.12400000000000233
+            ],
+            "last_xyz": [
+              -3.297320131874716,
+              6.801966664959329,
+              0.07999987864494323
+            ],
+            "gicp": {
+              "attempts": 113,
+              "accepted": 105,
+              "rejected": 8
+            }
+          }
+        ],
+        "navigator_active_at_start": true,
+        "gimbal_at_start": {
+          "status": "Folded",
+          "connected": true,
+          "spinning": false,
+          "upright": false,
+          "want_upright": false,
+          "yaw": 7.771716603599543e-11,
+          "roll": -1.6136498743435368e-05
+        },
+        "gicp_total": {
+          "attempts": 119,
+          "accepted": 111,
+          "rejected": 8
+        },
+        "events_total": {
+          "ACTIVATED_WAITING_FOR_PLAN": 1,
+          "BLOCKED": 5,
+          "GICP_REJECTED": 4,
+          "GOAL_REACHED": 2,
+          "BLOCK_COMMAND": 4,
+          "SAFETY_COSTMAP_LETHAL": 8,
+          "OPTIMIZER_FAILED": 1
+        }
+      },
+      "aligned_acquisition_window_sim_s": [
+        1.7,
+        47.0
+      ],
+      "source_frames": 454,
+      "missing_acquisition_stamps": {
+        "/livox/lidar": 0,
+        "/velodyne_points": 0,
+        "/aft_mapped_to_init": 0,
+        "/odometry": 0
+      },
+      "timing": {
+        "/livox/imu": {
+          "count": 9220,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.005655610002577305,
+            0.013475000916514551,
+            0.03521217900561169
+          ]
+        },
+        "/livox/lidar": {
+          "count": 461,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.1306476540339645,
+            0.1583272078365553,
+            0.1943626519641839
+          ]
+        },
+        "/velodyne_points": {
+          "count": 461,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.13037768748472445,
+            0.16167125578213015,
+            0.193672041001264
+          ]
+        },
+        "/aft_mapped_to_init": {
+          "count": 454,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.13148931897012517,
+            0.16126303958008065,
+            0.19202816701726988
+          ]
+        },
+        "/lidar_odometry": {
+          "count": 454,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.13151434698374942,
+            0.16100291940383613,
+            0.19183922797674313
+          ]
+        },
+        "/odometry": {
+          "count": 454,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.13136724301148206,
+            0.16068529883632435,
+            0.18985178199363872
+          ]
+        },
+        "/point_lio/diagnostics": {
+          "count": 454,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.13153468497330323,
+            0.16088782580336555,
+            0.1927136669983156
+          ]
+        }
+      },
+      "point_lio_max_processing_ms": 18.3901,
+      "point_lio_last_diagnostics": {
+        "raw_points": "4872",
+        "filtered_points": "372",
+        "associated_points": "347",
+        "effective_rows": "753",
+        "effective_points": "397.075",
+        "lidar_updates": "2",
+        "skipped_updates": "1",
+        "mean_abs_residual": "0.0100744",
+        "mean_nis": "0.233363",
+        "information_gain": "9.18487",
+        "pose_cov_logdet": "-75.3001",
+        "min_information_eigenvalue": "35930.2",
+        "information_condition": "46.4354",
+        "scale_0_responsibility": "165.556",
+        "scale_1_responsibility": "108.992",
+        "scale_2_responsibility": "68.5516",
+        "scheduler_target_points": "54",
+        "information_per_point": "0.0171989",
+        "processing_ms": "8.4773",
+        "lidar_queue": "0",
+        "imu_queue": "18",
+        "dropped_lidar_frames": "0",
+        "dropped_imu_messages": "0",
+        "pending_map_frames": "0",
+        "committed_map_frames": "340",
+        "rejected_map_frames": "57",
+        "map_voxels": "939",
+        "map_points": "13392"
+      },
+      "raw_artifacts": "/tmp/nav_odom_20261031/reliable_gui_repeat"
+    },
+    "final_gui": {
+      "navigation": {
+        "tag": "final_gui",
+        "gimbal_mode": "folded",
+        "wait_localized_wall_s": 10.64158401399618,
+        "localized_at_start": true,
+        "gicp_start": {
+          "attempts": 3,
+          "accepted": 3,
+          "rejected": 0
+        },
+        "routes": [
+          {
+            "name": "north_cross",
+            "goal": [
+              5.712,
+              4.998
+            ],
+            "status": 4,
+            "wall_s": 26.505657527013682,
+            "sim_s": 21.54,
+            "path_length_m": 21.703207741406118,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "SAFETY_COSTMAP_LETHAL": 2,
+              "OPTIMIZER_FAILED": 2,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.22400000000000125,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12248056702082977,
+              0.15117959266644898,
+              0.18228765402454883
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": 0.0031125834211707115,
+              "roll": -5.325927759258775e-06
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.12252702697878703,
+                0.15094834000337864,
+                0.18222321599023417
+              ],
+              "loam_interface": [
+                0.12219357601134107,
+                0.15128533499664623,
+                0.18219685496296734
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.09699999900000023,
+              0.1129999993000007,
+              0.12399999900000125
+            ],
+            "last_xyz": [
+              5.677721412335035,
+              5.003691780937544,
+              0.0799943801164627
+            ],
+            "gicp": {
+              "attempts": 56,
+              "accepted": 56,
+              "rejected": 0
+            }
+          },
+          {
+            "name": "north_return",
+            "goal": [
+              -3.32,
+              6.789
+            ],
+            "status": 4,
+            "wall_s": 22.46543631196255,
+            "sim_s": 18.42,
+            "path_length_m": 11.80321126761061,
+            "stop_count": 1,
+            "stop_time_s": 1.9,
+            "stalls_with_command": 0,
+            "stops": [
+              {
+                "duration_s": 1.9,
+                "xy": [
+                  -0.09686188486218453,
+                  7.665365305425191
+                ],
+                "mean_command": 0.014582469878863122
+              }
+            ],
+            "events": {
+              "BLOCK_COMMAND": 5,
+              "SAFETY_COSTMAP_LETHAL": 8,
+              "GICP_REJECTED": 1,
+              "BLOCKED": 3,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.22200000000000414,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12088588200276718,
+              0.14508114820346235,
+              0.16503597097471356
+            ],
+            "gimbal_at_end": {
+              "status": "Folded",
+              "connected": true,
+              "spinning": false,
+              "upright": false,
+              "want_upright": false,
+              "yaw": 0.0008605183684267104,
+              "roll": -1.3761878303597541e-09
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.12064677703892812,
+                0.14458242582622916,
+                0.16377148003084585
+              ],
+              "loam_interface": [
+                0.12074055802077055,
+                0.14468392960261553,
+                0.16546734399162233
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.09600000000000364,
+              0.11379999900000115,
+              0.1220000000000041
+            ],
+            "last_xyz": [
+              -3.2821245223744016,
+              6.826043137334198,
+              0.07999992334842682
+            ],
+            "gicp": {
+              "attempts": 107,
+              "accepted": 106,
+              "rejected": 1
+            }
+          }
+        ],
+        "navigator_active_at_start": true,
+        "gimbal_at_start": {
+          "status": "Folded",
+          "connected": true,
+          "spinning": false,
+          "upright": false,
+          "want_upright": false,
+          "yaw": -7.62555885103211e-09,
+          "roll": -4.7461434088402754e-11
+        },
+        "gicp_total": {
+          "attempts": 113,
+          "accepted": 112,
+          "rejected": 1
+        },
+        "events_total": {
+          "ACTIVATED_WAITING_FOR_PLAN": 1,
+          "SAFETY_COSTMAP_LETHAL": 10,
+          "OPTIMIZER_FAILED": 2,
+          "GOAL_REACHED": 2,
+          "BLOCK_COMMAND": 5,
+          "GICP_REJECTED": 1,
+          "BLOCKED": 3
+        }
+      },
+      "aligned_acquisition_window_sim_s": [
+        1.7,
+        48.3
+      ],
+      "source_frames": 467,
+      "missing_acquisition_stamps": {
+        "/livox/lidar": 0,
+        "/velodyne_points": 0,
+        "/aft_mapped_to_init": 0,
+        "/odometry": 0
+      },
+      "timing": {
+        "/livox/imu": {
+          "count": 9466,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.005386875011026859,
+            0.012398809799924491,
+            0.028579573961906135
+          ]
+        },
+        "/livox/lidar": {
+          "count": 474,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12028357898816466,
+            0.1444337586057372,
+            0.17956140998285264
+          ]
+        },
+        "/velodyne_points": {
+          "count": 474,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12047153699677438,
+            0.14588652537204325,
+            0.1827401680056937
+          ]
+        },
+        "/aft_mapped_to_init": {
+          "count": 467,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.120699931983836,
+            0.14658281176525634,
+            0.18206238298444077
+          ]
+        },
+        "/lidar_odometry": {
+          "count": 467,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12091321748448536,
+            0.14654341897403356,
+            0.182332158961799
+          ]
+        },
+        "/odometry": {
+          "count": 467,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12085625599138439,
+            0.1469183645240264,
+            0.18136276199948043
+          ]
+        },
+        "/point_lio/diagnostics": {
+          "count": 467,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.12120819301344454,
+            0.1465697232633829,
+            0.1813906219904311
+          ]
+        }
+      },
+      "point_lio_max_processing_ms": 17.1812,
+      "point_lio_last_diagnostics": {
+        "raw_points": "4859",
+        "filtered_points": "373",
+        "associated_points": "323",
+        "effective_rows": "720",
+        "effective_points": "369.029",
+        "lidar_updates": "2",
+        "skipped_updates": "1",
+        "mean_abs_residual": "0.0106218",
+        "mean_nis": "0.208958",
+        "information_gain": "9.08657",
+        "pose_cov_logdet": "-74.9511",
+        "min_information_eigenvalue": "36666.8",
+        "information_condition": "44.5294",
+        "scale_0_responsibility": "147.889",
+        "scale_1_responsibility": "100.892",
+        "scale_2_responsibility": "69.5865",
+        "scheduler_target_points": "52",
+        "information_per_point": "0.0184627",
+        "processing_ms": "5.68494",
+        "lidar_queue": "0",
+        "imu_queue": "16",
+        "dropped_lidar_frames": "0",
+        "dropped_imu_messages": "0",
+        "pending_map_frames": "0",
+        "committed_map_frames": "288",
+        "rejected_map_frames": "53",
+        "map_voxels": "891",
+        "map_points": "13181"
+      },
+      "raw_artifacts": "/tmp/nav_odom_20261031/final_gui"
+    },
+    "final_spin": {
+      "navigation": {
+        "tag": "final_spin",
+        "gimbal_mode": "spin",
+        "wait_localized_wall_s": 11.312575763033237,
+        "localized_at_start": true,
+        "gicp_start": {
+          "attempts": 3,
+          "accepted": 3,
+          "rejected": 0
+        },
+        "routes": [
+          {
+            "name": "west_down",
+            "goal": [
+              -12.15,
+              -1.9
+            ],
+            "status": 4,
+            "wall_s": 7.653787640971132,
+            "sim_s": 6.36,
+            "path_length_m": 5.979041618274279,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "BLOCK_COMMAND": 1,
+              "OPTIMIZER_FAILED": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.22699999900000062,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12055259649059735,
+              0.14191045743937136,
+              0.15230149397393689
+            ],
+            "gimbal_at_end": {
+              "status": "Rotating",
+              "connected": true,
+              "spinning": true,
+              "upright": true,
+              "want_upright": true,
+              "yaw": 9.159139633178711,
+              "roll": 1.570797324180603
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.12014791203546338,
+                0.14182163310761095,
+                0.15177705703536049
+              ],
+              "loam_interface": [
+                0.12032278851256706,
+                0.14285923882853238,
+                0.15198883099947125
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.10399999950000036,
+              0.11299999900000103,
+              0.12699999900000059
+            ],
+            "last_xyz": [
+              -12.204273229607752,
+              -1.811941625519238,
+              0.07999986374378204
+            ],
+            "gicp": {
+              "attempts": 21,
+              "accepted": 21,
+              "rejected": 0
+            }
+          },
+          {
+            "name": "west_up",
+            "goal": [
+              -9.51,
+              2.73
+            ],
+            "status": 4,
+            "wall_s": 7.003716880979482,
+            "sim_s": 5.640000000000001,
+            "path_length_m": 5.3420600015854545,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "BLOCK_COMMAND": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.24300000000000133,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12214356299955398,
+              0.15136933020548896,
+              0.17154765198938549
+            ],
+            "gimbal_at_end": {
+              "status": "Rotating",
+              "connected": true,
+              "spinning": true,
+              "upright": true,
+              "want_upright": true,
+              "yaw": 21.65326499938965,
+              "roll": 1.5707967281341553
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.12188715999945998,
+                0.15109910181490704,
+                0.17124145501293242
+              ],
+              "loam_interface": [
+                0.12127833196427673,
+                0.15148243380244822,
+                0.1717103619594127
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.10799999900000123,
+              0.12119999900000189,
+              0.14299999900000138
+            ],
+            "last_xyz": [
+              -9.641610140759623,
+              2.662801269597279,
+              0.07999986374378204
+            ],
+            "gicp": {
+              "attempts": 41,
+              "accepted": 41,
+              "rejected": 0
+            }
+          },
+          {
+            "name": "west_return",
+            "goal": [
+              -11.5,
+              3.1
+            ],
+            "status": 4,
+            "wall_s": 3.152631490956992,
+            "sim_s": 2.5,
+            "path_length_m": 1.9226271541945905,
+            "stop_count": 0,
+            "stop_time_s": 0,
+            "stalls_with_command": 0,
+            "stops": [],
+            "events": {
+              "BLOCK_COMMAND": 1,
+              "GOAL_REACHED": 1
+            },
+            "max_latest_odom_age_s": 0.22899999900000276,
+            "odom_receive_interval_p50_p95_max_wall_s": [
+              0.12444404501002282,
+              0.14917168898973612,
+              0.16829839098500088
+            ],
+            "gimbal_at_end": {
+              "status": "Rotating",
+              "connected": true,
+              "spinning": true,
+              "upright": true,
+              "want_upright": true,
+              "yaw": 29.33189582824707,
+              "roll": 1.5707964897155762
+            },
+            "input_receive_interval_p50_p95_max_wall_s": {
+              "point_lio": [
+                0.1252117679687217,
+                0.1498278105864301,
+                0.1693565160385333
+              ],
+              "loam_interface": [
+                0.12453758402261883,
+                0.1504345484427176,
+                0.16864203399745747
+              ]
+            },
+            "arrival_age_p50_p95_max": [
+              0.10699999900000287,
+              0.12639999980000138,
+              0.12899999900000275
+            ],
+            "last_xyz": [
+              -11.45778520929236,
+              3.10919714358256,
+              0.07999446952342987
+            ],
+            "gicp": {
+              "attempts": 54,
+              "accepted": 54,
+              "rejected": 0
+            }
+          }
+        ],
+        "navigator_active_at_start": true,
+        "gimbal_at_start": {
+          "status": "Upright",
+          "connected": true,
+          "spinning": false,
+          "upright": true,
+          "want_upright": true,
+          "yaw": 0.0012500410666689277,
+          "roll": 1.570798397064209
+        },
+        "gicp_total": {
+          "attempts": 60,
+          "accepted": 60,
+          "rejected": 0
+        },
+        "events_total": {
+          "ACTIVATED_WAITING_FOR_PLAN": 1,
+          "BLOCK_COMMAND": 3,
+          "OPTIMIZER_FAILED": 1,
+          "GOAL_REACHED": 3
+        }
+      },
+      "aligned_acquisition_window_sim_s": [
+        1.7,
+        27.3
+      ],
+      "source_frames": 257,
+      "missing_acquisition_stamps": {
+        "/livox/lidar": 0,
+        "/velodyne_points": 0,
+        "/aft_mapped_to_init": 0,
+        "/odometry": 0
+      },
+      "timing": {
+        "/livox/imu": {
+          "count": 5283,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.00525089749135077,
+            0.01242495425394736,
+            0.028797475970350206
+          ]
+        },
+        "/livox/lidar": {
+          "count": 264,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.11757589696208015,
+            0.14156108728493563,
+            0.1717332910047844
+          ]
+        },
+        "/velodyne_points": {
+          "count": 264,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.11791450105374679,
+            0.14100957923801616,
+            0.17162792099406943
+          ]
+        },
+        "/aft_mapped_to_init": {
+          "count": 257,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.11808851652313024,
+            0.14198232621129137,
+            0.17103698203573003
+          ]
+        },
+        "/lidar_odometry": {
+          "count": 257,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.11799039150355384,
+            0.1423897734930506,
+            0.17126494500553235
+          ]
+        },
+        "/odometry": {
+          "count": 257,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.11789474947727285,
+            0.1425162284867838,
+            0.1711894830223173
+          ]
+        },
+        "/point_lio/diagnostics": {
+          "count": 257,
+          "rx_interval_p50_p95_max_wall_s": [
+            0.11801029747584835,
+            0.1427817492367467,
+            0.17106543097179383
+          ]
+        }
+      },
+      "point_lio_max_processing_ms": 25.7853,
+      "point_lio_last_diagnostics": {
+        "raw_points": "7950",
+        "filtered_points": "342",
+        "associated_points": "327",
+        "effective_rows": "792",
+        "effective_points": "374.585",
+        "lidar_updates": "4",
+        "skipped_updates": "7",
+        "mean_abs_residual": "0.00973314",
+        "mean_nis": "0.201517",
+        "information_gain": "7.80412",
+        "pose_cov_logdet": "-72.1152",
+        "min_information_eigenvalue": "30100.7",
+        "information_condition": "21.3219",
+        "scale_0_responsibility": "112.562",
+        "scale_1_responsibility": "115.759",
+        "scale_2_responsibility": "94.852",
+        "scheduler_target_points": "44",
+        "information_per_point": "0.0263132",
+        "processing_ms": "9.45771",
+        "lidar_queue": "0",
+        "imu_queue": "20",
+        "dropped_lidar_frames": "0",
+        "dropped_imu_messages": "0",
+        "pending_map_frames": "0",
+        "committed_map_frames": "248",
+        "rejected_map_frames": "0",
+        "map_voxels": "1081",
+        "map_points": "14909"
+      },
+      "raw_artifacts": "/tmp/nav_odom_20261031/final_spin"
+    }
+  },
+  "dropout": {
+    "passed": true,
+    "stopped_process": "pointlio_mapping",
+    "last_measurement_stamp": 3.400000001,
+    "first_zero_wall_s": 0.4046387179987505,
+    "observed_measurement_age_sim_s": 0.5019999990000001,
+    "events": [
+      "Minco MPC fail-closed: ODOMETRY_STAMP_STALE"
+    ],
+    "feedback_resumed": true
+  },
+  "test_adaptive_lio": {
+    "tests": 10,
+    "failures": 0,
+    "errors": 0
+  },
+  "notes": [
+    "reliable_gui and reliable_gui_repeat ran with transport-identical earlier binaries while diagnostics were being built; final_gui and final_spin use the completed final build without concurrent compilation.",
+    "Missing stamps are measured by ROS observers; no packet capture was performed to identify a specific DDS fragment loss mechanism.",
+    "Baseline GUI observer used best-effort for converted clouds; configured reliable observer used reliable after the fix. All odometry observers kept identical best-effort QoS."
+  ]
+}

@@ -45,6 +45,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_transform_sample_gate test/test_transform_sample_gate.cpp)
   target_include_directories(test_transform_sample_gate PRIVATE include)
 
+  ament_add_gtest(test_odometry_pipeline test/test_odometry_pipeline.cpp)
+  target_include_directories(test_odometry_pipeline PRIVATE include)
+  target_link_libraries(test_odometry_pipeline ${PROJECT_NAME})
+  ament_target_dependencies(test_odometry_pipeline rclcpp tf2_ros tf2_geometry_msgs sensor_msgs nav_msgs)
+
   set(ament_cmake_clang_format_CLANG_FORMAT_VERSION 21)
   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
   set(ament_cmake_clang_tidy_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-tidy")

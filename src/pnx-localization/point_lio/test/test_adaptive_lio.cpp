@@ -3,6 +3,7 @@
 #include <pcl/point_types.h>
 
 #include "adaptive_lio.hpp"
+#include "instantaneous_scan.hpp"
 #include "common_lib.h"
 #include "ivox/ivox3d.h"
 
@@ -10,6 +11,19 @@ namespace
 {
 using EigenPointVector =
   std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>>;
+
+TEST(InstantaneousScan, DistinguishesSnapshotFromSweepingAndInvalidTimestamps)
+{
+  std::vector<pcl::PointXYZINormal> points(4);
+  for (auto & point : points) {point.curvature = 1.0e-6F;}
+  EXPECT_TRUE(point_lio::isInstantaneousScan(points));
+  points.back().curvature = 0.1F;
+  EXPECT_FALSE(point_lio::isInstantaneousScan(points));
+  points.back().curvature = std::numeric_limits<float>::quiet_NaN();
+  EXPECT_FALSE(point_lio::isInstantaneousScan(points));
+  points.clear();
+  EXPECT_FALSE(point_lio::isInstantaneousScan(points));
+}
 
 TEST(AdaptiveLio, FitsPlanarSurface)
 {

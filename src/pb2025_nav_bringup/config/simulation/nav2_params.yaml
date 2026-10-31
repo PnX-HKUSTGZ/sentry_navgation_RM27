@@ -150,7 +150,9 @@ point_lio:
                      0.0, 0.0, 1.0 ]
 
     odometry:
-      publish_odometry_without_downsample: True
+      # One corrected pose per instantaneous GPU scan; intermediate updates
+      # share a timestamp and must not disagree with the registered full cloud.
+      publish_odometry_without_downsample: False
 
     publish:
       path_en: False                                    # False: close the path output

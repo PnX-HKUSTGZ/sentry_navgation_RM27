@@ -59,6 +59,9 @@ controller_server:
       odom_topic: /odometry
       cmd_vel_mpc_topic: minco/cmd_vel_mpc
       odom_timeout: 0.25
+      # GUI simulation can run below half real time. The independent ROS-time
+      # measurement-age gate still uses 0.50 s with Point-LIO below.
+      odom_receive_timeout: 1.0
       trajectory_timeout: 1.50
       future_stamp_tolerance: 0.05
       dt: 0.05
@@ -98,33 +101,33 @@ controller_server:
       uphill_startup_min_command_speed: 1.0
       # Ramp transitions are abrupt in the collision STL. Blend down only
       # after measured roll/pitch shows that the chassis is entering a slope;
-      # flat-ground travel retains the 1.2 m/s limit.
+      # Flat-ground travel retains the 1.8 m/s limit.
       slope_slowdown_start_angle: 0.06
       slope_full_slowdown_angle: 0.18
       # Keep a climbing/downhill transition moving without imposing a second
       # low speed cap on the already collision-checked MINCO trajectory.
-      slope_speed_limit: 0.95
+      slope_speed_limit: 1.30
       Q: [3.0, 3.0, 2.0]
       q_along: 3.0
       # The narrow gate has only centimetres of lateral tracking margin.
       q_cross: 120.0
       R: [1.5, 1.5, 1.0]
-      # At 1.2 m/s and 1.8 m/s^2, nominal braking needs 0.40 m before
-      # latency/margin, within the 1.5 m local planning horizon below.
-      vx_min: -1.2
-      vx_max: 1.2
-      vy_min: -1.2
-      vy_max: 1.2
+      # At 1.8 m/s and 2.0 m/s^2, nominal braking needs 0.81 m before
+      # latency/margin; the planner now looks ahead 2.5 m.
+      vx_min: -1.8
+      vx_max: 1.8
+      vy_min: -1.8
+      vy_max: 1.8
       # Hard radial limit shared with MINCO. Independent vx/vy box limits alone
-      # permit 1.70 m/s at a diagonal and invalidate the radial brake model.
-      max_planar_speed: 1.2
+      # permit 2.55 m/s at a diagonal and invalidate the radial brake model.
+      max_planar_speed: 1.8
       omega_min: -1.2
       omega_max: 1.2
       use_acc_constraints: true
-      ax_min: -1.0
-      ax_max: 1.0
-      ay_min: -1.0
-      ay_max: 1.0
+      ax_min: -1.5
+      ax_max: 1.5
+      ay_min: -1.5
+      ay_max: 1.5
       alpha_min: -2.0
       alpha_max: 2.0
       odom_frame: odom
@@ -189,8 +192,9 @@ local_costmap:
       width: 5
       height: 5
       resolution: 0.05
-      # New wire-free CAD convex envelope with 15 mm normal margin.
-      footprint: "[[0.296, -0.210], [0.296, 0.209], [0.282, 0.244], [0.245, 0.281], [0.205, 0.297], [-0.205, 0.297], [-0.245, 0.281], [-0.282, 0.244], [-0.296, 0.209], [-0.296, -0.210], [-0.282, -0.245], [-0.245, -0.280], [-0.208, -0.296], [0.207, -0.296], [0.246, -0.280], [0.282, -0.245]]"
+      # Enclose the Gazebo wheel spheres and the upright rotating yaw body.
+      # The visual CAD polygon clipped the physical wheel corners by 16 mm.
+      footprint: "[[0.318, 0.0], [0.306, 0.218], [0.29421, 0.262], [0.262, 0.29421], [0.218, 0.306], [0.0, 0.318], [-0.218, 0.306], [-0.262, 0.29421], [-0.29421, 0.262], [-0.306, 0.218], [-0.318, 0.0], [-0.306, -0.218], [-0.29421, -0.262], [-0.262, -0.29421], [-0.218, -0.306], [0.0, -0.318], [0.218, -0.306], [0.262, -0.29421], [0.29421, -0.262], [0.306, -0.218]]"
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true
@@ -213,10 +217,10 @@ global_costmap:
         obstacle_threshold: 65
         stale_timeout: 2.75
         tf_timeout: 0.10
-        # Cover the 1.5 m local horizon plus the body front/corner, so global
+        # Cover the 2.5 m local horizon plus the body front/corner, so global
         # search incorporates measured pillars before the local seed reaches them.
         # MINCO still checks terrain and headroom across the complete ROG window.
-        obstacle_marking_max_range: 2.0
+        obstacle_marking_max_range: 3.0
         footprint_clearing_enabled: true
       # The outer inflation remains a soft SMAC preference. Static 253 becomes
       # soft only where the exact body fits; measured-obstacle 253 stays hard.
@@ -233,7 +237,7 @@ global_costmap:
       publish_frequency: 2.0
       global_frame: map
       robot_base_frame: gimbal_yaw_fake
-      footprint: "[[0.296, -0.210], [0.296, 0.209], [0.282, 0.244], [0.245, 0.281], [0.205, 0.297], [-0.205, 0.297], [-0.245, 0.281], [-0.282, 0.244], [-0.296, 0.209], [-0.296, -0.210], [-0.282, -0.245], [-0.245, -0.280], [-0.208, -0.296], [0.207, -0.296], [0.246, -0.280], [0.282, -0.245]]"
+      footprint: "[[0.318, 0.0], [0.306, 0.218], [0.29421, 0.262], [0.262, 0.29421], [0.218, 0.306], [0.0, 0.318], [-0.218, 0.306], [-0.262, 0.29421], [-0.29421, 0.262], [-0.306, 0.218], [-0.318, 0.0], [-0.306, -0.218], [-0.29421, -0.262], [-0.262, -0.29421], [-0.218, -0.306], [0.0, -0.318], [0.218, -0.306], [0.262, -0.29421], [0.29421, -0.262], [0.306, -0.218]]"
       resolution: 0.05
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
@@ -272,7 +276,7 @@ planner_server:
         clip_seed_by_rog_boundary: true
         rog_boundary_margin: 0.50
         rog_boundary_sample_step: 0.10
-        # Rotate the CAD polygon below by the current physical chassis yaw;
+        # Rotate the collision polygon below by the current physical chassis yaw;
         # its circumscribed circle must not close an otherwise valid 0.8 m gate.
         # No-elevation mode keeps the 2D static map, while local ROG terrain
         # connectivity checks ramps and drops from live observations.
@@ -283,7 +287,7 @@ planner_server:
           # steps instead of repeatedly driving the wheel contacts into them.
           max_step: 0.05
           max_slope_deg: 20.0
-        # The new CAD outline is checked as an oriented polygon. Add one 5 cm
+        # The collision envelope is checked as an oriented polygon. Add one 5 cm
         # cell at surveyed ramp/drop edges without replacing the polygon by a
         # circumscribed circle at the tunnel.
           lethal_clearance_radius: 0.44
@@ -315,11 +319,11 @@ planner_server:
         # not a measured physical clearance. Interior hits and walls block.
         dynamic_edge_overlap_tolerance: 0.04
         # Rectangle values remain as a compatibility fallback. Active safety
-        # sampling uses the CAD-derived folded-sentry polygon below.
-        footprint_length: 0.592
-        footprint_width: 0.594
+        # sampling uses the simulation collision envelope below.
+        footprint_length: 0.636
+        footprint_width: 0.636
         footprint_margin: 0.05
-        footprint_points: [0.296, -0.210, 0.296, 0.209, 0.282, 0.244, 0.245, 0.281, 0.205, 0.297, -0.205, 0.297, -0.245, 0.281, -0.282, 0.244, -0.296, 0.209, -0.296, -0.210, -0.282, -0.245, -0.245, -0.280, -0.208, -0.296, 0.207, -0.296, 0.246, -0.280, 0.282, -0.245]
+        footprint_points: [0.318, 0.0, 0.306, 0.218, 0.29421, 0.262, 0.262, 0.29421, 0.218, 0.306, 0.0, 0.318, -0.218, 0.306, -0.262, 0.29421, -0.29421, 0.262, -0.306, 0.218, -0.318, 0.0, -0.306, -0.218, -0.29421, -0.262, -0.262, -0.29421, -0.218, -0.306, 0.0, -0.318, 0.218, -0.306, 0.262, -0.29421, 0.29421, -0.262, 0.306, -0.218]
         sample_dt: 0.05
         # The compacted cloud normally updates at 4-10 Hz, but Gazebo GPU lidar
         # can still produce isolated 2.2-2.45 s scheduling gaps under combined
@@ -360,9 +364,8 @@ planner_server:
         frame_id: odom
         resolution: 0.05
         inflation_resolution: 0.05
-        # The local optimizer looks ahead 1.5 m. A 6 m rolling window retains
-        # over 1 m of boundary margin while reducing projected XY work by 44%
-        # from the previous 8 m window.
+        # The local optimizer looks ahead 2.5 m. The 6 m rolling window and
+        # boundary clipping keep its swept footprint inside the local map.
         map_size: [6.0, 6.0, 2.0]
         fix_map_origin: [0.0, 0.0, 0.0]
         point_filt_num: 1
@@ -484,7 +487,7 @@ planner_server:
           ground_connectivity_quantile: 0.20
           ground_connectivity_quantile_lateral_radius: 0.15
           ground_connectivity_quantile_min_samples: 3
-          ground_connectivity_fit_residual_tolerance: 0.05
+          ground_connectivity_fit_residual_tolerance: 0.08
           # A one-cell prior/no-data strip inside the measured footprint may
           # borrow support from two cardinal neighbors after two frames. Any
           # occupied voxel in the strip remains an immediate veto.
@@ -518,14 +521,14 @@ planner_server:
           # covers the 0.40 m forward hard-footprint
           # half-length plus the 0.50 m stop distance at 1 m/s; the narrower
           # lateral envelope limits the static-prior-only release area.
-          near_field_prior_fill_enable: false
-          near_field_prior_fill_length: 1.40
+          near_field_prior_fill_enable: true
+          near_field_prior_fill_length: 1.80
           near_field_prior_fill_width: 1.00
           # Axle height 0.080 m + original sensor mount height 0.130 m.
           # Reference is now the chassis axle, not the moving lidar centre.
           robot_origin_to_ground: 0.080
-          # Trial clearance height: 235 mm; physical collision envelope is 240 mm.
-          vehicle_height: 0.050
+          # Folded Gazebo collision envelope measured from the contact plane.
+          vehicle_height: 0.040
           headroom_margin: 0.0
           headroom_voxel_inset_fraction: 0.0
           body_bottom_clearance: 0.03
@@ -536,10 +539,10 @@ planner_server:
           ground_seed_tolerance: 0.18
           # Preserve recent connectivity only while the same ground and body
           # clearance are still observed. Never extends itself through a dropout.
-          ground_connectivity_hold_time: 1.2
+          ground_connectivity_hold_time: 2.0
           # Local floor evidence for roof returns; history uses hit timestamps.
-          overhead_ground_search_radius: 0.80
-          overhead_ground_history_time: 1.5
+          overhead_ground_search_radius: 1.00
+          overhead_ground_history_time: 2.0
           max_ground_height_delta: 0.35
           # The strict seed tolerance is capped by this value.  Six cm made
           # voxelized ramp returns disconnect an otherwise continuous ground
@@ -555,7 +558,7 @@ planner_server:
           # coverage gate: there is no finite occupied height to turn into a
           # downhill-hole obstacle. Unknown columns and every finite occupied
           # return still remain fail-closed below.
-          min_headroom_known_ratio: 0.1
+          min_headroom_known_ratio: 0.10
           # At the leading roof face, finite roof returns replace every
           # no-return ray in that XY voxel, so the body band can report 0% known
           # even though the measured lower roof boundary clears the vehicle.
@@ -572,7 +575,7 @@ planner_server:
           passable_cost: 50
           passable_as_free: true
           hysteresis_enable: true
-          hysteresis_count: 2
+          hysteresis_count: 1
           # Deterministic Gazebo rays retain the 2-frame hysteresis below but
           # do not add a wall-clock hold.  The old hold repeatedly preserved a
           # one-cell gate-edge classification after raw clearance was already
@@ -642,7 +645,7 @@ planner_server:
           range: [3.0, 3.0, 1.0]
       corridor:
         # Backup corridor only; primary MINCO/static checks use the oriented
-        # 0.592 x 0.594 m polygon above.
+        # simulation collision polygon above.
         robot_radius: 0.362
         extra_margin: 0.05
       smac_2d:
@@ -670,7 +673,7 @@ planner_server:
         # The simulated LiDAR exposes the next section continuously.  A
         # clipped prefix should therefore slow down briefly, not crawl at a
         # speed which makes every frontier refresh look like a stop.
-        observed_prefix_max_velocity: 0.85
+        observed_prefix_max_velocity: 1.20
       hot_start:
         # The larger simulated chassis can lag the rolling polynomial briefly
         # during contact transitions without making that seed unusable.
@@ -685,7 +688,7 @@ planner_server:
         # slope cell from launching SMAC and MINCO every 50 ms and starving the
         # incoming ROG snapshot callbacks.
         failed_replan_retry_period: 0.25
-        # Refresh before a 1.5 m stop-at-end horizon enters its braking tail.
+        # Refresh before the rolling horizon enters its braking tail.
         # This uses a per-FSM steady clock, independent of Gazebo clock jumps.
         successful_replan_period: 0.35
         # The internal FSM may revoke the trajectory at this distance. Keep it
@@ -697,31 +700,32 @@ planner_server:
         # near-180 deg A<->B ramp turn without ratcheting contact-induced yaw
         # drift into every rolling replan.
         enable_yaw_opt: true
-        # The 0.45 m radial field used to reject the 0.65 m raster opening
-        # before the exact 0.592 x 0.594 m polygon check could accept it.  The
-        # polygon check is authoritative; the soft centerline cost covers its
-        # 0.297 m half-width plus half a 5 cm obstacle cell.
-        safe_dist: 0.33
-        # Hard validation samples the CAD polygon above. Zero keeps this an
+        # The collision polygon is authoritative. Shape the soft centerline
+        # cost around its 0.318 m half-width plus half a 5 cm obstacle cell.
+        safe_dist: 0.35
+        # Hard validation samples the collision polygon above. Zero keeps this an
         # exact occupied/UNKNOWN test without duplicate radial inflation.
         collision_dist: 0.0
         # Receding horizon: stay inside currently verifiable 3D coverage, then
         # extend the trajectory as the robot moves through the tunnel/ramp.
-        lookahead_dist: 1.5
-        max_velocity: 1.2
-        # Slow the approaching local horizon before entering a narrow gate.
-        # Distance is from the centerline to ROG ESDF obstacles, in metres.
-        obstacle_slowdown_distance: 0.50
-        obstacle_max_velocity: 0.85
-        max_acceleration: 1.0
+        lookahead_dist: 2.5
+        max_velocity: 1.8
+        # Limit only segments near an obstacle; propagate necessary braking
+        # to neighbours instead of capping the complete rolling horizon.
+        # These are speed targets; full-footprint collision checks stay active.
+        segment_obstacle_slowdown: true
+        obstacle_slowdown_distance: 0.45
+        obstacle_max_velocity: 1.35
+        max_acceleration: 2.0
         terminal_velocity_ratio: 0.85
         terminal_tangent_lookahead: 0.30
         max_trajectory_duration: 20.0
         max_yaw_dot: 1.2
-        turn_angle_deadzone: 0.10
-        turn_angle_saturation: 0.80
-        min_turn_vel: 0.20
-        decay_power: 1.6
+        # Holonomic direction changes need not crawl at a raster path corner.
+        turn_angle_deadzone: 0.20
+        turn_angle_saturation: 1.57
+        min_turn_vel: 0.65
+        decay_power: 1.0
         time_allocation_iters: 15
         smooth_eps: 0.01
         integral_res: 16
@@ -752,7 +756,9 @@ planner_server:
         overlap_max_speed: 0.20
         overlap_max_duration: 1.0
         overlap_max_distance: 0.20
-        overlap_max_penetration: 0.05
+        # Recovery only: cover one 5 cm raster cell plus the collision-envelope
+        # correction. Each existing overlap must decrease; new cells stay vetoed.
+        overlap_max_penetration: 0.08
         overlap_max_ratio: 0.10
         # Suppress tiny escapes only when the CURRENT full body is already safe.
         # Normal driving uses safety.static_overlap_*, not this trigger.
@@ -783,6 +789,9 @@ fake_vel_transform:
 ign_sim_pointcloud_tool:
   ros__parameters:
     use_sim_time: true
+    # Retransmit large snapshots instead of silently losing scan fragments.
+    # Match point_lio.common.reliable_lidar below; queues remain shallow.
+    reliable_output: true
     pcd_topic: livox/lidar
     instantaneous_scan: true  # Gazebo GPU lidar renders a single-time snapshot.
     n_scan: 192
@@ -833,7 +842,8 @@ point_lio:
     prop_at_freq_of_imu: true
     check_satu: true
     init_map_size: 10
-    point_filter_num: 8                                 # Options: 4, 3
+    # Preserve enough angular samples for 5 cm terrain/clearance cells.
+    point_filter_num: 2
     space_down_sample: true
     filter_size_surf: 0.2                               # Options: 0.5, 0.3, 0.2, 0.15, 0.1
     filter_size_map: 0.2                                # Options: 0.5, 0.3, 0.15, 0.1
@@ -883,6 +893,10 @@ point_lio:
 
     common:
       lid_topic: "velodyne_points"
+      reliable_lidar: true
+      # 200 Hz IMU: retain a bounded 0.5 s burst while a scan is processed.
+      # The estimator still validates actual IMU timestamp gaps.
+      imu_receive_depth: 100
       imu_topic: "livox/imu"
       con_frame: false                                  # True: if you need to combine several LiDAR frames into one
       con_frame_num: 1                                  # the number of frames combined
@@ -930,7 +944,9 @@ point_lio:
       extrinsic_R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
     odometry:
-      publish_odometry_without_downsample: true
+      # One corrected pose per instantaneous GPU scan; intermediate updates
+      # share a timestamp and must not disagree with the registered full cloud.
+      publish_odometry_without_downsample: false
 
     publish:
       path_en: false                                    # False: close the path output
@@ -1016,6 +1032,10 @@ terrain_analysis_ext:
 relocalization_manager:
   ros__parameters:
     use_sim_time: true
+    # Keep correcting LIO drift during commanded motion and physical stalls.
+    # Quality/delta gates run before each bounded interpolation step.
+    continuous_refinement: true
+    tracking_correction_alpha: 0.25
     num_threads: 4
     num_neighbors: 20
     gravity_aligned: true  # Preserve map/odom gravity; optimize xyz and yaw.
@@ -1217,7 +1237,7 @@ minco_input_profiles:
       # Point-LIO does not preserve the organized 360 x 192 no-return lattice;
       # its empty columns therefore keep the conservative body-band gate.
       projection:
-        min_headroom_known_ratio: 0.40
+        min_headroom_known_ratio: 0.10
       frames:
         rog_frame: camera_init
       odom_topic: /odometry

@@ -1651,6 +1651,48 @@ TEST(ProjectionClearance, PriormapModeMayAcceptObservedEmptyColumn) {
   EXPECT_EQ(layer.mask().at(2U * kWidth + 2U), 1U);
 }
 
+TEST(ProjectionClearance, SubVoxelBodyBandUsesObservedVoxelCoverage) {
+  for (const bool known : {true, false}) {
+    SCOPED_TRACE(known);
+    rog_map::ProjectionLayer layer;
+    auto config = clearanceConfig();
+    config.vehicle_height = 0.05;
+    config.headroom_margin = 0.0;
+    config.body_bottom_clearance = 0.03;
+    config.reference_ground_z_abs = 0.0;
+    config.observed_empty_as_free = true;
+    config.min_headroom_known_ratio = 0.4;
+    layer.update(kWidth, kHeight, 0.05, kOrigin, 1.0, config,
+                 [known](int, int) { return emptyColumn(0.05, known); });
+    EXPECT_FLOAT_EQ(center(layer).headroom_known_ratio, known ? 1.0F : 0.0F);
+    EXPECT_EQ(center(layer).clearance_verified, known ? 1U : 0U);
+    EXPECT_EQ(center(layer).type,
+              known ? rog_map::CellType::FREE : rog_map::CellType::OCCUPIED);
+  }
+}
+
+TEST(ProjectionClearance, SubVoxelBandDoesNotSkipUnknownBoundarySliver) {
+  rog_map::ProjectionLayer layer;
+  auto config = clearanceConfig();
+  config.vehicle_height = 0.06;
+  config.headroom_margin = 0.0;
+  config.body_bottom_clearance = 0.03;
+  config.reference_ground_z_abs = 0.0;
+  config.observed_empty_as_free = true;
+  config.min_headroom_known_ratio = 0.8;
+  layer.update(kWidth, kHeight, 0.05, kOrigin, 1.0, config,
+               [](int, int) {
+                 auto stats = emptyColumn(0.05);
+                 // Voxel 1 spans [0, .05]; voxel 2 spans [.05, .10].
+                 stats.vertical_states[2] = rog_map::VerticalVoxelState::UNKNOWN;
+                 --stats.observed_count;
+                 return stats;
+               });
+  EXPECT_NEAR(center(layer).headroom_known_ratio, 2.0 / 3.0, 1.0e-6);
+  EXPECT_EQ(center(layer).clearance_verified, 0U);
+  EXPECT_EQ(center(layer).type, rog_map::CellType::OCCUPIED);
+}
+
 TEST(ProjectionClearance,
      PriormapModeRejectsEmptyColumnWithoutVerifiedBodyVolume) {
   rog_map::ProjectionLayer layer;

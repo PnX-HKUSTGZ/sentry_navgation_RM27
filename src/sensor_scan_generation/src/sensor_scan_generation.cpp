@@ -51,6 +51,11 @@ SensorScanGenerationNode::SensorScanGenerationNode(const rclcpp::NodeOptions & o
     false};
 
   odometry_sub_.subscribe(this, "lidar_odometry", qos_profile);
+  // Publish chassis feedback as soon as its sensor pose arrives. ApproximateTime
+  // may wait for a subsequent cloud before releasing a pair; that delay must not
+  // hold back the controller's state or stamp it with a different scan time.
+  odometry_sub_.registerCallback(
+    std::bind(&SensorScanGenerationNode::odometryHandler, this, std::placeholders::_1));
   laser_cloud_sub_.subscribe(this, "registered_scan", qos_profile);
 
   sync_ = std::make_unique<message_filters::Synchronizer<SyncPolicy>>(
@@ -60,10 +65,19 @@ SensorScanGenerationNode::SensorScanGenerationNode(const rclcpp::NodeOptions & o
     std::placeholders::_2));
 }
 
-void SensorScanGenerationNode::laserCloudAndOdometryHandler(
-  const nav_msgs::msg::Odometry::ConstSharedPtr & odometry_msg,
-  const sensor_msgs::msg::PointCloud2::ConstSharedPtr & pcd_msg)
+void SensorScanGenerationNode::odometryHandler(
+  const nav_msgs::msg::Odometry::ConstSharedPtr & odometry_msg)
 {
+  const rclcpp::Time stamp(odometry_msg->header.stamp, get_clock()->get_clock_type());
+  if (previous_odometry_stamp_.nanoseconds() > 0 && stamp <= previous_odometry_stamp_) {
+    // Reset only on an actual clock rewind, never on a delayed/duplicate pose.
+    if (now() < previous_odometry_stamp_) {
+      resetTwistHistory();
+      previous_odometry_stamp_ = rclcpp::Time(0, 0, get_clock()->get_clock_type());
+    } else {
+      return;
+    }
+  }
   tf2::Transform tf_lidar_to_chassis;
   tf2::Transform tf_odom_to_chassis;
   tf2::Transform tf_odom_to_robot_base;
@@ -71,10 +85,21 @@ void SensorScanGenerationNode::laserCloudAndOdometryHandler(
   tf2::Transform tf_lidar_to_robot_base;
 
   tf2::fromMsg(odometry_msg->pose.pose, tf_odom_to_lidar);
+  if (!isFinite(tf_odom_to_lidar.getOrigin()) ||
+    !isFinite(tf_odom_to_lidar.getRotation()) ||
+    tf_odom_to_lidar.getRotation().length2() < 1.0e-12 || stamp.nanoseconds() <= 0)
+  {
+    resetTwistHistory();
+    return;
+  }
   const bool robot_base_transform_available =
-    getTransform(lidar_frame_, robot_base_frame_, pcd_msg->header.stamp, tf_lidar_to_robot_base);
+    getTransform(lidar_frame_, robot_base_frame_, stamp, tf_lidar_to_robot_base);
   const bool chassis_transform_available =
-    getTransform(lidar_frame_, base_frame_, pcd_msg->header.stamp, tf_lidar_to_chassis);
+    base_frame_ == robot_base_frame_ ? robot_base_transform_available :
+    getTransform(lidar_frame_, base_frame_, stamp, tf_lidar_to_chassis);
+  if (base_frame_ == robot_base_frame_ && robot_base_transform_available) {
+    tf_lidar_to_chassis = tf_lidar_to_robot_base;
+  }
   const TransformSampleDecision decision =
     transform_sample_gate_.evaluate(robot_base_transform_available, chassis_transform_available);
 
@@ -84,8 +109,8 @@ void SensorScanGenerationNode::laserCloudAndOdometryHandler(
   if (!decision.publish_sample) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 2000,
-      "Dropping synchronized scan/odometry sample: required TF is unavailable "
-      "(lidar->robot_base=%s, lidar->base=%s). No scan, odometry, or derived TF was published.",
+      "Dropping odometry sample: required TF is unavailable "
+      "(lidar->robot_base=%s, lidar->base=%s). No odometry or derived TF was published.",
       robot_base_transform_available ? "ok" : "missing",
       chassis_transform_available ? "ok" : "missing");
     return;
@@ -100,10 +125,23 @@ void SensorScanGenerationNode::laserCloudAndOdometryHandler(
   tf_odom_to_robot_base = tf_odom_to_lidar * tf_lidar_to_robot_base;
 
   publishTransform(
-    tf_odom_to_chassis, odometry_msg->header.frame_id, base_frame_, pcd_msg->header.stamp);
+    tf_odom_to_chassis, odometry_msg->header.frame_id, base_frame_, stamp);
   publishOdometry(
-    tf_odom_to_robot_base, odometry_msg->header.frame_id, robot_base_frame_, pcd_msg->header.stamp);
+    tf_odom_to_robot_base, odometry_msg->header.frame_id, robot_base_frame_, stamp);
+}
 
+void SensorScanGenerationNode::laserCloudAndOdometryHandler(
+  const nav_msgs::msg::Odometry::ConstSharedPtr & odometry_msg,
+  const sensor_msgs::msg::PointCloud2::ConstSharedPtr & pcd_msg)
+{
+  tf2::Transform tf_odom_to_lidar;
+  tf2::fromMsg(odometry_msg->pose.pose, tf_odom_to_lidar);
+  if (!isFinite(tf_odom_to_lidar.getOrigin()) ||
+    !isFinite(tf_odom_to_lidar.getRotation()) ||
+    tf_odom_to_lidar.getRotation().length2() < 1.0e-12)
+  {
+    return;
+  }
   sensor_msgs::msg::PointCloud2 out;
   pcl_ros::transformPointCloud(lidar_frame_, tf_odom_to_lidar.inverse(), *pcd_msg, out);
   pub_laser_cloud_->publish(out);
@@ -130,7 +168,8 @@ void SensorScanGenerationNode::resetTwistHistory()
 {
   has_previous_odometry_ = false;
   previous_odometry_transform_.setIdentity();
-  previous_odometry_stamp_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  // Keep the publication watermark: a TF/measurement failure invalidates the
+  // velocity difference, but must not authorize older feedback to rewind pose.
 }
 
 void SensorScanGenerationNode::publishTransform(

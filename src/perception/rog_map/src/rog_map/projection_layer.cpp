@@ -67,22 +67,31 @@ double knownRatioInBodyVolume(const ColumnStats &stats, double ground_z,
   const double body_begin = ground_z + config.body_bottom_clearance;
   const double body_end =
       ground_z + config.vehicle_height + config.headroom_margin;
-  int total = 0;
-  int known = 0;
-  for (double z = body_begin + 0.5 * resolution; z < body_end;
-       z += resolution) {
-    ++total;
-    const int local_z =
-        static_cast<int>(std::llround((z - stats.scan_z_min_abs) / resolution));
+  if (!std::isfinite(body_begin) || !std::isfinite(body_end) ||
+      !std::isfinite(resolution) || resolution <= 0.0 || body_end <= body_begin) {
+    return 0.0;
+  }
+  // Integrate the overlap with the actual voxel intervals. A midpoint loop
+  // starting half a voxel above body_begin samples nothing when the body band
+  // is thinner than half a voxel, and can miss unknown end slices otherwise.
+  double known_height = 0.0;
+  const int first = static_cast<int>(
+      std::floor((body_begin - stats.scan_z_min_abs) / resolution + 0.5));
+  const int last = static_cast<int>(
+      std::ceil((body_end - stats.scan_z_min_abs) / resolution + 0.5));
+  for (int local_z = first; local_z < last; ++local_z) {
+    const double voxel_begin = centerZ(stats, local_z, resolution) - 0.5 * resolution;
+    const double overlap = std::max(
+        0.0, std::min(body_end, voxel_begin + resolution) -
+                 std::max(body_begin, voxel_begin));
     if (local_z >= 0 &&
         local_z < static_cast<int>(stats.vertical_states.size()) &&
         stats.vertical_states[static_cast<size_t>(local_z)] !=
             VerticalVoxelState::UNKNOWN) {
-      ++known;
+      known_height += overlap;
     }
   }
-  return total > 0 ? static_cast<double>(known) / static_cast<double>(total)
-                   : 0.0;
+  return std::clamp(known_height / (body_end - body_begin), 0.0, 1.0);
 }
 
 bool hasTrustedGroundSupport(const ColumnStats &stats) {

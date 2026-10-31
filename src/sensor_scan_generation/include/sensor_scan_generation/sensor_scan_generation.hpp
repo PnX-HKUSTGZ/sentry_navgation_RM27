@@ -38,6 +38,8 @@ public:
   explicit SensorScanGenerationNode(const rclcpp::NodeOptions & options);
 
 private:
+  void odometryHandler(const nav_msgs::msg::Odometry::ConstSharedPtr & odometry);
+
   void laserCloudAndOdometryHandler(
     const nav_msgs::msg::Odometry::ConstSharedPtr & odometry,
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr & laserCloud2);

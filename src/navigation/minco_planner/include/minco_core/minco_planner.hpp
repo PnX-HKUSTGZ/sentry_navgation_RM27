@@ -260,6 +260,7 @@ private:
   double lookahead_dist_;
   double traj_goal_tolerance_{0.5};
   double observed_prefix_max_velocity_{0.25};
+  bool segment_obstacle_slowdown_{false};
   // Maximum future time certified against the rolling ROG snapshot.
   double safety_check_horizon_{2.0};
   double collision_cache_reuse_max_duration_{0.75};

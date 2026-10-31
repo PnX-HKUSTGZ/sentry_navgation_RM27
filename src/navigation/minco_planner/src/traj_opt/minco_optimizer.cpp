@@ -171,7 +171,8 @@ double MincoOptimizer::optimize(const std::vector<Eigen::Vector3d> & waypoints,
       if (!feasible) {
         out_traj.clear();
         last_objective_total_ = std::numeric_limits<double>::infinity();
-        last_failure_reason_ = FailureReason::DYNAMIC_FEASIBILITY;
+        last_failure_reason_ = last_total_duration_ > cfg_.max_trajectory_duration ?
+          FailureReason::DURATION_LIMIT : FailureReason::DYNAMIC_FEASIBILITY;
         return std::numeric_limits<double>::infinity();
       }
       last_total_duration_ = out_traj.getTotalDuration();
@@ -263,6 +264,14 @@ bool MincoOptimizer::enforceDynamicFeasibility(
   }
 
   for (int iteration = 0; iteration <= cfg_.time_allocation_iters; ++iteration) {
+    last_total_duration_ = trajectory.getTotalDuration();
+    // Fixed nonzero boundary velocities do not decrease under uniform time
+    // scaling. Stop rebuilding once the duration budget is exhausted; another
+    // penalty solve or a freshly checked cached tail is the bounded fallback.
+    if (!std::isfinite(last_total_duration_) ||
+        last_total_duration_ > cfg_.max_trajectory_duration) {
+      return false;
+    }
     last_peak_velocity_ = trajectory.getMaxVelRate();
     last_peak_acceleration_ = trajectory.getMaxAccRate();
     if (!std::isfinite(last_peak_velocity_) || !std::isfinite(last_peak_acceleration_)) {

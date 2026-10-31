@@ -2,6 +2,8 @@
 #include "minco_core/minco_planner.hpp"
 #include "minco_core/components/cached_trajectory_policy.hpp"
 #include "minco_core/components/planning_odometry.hpp"
+#include "minco_core/components/start_guide_pruning.hpp"
+#include "minco_core/components/segment_speed_limit.hpp"
 #include "nav2_util/node_utils.hpp"
 
 // Project
@@ -970,6 +972,10 @@ void MincoPlanner::configure(
                       penalty_weight_acc);
 
   double penalty_weight_att = 0.0;
+  nav2_util::declare_parameter_if_not_declared(node,
+    prefix + "minco_optimizer.segment_obstacle_slowdown", rclcpp::ParameterValue(false));
+  node->get_parameter(prefix + "minco_optimizer.segment_obstacle_slowdown",
+    segment_obstacle_slowdown_);
   for (const auto & entry : std::vector<std::pair<std::string, double *>>{
     {"guide_lateral_weight", &minco_config.guide_lateral_weight},
     {"terminal_tangent_lookahead", &minco_config.terminal_tangent_lookahead},
@@ -1594,6 +1600,7 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".minco_optimizer.terminal_tangent_lookahead" ||
            param_name == name_ + ".minco_optimizer.obstacle_slowdown_distance" ||
            param_name == name_ + ".minco_optimizer.obstacle_max_velocity" ||
+           param_name == name_ + ".minco_optimizer.segment_obstacle_slowdown" ||
            param_name == name_ + ".minco_optimizer.guide_lateral_tolerance" ||
            param_name ==
                name_ + ".minco_optimizer.terminal_velocity_ratio" ||
@@ -2219,6 +2226,17 @@ bool MincoPlanner::ReplanLocal(
     end_state.col(2).setZero();
   }
 
+  double measured_yaw = 0.0;
+  if (safety_checker_ && utils::quaternionToYawChecked(current_pose.pose.orientation, measured_yaw)) {
+    const double open_clearance = std::max(0.50, minco_config.safe_dist);
+    pruneOpenStartGuide(sparse_path, start_state.col(0), start_state.col(1), 0.025,
+      [this, measured_yaw, open_clearance](const Eigen::Vector3d & point) {
+        const double distance = safety_checker_->getDistance(point);
+        return std::isfinite(distance) && distance > open_clearance &&
+          safety_checker_->checkFootprint(point, measured_yaw);
+      });
+  }
+
   // Remove near-start redundant points from sparse_path.
   while (sparse_path.size() > 2) {
     const Eigen::Vector2d first_step =
@@ -2250,7 +2268,8 @@ bool MincoPlanner::ReplanLocal(
       seed.observed_prefix_clipped
           ? std::min(minco_config.max_vel, observed_prefix_max_velocity_)
           : minco_config.max_vel;
-  if (minco_config.obstacle_slowdown_distance > 0.0 && safety_checker_) {
+  if (!segment_obstacle_slowdown_ &&
+      minco_config.obstacle_slowdown_distance > 0.0 && safety_checker_) {
     for (const auto & point : seed.dense_path) {
       const double clearance = safety_checker_->getDistance(point);
       if (std::isfinite(clearance) && clearance < minco_config.obstacle_slowdown_distance) {
@@ -2260,7 +2279,14 @@ bool MincoPlanner::ReplanLocal(
     }
   }
   const double terminal_speed = end_state.col(1).head<2>().norm();
-  const double terminal_speed_limit = trajectory_max_velocity * minco_config.terminal_velocity_ratio;
+  double terminal_segment_limit = trajectory_max_velocity;
+  if (segment_obstacle_slowdown_ && safety_checker_ && sparse_path.size() >= 2U) {
+    terminal_segment_limit = segmentObstacleSpeedLimit(
+      sparse_path[sparse_path.size() - 2U], sparse_path.back(), trajectory_max_velocity,
+      minco_config.obstacle_slowdown_distance, minco_config.obstacle_max_velocity,
+      [this](const Eigen::Vector3d &point) {return safety_checker_->getDistance(point);});
+  }
+  const double terminal_speed_limit = terminal_segment_limit * minco_config.terminal_velocity_ratio;
   if (terminal_speed > terminal_speed_limit) {
     end_state.col(1) *= terminal_speed_limit / terminal_speed;
   }
@@ -2587,11 +2613,21 @@ void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
   }
 
   std::vector<double> local_vmax_vec(static_cast<size_t>(N), global_vmax);
+  if (segment_obstacle_slowdown_ && safety_checker_) {
+    for (int i = 0; i < N; ++i) {
+      local_vmax_vec[static_cast<size_t>(i)] = segmentObstacleSpeedLimit(
+        sparse_path[static_cast<size_t>(i)], sparse_path[static_cast<size_t>(i + 1)],
+        global_vmax, minco_config.obstacle_slowdown_distance,
+        minco_config.obstacle_max_velocity,
+        [this](const Eigen::Vector3d &point) {return safety_checker_->getDistance(point);});
+    }
+  }
   for (int i = 0; i < N - 1; ++i) {
-    local_vmax_vec[static_cast<size_t>(i)] = utils::LimitLocalVel(
+    local_vmax_vec[static_cast<size_t>(i)] = std::min(
+      local_vmax_vec[static_cast<size_t>(i)], utils::LimitLocalVel(
         sparse_path, i, global_vmax, minco_config.turn_angle_deadzone,
         minco_config.turn_angle_saturation, minco_config.min_turn_vel,
-        minco_config.decay_power);
+        minco_config.decay_power));
   }
   utils::VelPropogation(seg_len, amax, local_vmax_vec);
   for (int i = 0; i < N; ++i) {

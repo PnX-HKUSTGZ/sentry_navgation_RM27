@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "relocalization_manager/relocalization_manager.hpp"
+#include "relocalization_manager/refinement_policy.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -463,6 +464,11 @@ void RelocalizationManagerNode::motionCommandCallback(
   const double linear_speed = std::hypot(linear_velocity.x, linear_velocity.y);
   const bool moving = std::isfinite(linear_speed) && linear_speed > moving_linear_speed_threshold_;
   const bool was_moving = robot_moving_.exchange(moving);
+  if (continuous_refinement_) {
+    // A velocity request is not evidence of physical motion. In continuous
+    // mode it must not disable registration while the chassis is wedged.
+    return;
+  }
 
   if (moving && !was_moving) {
     resetAcceptedGicpVerificationStreak();
@@ -525,7 +531,7 @@ void RelocalizationManagerNode::logLocalizationState()
 
 void RelocalizationManagerNode::recordAcceptedGicpVerification(const std::string & reason)
 {
-  if (isRobotMoving()) {
+  if (isRobotMoving() && !continuous_refinement_) {
     resetAcceptedGicpVerificationStreak();
     return;
   }
@@ -579,6 +585,8 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->declare_parameter("motion_command_topic", "cmd_vel");
   this->declare_parameter("moving_linear_speed_threshold", 0.05);
   this->declare_parameter("motion_command_timeout", 0.5);
+  this->declare_parameter("continuous_refinement", false);
+  this->declare_parameter("tracking_correction_alpha", 0.25);
   this->declare_parameter("required_consecutive_gicp_acceptances", 5);
   this->declare_parameter("transform_prior_map_with_lidar_offset", false);
   this->get_parameter("num_threads", small_gicp_params_.num_threads);
@@ -617,6 +625,12 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("motion_command_topic", motion_command_topic_);
   this->get_parameter("moving_linear_speed_threshold", moving_linear_speed_threshold_);
   this->get_parameter("motion_command_timeout", motion_command_timeout_);
+  this->get_parameter("continuous_refinement", continuous_refinement_);
+  this->get_parameter("tracking_correction_alpha", tracking_correction_alpha_);
+  if (!std::isfinite(tracking_correction_alpha_) || tracking_correction_alpha_ <= 0.0 ||
+      tracking_correction_alpha_ > 1.0) {
+    throw std::invalid_argument("tracking_correction_alpha must be in (0, 1]");
+  }
   this->get_parameter(
     "required_consecutive_gicp_acceptances", required_consecutive_gicp_acceptances_);
   this->get_parameter(
@@ -744,7 +758,7 @@ void RelocalizationManagerNode::registeredPcdCallback(
     if (reset_accumulated_cloud_.exchange(false)) {
       accumulated_cloud_->clear();
     }
-    if (!isRobotMoving()) {
+    if (!isRobotMoving() || continuous_refinement_) {
       *accumulated_cloud_ += *scan;
     }
   }
@@ -762,7 +776,7 @@ void RelocalizationManagerNode::performRegistration()
     accumulated_cloud_->clear();
   }
 
-  if (isRobotMoving()) {
+  if (isRobotMoving() && !continuous_refinement_) {
     resetAcceptedGicpVerificationStreak();
     accumulated_cloud_->clear();
     if (isLocalized()) {
@@ -775,7 +789,7 @@ void RelocalizationManagerNode::performRegistration()
     return;
   }
 
-  if (isLocalized()) {
+  if (isLocalized() && !continuous_refinement_) {
     RCLCPP_DEBUG_THROTTLE(
       this->get_logger(), *this->get_clock(), 5000,
       "Already localized; skipping periodic GICP refinement to keep map->odom stable.");
@@ -787,13 +801,14 @@ void RelocalizationManagerNode::performRegistration()
     small_gicp_verifier_->verify(*accumulated_cloud_, previous_map_to_odom_);
 
   if (verification.accepted) {
-    if (isRobotMoving()) {
+    if (isRobotMoving() && !continuous_refinement_) {
       resetAcceptedGicpVerificationStreak();
       accumulated_cloud_->clear();
       return;
     }
-    current_map_to_odom_ = verification.transform;
-    previous_map_to_odom_ = verification.transform;
+    const double alpha = continuous_refinement_ && isLocalized() ? tracking_correction_alpha_ : 1.0;
+    current_map_to_odom_ = blendVerifiedCorrection(current_map_to_odom_, verification.transform, alpha);
+    previous_map_to_odom_ = current_map_to_odom_;
     recordAcceptedGicpVerification("local GICP accepted");
     accumulated_cloud_->clear();
     return;

@@ -1,6 +1,7 @@
 // #include <so3_math.h>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdint>
 #include <malloc.h>
 #include <memory>
@@ -21,6 +22,7 @@
 #include <sstream>
 
 #include "li_initialization.h"
+#include "instantaneous_scan.hpp"
 
 using namespace std;
 
@@ -51,6 +53,8 @@ V3D euler_cur;
 
 nav_msgs::msg::Path path;
 nav_msgs::msg::Odometry odomAftMapped;
+double last_published_odom_stamp = 0.0;
+std::chrono::steady_clock::time_point last_odom_publish_wall;
 geometry_msgs::msg::PoseStamped msg_body_pose;
 
 int sleep_time = 0;
@@ -637,6 +641,20 @@ void publish_odometry(
     odomAftMapped.twist.twist.angular.z = angular_velocity_body.z();
   }
 
+  const auto publish_wall = std::chrono::steady_clock::now();
+  const double published_stamp = get_time_sec(odomAftMapped.header.stamp);
+  if (last_published_odom_stamp > 0.0) {
+    const double gap = std::chrono::duration<double>(publish_wall - last_odom_publish_wall).count();
+    if (gap > 0.35) {
+      RCLCPP_WARN(LOGGER,
+        "Odometry publication gap: wall=%.3f s scan_delta=%.3f s "
+        "lidar_queue=%zu imu_queue=%zu dropped_lidar=%zu dropped_imu=%zu",
+        gap, published_stamp - last_published_odom_stamp,
+        lidar_buffer.size(), imu_deque.size(), dropped_lidar_frames, dropped_imu_messages);
+    }
+  }
+  last_published_odom_stamp = published_stamp;
+  last_odom_publish_wall = publish_wall;
   pubOdomAftMapped->publish(odomAftMapped);
 
   if (tf_send_en) {
@@ -798,19 +816,27 @@ int main(int argc, char ** argv)
   open_file();
 
   /*** ROS subscribe initialization ***/
+  const bool reliable_lidar = nh->declare_parameter<bool>("common.reliable_lidar", false);
+  const int imu_receive_depth = static_cast<int>(std::clamp<int64_t>(
+    nh->declare_parameter<int64_t>("common.imu_receive_depth", 5), 1, 500));
+  auto lidar_qos = rclcpp::SensorDataQoS();
+  if (reliable_lidar) {lidar_qos.keep_last(2).reliable();}
+  RCLCPP_INFO(LOGGER, "LiDAR transport: %s, depth=%zu; IMU receive depth=%d",
+    reliable_lidar ? "reliable" : "best_effort", lidar_qos.depth(), imu_receive_depth);
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pcl_pc;
   rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr sub_pcl_livox;
   if (p_pre->lidar_type == AVIA) {
     sub_pcl_livox = nh->create_subscription<livox_ros_driver2::msg::CustomMsg>(
-      lid_topic, rclcpp::SensorDataQoS(),
+      lid_topic, lidar_qos,
       [](const livox_ros_driver2::msg::CustomMsg::SharedPtr msg) { livox_pcl_cbk(msg); });
   } else {
     sub_pcl_pc = nh->create_subscription<sensor_msgs::msg::PointCloud2>(
-      lid_topic, rclcpp::SensorDataQoS(),
+      lid_topic, lidar_qos,
       [](const sensor_msgs::msg::PointCloud2::SharedPtr msg) { standard_pcl_cbk(msg); });
   }
   auto sub_imu =
-    nh->create_subscription<sensor_msgs::msg::Imu>(imu_topic, rclcpp::SensorDataQoS(), imu_cbk);
+    nh->create_subscription<sensor_msgs::msg::Imu>(
+      imu_topic, rclcpp::SensorDataQoS().keep_last(imu_receive_depth), imu_cbk);
   auto pub_laser_cloud_full_res =
     nh->create_publisher<sensor_msgs::msg::PointCloud2>("cloud_registered", 20);
   auto pub_laser_cloud_full_world = nh->create_publisher<sensor_msgs::msg::PointCloud2>(
@@ -833,6 +859,18 @@ int main(int argc, char ** argv)
   while (rclcpp::ok()) {
     if (flg_exit) break;
     executor.spin_some();
+    if (init_map && last_published_odom_stamp > 0.0) {
+      const double gap = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - last_odom_publish_wall).count();
+      if (gap > 0.40) {
+        const double now = nh->now().seconds();
+        RCLCPP_WARN_THROTTLE(LOGGER, *nh->get_clock(), 1000,
+          "Odometry waiting: wall_gap=%.3f s odom_age=%.3f s "
+          "lidar_input_age=%.3f s imu_input_age=%.3f s lidar_queue=%zu imu_queue=%zu",
+          gap, now - last_published_odom_stamp, now - last_timestamp_lidar,
+          now - last_timestamp_imu, lidar_buffer.size(), imu_deque.size());
+      }
+    }
     if (sync_packages(Measures)) {
       frame_diagnostics.reset();
       frame_diagnostics.raw_points = Measures.lidar ? Measures.lidar->size() : 0;
@@ -917,7 +955,10 @@ int main(int argc, char ** argv)
       /*** downsample the feature points in a scan ***/
       t1 = omp_get_wtime();
       p_imu->Process(Measures, feats_undistort);
-      enqueueFullCloud(feats_undistort, Measures.lidar_beg_time);
+      const bool instantaneous_full_scan = point_lio::isInstantaneousScan(feats_undistort->points);
+      if (!instantaneous_full_scan) {
+        enqueueFullCloud(feats_undistort, Measures.lidar_beg_time);
+      }
       if (!has_full_cloud_anchor) {
         full_cloud_anchor = makeStateSnapshot(Measures.lidar_beg_time);
         has_full_cloud_anchor = true;
@@ -1512,7 +1553,25 @@ int main(int argc, char ** argv)
       /******* Publish points *******/
       if (path_en) publish_path(pub_path);
       if (scan_pub_en || pcd_save_en) publish_frame_world(pub_laser_cloud_full_res);
-      if (has_full_cloud_anchor && lidar_end_time > full_cloud_anchor.stamp) {
+      if (instantaneous_full_scan) {
+        // Every ray belongs to the same acquisition time. Transform the whole
+        // snapshot with the FINAL corrected scan pose, matching scan-end odom.
+        // The streaming path uses the preceding state to propagate individual
+        // points; consuming a snapshot on the first partial update instead
+        // leaves the published cloud inconsistent with later same-stamp poses.
+        full_cloud_world->clear();
+        const StateSnapshot corrected = makeStateSnapshot(lidar_end_time);
+        for (const auto & point : feats_undistort->points) {
+          if (!isFinitePoint(point)) {continue;}
+          FullCloudPoint acquired;
+          acquired.point = point;
+          acquired.stamp = corrected.stamp;
+          const PointType world = transformFullPointForward(corrected, acquired);
+          if (isFinitePoint(world)) {full_cloud_world->push_back(world);}
+        }
+        full_cloud_anchor = corrected;
+        has_full_cloud_anchor = true;
+      } else if (has_full_cloud_anchor && lidar_end_time > full_cloud_anchor.stamp) {
         processFullCloudSegmentWithSnapshot(makeStateSnapshot(lidar_end_time));
       }
       publishAccumulatedFullCloudWorld(pub_laser_cloud_full_world, lidar_end_time);
