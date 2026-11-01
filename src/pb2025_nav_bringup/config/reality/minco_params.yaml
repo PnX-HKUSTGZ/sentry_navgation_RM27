@@ -1,8 +1,7 @@
-# Complete real-robot profile for navigation_mode=minco. Legacy uses nav2_params.yaml.
+# MINCO 实车配置；传统导航使用 nav2_params.yaml。
 bt_navigator:
   ros__parameters:
-    # The asynchronous planner currently owns one target per session. Do not
-    # expose NavigateThroughPoses until ordered waypoint semantics are added.
+    # 当前异步规划仅支持单目标导航。
     navigators: ["navigate_to_pose"]
     default_nav_to_pose_bt_xml: $(find-pkg-share pb2025_nav_bringup)/behavior_trees/navigate_to_pose_w_minco_replanning.xml
     default_nav_through_poses_bt_xml: $(find-pkg-share pb2025_nav_bringup)/behavior_trees/navigate_through_poses_w_minco_replanning.xml
@@ -20,8 +19,7 @@ bt_navigator:
     - compute_path_error_code
     - follow_path_error_code
 
-# Motion behaviors publish velocity outside MincoMpc's planning-token gate.
-# MINCO keeps only the zero-motion Wait behavior; legacy retains the full set.
+# 仅启用等待行为，运动指令统一由 MINCO 控制链下发。
 behavior_server:
   ros__parameters:
     behavior_plugins: ["wait"]
@@ -41,7 +39,6 @@ behavior_server:
     max_rotational_vel: 0.8
     min_rotational_vel: 0.2
     rotational_acc_lim: 2.0
-    # params for pb_nav2_behaviors/BackUpFreeSpace
     service_name: "global_costmap/get_costmap"
     max_radius: 2.0
     visualize: false
@@ -54,10 +51,7 @@ controller_server:
     MincoMpc:
       plugin: "minco_controller::MincoMpcController"
       opt_path_topic: minco/opt_path
-      # The controller costmap is expressed in `odom`.  loam_interface
-      # converts Point-LIO's camera_init pose to this frame on
-      # /lidar_odometry; subscribing directly to /aft_mapped_to_init would
-      # trip the controller's ODOMETRY_FRAME_MISMATCH guard.
+      # 使用 loam_interface 转换后的 odom 系里程计，避免控制器坐标系不匹配。
       odom_topic: /lidar_odometry
       cmd_vel_mpc_topic: minco/cmd_vel_mpc
       odom_timeout: 0.25
@@ -69,40 +63,24 @@ controller_server:
       fixed_wz: 0.0
       deadzone_speed_threshold: 0.05
       control_delay_compensation: 0.05
-      # Break cold-start zero velocity without allowing the time cursor to
-      # outrun the physical robot on a short observed-safe stopping prefix.
+      # 限制参考轨迹领先车体的时间，避免短轨迹起步后追不上参考。
       reference_progress_max_lead_time: 0.25
-      # A rest-to-rest frontier trajectory ramps up slowly. While odometry is
-      # inside the startup deadzone, search this bounded future interval for
-      # the first reference sample above the command deadzone; normal tracking keeps the
-      # tighter lead limit above as soon as the chassis moves.
-      # 1.50 s startup lead plus the 0.50 s MPC horizon remains inside the
-      # planner's 2.00 s freshly validated trajectory horizon.
+      # 静止时允许前探起步参考；前探和 MPC 时域须覆盖在安全检查时域内。
       reference_startup_max_lead_time: 1.50
       reference_startup_target_speed: 0.08
-      # The real chassis does not reliably overcome static friction at the
-      # MPC's former 0.03..0.08 m/s cold-start output. Apply this magnitude
-      # floor only while measured speed remains inside the 0.05 m/s deadzone
-      # and an observed-safe trajectory supplies a valid motion direction.
-      # Match the observation-frontier ceiling so the chassis can reach a
-      # short ramp before attitude-based uphill assistance takes over.
+      # 仅在实测速度处于死区且轨迹方向有效时设置起步指令下限，以克服静摩擦。
       reference_startup_min_command_speed: 0.60
-      # Match planner recovery limits; speed assistance is disabled for escape.
+      # 与规划器脱困限制保持一致；脱困时禁用速度助力。
       recovery_max_speed: 0.20
       recovery_max_distance: 0.15
       recovery_max_duration: 1.0
       physical_base_frame: base_link
-      # Blend continuously from the MPC command at the ramp entry to full
-      # assistance on the measured steep section. The independent reference
-      # threshold keeps assistance active on a normal trajectory after the
-      # chassis leaves the startup deadzone, without boosting a 0.20 m/s
-      # observation-frontier trajectory. Flat/downhill commands are unchanged.
+      # 按上坡坡度渐增助力；独立参考速度门槛避免抬高低速终点指令。
       uphill_startup_min_grade: 0.03
       uphill_full_assist_grade: 0.18
       uphill_assist_min_reference_speed: 0.30
       uphill_startup_min_command_speed: 0.90
-      # Use the released flat-ground ceiling and reduce it only once measured
-      # chassis tilt confirms a ramp transition.
+      # 按实测底盘倾角渐进限速，角度单位：弧度。
       slope_slowdown_start_angle: 0.06
       slope_full_slowdown_angle: 0.18
       slope_speed_limit: 1.00
@@ -126,8 +104,7 @@ controller_server:
       alpha_max: 2.0
       odom_frame: odom
       map_frame: map
-      # Rigid transform from the chassis rotation center to MID360, expressed
-      # in base_link. MPC uses it for both pose and twist compensation.
+      # 底盘旋转中心到 MID360 的刚性外参，用于位姿及速度补偿。
       lidar_offset_x: 0.0
       lidar_offset_y: -0.20
       lidar_roll_offset: 0.0
@@ -153,24 +130,19 @@ controller_server:
     goal_checker_plugins: ["general_goal_checker"]
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      # Observation-frontier trajectories deliberately stop and revalidate.
-      # Do not abort and clear both costmaps while this bounded crawl is still
-      # making measurable progress.
+      # 低速观测前沿仍有进展时，不提前触发无进展清图。
       required_movement_radius: 0.10
       movement_time_allowance: 15.0
     general_goal_checker:
       stateful: true
       plugin: "nav2_controller::SimpleGoalChecker"
-      # Keep a realizable tolerance, but do not declare success while the
-      # chassis is still about 20 cm short of a goal beyond the ramp crest.
+      # 到点距离容差，避免在坡顶前过早宣布完成。
       xy_goal_tolerance: 0.10
       yaw_goal_tolerance: 6.28
 local_costmap:
   local_costmap:
     ros__parameters:
-      # ROG publishes a tri-state overlay: measured obstruction, measured
-      # overhead clearance, or neutral. Empty and unknown columns cannot erase
-      # the static map or its inflation.
+      # ROG 叠加层区分障碍、已验证净空与中立；空列和未知列不清除静态占用。
       plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
       rog_dynamic_obstacle_layer:
         plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
@@ -181,8 +153,7 @@ local_costmap:
         tf_timeout: 0.10
         obstacle_marking_max_range: 2.0
         footprint_clearing_enabled: true
-      # Keep the active MINCO profile self-contained. ROG writes lethal source
-      # cells first; this layer expands them in the merged local costmap.
+      # 对 ROG 写入的障碍在合并地图中膨胀。
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
@@ -198,8 +169,7 @@ local_costmap:
       width: 5
       height: 5
       resolution: 0.05
-      # The real chassis is a 0.50 x 0.50 m square. Keep the radius as a
-      # conservative fallback; the explicit footprint below is authoritative.
+      # 实车按 0.50×0.50 米多边形检查，半径仅作兼容回退。
       robot_radius: 0.36
       footprint: "[[-0.25, -0.25], [0.25, -0.25], [0.25, 0.25], [-0.25, 0.25]]"
       static_layer:
@@ -210,9 +180,7 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      # Global SMAC must see the same obstacle/clearance overlay. Keep this
-      # plugin between static and inflation so verified-clearance cells are
-      # cleared before remaining obstacles are inflated.
+      # 全局与局部使用同一 ROG 叠加层，顺序保持在静态层和膨胀层之间。
       plugins: ["static_layer", "rog_dynamic_obstacle_layer", "inflation_layer"]
       rog_dynamic_obstacle_layer:
         plugin: "pb_nav2_costmap_2d::RogDynamicObstacleLayer"
@@ -221,11 +189,9 @@ global_costmap:
         obstacle_threshold: 65
         stale_timeout: 1.75
         tf_timeout: 0.10
-        # Keep hardware behavior unlimited until the simulation-only near
-        # reroute policy has been validated on the course.
+        # 实车全局动态障碍投影不限距离；0 表示不限制。
         obstacle_marking_max_range: 0.0
         footprint_clearing_enabled: true
-      # Global SMAC consumes the merged costmap after this inflation pass.
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
@@ -237,7 +203,7 @@ global_costmap:
       publish_frequency: 2.0
       global_frame: map
       robot_base_frame: gimbal_yaw_fake
-      # Match local_costmap and the MINCO safety footprint.
+      # 与局部地图及 MINCO 安全足迹保持一致。
       robot_radius: 0.36
       footprint: "[[-0.25, -0.25], [0.25, -0.25], [0.25, 0.25], [-0.25, 0.25]]"
       resolution: 0.05
@@ -247,9 +213,6 @@ global_costmap:
         map_subscribe_transient_local: true
       always_send_full_costmap: false
 
-# The yaml_filename does not need to be specified since it going to be set by defaults in launch.
-# If you'd rather set it in the yaml, remove the default "map" value in the tb3_simulation_launch.py
-# file & provide full path to map below. If CLI map configuration or launch default is provided, that will be used.
 planner_server:
   ros__parameters:
     expected_planner_frequency: 20.0
@@ -259,40 +222,30 @@ planner_server:
       planner_mode: PRIORMAP
       trajectory_topic: minco/opt_path
       backup_trajectory_topic: minco/backup_path
-      # NavigateToPose refreshes createPlan at 10 Hz; loss of requests fences
-      # the asynchronous MINCO session before it can publish another NORMAL.
+      # 规划请求中断超过此时间，撤销旧异步任务及运动授权，单位：秒。
       request_lease_timeout: 0.75
       frames:
         map_frame: map
         rog_frame: camera_init
-        # Physical footprint yaw must not come from gimbal_yaw_fake.
+        # 足迹朝向取物理底盘，不能取旋转云台坐标系。
         physical_base_frame: base_link
       priormap:
         use_nav2_global_search: true
         static_clearance_mode: polygon
-        # Feed measured ROG occupied cells into the global search as a local
-        # dynamic hard mask. UNKNOWN/frontier cells are filtered in Astar/SMAC,
-        # so this does not route around an unobserved ROG window.
+        # 实测占用参与全局动态硬约束；未知及观测前沿不作为该掩码的障碍。
         dynamic_global_obstacle:
           enable: false
-          # Match the 0.50 m square chassis corner radius (0.354 m) plus the
-          # 5 cm raster guard. This keeps global search and local validation
-          # on the same physical envelope.
+          # 覆盖实车角点半径及一格地图余量。
           collision_distance: 0.41
         clip_seed_by_rog_boundary: true
         rog_boundary_margin: 0.30
         rog_boundary_sample_step: 0.10
-        # Global, local and recovery static checks use the original PGM cells
-        # and the same 0.50 x 0.50 m safety footprint, without ROG reprojection.
-        # No-elevation mode keeps the 2D static map but does not derive global
-        # ramp/drop edges from a surveyed height grid. Local ROG connectivity
-        # remains the authoritative terrain gate.
+        # 全局、局部及脱困使用原始 PGM 和同一车体足迹；无高程模式不生成全局坡台边界。
         ground_edge_avoidance:
           enable: false
           max_step: 0.06
           max_slope_deg: 28.0
-          # The 0.50 m square chassis has a 0.354 m corner radius. Reserve one
-          # 5 cm map cell beyond it so global and local checks agree.
+          # 全局边缘余量须与实车多边形及栅格分辨率匹配。
           lethal_clearance_radius: 0.41
           clearance_radius: 0.41
           clearance_cost: 240
@@ -301,43 +254,34 @@ planner_server:
         boundary_sample_step: 0.10
         unknown_as_occupied: true
         prefer_goal_direction: true
-      # Bound fallback goal substitution to two 5 cm grid cells. A 30 cm
-      # substitute endpoint can otherwise stop the internal FSM on the ramp.
+      # 限制替代目标偏移，避免内部到点状态停在坡面。
       tolerance: 0.10
       use_smac: true
       allow_unknown: false
-      # ROG UNKNOWN cells may be traversed when this is enabled. Static PGM
-      # collisions, measured obstacles and insufficient tunnel headroom still
-      # block the trajectory.
+      # 允许进入未知 ROG 区域；PGM 黑区、实测障碍及权重策略仍独立生效。
       allow_unknown_motion: true
       odom_topic: /aft_mapped_to_init
-      # base_link -> MID360 lever arm; keep it identical to the controller and
-      # the real robot description.
+      # 底盘到雷达的偏移，与控制器及实车描述保持一致。
       lidar_offset_x: 0.0
       lidar_offset_y: -0.20
       safety:
-        # Original PGM only. Keep the small calibrated overlap allowance.
+        # 仅针对原始 PGM；侵入面积和深度必须同时达标。
         static_overlap_max_ratio: 0.04
         static_overlap_max_depth: 0.06
-        # Keep real-vehicle dynamic obstacle validation strict until a measured
-        # sensor/footprint calibration justifies a boundary tolerance.
+        # 实车动态障碍边缘容差，须依据传感器及足迹标定设置。
         dynamic_edge_overlap_tolerance: 0.15
         footprint_length: 0.50
         footprint_width: 0.50
         footprint_margin: 0.05
-        # The polygon is the measured 0.50 x 0.50 m body outline. The margin
-        # remains the rectangle fallback for deployments without this polygon.
+        # 多边形为实测车体轮廓；矩形余量仅用于缺少多边形的兼容配置。
         footprint_points: [-0.25, -0.25, 0.25, -0.25, 0.25, 0.25, -0.25, 0.25]
         sample_dt: 0.05
         map_timeout: 0.50
         future_tolerance: 0.05
         check_horizon: 2.0
-        # Collision/safety rejection gets only a short revalidated tail; a
-        # newly observed obstacle must not be hidden by continuity handling.
+        # 碰撞拒绝仅允许复用重新验证的短轨迹尾段，避免掩盖新障碍。
         collision_cache_reuse_max_duration: 2.00
-        # A numerical optimizer failure is different from a collision. Continue
-        # a freshly ROG-revalidated trajectory for at most the 2 s certified
-        # horizon while the next solve retries; collision reuse stays at 0.40 s.
+        # 数值优化失败可复用重新验证的尾段，最长不超过安全检查时域。
         optimizer_failure_cache_reuse_max_duration: 2.00
       performance:
         enable: true
@@ -379,15 +323,11 @@ planner_server:
           enable: true
           z_offset: -0.55
           position_frame: base_link
-          # Transform points into base_link so the self-filter rotates with
-          # the vehicle; translating an axis-aligned box is wrong after yaw.
+          # 先变换至底盘坐标系再滤除自身点云，使滤波框随车体转动。
           filter_mode: transform_cloud
-          # Point-LIO names its IMU pose child "body"; imu_link is the same
-          # physical frame in robot_state_publisher's static TF tree.
+          # Point-LIO 的 body 与机器人描述中的 imu_link 对应同一物理坐标系。
           pose_child_frame: imu_link
-          # The paired Point-LIO odometry supplies the scan-time dynamic pose;
-          # this timeout only covers the static imu_link extrinsic lookup and
-          # the fail-closed exact-time compatibility fallback.
+          # 配对里程计提供扫描时刻位姿；此超时仅用于静态外参与精确时刻 TF 回退。
           transform_timeout: 0.10
           remove_inside: true
           log_stats: false
@@ -412,9 +352,7 @@ planner_server:
           num_threads: 4
         decay:
           enable: true
-          # At 0.5 m/s the MID360 near-field ground blind ring takes roughly
-          # 2.5 s to cross. Retain occupied surface evidence through that gap;
-          # this never turns unobserved space into free space.
+          # 保留占用证据以跨越 MID360 近场盲环，不将未观测空间变为空闲。
           keep_time: 3.00
           clear_time: 5.00
           active_list_enable: false
@@ -426,78 +364,49 @@ planner_server:
           min_observed_voxels: 2
           surface_height_delta_max: 0.12
           clearance_check_enable: true
-          # In no-elevation mode, an empty column is usable only after its full
-          # vehicle-height volume has been observed free. UNKNOWN and occupied
-          # columns remain fail-closed.
+          # 权重小于 1 时，空列仍须满足车体高度范围内的净空证据要求。
           observed_empty_as_free: true
-          # Weighted terrain policy handles missing evidence; measured obstacles
-          # block immediately without the old multi-frame white-cell exemption.
+          # 地形证据由权重策略处理；实测障碍无需旧版白区多帧豁免。
           prior_free_uncertain_obstacle_confirmations: 1
-          # Bridge only clearance-verified EMPTY cells across a short MID360
-          # blind strip. The landing must be a measured, height-consistent ramp;
-          # this cannot bridge UNKNOWN cells or chain across a second gap.
+          # 仅桥接短距离、净空已验证的空列；落点须为高度一致的实测坡面。
           bridge_observed_empty_for_ground_connectivity: true
-          # Recent hardware logs put the first usable ramp return about
-          # 0.37..0.53 m beyond the footprint edge. The one-shot height and
-          # fitted-slope gates below still reject unknown columns and ledges.
+          # 桥接范围覆盖足迹边缘到首个坡面回波的盲区；高度和坡度检查仍生效。
           ground_connectivity_bridge_max_length: 0.60
-          # Also bounds the one-time voxelized ramp-foot transition. It is
-          # accepted only when a continuing measured slope confirms the landing.
+          # 桥接高度差上限，同时约束坡脚体素跳变；落点须验证坡面连续。
           ground_connectivity_bridge_max_height_delta: 0.15
           ground_connectivity_bridge_landing_min_length: 0.15
           ground_connectivity_bridge_landing_min_height_delta: 0.04
-          # Use a narrow measured strip and its lower 20% height quantile to
-          # verify a continuous fitted slope after a voxelized height jump.
-          # Unknown/headroom-blocked cells never enter the sample set.
-          # Those connected samples also recheck a thick roof return against
-          # the local slope instead of the higher robot contact plane. The
-          # neighborhood is 2*lateral_radius; static-free surrounding support,
-          # the fitted residual and the real-car headroom gate remain required.
+          # 用窄带低分位高度拟合连续坡面，并复核顶部回波；未知及净空阻挡列不参与采样。
           ground_connectivity_quantile: 0.20
           ground_connectivity_quantile_lateral_radius: 0.15
           ground_connectivity_quantile_min_samples: 3
           ground_connectivity_fit_residual_tolerance: 0.05
-          # Surveyed-support hole filling is inactive without elevation data.
+          # 没有先验高程时，支撑缺口填补不生效。
           observed_ground_support_bridge_enable: false
           observed_ground_support_bridge_min_neighbors: 3
           observed_ground_support_bridge_max_height_delta: 0.04
           observed_ground_support_bridge_hysteresis_count: 3
-          # Cover the 0.50 x 0.50 m hard collision footprint plus one 0.10 m
-          # ROG boundary sample in every direction. This lets a stationary car
-          # validate the first local-path step even when the gimbal has not yet
-          # observed the sparse body-height band. Only footprint-clear-eligible
-          # zero-hit cells are released; any occupied return remains a veto.
+          # 补偿当前足迹内的零命中近场盲区；窗口随车移动，实测占用不清除。
           clear_robot_footprint_unknown: true
           robot_footprint_clear_length: 0.70
           robot_footprint_clear_width: 0.70
-          # Point-LIO's /aft_mapped_to_init pose is the IMU/body pose. The
-          # physical MID360/IMU frame is y=-0.20 m from base_link in the real
-          # robot description, so move the ROG clearance envelope +0.20 m back
-          # to the base footprint. Without this correction the body band is
-          # about one full chassis width away from the clearing window.
+          # 将基于 IMU 位姿的补偿窗口移回底盘中心；偏移须与实车安装外参一致。
           robot_footprint_clear_offset_x: 0.0
           robot_footprint_clear_offset_y: 0.20
-          # This fill path relies on surveyed elevation support, so it must stay
-          # disabled in no-elevation mode. Current-footprint clearing above is
-          # still available and never clears an occupied return.
+          # 该近场填补依赖先验高程，无高程模式保持关闭；当前足迹补偿独立生效。
           near_field_prior_fill_enable: false
           near_field_prior_fill_length: 1.20
           near_field_prior_fill_width: 1.20
           robot_origin_to_ground: 0.28
           vehicle_height: 0.20
           headroom_margin: 0.00
-          # Keep a half-voxel safety inset above/below measured surface heights.
+          # 实测表面上下各保留半体素高度余量。
           headroom_voxel_inset_fraction: 0.5
           body_bottom_clearance: 0.04
-          # Thin, clearance-verified ground under the current footprint first
-          # calibrates the tangent-plane height using a robust median. Full
-          # tolerance is used only under the chassis; outside it, the calibrated
-          # plane tightens the gate to max(max_ground_step, resolution), so a
-          # remote thin plate cannot seed an unrelated surface. Connectivity
-          # still enforces the 6 cm step and 28-degree slope.
+          # 先用足迹内薄地面回波校准切平面，足迹外收紧种子高度容差；台阶和坡度限制仍生效。
           ground_seed_tolerance: 0.18
           ground_connectivity_hold_time: 1.2
-          # Local floor evidence for roof returns; history uses hit timestamps.
+          # 顶部回波对应的局部地面搜索半径，单位：米。
           overhead_ground_search_radius: 0.60
           overhead_ground_history_time: 2.0
           max_ground_height_delta: 0.35
@@ -505,10 +414,7 @@ planner_server:
           max_ground_slope_deg: 28.0
           ground_seed_radius: 2.50
           min_headroom_known_ratio: 0.15
-          # A measured overhead return supplies a conservative lower roof
-          # boundary. Accept it from surveyed support when that boundary clears
-          # vehicle_height + headroom_margin; a lower return still blocks. This
-          # does not weaken empty columns, which use their independent ratio gate.
+          # 实测顶部下边界须高于车高与净空余量之和；空列使用独立覆盖门槛。
           min_observed_overhead_headroom_known_ratio: 0.0
           clearance_unknown_as_occupied: false
           wall_height_delta_min: 0.35
@@ -521,37 +427,29 @@ planner_server:
           hysteresis_enable: true
           hysteresis_count: 2
           obstacle_hold_time: 1.00
-          # One MID360 frame of zero-hit clearance dropout may reuse the last
-          # verified result. Measured occupied returns bypass this hold.
+          # 短暂零命中时复用已验证净空；新占用回波立即覆盖保持结果。
           clearance_dropout_hold_time: 0.80
-          # Enable only after a real bag proves that one-cell holes dominate and
-          # thin dynamic obstacles remain detected from every approach angle.
+          # 实车缺口填补默认关闭，需验证薄动态障碍的检出能力后再启用。
           clearance_hole_fill_enable: false
           clearance_hole_fill_max_width: 0.05
           mask_filter_en: true
           fill_occ_min: 7
           denoise_occ_max: 0
-          # At weight 1, fixed-map subtraction supplies a separate vehicle layer.
-          # Zero velocity is not a clearing condition; FOV gaps retain tracks.
+          # 权重为 1 时，固定 PCD 背景差分生成独立车辆层；静止目标仍阻挡，短暂失观测保留目标。
           vehicle_obstacles:
             background_topic: /prior_pcd_map
             background_voxel: 0.04
             background_distance: 0.15
-            # Prefer static passage: absorb <=8 cm survey/registration residuals,
-            # even when a sparse tunnel-edge normal disagrees with the prior.
+            # 吸收测绘及配准的小偏差，减少洞口边缘静态残差误报，单位：米。
             surface_distance: 0.08
             normal_angle_deg: 45.0
-            # Match a local fixed surface over 50 cm along it, but only 10 cm
-            # normal to it. No requirement to observe ground/headroom completeness.
-            # Ignore a 10 cm fringe around surveyed black cells as static
-            # boundary residuals. Original static footprint blocking is unchanged.
+            # PGM 黑区边缘的静态残差过滤范围；不改变原始 PGM 足迹检查，单位：米。
             prior_boundary_distance: 0.10
             static_surface_radius: 0.50
             static_surface_distance: 0.10
             static_surface_min_support: 3
             static_surface_max_curvature: 0.10
-            # Discard surveyed ramp/platform faces below its driving surface;
-            # missing elevation evidence does not block or suppress live targets.
+            # 滤除先验行驶面以下的坡台回波；缺少高程证据本身不拦停。
             ground_surface_tolerance: 0.05
             min_points: 5
             hold_time: 2.0
@@ -563,17 +461,14 @@ planner_server:
             frame_id: map
             yaml_path: "<rog_prior_map_yaml>"
             pgm_path: ""
-            # Below 1: each terrain score must reach 1 - weight in known white.
-            # At 1: original PGM checks static space; the separate vehicle layer blocks live targets.
+            # 小于 1：白区各项实时地形证据须达到 1−权重；等于 1：PGM 判断静态通行，车辆层阻挡实测目标。
             traversability_weight: 0.5
-            # Keep static occupancy fusion, but do not require or consume a
-            # surveyed elevation value to authorize locally observed terrain.
+            # 融合静态占用，但不要求实时地形必须具有先验高程。
             require_ground_support: false
             ground_support_tolerance: 0.08
             transform_timeout: 0.50
             transform_future_tolerance: 0.20
-            # VIO/LIO TFs carry small roll/pitch noise while the platform is
-            # level; only larger tilt should invalidate prior-map support.
+            # 先验支撑允许小幅姿态噪声，超过倾角容差才判无效。
             horizontal_tolerance: 0.01
         field:
           enable: true
@@ -597,8 +492,7 @@ planner_server:
           summary_rate: 1.0
           dirty_column_enable: true
           dirty_full_ratio: 0.30
-          # Keep this legacy alias consistent with raycasting.parallel_enable
-          # above: Config loads both names and this later value wins.
+          # 兼容别名，须与 raycasting.parallel_enable 一致；后加载的别名值优先。
           parallel_raycast_enable: true
           raycast_num_threads: 4
         visualization:
@@ -607,72 +501,50 @@ planner_server:
           rate: 5.0
           range: [10.0, 10.0, 2.0]
       corridor:
-        # Circumscribed radius of the 0.50 m square body.
+        # 0.50 米方形车体的外接半径，仅作兼容回退。
         robot_radius: 0.36
         extra_margin: 0.05
       smac_2d:
-        # Consume Nav2's merged inflation costs as a linear travel penalty.
-        # The previous hard-coded square reduced the radius edge (cost ~= 45)
-        # to only a 6% penalty and let the global seed hug obstacles.
-        # Real dynamic obstacles usually have open bypass space. Give their
-        # inflated band enough weight that a modest geometric shortcut no
-        # longer wins; simulation stays at 2.0 for its constrained tunnels.
+        # 全局膨胀代价的线性权重，优先保留动态障碍绕行距离。
         cost_penalty: 8.0
         use_quadratic_cost_penalty: false
-        # The local ROG window is not a stable global topology source. Keep its
-        # fail-closed frontier out of SMAC's global soft cost; downstream local
-        # optimization and safety checks still enforce ROG obstacles.
+        # 滚动 ROG 场不作为全局软拓扑来源；局部优化及安全检查仍使用 ROG。
         use_esdf_cost: false
-        # Dormant experiment values for a future evidence-only dynamic field.
+        # 未启用的实验参数。
         esdf_weight: 4.0
         esdf_decay: 0.30
         esdf_max_cost: 4.0
       local_path:
-        # Sparsification may shorten the SMAC polyline only while staying in a
-        # comparable cost band. This preserves a dynamic-obstacle detour while
-        # still allowing shortcuts through uniformly inflated narrow passages.
+        # 稀疏化只在相近代价带内抄近路，保留动态绕行及窄洞通行。
         shortcut_peak_cost_slack: 10.0
         shortcut_mean_cost_slack: 5.0
-        # If the seed reaches the observation frontier, move along the short
-        # prior-backed prefix slowly and stop there. Motion exposes fresh
-        # LiDAR volume, so the next rolling replan can extend the path without
-        # waiting for a manual gimbal sweep.
+        # 观测前沿的短轨迹速度上限；到前沿停车验证，随观测推进再延长。
         observed_prefix_max_velocity: 0.60
       hot_start:
-        # Preserve the former hard-coded real-vehicle behavior by default.
+        # 热启动的位置跟踪容差，单位：米。
         tracking_error_base: 0.30
         velocity_error_threshold: 0.35
         direction_cosine_threshold: 0.35
       minco_optimizer:
         opt_freq: 20.0
-        # Bound failure retries without reducing the independent 20 Hz
-        # trajectory safety monitor.
+        # 限制规划失败重试频率，不降低独立安全监视频率。
         failed_replan_retry_period: 0.25
         successful_replan_period: 0.50
-        # The internal FSM stops publishing motion inside this radius. Keep it
-        # strictly inside Nav2's 0.10 m checker so FollowPath can still complete;
-        # 0.15 m previously stopped short goals on the ramp face.
+        # 必须小于 Nav2 到点距离容差，避免内部状态提前停车。
         traj_goal_tolerance: 0.08
-        # Translation is holonomic: track the explicit navigation goal yaw,
-        # never the path tangent that can rotate the body into a tunnel wall.
+        # 全向平移跟踪目标朝向，不随路径切线强制转动。
         enable_yaw_opt: true
         safe_dist: 0.30
-        # Hard validation samples the explicit 0.50x0.50 m body polygon. Zero
-        # keeps this an exact occupied/UNKNOWN test instead of applying a
-        # second, duplicate radial inflation.
+        # 多边形已覆盖车体，设为 0 避免重复径向膨胀。
         collision_dist: 0.0
-        # At 0.8 m/s this keeps a 1.9 s local horizon while avoiding a demand to
-        # validate the complete route from one LiDAR viewpoint.
+        # 局部前瞻距离，无需单次雷达观测覆盖整条路线，单位：米。
         lookahead_dist: 1.5
         max_velocity: 1.0
         max_acceleration: 0.8
-        # Keep the rolling endpoint below the continuous 0.8 m/s bound. This
-        # prevents the independent 0.90..0.94 m/s failure seen with a fully
-        # observed seed; observation-frontier crawling is configured above.
+        # 滚动轨迹末端速度比例，须与最大速度及前沿速度限制匹配。
         terminal_velocity_ratio: 0.60
         terminal_tangent_lookahead: 0.30
-        # Preserve the optimizer's native finite bound while accepting valid
-        # dynamically retimed slope trajectories that exceed 10 s.
+        # 轨迹时长上限，允许坡面动态重定时后的有限延长，单位：秒。
         max_trajectory_duration: 15.0
         max_yaw_dot: 0.8
         turn_angle_deadzone: 0.10
@@ -711,34 +583,30 @@ planner_server:
 fake_vel_transform:
   ros__parameters:
     enable_cmd_spin: false
-    # Active MINCO uses the independent ROG-map freshness safety gate.
+    # MINCO 使用独立的 ROG 地图时效检查。
     terrain_guard_enabled: false
     use_latest_odom_for_cmd: true
-    # Use the compensated odom-frame stream so fake_vel_transform and the
-    # controller share the same timestamp/frame contract.
+    # 使用转换后的 odom 系里程计，与速度变换节点保持时间戳和坐标约定一致。
     odom_topic: /lidar_odometry
     odom_timeout: 0.20
     input_cmd_vel_topic: cmd_vel_nav2_result
     output_cmd_vel_topic: cmd_vel
     use_sim_time: false
-    # loam_interface publishes this compensated real-robot odometry topic.
-    # The old /odometry alias is not produced by the reality launch.
+    # 实车启动链使用 lidar_odometry，不依赖未发布的 odometry 别名。
     robot_base_frame: "gimbal_yaw"
     fake_robot_base_frame: "gimbal_yaw_fake"
     cmd_spin_topic: "cmd_spin"
     init_spin_speed: 0.0
-    # Fail closed if the legacy perception chain stops updating. Real MID360
-    # data is nominally 10 Hz, so 0.5 s tolerates jitter without masking a
-    # sensor/node failure.
+    # 传统地形链超时后停止放行；MINCO 使用其独立安全检查。
     terrain_map_topic: "terrain_map"
     terrain_timeout: 0.5
 
 livox_ros_driver2:
   ros__parameters:
-    xfer_format: 4                                      # 0-PointCloud2Msg(PointXYZRTL), 1-LivoxCustomMsg, 2-PclPxyziMsg, 3-LivoxImuMsg, 4-AllMsg
-    multi_topic: 0                                      # 0-All LiDARs share the same topic, 1-One LiDAR one topic
-    data_src: 0                                         # 0-lidar, others-Invalid data src
-    publish_freq: 10.0                                  # frequency of publish, 5.0, 10.0, 20.0, 50.0, etc.
+    xfer_format: 4  # 格式：0=标准点云，1=Livox 自定义，2=PCL 点云，3=IMU，4=全部。
+    multi_topic: 0  # 0=多雷达共用话题，1=各雷达独立话题。
+    data_src: 0  # 0 表示雷达数据源。
+    publish_freq: 10.0  # 发布频率，单位：Hz。
     output_data_type: 0
     frame_id: left_mid360
     user_config_path: $(find-pkg-share pb2025_nav_bringup)/config/reality/mid360_user_config.json
@@ -747,19 +615,19 @@ livox_ros_driver2:
 
 point_lio:
   ros__parameters:
-    use_imu_as_input: false                             # Change to True to use IMU as input of Point-LIO
+    use_imu_as_input: false  # 启用后以 IMU 作为滤波器输入。
     prop_at_freq_of_imu: true
     check_satu: true
     init_map_size: 10
-    point_filter_num: 8                                 # Options: 4, 3
+    point_filter_num: 8
     space_down_sample: true
-    filter_size_surf: 0.2                               # Options: 0.5, 0.3, 0.2, 0.15, 0.1
-    filter_size_map: 0.2                                # Options: 0.5, 0.3, 0.15, 0.1
-    ivox_nearby_type: 18                                # Options: 0, 6, 18, 26
-    runtime_pos_log_enable: false                       # Option: True
+    filter_size_surf: 0.2
+    filter_size_map: 0.2
+    ivox_nearby_type: 18  # 邻域类型：0、6、18 或 26。
+    runtime_pos_log_enable: false
 
     estimator:
-      max_iterations: 1                                # Current IKFoM update is covariance-consistent for one iteration
+      max_iterations: 1  # 当前 IKFoM 更新按单次迭代保持协方差一致。
 
     input_guard:
       min_scan_points: 100
@@ -802,64 +670,63 @@ point_lio:
     common:
       lid_topic: "livox/lidar"
       imu_topic: "livox/imu"
-      con_frame: false                                  # True: if you need to combine several LiDAR frames into one
-      con_frame_num: 1                                  # the number of frames combined
-      cut_frame: false                                  # True: if you need to cut one LiDAR frame into several subframes
-      cut_frame_time_interval: 0.05                     # should be integral fraction of 1 / LiDAR frequency
-      time_diff_lidar_to_imu: 0.0                       # Time offset between LiDAR and IMU calibrated by other algorithms, e.g., LI-Init (find in Readme)
+      con_frame: false  # 是否合并多帧雷达。
+      con_frame_num: 1  # 合并帧数。
+      cut_frame: false  # 是否将单帧切分为子帧。
+      cut_frame_time_interval: 0.05  # 应为雷达帧周期的整数分之一。
+      time_diff_lidar_to_imu: 0.0  # 雷达与 IMU 标定时间偏移，单位：秒。
 
     prior_pcd:
       enable: false
-      # NOTE: `prior_pcd_map_path` will be provided in the launch file
-      # prior_pcd_map_path: ""
+      # 先验 PCD 路径由启动文件注入。
       init_pose: [0.0, 0.0, 0.0]
 
     preprocess:
-      lidar_type: 1                                     # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR
+      lidar_type: 1  # 雷达类型：1=Livox，2=Velodyne，3=Ouster。
       scan_line: 4
-      timestamp_unit: 3                                 # the unit of time/t field in the PointCloud2 rostopic: 0-second, 1-milisecond, 2-microsecond, 3-nanosecond.
+      timestamp_unit: 3  # 点时间单位：0=秒，1=毫秒，2=微秒，3=纳秒。
       blind: 0.5
 
     mapping:
       imu_en: true
-      extrinsic_est_en: false                           # for aggressive motion, set this variable False
-      imu_time_inte: 0.005                              # = 1 / frequency of IMU
+      extrinsic_est_en: false  # 剧烈运动时关闭在线外参估计。
+      imu_time_inte: 0.005  # IMU 采样间隔，单位：秒。
       lidar_time_inte: 0.1
-      satu_acc: 4.0                                     # the saturation value of IMU's acceleration. not related to the units
-      satu_gyro: 35.0                                   # the saturation value of IMU's angular velocity. not related to the units
-      acc_norm: 1.0                                     # 1.0 for g as unit, 9.81 for m/s^2 as unit of the IMU's acceleration
-      lidar_meas_cov: 0.01                              # 0.001
+      satu_acc: 4.0  # IMU 加速度饱和阈值。
+      satu_gyro: 35.0  # IMU 角速度饱和阈值。
+      acc_norm: 1.0  # 加速度单位为 g 时取 1.0，为米每二次方秒时取 9.81。
+      lidar_meas_cov: 0.01
       acc_cov_output: 500.0
       gyr_cov_output: 1000.0
       b_acc_cov: 0.0001
       b_gyr_cov: 0.0001
       imu_meas_acc_cov: 0.1
       imu_meas_omg_cov: 0.1
-      gyr_cov_input: 0.1                                # for IMU as input model
-      acc_cov_input: 0.1                                # for IMU as input model
-      plane_thr: 0.1                                    # 0.05, the threshold for plane criteria, the smaller, the flatter a plane
+      gyr_cov_input: 0.1  # 用于 IMU 输入模式。
+      acc_cov_input: 0.1  # 用于 IMU 输入模式。
+      plane_thr: 0.1  # 平面判定阈值，越小越严格。
       match_s: 81.0
       ivox_grid_resolution: 0.5
       max_neighbor_distance: 1.4
       max_points_per_voxel: 64
-      gravity: [0.0, 0.0, -1.0]                         # Livox driver compensates the physical -45 deg roll
-      gravity_init: [0.0, 0.0, -1.0]                    # acc_norm is 1.0 on the real MID360 path
-      extrinsic_T: [-0.011, -0.02329, 0.04412]          # MID360 internal LiDAR pose in IMU frame, not base_link mounting
+      gravity: [0.0, 0.0, -1.0]  # Livox 驱动已补偿 −45° 安装横滚角。
+      gravity_init: [0.0, 0.0, -1.0]  # 实车 MID360 的加速度单位为 g。
+      extrinsic_T: [-0.011, -0.02329, 0.04412]  # MID360 内部雷达相对 IMU 的外参，不是底盘安装外参。
       extrinsic_R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
     odometry:
       publish_odometry_without_downsample: false
 
     publish:
-      path_en: false                                    # False: close the path output
-      scan_publish_en: true                             # False: close all the point cloud output
-      scan_bodyframe_pub_en: false                      # True: output the point cloud scans in IMU-body-frame
-      tf_send_en: false                                 # True: send transform from 'camera_init' to 'aft_mapped'
+      path_en: false  # 是否发布轨迹。
+      scan_publish_en: true  # 是否发布点云。
+      scan_bodyframe_pub_en: false  # 是否发布 IMU 机体系点云。
+      tf_send_en: false  # 是否发布 camera_init 到 aft_mapped 的 TF。
 
     pcd_save:
       pcd_save_en: false
-      interval: -1                                      # how many LiDAR frames saved in each pcd file;
-                                                        # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
+      interval: -1  # 每个 PCD 文件保存的帧数，−1 表示合并保存。
+                                                        # -1 表示所有帧保存到同一 PCD 文件，长时间保存会增加内存占用。
 
 loam_interface:
   ros__parameters:
@@ -880,34 +747,32 @@ sensor_scan_generation:
 terrain_analysis:
   ros__parameters:
     scanVoxelSize: 0.05                 # 点云下采样
-    decayTime: 0.8                      # 点云时间差阈值 大于则不会被处理；实车短一点可减少瞬时幽灵点残留
-    noDecayDis: 0.0                     # 点云距离阈值 小于该阈值不考虑时间差
+    decayTime: 0.8  # 点云保留时长；实车缩短以减少残留，单位：秒。
+    noDecayDis: 0.0  # 此距离内不按时间衰减，单位：米。
     clearingDis: 0.0                    # 该距离外的点会被清除
-    useSorting: true                    # 这个参数开起来就能上坡了；如果 use_sorting,那么就以周围点中的分位点作为地面点，否则以最低点作为地面点；周围其余点相对于地面点的高度作为通过代价，所以对于坡面，有的点的代价是正，有的是负，就相互抵消了；不要与 consider_drop 同时开启，计算上会有冲突
-    quantileZ: 0.2                      # useful if use_sorting is enabled.
-    considerDrop: false                 # 考虑凹下去的地面,开启则将相对于地面点的高度取绝对值
+    useSorting: true  # 以高度分位点估计地面，支持坡面；勿与 considerDrop 同时开启。
+    quantileZ: 0.2  # 启用高度排序时的地面分位数。
+    considerDrop: false  # 是否按相对地面的绝对高度检测凹陷。
     limitGroundLift: false
     maxGroundLift: 0.3
-    clearDyObs: true                    # 清除动态物体的话，有动态物体走过的地方就走不了了
-    minDyObsDis: 0.3                    # 以下参数都是在 clear_dy_obs 的情况下才有用的
+    clearDyObs: true  # 清除动态物体留下的过期点。
+    minDyObsDis: 0.3  # 下方动态清除参数需开启 clearDyObs。
     minDyObsAngle: 0.0
     minDyObsRelZ: -0.3
     absDyObsRelZThre: 0.2
     minDyObsVFOV: -28.0
     maxDyObsVFOV: 33.0
     minDyObsPointNum: 1
-    noDataObstacle: false               # treat no data as obstacle
+    noDataObstacle: false  # 是否将无数据区域视作障碍。
     noDataBlockSkipNum: 0
     minBlockPointNum: 8                # 提高局部平面栅格最少点数，过滤稀疏孤立噪点
-    # Legacy terrain_map intensity is point-to-local-ground height. Keep
-    # returns at or above the 0.60 m tunnel-clearance threshold out of the
-    # obstacle cloud; maxRelZ remains the sensor-frame input crop.
+    # 传统地形链按相对地面高度过滤顶部回波；maxRelZ 仅限制输入点云范围。
     vehicleHeight: 0.45
     voxelPointUpdateThre: 100
     voxelTimeUpdateThre: 2.0            # 更频繁清理过期点，避免假障碍在 terrain_map 里拖尾
-    minRelZ: -1.5                       # min_rel_z 以及 max_rel_z 限制了有效点云点的Z值范围，用于对天花板和地板进行处理
+    minRelZ: -1.5  # 与 maxRelZ 共同限定有效点云的相对高度。
     maxRelZ: 0.5
-    disRatioZ: 0.2                      # Z 值的最大最小范围由这两个值决定，但是并不等于这两个值，是有一个比例关系的，距离机器人越远，限定范围就越大，这其中考虑了坡度
+    disRatioZ: 0.2  # 相对高度范围随距离扩展，以适应坡面。
 
 terrain_analysis_ext:
   ros__parameters:
@@ -917,11 +782,10 @@ terrain_analysis_ext:
     clearingDis: 20.0
     useSorting: true
     quantileZ: 0.2
-    # Match terrain_analysis so the ext/global cloud cannot re-introduce roof
-    # returns that the local legacy chain has already excluded.
+    # 与局部传统地形链保持同一顶部过滤阈值。
     vehicleHeight: 0.45
     voxelPointUpdateThre: 100
-    voxelTimeUpdateThre: 0.8            # global terrain map 也缩短过期点清理周期
+    voxelTimeUpdateThre: 0.8  # 全局地形点云的过期清理周期，单位：秒。
     lowerBoundZ: -1.5
     upperBoundZ: 0.5
     disRatioZ: 0.2
@@ -945,7 +809,7 @@ relocalization_manager:
     min_inliers: 800
     max_delta_xy: 0.50
     max_delta_z: 0.25
-    max_delta_yaw: 0.3490658504 # 10 deg
+    max_delta_yaw: 0.3490658504  # 偏航增量上限，单位：弧度。
     map_frame: "map"
     odom_frame: "odom"
     base_frame: "base_footprint"
@@ -957,11 +821,10 @@ relocalization_manager:
     moving_linear_speed_threshold: 0.05
     motion_command_timeout: 0.5
     required_consecutive_gicp_acceptances: 3
-    init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
-    prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
-    transform_prior_map_with_lidar_offset: false # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上
-    # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
-    # prior_pcd_file: ""
+    init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 初始位姿：[x, y, z, 横滚, 俯仰, 偏航]。
+    prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 先验 PCD 的平移及旋转，用于对齐场地坐标。
+    transform_prior_map_with_lidar_offset: false  # 不将雷达安装外参叠加到全局 PCD。
+    # 先验 PCD 文件由启动文件指定。
 
 pointcloud_to_laserscan:
   ros__parameters:
@@ -971,9 +834,9 @@ pointcloud_to_laserscan:
     max_height: 6.0
     min_intensity: 0.1
     max_intensity: 2.0
-    angle_min: -3.1415926                   # -M_PI/2
-    angle_max: 3.1415926                    # M_PI/2
-    angle_increment: 0.00872665             # M_PI/360.0
+    angle_min: -3.1415926
+    angle_max: 3.1415926
+    angle_increment: 0.00872665
     scan_time: 0.05
     range_min: 0.3
     range_max: 10.0
@@ -981,7 +844,6 @@ pointcloud_to_laserscan:
 
 slam_toolbox:
   ros__parameters:
-    # https://github.com/SteveMacenski/slam_toolbox/tree/humble?#configuration
     solver_plugin: solver_plugins::CeresSolver
     ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner: SCHUR_JACOBI
@@ -996,29 +858,23 @@ slam_toolbox:
     use_map_saver: true
     mode: mapping
 
-    # if you'd like to immediately start continuing a map at a given pose
-    # or at the dock, but they are mutually exclusive, if pose is given
-    # will use pose
-    # map_file_name: test_steve
-    # map_start_pose: [0.0, 0.0, 0.0]
-    # map_start_at_dock: true
 
     debug_logging: false
     throttle_scans: 1
     scan_queue_size: 10
-    # slam_toolbox is the sole owner of the dynamic map -> odom transform.
+    # 动态 map→odom 仅由 slam_toolbox 发布。
     transform_publish_period: 0.05
     map_update_interval: 0.5
     resolution: 0.05
-    min_laser_range: 0.3                         # for rastering images
-    max_laser_range: 10.0                         # for rastering images
+    min_laser_range: 0.3
+    max_laser_range: 10.0
     minimum_time_interval: 0.2
     transform_timeout: 0.2
     tf_buffer_duration: 10.
-    stack_size_to_use: 40000000                   # program needs a larger stack size to serialize large maps
+    stack_size_to_use: 40000000  # 大地图序列化所需栈空间，单位：字节。
     enable_interactive_mode: true
 
-    # General Parameters
+    # 通用参数。
     use_scan_matching: false
     use_scan_barycenter: true
     minimum_travel_distance: 0.1
@@ -1034,17 +890,17 @@ slam_toolbox:
     loop_match_minimum_response_coarse: 0.35
     loop_match_minimum_response_fine: 0.45
 
-    # Correlation Parameters - Correlation Parameters
+    # 扫描相关匹配参数。
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
     correlation_search_space_smear_deviation: 0.1
 
-    # Correlation Parameters - Loop Closure Parameters
+    # 回环搜索参数。
     loop_search_space_dimension: 8.0
     loop_search_space_resolution: 0.05
     loop_search_space_smear_deviation: 0.03
 
-    # Scan Matcher Parameters
+    # 扫描匹配器参数。
     distance_variance_penalty: 5.5
     angle_variance_penalty: 5.0
 
