@@ -293,6 +293,8 @@ struct FrameDiagnostics
   double information_gain_sum = 0.0;
   Eigen::Matrix<double, 6, 6> pose_information = Eigen::Matrix<double, 6, 6>::Zero();
   bool imu_saturated = false;
+  std::size_t rejected_imu_updates = 0;
+  const char * last_imu_rejection_reason = "none";
 
   void reset()
   {

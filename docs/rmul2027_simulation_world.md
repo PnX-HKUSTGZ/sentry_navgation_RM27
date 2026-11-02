@@ -35,7 +35,7 @@ Point-LIO + GICP + MINCO：
 
 ```bash
 source install/setup.bash
-ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \
+ros2 launch launch_bringup rm_navigation_simulation_launch.py \
   world:=RMUL2027 navigation_mode:=minco use_ground_truth_odom:=false
 ```
 
@@ -63,7 +63,7 @@ RMUL2027 的相机视角；显式传入配置路径可以覆盖自动选择。
 
 ## 导航地图
 
-以下路径相对 `src/pb2025_nav_bringup`：
+以下路径相对 `src/pnx-launch/launch_bringup`：
 
 | 路径 | 内容 |
 | --- | --- |
@@ -85,7 +85,7 @@ PGM 先做 1 cm 子栅格地面连通性分析，再合并为 5 cm 格子。原�
 
 ## 资源
 
-下列路径相对 `src/rm_27_stimulation`：
+下列路径相对 `src/pnx-stimulation/rm_27_stimulation`：
 
 | 路径 | 内容 |
 | --- | --- |
@@ -149,22 +149,22 @@ Bullet/ODE 场地摩擦系数仍为 0.8，轮子和驱动力参数未因本次�
 ```bash
 python3 -m venv /home/pnx/nav_ws/.tools/rmul2027-cad-venv
 /home/pnx/nav_ws/.tools/rmul2027-cad-venv/bin/python -m pip install \
-  -r src/rm_27_stimulation/tools/rmul2027_requirements.txt
+  -r src/pnx-stimulation/rm_27_stimulation/tools/rmul2027_requirements.txt
 
 /home/pnx/nav_ws/.tools/rmul2027-cad-venv/bin/python \
-  src/rm_27_stimulation/tools/import_rmul2027_world.py
+  src/pnx-stimulation/rm_27_stimulation/tools/import_rmul2027_world.py
 
 /home/pnx/nav_ws/.tools/blender-4.5.14-linux-x64/blender \
   --background --factory-startup \
-  --python src/rm_27_stimulation/tools/render_rmul2027_world.py -- \
-  --assets src/rm_27_stimulation/meshes/RMUL2027
+  --python src/pnx-stimulation/rm_27_stimulation/tools/render_rmul2027_world.py -- \
+  --assets src/pnx-stimulation/rm_27_stimulation/meshes/RMUL2027
 
 /home/pnx/nav_ws/.tools/rmul2027-cad-venv/bin/python \
-  src/pb2025_nav_bringup/tools/generate_rmul2027_maps.py
+  src/pnx-launch/launch_bringup/tools/generate_rmul2027_maps.py
 
 source /opt/ros/jazzy/setup.bash
 colcon build --base-paths src --packages-select \
-  rm_27_stimulation ign_sim_pointcloud_tool pb2025_nav_bringup --symlink-install
+  rm_27_stimulation ign_sim_pointcloud_tool launch_bringup --symlink-install
 ```
 
 网格文件名可能变化，重新生成后必须构建，使新文件进入 install 目录。
@@ -176,7 +176,7 @@ Blender 导出脚本使用 4.5 的 COLLADA 导出器。
 
 ```bash
 /home/pnx/nav_ws/.tools/rmul2027-cad-venv/bin/python \
-  src/rm_27_stimulation/test/test_rmul2027_geometry.py
+  src/pnx-stimulation/rm_27_stimulation/test/test_rmul2027_geometry.py
 ```
 
 `tools/check_rmul2027_runtime.py` 用于隔离仿真中的接触高度、雷达与底盘移动检查。
@@ -197,7 +197,7 @@ Gazebo Bullet 的 8 个落地测点包含共享棱柱网格，最大接触高度
 
 ```bash
 /home/pnx/nav_ws/.tools/rmul2027-cad-venv/bin/python \
-  src/rm_27_stimulation/tools/check_rmul2027_collision_geometry.py
+  src/pnx-stimulation/rm_27_stimulation/tools/check_rmul2027_collision_geometry.py
 ```
 
 同机无头对照使用相同机器人、核显渲染、IMU/LiDAR 和物理步长，各统计 12 秒，

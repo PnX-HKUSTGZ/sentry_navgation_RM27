@@ -2,7 +2,7 @@
 
 比较日期：2026-10-13。按当前工作区 YAML 解析结果逐项比较，不采用旧教程中的历史数值，也没有修改两份配置。
 
-来源：[实车 minco_params.yaml](/home/pnx/nav_ws/sentry-navigation-RM27/src/pb2025_nav_bringup/config/reality/minco_params.yaml)、[仿真 minco_params.yaml](/home/pnx/nav_ws/sentry-navigation-RM27/src/pb2025_nav_bringup/config/simulation/minco_params.yaml)。
+来源：[实车 minco_params.yaml](/home/pnx/nav_ws/sentry-navigation-RM27/src/pnx-launch/launch_bringup/config/reality/minco_params.yaml)、[仿真 minco_params.yaml](/home/pnx/nav_ws/sentry-navigation-RM27/src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml)。
 
 两份文件共有 **246 个字段差异**；排除 **35 个车辆几何与外参字段**后，下面完整列出 **211 个字段**。数量包括只在一侧存在的节点/参数、各节点的时钟差异和当前关闭分支中的设置；不代表有 211 处当前生效的算法差异。
 
@@ -283,7 +283,7 @@
 | `livox_ros_driver2.multi_topic` | `0` | 未配置 | 多雷达话题分配模式；0 为共享话题。 仿真用 Gazebo/bridge，未配置此实车驱动节点。 | 704/— |
 | `livox_ros_driver2.output_data_type` | `0` | 未配置 | 输出目的地；0 为 ROS。 仿真用 Gazebo/bridge，未配置此实车驱动节点。 | 707/— |
 | `livox_ros_driver2.publish_freq` | `10` | 未配置 | 实车雷达发布频率，Hz。 仿真用 Gazebo/bridge，未配置此实车驱动节点。 | 706/— |
-| `livox_ros_driver2.user_config_path` | `$(find-pkg-share pb2025_nav_bringup)/config/reality/mid360_user_config.json` | 未配置 | 实车 MID360 网络、设备及数据等驱动设置文件。 仿真用 Gazebo/bridge，未配置此实车驱动节点。 | 709/— |
+| `livox_ros_driver2.user_config_path` | `$(find-pkg-share launch_bringup)/config/reality/mid360_user_config.json` | 未配置 | 实车 MID360 网络、设备及数据等驱动设置文件。 仿真用 Gazebo/bridge，未配置此实车驱动节点。 | 709/— |
 | `livox_ros_driver2.xfer_format` | `4` | 未配置 | 驱动消息格式；当前 4 为本仓库的 AllMsg 输出模式。 仿真用 Gazebo/bridge，未配置此实车驱动节点。 | 703/— |
 
 ## 12. 各节点时钟
@@ -323,11 +323,11 @@
 
 ## 核对依据与说明
 
-- 净空缺测保持、先验支撑桥接和高程净空孔洞填补均在代码中要求 require_ground_support=true，不能因仿真 YAML 写着 enable=true 就认为当前无高程模式正在使用这些机制。见 [projection_layer.cpp](/home/pnx/nav_ws/sentry-navigation-RM27/src/perception/rog_map/src/rog_map/projection_layer.cpp:823)。
-- 原始 PGM 白格补 UNKNOWN 由 free_fills_unknown 独立控制，在无先验高程模式仍可生效。见 [prior_map.cpp](/home/pnx/nav_ws/sentry-navigation-RM27/src/perception/rog_map/src/rog_map/prior_map.cpp:942)。
-- obstacle_slowdown_distance 对引导路径检查后，可限制整条当前局部轨迹，不只是某个采样点。见 [minco_planner.cpp](/home/pnx/nav_ws/sentry-navigation-RM27/src/navigation/minco_planner/src/minco_core/minco_planner.cpp:2230)。
-- 全局动态层 obstacle_marking_max_range=0 表示无限制，超过 stale_timeout 会清除该层旧快照。见 [rog_dynamic_obstacle_layer.cpp](/home/pnx/nav_ws/sentry-navigation-RM27/src/pb_nav2_plugins/src/layers/rog_dynamic_obstacle_layer.cpp:156)。
-- 仿真切换 Point-LIO 的参数覆盖见 [navigation_launch.py](/home/pnx/nav_ws/sentry-navigation-RM27/src/pb2025_nav_bringup/launch/navigation_launch.py:132)。
+- 净空缺测保持、先验支撑桥接和高程净空孔洞填补均在代码中要求 require_ground_support=true，不能因仿真 YAML 写着 enable=true 就认为当前无高程模式正在使用这些机制。见 [projection_layer.cpp](/home/pnx/nav_ws/sentry-navigation-RM27/src/pnx-perception/rog_map/src/rog_map/projection_layer.cpp:823)。
+- 原始 PGM 白格补 UNKNOWN 由 free_fills_unknown 独立控制，在无先验高程模式仍可生效。见 [prior_map.cpp](/home/pnx/nav_ws/sentry-navigation-RM27/src/pnx-perception/rog_map/src/rog_map/prior_map.cpp:942)。
+- obstacle_slowdown_distance 对引导路径检查后，可限制整条当前局部轨迹，不只是某个采样点。见 [minco_planner.cpp](/home/pnx/nav_ws/sentry-navigation-RM27/src/pnx-navigation/minco_planner/src/minco_core/minco_planner.cpp:2230)。
+- 全局动态层 obstacle_marking_max_range=0 表示无限制，超过 stale_timeout 会清除该层旧快照。见 [rog_dynamic_obstacle_layer.cpp](/home/pnx/nav_ws/sentry-navigation-RM27/src/pnx-perception/pb_nav2_plugins/src/layers/rog_dynamic_obstacle_layer.cpp:156)。
+- 仿真切换 Point-LIO 的参数覆盖见 [navigation_launch.py](/home/pnx/nav_ws/sentry-navigation-RM27/src/pnx-launch/launch_bringup/launch/navigation_launch.py:132)。
 - 实车 relocalization_manager.max_delta_yaw 数值 0.3490658504 实际为 20°，原注释写成 10°；本文以数值为准。terrain_analysis.voxelTimeUpdateThre=2.0 也不表示比 0.3 更频繁整理体素，相关旧注释方向不准确。此次只记录差异，没有改配置或注释。
 
 所有差异字段均由 YAML 结构比较产生，包含数组整体值与单侧缺失项；仅注释不同、字段排列不同不会计入。

@@ -147,13 +147,13 @@ minco
 
 | 文件 | 用途 |
 |---|---|
-| `src/pb2025_nav_bringup/config/simulation/minco_params.yaml` | 仿真完整 MINCO/ROG/MPC 参数及 Point-LIO 输入选项 |
-| `src/pb2025_nav_bringup/config/reality/minco_params.yaml` | 实车完整 MINCO/ROG/MPC 参数 |
-| `src/pb2025_nav_bringup/config/*/nav2_params.yaml` | 仅 legacy 的 Nav2、costmap、旧 planner/controller 参数 |
-| `src/pb2025_nav_bringup/launch/navigation_launch.py` | 两种模式和单文件参数装配 |
-| `src/rm_27_stimulation/launch/sim_with_nav.launch.py` | Gazebo 与导航总入口 |
-| `src/rm_27_stimulation/config/worlds.yaml` | 仿真 world 到导航 map 的映射 |
-| `src/rm_27_stimulation/config/spawn_poses.yaml` | 仿真起始位姿 |
+| `src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml` | 仿真完整 MINCO/ROG/MPC 参数及 Point-LIO 输入选项 |
+| `src/pnx-launch/launch_bringup/config/reality/minco_params.yaml` | 实车完整 MINCO/ROG/MPC 参数 |
+| `src/pnx-launch/launch_bringup/config/*/nav2_params.yaml` | 仅 legacy 的 Nav2、costmap、旧 planner/controller 参数 |
+| `src/pnx-launch/launch_bringup/launch/navigation_launch.py` | 两种模式和单文件参数装配 |
+| `src/pnx-stimulation/rm_27_stimulation/launch/sim_with_nav.launch.py` | Gazebo 与导航总入口 |
+| `src/pnx-stimulation/rm_27_stimulation/config/worlds.yaml` | 仿真 world 到导航 map 的映射 |
+| `src/pnx-stimulation/rm_27_stimulation/config/spawn_poses.yaml` | 仿真起始位姿 |
 
 只修改 `src/` 下的源参数；随后重新 `colcon build` 并 `source install/setup.bash`。不要直接改
 `install/` 中的副本，否则下一次构建会覆盖且无法可靠复现。
@@ -184,7 +184,7 @@ source install/setup.bash
 colcon build --symlink-install \
   --packages-up-to \
   ros_interfaces rog_map minco_planner minco_controller fake_vel_transform \
-  sensor_scan_generation point_lio pb2025_nav_bringup rm_27_stimulation \
+  sensor_scan_generation point_lio launch_bringup rm_27_stimulation \
   --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 source install/setup.bash
 ```
@@ -194,7 +194,7 @@ source install/setup.bash
 ```bash
 colcon test --packages-select \
   ros_interfaces rog_map minco_planner minco_controller fake_vel_transform \
-  sensor_scan_generation point_lio pb2025_nav_bringup rm_27_stimulation
+  sensor_scan_generation point_lio launch_bringup rm_27_stimulation
 colcon test-result --verbose
 ```
 
@@ -209,7 +209,7 @@ colcon --log-base log_rog_minco_release build --symlink-install \
   --install-base install_rog_minco_release \
   --packages-up-to \
   ros_interfaces rog_map minco_planner minco_controller fake_vel_transform \
-  sensor_scan_generation point_lio pb2025_nav_bringup rm_27_stimulation \
+  sensor_scan_generation point_lio launch_bringup rm_27_stimulation \
   --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 source install_rog_minco_release/setup.bash
 
@@ -218,7 +218,7 @@ colcon --log-base log_rog_minco_release_test test \
   --install-base install_rog_minco_release \
   --packages-select \
   ros_interfaces rog_map minco_planner minco_controller fake_vel_transform \
-  sensor_scan_generation point_lio pb2025_nav_bringup rm_27_stimulation \
+  sensor_scan_generation point_lio launch_bringup rm_27_stimulation \
   --event-handlers console_cohesion+
 colcon test-result --test-result-base build_rog_minco_release --verbose
 ```
@@ -244,11 +244,11 @@ colcon test-result --test-result-base build_rog_minco_release --verbose
 ./build/sensor_scan_generation/test_twist_estimator
 ./build/sensor_scan_generation/test_transform_sample_gate
 ./build/point_lio/test_adaptive_lio
-./build/pb2025_nav_bringup/test_minco_shadow_goal_relay
+./build/launch_bringup/test_minco_shadow_goal_relay
 ./build/rm_27_stimulation/test_ground_truth_twist_transform
 ./build/rm_27_stimulation/test_organized_lidar_miss_rays
 ./build/rm_27_stimulation/test_planar_velocity_pi
-python3 -m pytest -q src/pb2025_nav_bringup/test/test_navigation_launch.py
+python3 -m pytest -q src/pnx-launch/launch_bringup/test/test_navigation_launch.py
 ```
 
 任何测试失败都不应进入 Gazebo 自动运动，更不能进入实车。
@@ -377,7 +377,7 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py \
 实车第一阶段只能使用 shadow：
 
 ```bash
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
   world:=highbay \
   slam:=false \
   navigation_mode:=minco_shadow \
@@ -411,7 +411,7 @@ ros2 bag record --storage mcap \
 完成 shadow 和本文第 14 节 release 门槛后，才允许停止 shadow、低速重启为：
 
 ```bash
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
   world:=highbay slam:=false \
   navigation_mode:=minco enable_legacy_terrain:=auto use_rviz:=true
 ```
@@ -720,8 +720,8 @@ install、选错 map 或误用了旧参数文件。
 核对当前 shell 实际使用的安装来源与已安装地图：
 
 ```bash
-ros2 pkg prefix pb2025_nav_bringup
-BRINGUP_SHARE="$(ros2 pkg prefix pb2025_nav_bringup)/share/pb2025_nav_bringup"
+ros2 pkg prefix launch_bringup
+BRINGUP_SHARE="$(ros2 pkg prefix launch_bringup)/share/launch_bringup"
 sed -n '/^ground_elevation:/,$p' \
   "$BRINGUP_SHARE/map/simulation/tunnel_ramp_test.yaml"
 ```
@@ -995,7 +995,7 @@ Inf no-return**。纯 NaN 没有可信方向，保留非有限并计入 `unsuppo
 free，不能在末端制造假障碍。
 
 参数源是
-`src/pb2025_nav_bringup/config/simulation/nav2_params.yaml` 的
+`src/pnx-launch/launch_bringup/config/simulation/nav2_params.yaml` 的
 `rm27_ground_truth_localizer.ros__parameters`：
 
 ```yaml
@@ -1395,7 +1395,7 @@ ground_elevation:
 坡度最连续的候选相交面恢复洞底或中间坡面。RMUC2026 当前有 `113792/113794` 个 known-free
 单元具备支撑，有效范围为 `0.000..0.310 m`，不是全图 `z=0`。
 
-仿真现有文件 `src/pb2025_nav_bringup/map/simulation/tunnel_ramp_test.yaml` 是可执行示例：
+仿真现有文件 `src/pnx-launch/launch_bringup/map/simulation/tunnel_ramp_test.yaml` 是可执行示例：
 
 ```yaml
 image: tunnel_ramp_test.pgm
@@ -1438,7 +1438,7 @@ z(x,y) = reference[2]
 2. 在 map frame 中测量平地、坡脚、坡顶、平台四角及横向两侧，单位统一为米；不要使用相对车体高度。
 3. 每个连续平面拟合 `reference` 和 `slope`，边界只覆盖确实测量且 PGM known-free 的区域。坡角
    `theta` 转换为沿坡方向斜率时使用 `slope=tan(theta)`。
-4. 把块写入实际 launch 选中的 `src/pb2025_nav_bringup/map/reality/<map>.yaml`，重新构建/安装并
+4. 把块写入实际 launch 选中的 `src/pnx-launch/launch_bringup/map/reality/<map>.yaml`，重新构建/安装并
    source；不要改 `install/` 副本。
 5. 先启动 `minco_shadow`，确认加载日志、TF Z 和 `clearance_status=3/4/25` 的空间位置；随后做
    错高浮空板、静态墙和地图边界负例。
@@ -1461,7 +1461,7 @@ ground_elevation:
 ```bash
 cd /home/pnx/nav_ws/sentry-navigation-RM27
 source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install --packages-select pb2025_nav_bringup
+colcon build --symlink-install --packages-select launch_bringup
 source install/setup.bash
 ```
 
@@ -1469,10 +1469,10 @@ RMUC2026 的 STL/world/PGM 任一改变后，必须重生成并核对高程图�
 
 ```bash
 cd /home/pnx/nav_ws/sentry-navigation-RM27
-python3 src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py
-python3 src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py --check
+python3 src/pnx-launch/launch_bringup/tools/generate_rmuc2026_elevation.py
+python3 src/pnx-launch/launch_bringup/tools/generate_rmuc2026_elevation.py --check
 source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install --packages-select rog_map pb2025_nav_bringup
+colcon build --symlink-install --packages-select rog_map launch_bringup
 ```
 
 生成输出必须仍显示 `support=113792/113794` 和 `z=[0.000, 0.310] m`。数量或范围变化说明场景几何、
@@ -1509,7 +1509,7 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
 核验命令：
 
 ```bash
-MAP_YAML=src/pb2025_nav_bringup/map/reality/highbay.yaml
+MAP_YAML=src/pnx-launch/launch_bringup/map/reality/highbay.yaml
 sed -n '/^ground_elevation:/,$p' "$MAP_YAML"
 ros2 param get /minco_shadow/planner_server \
   MincoPlanner.rog_map.projection.prior_map.require_ground_support
@@ -2014,8 +2014,8 @@ RViz 在 `ROG Map` 分组启用 `Projection Reason`、`Fused Traversability`、`
    且偶发越界才把 `map_timeout` 设为 `P99(snapshot_age)+0.10 s`，并按最大车速制动距离审核。当前仿真
    为 2.20 s、实车 0.50 s，且仍小于 ROG occupied `keep_time=3.00 s`；实车禁止照抄仿真值。
 
-修改位置是 `src/pb2025_nav_bringup/config/simulation/minco_params.yaml` 或
-`src/pb2025_nav_bringup/config/reality/minco_params.yaml`。改完重启并确认
+修改位置是 `src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml` 或
+`src/pnx-launch/launch_bringup/config/reality/minco_params.yaml`。改完重启并确认
 生效值；ROG 参数目前按 configure 阶段读取，不建议用 `ros2 param set` 当成永久调参：
 
 ```bash
@@ -2244,7 +2244,7 @@ controller CSV 不含索引和 ID，`ref_v*` 只是时间推进的旁证。它�
 colcon --log-base log_mpc_ref_debug build --symlink-install \
   --build-base build_mpc_ref_debug \
   --install-base install_mpc_ref_debug \
-  --packages-up-to minco_controller pb2025_nav_bringup rm_27_stimulation \
+  --packages-up-to minco_controller launch_bringup rm_27_stimulation \
   --cmake-args -DCMAKE_BUILD_TYPE=Debug
 source install_mpc_ref_debug/setup.bash
 pgrep -af controller_server
@@ -2253,7 +2253,7 @@ gdb -q -p <controller_server_PID>
 
 ```gdb
 set pagination off
-break /home/pnx/nav_ws/sentry-navigation-RM27/src/navigation/minco_controller/src/minco_mpc_controller.cpp:972
+break /home/pnx/nav_ws/sentry-navigation-RM27/src/pnx-navigation/minco_controller/src/minco_mpc_controller.cpp:972
 commands
   silent
   printf "id=%u same=%d nearest=%.3f spatial_prev=%.3f spatial=%.3f ref_prev=%.3f ref=%.3f lead_s=%.3f elapsed=%.6f\n", current_traj_id, same_opt_traj, nearest_idx_float, tracked_spatial_idx, current_spatial_idx, tracked_ref_idx, current_idx_float, (current_idx_float-current_spatial_idx)*planner_dt, elapsed_since_update
@@ -2416,9 +2416,9 @@ timeout 2 ros2 topic echo /cmd_vel --qos-profile sensor_data
 
 ```bash
 gz sdf -k \
-  src/rm_27_stimulation/world/tunnel_ramp_test/tunnel_ramp_test.world
+  src/pnx-stimulation/rm_27_stimulation/world/tunnel_ramp_test/tunnel_ramp_test.world
 xmllint --noout \
-  src/rm_27_stimulation/world/tunnel_ramp_test/tunnel_ramp_test.world
+  src/pnx-stimulation/rm_27_stimulation/world/tunnel_ramp_test/tunnel_ramp_test.world
 ```
 
 再用下面的静态门同时核对坡面上表面端点、平台上表面和两个 high-elevation patch。
@@ -2432,8 +2432,8 @@ import xml.etree.ElementTree as ET
 
 import yaml
 
-world_path = 'src/rm_27_stimulation/world/tunnel_ramp_test/tunnel_ramp_test.world'
-map_path = 'src/pb2025_nav_bringup/map/simulation/tunnel_ramp_test.yaml'
+world_path = 'src/pnx-stimulation/rm_27_stimulation/world/tunnel_ramp_test/tunnel_ramp_test.world'
+map_path = 'src/pnx-launch/launch_bringup/map/simulation/tunnel_ramp_test.yaml'
 root = ET.parse(world_path).getroot()
 
 def model(name):
@@ -3259,7 +3259,7 @@ command_timeout               0.5 s
 核对 xacro 展开值与单测：
 
 ```bash
-xacro src/rm_27_stimulation/urdf/simulation_waking_robot.xacro \
+xacro src/pnx-stimulation/rm_27_stimulation/urdf/simulation_waking_robot.xacro \
   > /tmp/rm27_sim_robot.urdf
 rg -n 'linear_velocity_(integral_)?gain|max_planar_(integral_)?force|stall_assist|command_timeout' \
   /tmp/rm27_sim_robot.urdf
@@ -3537,7 +3537,7 @@ source /opt/ros/jazzy/setup.bash
 colcon --log-base log_rog_minco_debug build --symlink-install \
   --build-base build_rog_minco_debug \
   --install-base install_rog_minco_debug \
-  --packages-up-to rog_map minco_planner minco_controller pb2025_nav_bringup rm_27_stimulation \
+  --packages-up-to rog_map minco_planner minco_controller launch_bringup rm_27_stimulation \
   --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 source install_rog_minco_debug/setup.bash
 ```
@@ -3584,7 +3584,7 @@ coredumpctl gdb <PID-or-executable>
 colcon --log-base log_rog_minco_asan build --symlink-install \
   --build-base build_rog_minco_asan \
   --install-base install_rog_minco_asan \
-  --packages-up-to rog_map minco_planner minco_controller pb2025_nav_bringup rm_27_stimulation \
+  --packages-up-to rog_map minco_planner minco_controller launch_bringup rm_27_stimulation \
   --cmake-args \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
@@ -3660,7 +3660,7 @@ ros2 service call \
 4. 用相同 `world/map` 重启 `legacy`：
 
 ```bash
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
   world:=highbay slam:=false \
   navigation_mode:=legacy enable_legacy_terrain:=auto use_rviz:=true
 ```
@@ -4116,7 +4116,7 @@ rg -n 'Trajectory safety rejected|occupied_z|support_z|footprint_offset|STALE_SN
 
 ```bash
 cd /home/pnx/nav_ws/sentry-navigation-RM27
-python3 src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py --check
+python3 src/pnx-launch/launch_bringup/tools/generate_rmuc2026_elevation.py --check
 ```
 
 当前应报告 `support=113792/113794 known-free cells` 和 `z=[0.000, 0.310] m`。若检查失败，先重新
@@ -4269,7 +4269,7 @@ source /opt/ros/jazzy/setup.bash
 colcon build --packages-select minco_planner --symlink-install --cmake-args -DBUILD_TESTING=ON
 colcon test --packages-select minco_planner --event-handlers console_direct+
 colcon test-result --verbose --test-result-base build/minco_planner
-python3 src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py --check
+python3 src/pnx-launch/launch_bringup/tools/generate_rmuc2026_elevation.py --check
 ```
 
 本次静态地图连通性检查把自动静态硬净空、当前坡边硬内圈和无支撑闭锁共同投影后，最近任务的
@@ -4366,7 +4366,7 @@ rg -n 'check_horizon|Cold-start velocity rejected|OUT_OF_MAP|velocity_direction_
 cd /home/pnx/nav_ws/sentry-navigation-RM27
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
   slam:=False navigation_mode:=minco world:=highbay3
 ```
 
@@ -4472,7 +4472,7 @@ BLOCK、双向过洞和坡上停车。不要同时提高 MPC 上限、follow sca
 cd /home/pnx/nav_ws/sentry-navigation-RM27
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
   slam:=False navigation_mode:=minco world:=highbay3
 ```
 

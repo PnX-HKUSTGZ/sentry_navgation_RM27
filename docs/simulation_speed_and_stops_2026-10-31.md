@@ -1,6 +1,6 @@
 **仿真倍率与短停复核，2026-10-31**
 
-RMUC2026 的目标实时倍率已从 1 改为 2，`real_time_update_rate` 从 1000 改为 2000；物理积分步长仍为 0.001 s。关闭场景和太阳光源的阴影以减少渲染开销。修改位于 `src/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world`，安装目录使用源文件链接，重启仿真即可生效。
+RMUC2026 的目标实时倍率已从 1 改为 2，`real_time_update_rate` 从 1000 改为 2000；物理积分步长仍为 0.001 s。关闭场景和太阳光源的阴影以减少渲染开销。修改位于 `src/pnx-stimulation/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world`，安装目录使用源文件链接，重启仿真即可生效。
 
 Gazebo GUI、RViz、Point-LIO 与 MINCO 同时运行时，关闭阴影后的三段开放路线全部到达、没有达到统计门限的中途停车，实际倍率约 **1.034**。10 月 30 日同类开放路线约 0.89；这不是实际 2 倍加速，当前负载下目标值与实际值差距仍明显。保留 1 ms 步长，未通过改变物理精度提高数字上的倍率。
 

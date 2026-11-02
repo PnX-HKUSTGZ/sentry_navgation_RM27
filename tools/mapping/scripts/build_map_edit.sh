@@ -39,8 +39,8 @@ if [[ ! -f "$ros_setup" ]]; then
   printf 'ROS setup 文件不存在: %s\n' "$ros_setup" >&2
   exit 1
 fi
-if [[ ! -f "$repo_root/src/map_edit/package.xml" ]]; then
-  printf '找不到 src/map_edit/package.xml；请从完整仓库运行此脚本。\n' >&2
+if [[ ! -f "$repo_root/src/tools/map_edit/package.xml" ]]; then
+  printf '找不到 src/tools/map_edit/package.xml；请从完整仓库运行此脚本。\n' >&2
   exit 1
 fi
 
@@ -62,6 +62,6 @@ colcon \
   --log-base tools/mapping/.build/map_edit/log \
   build \
   --parallel-workers "$parallel_workers" \
-  --base-paths src/map_edit \
+  --base-paths src/tools/map_edit \
   --build-base tools/mapping/.build/map_edit/build \
   --install-base tools/mapping/.build/map_edit/install

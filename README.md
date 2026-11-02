@@ -11,7 +11,7 @@
 
     本项目大幅优化了坐标变换逻辑，考虑雷达原点 `lidar_odom` 与 底盘原点 `odom` 之间的隐式变换。
 
-    Mid360 逻辑坐标系按 `base_link -> left_mid360` 为 `xyz="0.0 0.18 0.28"`、`rpy="0 0 0"` 维护，实车物理 `roll=-45°` 在 Livox driver 层补偿。系统使用 [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) 里程计，[relocalization_manager](./src/relocalization_manager/) 管理重定位并在内部使用 small_gicp 做点云匹配验证，[loam_interface](./src/loam_interface/) 会将 point_lio 输出的 `/cloud_registered` 从 `lidar_odom` 系转换到 `odom` 系，[sensor_scan_generation](./src/sensor_scan_generation/) 将 `odom` 系的点云转换到 `left_mid360` 系，并发布变换 `odom -> chassis`。
+    Mid360 逻辑坐标系按 `base_link -> left_mid360` 为 `xyz="0.0 0.18 0.28"`、`rpy="0 0 0"` 维护，实车物理 `roll=-45°` 在 Livox driver 层补偿。系统使用 [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) 里程计，[relocalization_manager](./src/pnx-localization/relocalization_manager/) 管理重定位并在内部使用 small_gicp 做点云匹配验证，[loam_interface](./src/pnx-localization/loam_interface/) 会将 point_lio 输出的 `/cloud_registered` 从 `lidar_odom` 系转换到 `odom` 系，[sensor_scan_generation](./src/pnx-localization/sensor_scan_generation/) 将 `odom` 系的点云转换到 `left_mid360` 系，并发布变换 `odom -> chassis`。
 
     ![frames_2025_03_26](https://raw.githubusercontent.com/LihanChen2004/picx-images-hosting/master/frames_2025_03_26.67xmq3djvx.webp)
 
@@ -27,29 +27,44 @@
 
     Livox Mid360 位于 `base_link` 左侧 0.18 m、上方 0.28 m。RM27 采用旧工程同款坐标方案：TF 中的 `left_mid360` 是 roll 补偿后的逻辑雷达 frame，实车物理 `roll=-45°` 写在 Livox driver 的 `extrinsic_parameter.roll`，不要再在 TF 里重复 roll。
 
-    注：仿真环境中，Gazebo Mid360 插件先发布 `/livox/lidar`，再由 [ign_sim_pointcloud_tool](./src/ign_sim_pointcloud_tool/) 转为带 `ring/time` 字段的 `/velodyne_points` 供 Point-LIO 使用。
+    注：仿真环境中，Gazebo Mid360 插件先发布 `/livox/lidar`，再由 [ign_sim_pointcloud_tool](./src/pnx-stimulation/ign_sim_pointcloud_tool/) 转为带 `ring/time` 字段的 `/velodyne_points` 供 Point-LIO 使用。
 
 - 文件结构
 
-    ```plaintext
+    ```text
     .
     └── src
-        ├── fake_vel_transform              # 虚拟速度参考坐标系，以应对云台扫描模式自旋，详见子仓库 README
-        ├── ign_sim_pointcloud_tool         # 仿真器点云处理工具
-        ├── livox_ros_driver2               # Livox 驱动
-        ├── loam_interface                  # point_lio 等里程计算法接口
-        ├── pb_teleop_twist_joy             # 手柄控制
-        ├── pb2025_nav_bringup              # 启动文件
-        ├── pb2025_sentry_nav               # 本仓库功能包描述文件
-        ├── pb_omni_pid_pursuit_controller  # 路径跟踪控制器
-        ├── point_lio                       # 里程计
-        ├── pointcloud_to_laserscan         # 将 terrain_map 转换为 laserScan 类型以表示障碍物（仅 SLAM 模式启动）
-        ├── rm_27_stimulation               # RM27 Gazebo Classic 独立仿真包
-        ├── sensor_scan_generation          # 点云相关坐标变换
-        ├── relocalization_manager          # 重定位管理，内部使用 small_gicp 验证并由 manager 发布 map -> odom
-        ├── terrain_analysis                # 距车体 4m 范围内地形分析，将障碍物离地高度写入 PointCloud intensity
-        └── terrain_analysis_ext            # 车体 4m 范围外地形分析，将障碍物离地高度写入 PointCloud intensity
+        ├── livox_ros_driver2
+        ├── pnx-launch
+        │   ├── launch_bringup
+        │   ├── pnx_sentry_nav
+        │   ├── ros_interfaces
+        │   └── sentry_robot_description
+        ├── pnx-localization
+        │   ├── loam_interface
+        │   ├── point_lio
+        │   ├── relocalization_manager
+        │   └── sensor_scan_generation
+        ├── pnx-navigation
+        │   ├── fake_vel_transform
+        │   ├── minco_controller
+        │   ├── minco_planner
+        │   └── pb_omni_pid_pursuit_controller
+        ├── pnx-perception
+        │   ├── pb_nav2_plugins
+        │   ├── pointcloud_to_laserscan
+        │   ├── rog_map
+        │   ├── terrain_analysis
+        │   └── terrain_analysis_ext
+        ├── pnx-stimulation
+        │   ├── ign_sim_pointcloud_tool
+        │   └── rm_27_stimulation
+        └── tools
+            └── map_edit
     ```
+
+ROS 包名与目录名一致：导航启动包为 `launch_bringup`，功能集合包为 `pnx_sentry_nav`。
+移动目录或修改包名后，需要重新生成构建和安装产物，再执行 `source install/setup.bash`。
 
 ## 2. Quick Start
 
@@ -68,7 +83,7 @@
 #### 2.1.2 Create Container
 
 ```bash
-docker run -it --rm --name pb2025_sentry_nav \
+docker run -it --rm --name pnx_sentry_nav \
   --network host \
   -e "DISPLAY=$DISPLAY" \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
@@ -82,7 +97,7 @@ docker run -it --rm --name pb2025_sentry_nav \
 
 - Ubuntu 22.04
 - ROS: [Humble](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html)
-- Gazebo Classic 仿真依赖：本仓库内置 `src/rm_27_stimulation`，当前不依赖 `rmu_gazebo_simulator`。
+- Gazebo Classic 仿真依赖：本仓库内置 `src/pnx-stimulation/rm_27_stimulation`，当前不依赖 `rmu_gazebo_simulator`。
 - Install [small_icp](https://github.com/koide3/small_gicp):
 
     ```bash
@@ -103,7 +118,7 @@ cd ~/ros_ws
 ```
 
 ```bash
-git clone --recursive https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav.git src/pb2025_sentry_nav
+git clone --recursive https://github.com/PnX-HKUSTGZ/sentry_navgation_RM27.git src/sentry-navigation-RM27
 ```
 
 下载先验点云:
@@ -123,7 +138,7 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
 > [!NOTE]
-> 推荐使用 --symlink-install 选项来构建你的工作空间，因为 pb2025_sentry_nav 广泛使用了 launch.py 文件和 YAML 文件。这个构建参数会为那些非编译的源文件使用符号链接，这意味着当你调整参数文件时，不需要反复重建，只需要重新启动即可。
+> 推荐使用 --symlink-install 选项来构建你的工作空间，因为 pnx_sentry_nav 广泛使用了 launch.py 文件和 YAML 文件。这个构建参数会为那些非编译的源文件使用符号链接，这意味着当你调整参数文件时，不需要反复重建，只需要重新启动即可。
 
 ### 2.3 Running
 
@@ -146,7 +161,7 @@ use_rviz:=true
 如果 Gazebo 和机器人已经单独启动，也可以只启动导航：
 
 ```bash
-ros2 launch pb2025_nav_bringup rm_navigation_simulation_launch.py \
+ros2 launch launch_bringup rm_navigation_simulation_launch.py \
 world:=RMUC2026 \
 slam:=False \
 namespace:=
@@ -171,7 +186,7 @@ use_rviz:=true
 建图模式：
 
 ```bash
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
 slam:=True
 ```
 
@@ -182,7 +197,7 @@ slam:=True
 注意修改 `world` 参数为实际地图的名称
 
 ```bash
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
 world:=<YOUR_WORLD_NAME> \
 slam:=False
 ```
@@ -200,13 +215,13 @@ slam:=False
 |-|-|-|-|-|
 | 🤖 🖥️ | `namespace` | 顶级命名空间；当前单机器人仿真保持空值 | string | 仿真: ""; 实车: "" |
 | 🤖🖥️ | `use_sim_time` | 如果为 True，则使用仿真（Gazebo）时钟 | bool | 仿真: True; 实车: False |
-| 🤖 🖥️ | `slam` | 是否启用建图模式。如果为 True，则禁用 small_gicp 并发送静态 tf（map->odom）。然后自动保存 pcd 文件到 [PCD](./src/point_lio/PCD/)| bool | False |
+| 🤖 🖥️ | `slam` | 是否启用建图模式。如果为 True，则禁用 small_gicp 并发送静态 tf（map->odom）。然后自动保存 pcd 文件到 [PCD](./src/pnx-localization/point_lio/PCD/)| bool | False |
 | 🤖 🖥️ | `world` | 在仿真模式，当前优先验证 `RMUC2026`；其他旧 world 需要确认 mesh/map/pcd 是否齐全 | string | 仿真: "RMUC2026" |
 |  |  | 在实车模式，`world` 参数名称与栅格地图和先验点云图的文件名称相同 | string | "" |
-| 🤖 🖥️ | `map` | 要加载的地图文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [RMUC2026.yaml](./src/pb2025_nav_bringup/map/simulation/RMUC2026.yaml); 实车: 自动填充 |
-| 🤖 🖥️ | `prior_pcd_file` | 要加载的先验 pcd 文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [RMUC2026.pcd](./src/pb2025_nav_bringup/pcd/simulation/RMUC2026.pcd); 实车: 自动填充 |
-| 🤖 🖥️ | `params_file` | 用于所有启动节点的 ROS2 参数文件的完整路径 | string | 仿真: [nav2_params.yaml](./src/pb2025_nav_bringup/config/simulation/nav2_params.yaml); 实车: [nav2_params.yaml](./src/pb2025_nav_bringup/config/reality/nav2_params.yaml) |
-| 🤖🖥️ | `rviz_config_file` | 要使用的 RViz 配置文件的完整路径 | string | [nav2_default_view.rviz](./src/pb2025_nav_bringup/rviz/nav2_default_view.rviz) |
+| 🤖 🖥️ | `map` | 要加载的地图文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [RMUC2026.yaml](./src/pnx-launch/launch_bringup/map/simulation/RMUC2026.yaml); 实车: 自动填充 |
+| 🤖 🖥️ | `prior_pcd_file` | 要加载的先验 pcd 文件的完整路径。默认路径自动基于 `world` 参数构建 | string | 仿真: [RMUC2026.pcd](./src/pnx-launch/launch_bringup/pcd/simulation/RMUC2026.pcd); 实车: 自动填充 |
+| 🤖 🖥️ | `params_file` | 用于所有启动节点的 ROS2 参数文件的完整路径 | string | 仿真: [nav2_params.yaml](./src/pnx-launch/launch_bringup/config/simulation/nav2_params.yaml); 实车: [nav2_params.yaml](./src/pnx-launch/launch_bringup/config/reality/nav2_params.yaml) |
+| 🤖🖥️ | `rviz_config_file` | 要使用的 RViz 配置文件的完整路径 | string | [nav2_default_view.rviz](./src/pnx-launch/launch_bringup/rviz/nav2_default_view.rviz) |
 | 🤖 🖥️ | `autostart` | 自动启动 nav2 栈 | bool | True |
 | 🤖 🖥️ | `use_composition` | 是否使用 Composable Node 形式启动 | bool | False |
 | 🤖 🖥️ | `use_respawn` | 如果节点崩溃，是否重新启动。本参数仅 `use_composition:=False` 时有效 | bool | False |
@@ -215,9 +230,3 @@ slam:=False
 
 > [!TIP]
 > 关于本项目更多细节与实车部署指南，请前往 [Wiki](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav/wiki)
-
-### 2.5 手柄控制
-
-默认情况下，PS4 手柄控制已开启。键位映射关系详见 [nav2_params.yaml](./src/pb2025_nav_bringup/config/simulation/nav2_params.yaml) 中的 `teleop_twist_joy_node` 部分。
-
-![teleop_twist_joy.gif](https://raw.githubusercontent.com/LihanChen2004/picx-images-hosting/master/teleop_twist_joy.5j4aav3v3p.gif)

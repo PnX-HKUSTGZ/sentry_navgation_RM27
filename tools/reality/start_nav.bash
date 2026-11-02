@@ -11,7 +11,7 @@ pkill -KILL -u "$USER" -f -- "$NAV_PROC_RE" || true
 
 ros2 daemon stop 2>/dev/null || true
 
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
   slam:=False \
   navigation_mode:=minco \
   world:=highbay2

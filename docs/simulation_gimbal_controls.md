@@ -1,6 +1,6 @@
 # 仿真云台与立头控制
 
-适用模型：`src/rm_27_stimulation/urdf/simulation_waking_robot.xacro`。
+适用模型：`src/pnx-stimulation/rm_27_stimulation/urdf/simulation_waking_robot.xacro`。
 默认使用 `meshes/rm27_sentry_visual` 中的拆分 CAD 网格。实车不启动这些控制节点。
 
 ## 启动与操作
@@ -41,7 +41,7 @@ ros2 service call /sim/gimbal/set_upright std_srvs/srv/SetBool '{data: false}'
 
 ## 速度参数
 
-修改 `src/rm_27_stimulation/config/gimbal_control.yaml`，重启仿真生效。
+修改 `src/pnx-stimulation/rm_27_stimulation/config/gimbal_control.yaml`，重启仿真生效。
 
 | 参数 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -77,7 +77,7 @@ MID360 与 IMU 只随大 yaw 运动。模拟碰撞体随关节运动，倒头最
 `meshes/rm27_sentry_visual/articulated_metadata.json`，可用以下命令重新生成网格：
 
 ```bash
-python3 src/rm_27_stimulation/tools/import_articulated_sentry.py 饼922.zip
+python3 src/pnx-stimulation/rm_27_stimulation/tools/import_articulated_sentry.py 饼922.zip
 ```
 
 原包与旧 `哨922stl.zip` 的装配坐标不同。大 yaw 按原包校正，roll 轴心取其
@@ -104,7 +104,7 @@ ROG 的地面参考和自过滤通过同一采样时刻的关节变换得到，�
 自过滤。集成检查脚本只控制仿真云台，不发布底盘速度：
 
 ```bash
-python3 src/rm_27_stimulation/tools/check_gimbal_simulation.py
+python3 src/pnx-stimulation/rm_27_stimulation/tools/check_gimbal_simulation.py
 ```
 
 已在隔离的 Gazebo 测试场景中验证两次立头/旋转/回正/倒头序列、雷达安装位姿与

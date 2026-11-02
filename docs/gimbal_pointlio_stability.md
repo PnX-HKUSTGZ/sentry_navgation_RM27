@@ -41,7 +41,7 @@ IMU 当前为理想模型，未额外加入随机偏置、温漂或振动噪声�
 ```bash
 source /opt/ros/jazzy/setup.bash
 colcon build --base-paths src --packages-select \
-  rm_27_stimulation ign_sim_pointcloud_tool pb2025_nav_bringup --symlink-install
+  rm_27_stimulation ign_sim_pointcloud_tool launch_bringup --symlink-install
 source install/setup.bash
 ```
 

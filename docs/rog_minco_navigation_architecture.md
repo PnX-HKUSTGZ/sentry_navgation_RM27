@@ -313,7 +313,7 @@ active 模式中：
 > 实车 active MINCO 的 MPC、fake-vel 和 legacy 控制器都订阅 `loam_interface` 生成的
 > `/lidar_odometry`；MincoPlanner/ROG 直接订阅 `/aft_mapped_to_init`。实车 `/odometry` 是旧版
 > sensor-scan 兼容链路的历史名称，不能作为当前 active MINCO 的输入前提；现场调试
-> 应以 `src/pb2025_nav_bringup/config/reality/minco_params.yaml` 和
+> 应以 `src/pnx-launch/launch_bringup/config/reality/minco_params.yaml` 和
 > `config/reality/nav2_params.yaml` 为准。
 
 所有当前 MINCO profile 都是 `planner_mode: PRIORMAP`。`FrameAwareRogQuery` 在规划时把
@@ -1476,10 +1476,10 @@ planner 以 `COSTMAP_LETHAL` / `INSUFFICIENT_CLEARANCE` fail-closed。该结果�
 RMUC2026 使用以下四个相互绑定的资源：
 
 ~~~text
-src/pb2025_nav_bringup/map/simulation/RMUC2026.pgm
-src/pb2025_nav_bringup/map/simulation/RMUC2026_elevation.pgm
-src/rm_27_stimulation/meshes/RMUC2026_world/meshes/RMUC2026.stl
-src/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world
+src/pnx-launch/launch_bringup/map/simulation/RMUC2026.pgm
+src/pnx-launch/launch_bringup/map/simulation/RMUC2026_elevation.pgm
+src/pnx-stimulation/rm_27_stimulation/meshes/RMUC2026_world/meshes/RMUC2026.stl
+src/pnx-stimulation/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world
 ~~~
 
 高程图为 `583 x 300`、5 cm 分辨率的 16 位 PGM，与二维占据图逐像素对齐。生成器从 world 读取
@@ -1498,8 +1498,8 @@ src/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world
 
 ```bash
 cd /home/pnx/nav_ws/sentry-navigation-RM27
-python3 src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py
-python3 src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py --check
+python3 src/pnx-launch/launch_bringup/tools/generate_rmuc2026_elevation.py
+python3 src/pnx-launch/launch_bringup/tools/generate_rmuc2026_elevation.py --check
 ```
 
 ### 12.2 当前洞口资源
@@ -1507,12 +1507,12 @@ python3 src/pb2025_nav_bringup/tools/generate_rmuc2026_elevation.py --check
 当前工作树包含：
 
 ~~~text
-src/rm_27_stimulation/world/tunnel_ramp_test/tunnel_ramp_test.world
-src/pb2025_nav_bringup/map/simulation/tunnel_ramp_test.yaml
-src/pb2025_nav_bringup/map/simulation/tunnel_ramp_test.pgm
+src/pnx-stimulation/rm_27_stimulation/world/tunnel_ramp_test/tunnel_ramp_test.world
+src/pnx-launch/launch_bringup/map/simulation/tunnel_ramp_test.yaml
+src/pnx-launch/launch_bringup/map/simulation/tunnel_ramp_test.pgm
 ~~~
 
-`src/rm_27_stimulation/config/worlds.yaml` 将 `tunnel_ramp_test` 映射到同名 nav map，
+`src/pnx-stimulation/rm_27_stimulation/config/worlds.yaml` 将 `tunnel_ramp_test` 映射到同名 nav map，
 `spawn_poses.yaml` 提供该 world 的出生位姿。
 
 同名 map YAML 还包含与 world 几何一致的 `ground_elevation`：水平地面为 `0.0 m`，短坡使用
@@ -1527,7 +1527,7 @@ src/pb2025_nav_bringup/map/simulation/tunnel_ramp_test.pgm
 当前工作树**没有**：
 
 ~~~text
-src/pb2025_nav_bringup/pcd/simulation/tunnel_ramp_test.pcd
+src/pnx-launch/launch_bringup/pcd/simulation/tunnel_ramp_test.pcd
 ~~~
 
 因此洞口场景应先使用 `use_ground_truth_odom:=true`。当
@@ -1536,7 +1536,7 @@ src/pb2025_nav_bringup/pcd/simulation/tunnel_ramp_test.pcd
 
 顶层 `rm_27_stimulation/sim_with_nav.launch.py` 当前没有透传自定义 `prior_pcd_file`。后续测试
 Point-LIO 版本时，需要先制作与 world/map 对齐的 PCD，并通过
-`pb2025_nav_bringup/rm_navigation_simulation_launch.py` 的入口提供绝对路径，同时标定
+`launch_bringup/rm_navigation_simulation_launch.py` 的入口提供绝对路径，同时标定
 `relocalization_manager.init_pose` 和必要的 `prior_pcd_transform`。“PCD 文件存在”不代表坐标
 已经对齐。
 
@@ -1570,84 +1570,84 @@ hash 位图和 touched-ID 列表合并 miss，保持“每帧每体素一次 mis
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/pb2025_nav_bringup/launch/navigation_launch.py` | 两模式解析、单文件参数选择、仿真 Point-LIO 输入切换与 terrain 开关 |
-| `src/pb2025_nav_bringup/launch/bringup_launch.py` | localization/navigation 组合及 SLAM 模式约束 |
-| `src/pb2025_nav_bringup/launch/rm_navigation_reality_launch.py` | 实车入口、map/PCD/模式参数 |
-| `src/pb2025_nav_bringup/launch/rm_navigation_simulation_launch.py` | 仿真定位选择、PCD 前置检查、真值 localizer |
-| `src/pb2025_nav_bringup/config/reality/nav2_params.yaml` | 实车 legacy 基线 |
-| `src/pb2025_nav_bringup/config/simulation/nav2_params.yaml` | 仿真 legacy 基线 |
-| `src/pb2025_nav_bringup/config/reality/minco_params.yaml` | 实车完整 MINCO/ROG/MPC 参数 |
-| `src/pb2025_nav_bringup/config/simulation/minco_params.yaml` | 仿真完整 MINCO 参数及 Point-LIO 输入选项 |
-| `src/pb2025_nav_bringup/behavior_trees/navigate_to_pose_w_minco_replanning.xml` | active 单目标 BT，固定 planner/controller ID |
-| `src/pb2025_nav_bringup/behavior_trees/navigate_through_poses_w_minco_replanning.xml` | active 多目标防御性 fail-closed BT；当前 navigator 未加载 |
-| `src/pb2025_nav_bringup/test/test_navigation_launch.py` | 两模式/单文件 launch 测试 |
+| `src/pnx-launch/launch_bringup/launch/navigation_launch.py` | 两模式解析、单文件参数选择、仿真 Point-LIO 输入切换与 terrain 开关 |
+| `src/pnx-launch/launch_bringup/launch/bringup_launch.py` | localization/navigation 组合及 SLAM 模式约束 |
+| `src/pnx-launch/launch_bringup/launch/rm_navigation_reality_launch.py` | 实车入口、map/PCD/模式参数 |
+| `src/pnx-launch/launch_bringup/launch/rm_navigation_simulation_launch.py` | 仿真定位选择、PCD 前置检查、真值 localizer |
+| `src/pnx-launch/launch_bringup/config/reality/nav2_params.yaml` | 实车 legacy 基线 |
+| `src/pnx-launch/launch_bringup/config/simulation/nav2_params.yaml` | 仿真 legacy 基线 |
+| `src/pnx-launch/launch_bringup/config/reality/minco_params.yaml` | 实车完整 MINCO/ROG/MPC 参数 |
+| `src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml` | 仿真完整 MINCO 参数及 Point-LIO 输入选项 |
+| `src/pnx-launch/launch_bringup/behavior_trees/navigate_to_pose_w_minco_replanning.xml` | active 单目标 BT，固定 planner/controller ID |
+| `src/pnx-launch/launch_bringup/behavior_trees/navigate_through_poses_w_minco_replanning.xml` | active 多目标防御性 fail-closed BT；当前 navigator 未加载 |
+| `src/pnx-launch/launch_bringup/test/test_navigation_launch.py` | 两模式/单文件 launch 测试 |
 
 ### 13.2 ROG-map
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/perception/rog_map/include/rog_map/rog_map_core/config.hpp` | ROG 参数模型与校验 |
-| `src/perception/rog_map/include/rog_map_ros/rog_map_ros2.hpp` | ROS2 订阅、时间/frame 门、prior TF、可视化装配 |
-| `src/perception/rog_map/include/rog_map_ros/latest_value_mailbox.hpp` | 多线程下原子交付最新点云、位姿和合并帧数 |
-| `src/perception/rog_map/include/rog_map_ros/cloud_registered_crop_filter.hpp` | 自回波过滤接口 |
-| `src/perception/rog_map/src/rog_map_ros/cloud_registered_crop_filter.cpp` | `transform_cloud` 点变换、Z 截断与旋转车体自滤实现 |
-| `src/perception/rog_map/include/rog_map/projection_layer.hpp` | 柱统计、cell type/reason 和投影接口 |
-| `src/perception/rog_map/src/rog_map/projection_layer.cpp` | 净空、支撑高度门、兼容 seed/BFS/多格 bounded bridge 与代码级 fail-closed |
-| `src/perception/rog_map/include/rog_map/prior_map.hpp` | 二维 prior、高程 patch、frame transform、cache 与融合接口 |
-| `src/perception/rog_map/src/rog_map/prior_map.cpp` | trinary YAML/PGM、高程解析、3 x 3 保守采样、支撑 cache 与三态融合 |
-| `src/perception/rog_map/include/rog_map/field_layer.hpp` | 2D field 接口 |
-| `src/perception/rog_map/src/rog_map/field_layer.cpp` | 正/负 EDT、距离和梯度 |
-| `src/perception/rog_map/include/rog_map/map_query_interface.hpp` | 单点与 batch query、projected cost 和 snapshot 元数据合同 |
-| `src/perception/rog_map/include/rog_map/query_adapter.hpp` | 不可变 snapshot query 接口 |
-| `src/perception/rog_map/src/rog_map/query_adapter.cpp` | 单快照 batch、projected cost、cell-center 坐标和边界插值 |
-| `src/perception/rog_map/src/rog_map/rog_map.cpp` | occupancy、投影、prior、field 的总装 |
-| `src/perception/rog_map/src/rog_map/rog_map_visualizer.cpp` | `/rog_map/...` publisher 创建 |
-| `src/perception/rog_map/test/test_latest_value_mailbox.cpp` | 最新点云/位姿/合并帧计数的原子交付与并发测试 |
-| `src/perception/rog_map/test/test_projection_clearance.cpp` | 净空、支撑/浮板/坑/坡、legacy bridge、prior TF/cache/fusion 回归测试 |
+| `src/pnx-perception/rog_map/include/rog_map/rog_map_core/config.hpp` | ROG 参数模型与校验 |
+| `src/pnx-perception/rog_map/include/rog_map_ros/rog_map_ros2.hpp` | ROS2 订阅、时间/frame 门、prior TF、可视化装配 |
+| `src/pnx-perception/rog_map/include/rog_map_ros/latest_value_mailbox.hpp` | 多线程下原子交付最新点云、位姿和合并帧数 |
+| `src/pnx-perception/rog_map/include/rog_map_ros/cloud_registered_crop_filter.hpp` | 自回波过滤接口 |
+| `src/pnx-perception/rog_map/src/rog_map_ros/cloud_registered_crop_filter.cpp` | `transform_cloud` 点变换、Z 截断与旋转车体自滤实现 |
+| `src/pnx-perception/rog_map/include/rog_map/projection_layer.hpp` | 柱统计、cell type/reason 和投影接口 |
+| `src/pnx-perception/rog_map/src/rog_map/projection_layer.cpp` | 净空、支撑高度门、兼容 seed/BFS/多格 bounded bridge 与代码级 fail-closed |
+| `src/pnx-perception/rog_map/include/rog_map/prior_map.hpp` | 二维 prior、高程 patch、frame transform、cache 与融合接口 |
+| `src/pnx-perception/rog_map/src/rog_map/prior_map.cpp` | trinary YAML/PGM、高程解析、3 x 3 保守采样、支撑 cache 与三态融合 |
+| `src/pnx-perception/rog_map/include/rog_map/field_layer.hpp` | 2D field 接口 |
+| `src/pnx-perception/rog_map/src/rog_map/field_layer.cpp` | 正/负 EDT、距离和梯度 |
+| `src/pnx-perception/rog_map/include/rog_map/map_query_interface.hpp` | 单点与 batch query、projected cost 和 snapshot 元数据合同 |
+| `src/pnx-perception/rog_map/include/rog_map/query_adapter.hpp` | 不可变 snapshot query 接口 |
+| `src/pnx-perception/rog_map/src/rog_map/query_adapter.cpp` | 单快照 batch、projected cost、cell-center 坐标和边界插值 |
+| `src/pnx-perception/rog_map/src/rog_map/rog_map.cpp` | occupancy、投影、prior、field 的总装 |
+| `src/pnx-perception/rog_map/src/rog_map/rog_map_visualizer.cpp` | `/rog_map/...` publisher 创建 |
+| `src/pnx-perception/rog_map/test/test_latest_value_mailbox.cpp` | 最新点云/位姿/合并帧计数的原子交付与并发测试 |
+| `src/pnx-perception/rog_map/test/test_projection_clearance.cpp` | 净空、支撑/浮板/坑/坡、legacy bridge、prior TF/cache/fusion 回归测试 |
 
 ### 13.3 MINCO planner
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/navigation/minco_planner/src/minco_core/minco_planner.cpp` | Nav2 plugin、ROG 内嵌、session、异步规划、物理 base pose 选择、yaw 与安全门 |
-| `src/navigation/minco_planner/src/minco_core/minco_fsm.cpp` | 20 Hz 搜索/重规划状态机 |
-| `src/navigation/minco_planner/include/minco_core/components/planning_request_contract.hpp` | 同目标判定、非零单调 planning token |
-| `src/navigation/minco_planner/src/minco_core/components/planner_mode_context.cpp` | PRIORMAP/EXPLORATION query 角色 |
-| `src/navigation/minco_planner/src/minco_core/components/map_query_adapters.cpp` | Nav2 costmap snapshot、单 TF 的 map/ROG batch query |
-| `src/navigation/minco_planner/src/minco_core/components/global_path_searcher.cpp` | 全局 SMAC/A* |
-| `src/navigation/minco_planner/src/minco_core/components/local_path_processor.cpp` | ROG 边界裁剪、lookahead 和稀疏化 |
-| `src/navigation/minco_planner/src/traj_opt/minco_optimizer.cpp` | L-BFGS、连续动力学检查与时间重分配 |
-| `src/navigation/minco_planner/src/utils/piece.cpp` | 分段多项式连续极值 |
-| `src/navigation/minco_planner/src/traj_opt/yaw_traj_opt.cpp` | yaw waypoint、显式起终端约束与多项式 trajectory |
-| `src/navigation/minco_planner/test/yaw_traj_opt_test.cpp` | 全向底盘显式 goal yaw 不被 position tangent 覆盖的测试 |
-| `src/navigation/minco_planner/src/minco_core/components/trajectory_safety_checker.cpp` | coherent footprint batch、freshness、空间 pickup、swept join 与旋转矩形检查 |
-| `src/navigation/minco_planner/test/map_query_adapters_test.cpp` | query/frame/snapshot 合同 |
-| `src/navigation/minco_planner/test/minco_optimizer_dynamics_test.cpp` | 连续峰值和重定时 |
-| `src/navigation/minco_planner/test/planning_session_state_test.cpp` | generation/lifecycle |
-| `src/navigation/minco_planner/test/planning_request_contract_test.cpp` | 同目标复用和 token 单调性测试 |
-| `src/navigation/minco_planner/test/planning_request_lease_test.cpp` | active 请求心跳租约和过期 fail-closed 测试 |
-| `src/navigation/minco_planner/test/smac_global_search_policy_test.cpp` | 全局搜索策略及失败边界测试 |
-| `src/navigation/minco_planner/test/trajectory_safety_checker_test.cpp` | footprint/freshness/fail-closed |
-| `src/navigation/minco_planner/src/minco_core/minco_fsm.cpp` | 20 Hz 状态检查、当前 profile 约 2 Hz 成功滚动重规划，以及最多 4 Hz 的失败生成限频，避免阻塞时重复搜索挤占 ROG 回调 |
+| `src/pnx-navigation/minco_planner/src/minco_core/minco_planner.cpp` | Nav2 plugin、ROG 内嵌、session、异步规划、物理 base pose 选择、yaw 与安全门 |
+| `src/pnx-navigation/minco_planner/src/minco_core/minco_fsm.cpp` | 20 Hz 搜索/重规划状态机 |
+| `src/pnx-navigation/minco_planner/include/minco_core/components/planning_request_contract.hpp` | 同目标判定、非零单调 planning token |
+| `src/pnx-navigation/minco_planner/src/minco_core/components/planner_mode_context.cpp` | PRIORMAP/EXPLORATION query 角色 |
+| `src/pnx-navigation/minco_planner/src/minco_core/components/map_query_adapters.cpp` | Nav2 costmap snapshot、单 TF 的 map/ROG batch query |
+| `src/pnx-navigation/minco_planner/src/minco_core/components/global_path_searcher.cpp` | 全局 SMAC/A* |
+| `src/pnx-navigation/minco_planner/src/minco_core/components/local_path_processor.cpp` | ROG 边界裁剪、lookahead 和稀疏化 |
+| `src/pnx-navigation/minco_planner/src/traj_opt/minco_optimizer.cpp` | L-BFGS、连续动力学检查与时间重分配 |
+| `src/pnx-navigation/minco_planner/src/utils/piece.cpp` | 分段多项式连续极值 |
+| `src/pnx-navigation/minco_planner/src/traj_opt/yaw_traj_opt.cpp` | yaw waypoint、显式起终端约束与多项式 trajectory |
+| `src/pnx-navigation/minco_planner/test/yaw_traj_opt_test.cpp` | 全向底盘显式 goal yaw 不被 position tangent 覆盖的测试 |
+| `src/pnx-navigation/minco_planner/src/minco_core/components/trajectory_safety_checker.cpp` | coherent footprint batch、freshness、空间 pickup、swept join 与旋转矩形检查 |
+| `src/pnx-navigation/minco_planner/test/map_query_adapters_test.cpp` | query/frame/snapshot 合同 |
+| `src/pnx-navigation/minco_planner/test/minco_optimizer_dynamics_test.cpp` | 连续峰值和重定时 |
+| `src/pnx-navigation/minco_planner/test/planning_session_state_test.cpp` | generation/lifecycle |
+| `src/pnx-navigation/minco_planner/test/planning_request_contract_test.cpp` | 同目标复用和 token 单调性测试 |
+| `src/pnx-navigation/minco_planner/test/planning_request_lease_test.cpp` | active 请求心跳租约和过期 fail-closed 测试 |
+| `src/pnx-navigation/minco_planner/test/smac_global_search_policy_test.cpp` | 全局搜索策略及失败边界测试 |
+| `src/pnx-navigation/minco_planner/test/trajectory_safety_checker_test.cpp` | footprint/freshness/fail-closed |
+| `src/pnx-navigation/minco_planner/src/minco_core/minco_fsm.cpp` | 20 Hz 状态检查、当前 profile 约 2 Hz 成功滚动重规划，以及最多 4 Hz 的失败生成限频，避免阻塞时重复搜索挤占 ROG 回调 |
 
 ### 13.4 MPC、消息和速度 bridge
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/navigation/minco_controller/src/minco_mpc_controller.cpp` | Nav2 controller plugin、frame 统一、输入门和零速策略 |
-| `src/navigation/minco_controller/include/minco_controller/reference_progress.hpp` | 新轨迹空间 pickup、同轨迹单调且受空间领先上限约束的时间推进合同 |
-| `src/navigation/minco_controller/src/mpc_solver.cpp` | QP 模型与求解 |
-| `src/navigation/minco_controller/src/input_validation.cpp` | trajectory/odom/stamp 数值校验 |
-| `src/navigation/minco_controller/include/minco_controller/trajectory_session_gate.hpp` | Path/trajectory token 授权、pending 与旧会话拒绝 |
-| `src/navigation/minco_controller/test/test_mpc_solver.cpp` | MPC 约束与求解测试 |
-| `src/navigation/minco_controller/test/test_input_validation.cpp` | 非有限值和时间戳测试 |
-| `src/navigation/minco_controller/test/test_reference_progress.cpp` | 空间/时间 reference 进度与非法输入测试 |
-| `src/navigation/minco_controller/test/test_trajectory_session_gate.cpp` | 旧 trajectory 隔离测试 |
-| `src/ros_interfaces/msg/MpcPositionCommand.msg` | `planning_stamp`、NORMAL/BLOCK 和离散轨迹命令 |
-| `src/ros_interfaces/msg/PositionCommand.msg` | position/velocity/acceleration/jerk/yaw 样本 |
-| `src/fake_vel_transform/src/fake_vel_transform.cpp` | world-aligned 命令到底盘系、odom watchdog |
-| `src/fake_vel_transform/include/fake_vel_transform/odom_validation.hpp` | odometry/stamp 校验 |
-| `src/fake_vel_transform/test/test_fake_vel_transform.cpp` | latest-odom 模式和 fail-closed 测试 |
+| `src/pnx-navigation/minco_controller/src/minco_mpc_controller.cpp` | Nav2 controller plugin、frame 统一、输入门和零速策略 |
+| `src/pnx-navigation/minco_controller/include/minco_controller/reference_progress.hpp` | 新轨迹空间 pickup、同轨迹单调且受空间领先上限约束的时间推进合同 |
+| `src/pnx-navigation/minco_controller/src/mpc_solver.cpp` | QP 模型与求解 |
+| `src/pnx-navigation/minco_controller/src/input_validation.cpp` | trajectory/odom/stamp 数值校验 |
+| `src/pnx-navigation/minco_controller/include/minco_controller/trajectory_session_gate.hpp` | Path/trajectory token 授权、pending 与旧会话拒绝 |
+| `src/pnx-navigation/minco_controller/test/test_mpc_solver.cpp` | MPC 约束与求解测试 |
+| `src/pnx-navigation/minco_controller/test/test_input_validation.cpp` | 非有限值和时间戳测试 |
+| `src/pnx-navigation/minco_controller/test/test_reference_progress.cpp` | 空间/时间 reference 进度与非法输入测试 |
+| `src/pnx-navigation/minco_controller/test/test_trajectory_session_gate.cpp` | 旧 trajectory 隔离测试 |
+| `src/pnx-launch/ros_interfaces/msg/MpcPositionCommand.msg` | `planning_stamp`、NORMAL/BLOCK 和离散轨迹命令 |
+| `src/pnx-launch/ros_interfaces/msg/PositionCommand.msg` | position/velocity/acceleration/jerk/yaw 样本 |
+| `src/pnx-navigation/fake_vel_transform/src/fake_vel_transform.cpp` | world-aligned 命令到底盘系、odom watchdog |
+| `src/pnx-navigation/fake_vel_transform/include/fake_vel_transform/odom_validation.hpp` | odometry/stamp 校验 |
+| `src/pnx-navigation/fake_vel_transform/test/test_fake_vel_transform.cpp` | latest-odom 模式和 fail-closed 测试 |
 
 ### 13.5 定位、旧感知与仿真
 
@@ -1655,35 +1655,35 @@ hash 位图和 touched-ID 列表合并 miss，保持“每帧每体素一次 mis
 | --- | --- |
 | `src/pnx-localization/point_lio/src/laserMapping.cpp` | `/cloud_registered_full`、`/aft_mapped_to_init` 和 twist 合同 |
 | `src/pnx-localization/loam_interface/src/pnx-localization/loam_interface.cpp` | Point-LIO 输出整理为 registered scan/lidar odom |
-| `src/sensor_scan_generation/src/sensor_scan_generation.cpp` | 底盘 `/odometry`、`/sensor_scan` 和 TF |
-| `src/sensor_scan_generation/include/sensor_scan_generation/twist_estimator.hpp` | child-frame twist 估计 |
-| `src/sensor_scan_generation/include/sensor_scan_generation/transform_sample_gate.hpp` | 必需 TF 任一失败时整组样本 fail-closed，恢复后 twist 冷启动 |
-| `src/sensor_scan_generation/test/test_twist_estimator.cpp` | child-frame 有限差分 twist 测试 |
-| `src/sensor_scan_generation/test/test_transform_sample_gate.cpp` | 双 TF 原子发布门、单边失败和恢复冷启动测试 |
+| `src/pnx-localization/sensor_scan_generation/src/sensor_scan_generation.cpp` | 底盘 `/odometry`、`/sensor_scan` 和 TF |
+| `src/pnx-localization/sensor_scan_generation/include/sensor_scan_generation/twist_estimator.hpp` | child-frame twist 估计 |
+| `src/pnx-localization/sensor_scan_generation/include/sensor_scan_generation/transform_sample_gate.hpp` | 必需 TF 任一失败时整组样本 fail-closed，恢复后 twist 冷启动 |
+| `src/pnx-localization/sensor_scan_generation/test/test_twist_estimator.cpp` | child-frame 有限差分 twist 测试 |
+| `src/pnx-localization/sensor_scan_generation/test/test_transform_sample_gate.cpp` | 双 TF 原子发布门、单边失败和恢复冷启动测试 |
 | `src/pnx-localization/relocalization_manager/src/pnx-localization/relocalization_manager.cpp` | prior PCD 重定位和 `map -> odom` |
-| `src/terrain_analysis/src/terrainAnalysis.cpp` | legacy local terrain |
-| `src/terrain_analysis_ext/src/terrainAnalysisExt.cpp` | legacy global/extended terrain |
-| `src/pb_nav2_plugins/src/layers/intensity_voxel_layer.cpp` | legacy terrain 到 costmap |
-| `src/rm_27_stimulation/src/ground_truth_localizer.cpp` | 真值状态缓存、organized no-return 重建；按 scan stamp 插值并成对发布 lidar odom/registered scan |
-| `src/rm_27_stimulation/include/rm_27_stimulation/ground_truth_state_buffer.hpp` | 有序 GT 缓存、严格时间包围、插值间隔和 steady timeout 合同 |
-| `src/rm_27_stimulation/include/rm_27_stimulation/twist_transform.hpp` | `R(v + omega x p)` 与六维 covariance Jacobian |
-| `src/rm_27_stimulation/test/test_ground_truth_twist_transform.cpp` | 杆臂、安装旋转、covariance、GT 有序缓存/插值与 steady timeout 单测（可执行名同文件主名） |
-| `src/rm_27_stimulation/include/rm_27_stimulation/organized_lidar_miss_rays.hpp` | Gazebo organized any-inf miss-ray 的强校验与有限端点重建 |
-| `src/rm_27_stimulation/test/test_organized_lidar_miss_rays.cpp` | layout/ring/Inf/NaN、range 和仅 miss stride 合同测试 |
-| `src/rm_27_stimulation/src/cmd_vel_pose_control_system.cpp` | Gazebo 平面 PI 速度力伺服、yaw 力矩、命令 timeout 与非有限输入保护 |
-| `src/rm_27_stimulation/include/rm_27_stimulation/planar_velocity_pi.hpp` | 矢量积分限幅和总力饱和 anti-windup |
-| `src/rm_27_stimulation/test/test_planar_velocity_pi.cpp` | P 兼容、积分限幅、anti-windup、复位和非法输入测试 |
-| `src/rm_27_stimulation/include/rm_27_stimulation/stiction_assist.hpp` | 非零命令下的延时、渐增、速度释放和换向复位停滞辅助 |
-| `src/rm_27_stimulation/test/test_stiction_assist.cpp` | 启用延时、斜坡、上限、释放、换向和非法输入测试 |
-| `src/rm_27_stimulation/urdf/mid360.xacro` | 360 x 96 gpu_lidar 模型 |
-| `src/rm_27_stimulation/urdf/simulation_waking_robot.xacro` | 仿真车体、全向球形接触、驱动插件、短坡 PI 与停滞辅助参数 |
-| `src/rm_27_stimulation/launch/sim_with_nav.launch.py` | Gazebo 与导航总入口 |
-| `src/rm_27_stimulation/config/worlds.yaml` | world 到 nav map 映射 |
-| `src/rm_27_stimulation/config/spawn_poses.yaml` | 仿真出生位姿 |
-| `src/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world` | RMUC2026 DART 动力学与 Bullet collision detector 配置 |
-| `src/rm_27_stimulation/world/tunnel_ramp_test/` | 洞口短坡 world |
-| `src/pb2025_nav_bringup/map/` | Nav2/ROG 共用二维 YAML/PGM |
-| `src/pb2025_nav_bringup/pcd/` | Point-LIO 重定位先验；与二维 map 不是同一资源 |
+| `src/pnx-perception/terrain_analysis/src/terrainAnalysis.cpp` | legacy local terrain |
+| `src/pnx-perception/terrain_analysis_ext/src/terrainAnalysisExt.cpp` | legacy global/extended terrain |
+| `src/pnx-perception/pb_nav2_plugins/src/layers/intensity_voxel_layer.cpp` | legacy terrain 到 costmap |
+| `src/pnx-stimulation/rm_27_stimulation/src/ground_truth_localizer.cpp` | 真值状态缓存、organized no-return 重建；按 scan stamp 插值并成对发布 lidar odom/registered scan |
+| `src/pnx-stimulation/rm_27_stimulation/include/rm_27_stimulation/ground_truth_state_buffer.hpp` | 有序 GT 缓存、严格时间包围、插值间隔和 steady timeout 合同 |
+| `src/pnx-stimulation/rm_27_stimulation/include/rm_27_stimulation/twist_transform.hpp` | `R(v + omega x p)` 与六维 covariance Jacobian |
+| `src/pnx-stimulation/rm_27_stimulation/test/test_ground_truth_twist_transform.cpp` | 杆臂、安装旋转、covariance、GT 有序缓存/插值与 steady timeout 单测（可执行名同文件主名） |
+| `src/pnx-stimulation/rm_27_stimulation/include/rm_27_stimulation/organized_lidar_miss_rays.hpp` | Gazebo organized any-inf miss-ray 的强校验与有限端点重建 |
+| `src/pnx-stimulation/rm_27_stimulation/test/test_organized_lidar_miss_rays.cpp` | layout/ring/Inf/NaN、range 和仅 miss stride 合同测试 |
+| `src/pnx-stimulation/rm_27_stimulation/src/cmd_vel_pose_control_system.cpp` | Gazebo 平面 PI 速度力伺服、yaw 力矩、命令 timeout 与非有限输入保护 |
+| `src/pnx-stimulation/rm_27_stimulation/include/rm_27_stimulation/planar_velocity_pi.hpp` | 矢量积分限幅和总力饱和 anti-windup |
+| `src/pnx-stimulation/rm_27_stimulation/test/test_planar_velocity_pi.cpp` | P 兼容、积分限幅、anti-windup、复位和非法输入测试 |
+| `src/pnx-stimulation/rm_27_stimulation/include/rm_27_stimulation/stiction_assist.hpp` | 非零命令下的延时、渐增、速度释放和换向复位停滞辅助 |
+| `src/pnx-stimulation/rm_27_stimulation/test/test_stiction_assist.cpp` | 启用延时、斜坡、上限、释放、换向和非法输入测试 |
+| `src/pnx-stimulation/rm_27_stimulation/urdf/mid360.xacro` | 360 x 96 gpu_lidar 模型 |
+| `src/pnx-stimulation/rm_27_stimulation/urdf/simulation_waking_robot.xacro` | 仿真车体、全向球形接触、驱动插件、短坡 PI 与停滞辅助参数 |
+| `src/pnx-stimulation/rm_27_stimulation/launch/sim_with_nav.launch.py` | Gazebo 与导航总入口 |
+| `src/pnx-stimulation/rm_27_stimulation/config/worlds.yaml` | world 到 nav map 映射 |
+| `src/pnx-stimulation/rm_27_stimulation/config/spawn_poses.yaml` | 仿真出生位姿 |
+| `src/pnx-stimulation/rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world` | RMUC2026 DART 动力学与 Bullet collision detector 配置 |
+| `src/pnx-stimulation/rm_27_stimulation/world/tunnel_ramp_test/` | 洞口短坡 world |
+| `src/pnx-launch/launch_bringup/map/` | Nav2/ROG 共用二维 YAML/PGM |
+| `src/pnx-launch/launch_bringup/pcd/` | Point-LIO 重定位先验；与二维 map 不是同一资源 |
 
 ## 14. 阅读与排障顺序
 

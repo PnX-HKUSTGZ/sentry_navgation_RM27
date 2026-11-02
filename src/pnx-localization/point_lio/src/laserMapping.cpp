@@ -464,9 +464,21 @@ PointVector collectMapPoints()
   return points_to_add;
 }
 
+void updateImuWithDiagnostics(rclcpp::Clock & clock)
+{
+  if (!kf_output.update_iterated_dyn_share_IMU()) {
+    ++frame_diagnostics.rejected_imu_updates;
+    frame_diagnostics.last_imu_rejection_reason = kf_output.last_imu_update_reason();
+    RCLCPP_WARN_THROTTLE(
+      LOGGER, clock, 2000, "IMU update rejected; prior retained: %s",
+      kf_output.last_imu_update_reason());
+  }
+}
+
 void processPendingMapUpdates(double current_stamp)
 {
-  if (frame_diagnostics.imu_saturated || imu_gap_detected) {
+  if (frame_diagnostics.imu_saturated || frame_diagnostics.rejected_imu_updates > 0 ||
+      imu_gap_detected) {
     map_pause_until = std::max(map_pause_until, current_stamp + map_impact_pause_duration);
     rejected_map_frames += pending_map_updates.size();
     pending_map_updates.clear();
@@ -699,10 +711,11 @@ void publish_diagnostics(
   status.hardware_id = "point_lio";
   const bool low_geometry =
     frame_diagnostics.effective_points < static_cast<double>(map_min_effective_points);
-  status.level = (frame_diagnostics.imu_saturated || low_geometry) ?
+  status.level = (frame_diagnostics.imu_saturated || low_geometry ||
+                  frame_diagnostics.rejected_imu_updates > 0) ?
     diagnostic_msgs::msg::DiagnosticStatus::WARN : diagnostic_msgs::msg::DiagnosticStatus::OK;
-  status.message = frame_diagnostics.imu_saturated ? "imu_saturated" :
-    (low_geometry ? "low_geometry" : "ok");
+  status.message = frame_diagnostics.rejected_imu_updates > 0 ? "imu_update_rejected" :
+    (frame_diagnostics.imu_saturated ? "imu_saturated" : (low_geometry ? "low_geometry" : "ok"));
 
   const Eigen::Matrix<double, 6, 6> pose_covariance = use_imu_as_input ?
     poseCovariance(kf_input.get_P()) : poseCovariance(kf_output.get_P());
@@ -725,6 +738,9 @@ void publish_diagnostics(
     diagnosticValue("effective_points", frame_diagnostics.effective_points),
     diagnosticValue("lidar_updates", frame_diagnostics.lidar_updates),
     diagnosticValue("skipped_updates", frame_diagnostics.skipped_updates),
+    diagnosticValue("rejected_imu_updates", frame_diagnostics.rejected_imu_updates),
+    diagnosticValue("last_imu_update_reason", kf_output.last_imu_update_reason()),
+    diagnosticValue("last_imu_rejection_reason", frame_diagnostics.last_imu_rejection_reason),
     diagnosticValue("mean_abs_residual", frame_diagnostics.residual_abs_sum / row_count),
     diagnosticValue("mean_nis", frame_diagnostics.nis_sum / row_count),
     diagnosticValue("information_gain", frame_diagnostics.information_gain_sum),
@@ -1144,7 +1160,7 @@ int main(int argc, char ** argv)
 
                     propag_time += omp_get_wtime() - propag_imu_start;
                     double solve_imu_start = omp_get_wtime();
-                    kf_output.update_iterated_dyn_share_IMU();
+                    updateImuWithDiagnostics(*nh->get_clock());
                     solve_time += omp_get_wtime() - solve_imu_start;
                   }
                 }
@@ -1297,7 +1313,7 @@ int main(int argc, char ** argv)
                 acc_avr << imu_next.linear_acceleration.x, imu_next.linear_acceleration.y,
                   imu_next.linear_acceleration.z;
                 // acc_avr_norm = acc_avr * G_m_s2 / acc_norm;
-                kf_output.update_iterated_dyn_share_IMU();
+                updateImuWithDiagnostics(*nh->get_clock());
                 imu_deque.pop_front();
                 if (imu_deque.empty()) break;
                 imu_last = imu_next;

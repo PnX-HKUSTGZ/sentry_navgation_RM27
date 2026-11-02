@@ -1,5 +1,5 @@
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-NAV_WS_ROOT=$(cd -- "$SCRIPT_DIR/../../.." && pwd)
+NAV_WS_ROOT=$(cd -- "$SCRIPT_DIR/../.." && pwd)
 
 cd "$NAV_WS_ROOT"
 source /opt/ros/jazzy/setup.bash
@@ -15,6 +15,6 @@ pkill -KILL -u "$USER" -f -- "$NAV_PROC_RE" || true
 
 ros2 daemon stop 2>/dev/null || true
 
-ros2 launch pb2025_nav_bringup rm_navigation_reality_launch.py \
+ros2 launch launch_bringup rm_navigation_reality_launch.py \
   slam:=True \
   navigation_mode:=legacy

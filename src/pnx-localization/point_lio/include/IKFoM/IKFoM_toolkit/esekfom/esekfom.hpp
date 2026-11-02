@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include "../mtk/build_manifold.hpp"
@@ -265,43 +266,122 @@ public:
     return true;
   }
 
-  void update_iterated_dyn_share_IMU()
+  // A single IMU sample is a linear observation of omega/acc and their biases.
+  // Compute on copies and commit atomically; rejection preserves the exact prior.
+  bool update_iterated_dyn_share_IMU()
   {
-    dyn_share_modified<scalar_type> dyn_share;
-    for (int i = 0; i < maximum_iter; i++) {
-      dyn_share.valid = true;
-      h_dyn_share_modified_2(x_, dyn_share);
-
-      Matrix<scalar_type, 6, 1> z = dyn_share.z_IMU;
-
-      Matrix<double, 30, 6> PHT;
-      Matrix<double, 6, 30> HP;
-      Matrix<double, 6, 6> HPHT;
-      PHT.setZero();
-      HP.setZero();
-      HPHT.setZero();
-      for (int l_ = 0; l_ < 6; l_++) {
-        if (!dyn_share.satu_check[l_]) {
-          PHT.col(l_) = P_.col(15 + l_) + P_.col(24 + l_);
-          HP.row(l_) = P_.row(15 + l_) + P_.row(24 + l_);
-        }
+    static_assert(n == 30, "IMU observation update requires the 30-DOF output state");
+    const auto reject = [this](const char * reason) {
+      last_imu_update_reason_ = reason;
+      return false;
+    };
+    const auto valid_state = [](const state & value) {
+      const auto valid_rotation = [](const auto & rotation) {
+        return rotation.allFinite() &&
+               (rotation.transpose() * rotation).isApprox(
+                 Eigen::Matrix<scalar_type, 3, 3>::Identity(), scalar_type(1e-6)) &&
+               std::abs(rotation.determinant() - scalar_type(1)) < scalar_type(1e-6);
+      };
+      return value.pos.allFinite() && valid_rotation(value.rot) &&
+             valid_rotation(value.offset_R_L_I) && value.offset_T_L_I.allFinite() &&
+             value.vel.allFinite() && value.omg.allFinite() && value.acc.allFinite() &&
+             value.gravity.allFinite() && value.bg.allFinite() && value.ba.allFinite();
+    };
+    const auto valid_covariance = [](const cov & value) {
+      if (!value.allFinite()) {
+        return false;
       }
-      for (int l_ = 0; l_ < 6; l_++) {
-        if (!dyn_share.satu_check[l_]) {
-          HPHT.col(l_) = HP.col(15 + l_) + HP.col(24 + l_);
-        }
-        HPHT(l_, l_) += dyn_share.R_IMU(l_);  //, l);
-      }
-      Eigen::Matrix<double, 30, 6> K = PHT * HPHT.inverse();
+      // Permit zero-variance directions, but never accept negative pivots.
+      const Eigen::LDLT<cov> decomposition(value);
+      return decomposition.info() == Eigen::Success &&
+             decomposition.vectorD().allFinite() &&
+             (decomposition.vectorD().array() >= scalar_type(0)).all();
+    };
 
-      Matrix<scalar_type, n, 1> dx_ = K * z;
-
-      P_ -= K * HP;
-      P_ = scalar_type(0.5) * (P_ + P_.transpose());
-      x_.boxplus(dx_);
+    if (!valid_state(x_)) {
+      return reject("invalid_prior_state");
     }
-    return;
+    if (!P_.allFinite() || !P_.isApprox(P_.transpose(), scalar_type(1e-9))) {
+      return reject("invalid_prior_covariance");
+    }
+    const cov prior = scalar_type(0.5) * P_ + scalar_type(0.5) * P_.transpose();
+    if (!valid_covariance(prior)) {
+      return reject("invalid_prior_covariance");
+    }
+    if (!h_dyn_share_modified_2) {
+      return reject("missing_measurement_model");
+    }
+
+    state candidate = x_;
+    dyn_share_modified<scalar_type> observation{};
+    observation.valid = true;
+    // Missing callback fields must fail validation rather than read uninitialized memory.
+    observation.z_IMU.setConstant(std::numeric_limits<scalar_type>::quiet_NaN());
+    observation.R_IMU.setConstant(std::numeric_limits<scalar_type>::quiet_NaN());
+    h_dyn_share_modified_2(candidate, observation);
+    if (!observation.valid) {
+      return reject("invalid_measurement");
+    }
+
+    Matrix<scalar_type, 6, n> H = Matrix<scalar_type, 6, n>::Zero();
+    Matrix<scalar_type, 6, 1> innovation = Matrix<scalar_type, 6, 1>::Zero();
+    Matrix<scalar_type, 6, 1> noise = Matrix<scalar_type, 6, 1>::Ones();
+    int active_axes = 0;
+    for (int axis = 0; axis < 6; ++axis) {
+      if (observation.satu_check[axis]) {
+        continue;
+      }
+      if (!std::isfinite(observation.z_IMU(axis))) {
+        return reject("nonfinite_innovation");
+      }
+      if (!std::isfinite(observation.R_IMU(axis)) || observation.R_IMU(axis) <= 0) {
+        return reject("invalid_measurement_noise");
+      }
+      H(axis, 15 + axis) = scalar_type(1);
+      H(axis, 24 + axis) = scalar_type(1);
+      innovation(axis) = observation.z_IMU(axis);
+      noise(axis) = observation.R_IMU(axis);
+      ++active_axes;
+    }
+    if (active_axes == 0) {
+      last_imu_update_reason_ = "all_axes_saturated";
+      return true;  // Expected no-op; even the prior's roundoff is preserved.
+    }
+
+    const Matrix<scalar_type, n, 6> PHT = prior * H.transpose();
+    Matrix<scalar_type, 6, 6> S = H * PHT;
+    S.diagonal() += noise;
+    S = (scalar_type(0.5) * S + scalar_type(0.5) * S.transpose()).eval();
+    if (!S.allFinite()) {
+      return reject("invalid_innovation_covariance");
+    }
+    const Eigen::LLT<Matrix<scalar_type, 6, 6>> solver(S);
+    if (solver.info() != Eigen::Success) {
+      return reject("innovation_factorization_failed");
+    }
+    const Matrix<scalar_type, n, 6> K = solver.solve(PHT.transpose()).transpose();
+    const vectorized_state increment = K * innovation;
+    if (!K.allFinite() || !increment.allFinite()) {
+      return reject("nonfinite_increment");
+    }
+    candidate.boxplus(increment);
+    if (!valid_state(candidate)) {
+      return reject("invalid_posterior_state");
+    }
+
+    const cov A = cov::Identity() - K * H;
+    const cov joseph = A * prior * A.transpose() + K * noise.asDiagonal() * K.transpose();
+    const cov posterior = scalar_type(0.5) * joseph + scalar_type(0.5) * joseph.transpose();
+    if (!valid_covariance(posterior)) {
+      return reject("invalid_posterior_covariance");
+    }
+    x_ = candidate;
+    P_ = posterior;
+    last_imu_update_reason_ = "accepted";
+    return true;
   }
+
+  const char * last_imu_update_reason() const { return last_imu_update_reason_; }
 
   void change_x(state & input_state)
   {
@@ -347,7 +427,8 @@ private:
 
   measurementModel_dyn_share_modified_cov * h_dyn_share_modified_1;
 
-  measurementModel_dyn_share_modified * h_dyn_share_modified_2;
+  measurementModel_dyn_share_modified * h_dyn_share_modified_2 = nullptr;
+  const char * last_imu_update_reason_ = "not_run";
 
   measurementModel_dyn_share_modified * h_dyn_share_modified_3;
 

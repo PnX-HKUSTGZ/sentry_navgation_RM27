@@ -37,13 +37,13 @@ class VehicleScenario:
         self.spin_rates = []
         self.last_yaw = None
         self.bridge = None
-        self.expected_spin = float(yaml.safe_load(Path('src/rm_27_stimulation/config/gimbal_control.yaml').read_text())['sim_gimbal_control']['ros__parameters']['spin_speed'])
+        self.expected_spin = float(yaml.safe_load(Path('src/pnx-stimulation/rm_27_stimulation/config/gimbal_control.yaml').read_text())['sim_gimbal_control']['ros__parameters']['spin_speed'])
         self.known_at_start = False
         self.first_observed_stamp = None
         self.spawn_xy = {'parked': (-9.7, 3.2), 'crossing': (-9.7, 2.2),
                          'oncoming': (-8.6, 3.2), 'stop': (-9.7, 2.2),
                          'late_crossing': (-9.7, 2.2)}[name]
-        params = yaml.safe_load(Path(os.environ.get('NAV_VEHICLE_PARAMS', 'src/pb2025_nav_bringup/config/simulation/minco_params.yaml')).read_text())
+        params = yaml.safe_load(Path(os.environ.get('NAV_VEHICLE_PARAMS', 'src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml')).read_text())
         self.footprint = np.array(params['planner_server']['ros__parameters']['MincoPlanner']['safety']['footprint_points']).reshape(-1, 2)
         self.other_footprint = np.array([[-.30, -.26], [.30, -.26], [.30, .26], [-.30, .26]])
         self.pub = node.create_publisher(Twist, '/validation_vehicle/cmd_vel', 1)

@@ -39,7 +39,6 @@ digraph NavigationTF {
   robot_state_pub [label="robot_state_publisher / robot_description\\nExternal or optional standalone\\nPublishes static/dynamic robot link TF"];
   nav2 [label="Nav2 nodes\\ncontroller/planner/bt/behavior/costmaps\\nConsume TF, do not own these transforms"];
   p2l [label="pointcloud_to_laserscan\\nConsumes TF if target_frame is set"];
-  teleop [label="pb_teleop_twist_joy\\nConsumes TF map -> robot_base_frame"];
   slam_toolbox [label="slam_toolbox in this config\\ntransform_publish_period=0.0\\nDoes not publish odom TF"];
 
   // Broadcast transforms
@@ -77,7 +76,6 @@ digraph NavigationTF {
   left_mid360 -> gimbal_yaw [label="lookup by sensor_scan_generation\\nlidar_frame -> robot_base_frame", style=dashed, color="#64748b"];
   gimbal_yaw -> left_mid360 [label="lookup by small_gicp initialpose path\\nrobot_base_frame -> current_scan_frame", style=dashed, color="#64748b"];
   map -> gimbal_yaw_fake [label="consumed by Nav2 via map->odom->base->fake chain", style=dashed, color="#64748b"];
-  map -> gimbal_yaw [label="lookup by teleop for goal/heading helpers", style=dashed, color="#64748b"];
   base_footprint -> p2l [label="pointcloud_to_laserscan target_frame=base_footprint", style=dashed, color="#64748b"];
 
   // Consumers
@@ -86,7 +84,6 @@ digraph NavigationTF {
   gimbal_yaw_fake -> nav2 [label="configured robot_base_frame"];
   slam_toolbox -> map [label="mapping uses map frame; no TF output in current params", style=dashed];
   p2l -> slam_toolbox [label="SLAM scan chain uses TF", style=dashed];
-  teleop -> nav2 [label="optional user commands/actions", style=dashed];
 
   // Ranks
   { rank=same; map; small_gicp; static_map_odom; }

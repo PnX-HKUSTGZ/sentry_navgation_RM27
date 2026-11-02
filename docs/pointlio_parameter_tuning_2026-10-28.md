@@ -33,7 +33,7 @@ Gazebo 真值只用于评估物理运动，没有接入导航定位。按用户�
 
 ## 最终参数
 
-主要修改在 `src/pb2025_nav_bringup/config/simulation/minco_params.yaml`：
+主要修改在 `src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml`：
 
 | 参数 | 原值 | 最终值 |
 | --- | ---: | ---: |

@@ -1,6 +1,6 @@
 # Contributing Guidelines
 
-Thank you for your interest in contributing to `pb2025_sentry_nav`.
+Thank you for your interest in contributing to `pnx_sentry_nav`.
 Whether it's a bug report, new feature, correction, or additional
 documentation, we greatly value feedback and contributions from our community.
 

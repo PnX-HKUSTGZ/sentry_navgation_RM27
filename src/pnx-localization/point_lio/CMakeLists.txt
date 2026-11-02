@@ -107,6 +107,10 @@ if(BUILD_TESTING)
   target_include_directories(test_adaptive_lio PRIVATE include ${EIGEN3_INCLUDE_DIR} ${PCL_INCLUDE_DIRS})
   ament_target_dependencies(test_adaptive_lio rclcpp nav_msgs sensor_msgs tf2_ros)
   target_link_libraries(test_adaptive_lio ${PCL_LIBRARIES})
+  ament_add_gtest(test_imu_update test/test_imu_update.cpp)
+  target_include_directories(test_imu_update PRIVATE include ${EIGEN3_INCLUDE_DIR} ${PCL_INCLUDE_DIRS})
+  ament_target_dependencies(test_imu_update rclcpp nav_msgs sensor_msgs tf2_ros)
+  target_link_libraries(test_imu_update ${PCL_LIBRARIES})
 endif()
 
 # Install the executable

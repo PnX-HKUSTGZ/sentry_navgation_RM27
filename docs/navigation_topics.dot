@@ -31,8 +31,8 @@ digraph NavigationTopics {
   slam_toolbox [label="slam_toolbox\\n(SLAM mode)"];
   map_server [label="nav2_map_server\\nmap_server"];
   map_saver [label="nav2_map_server\\nmap_saver_server\\n(SLAM mode)"];
-  rviz_user [label="RViz / user / teleop clients"];
-  teleop [label="pb_teleop_twist_joy\\n(optional)"];
+  rviz_user [label="RViz / user clients"];
+  joy_driver [label="External joystick driver\\n(optional)"];
   controller [label="nav2_controller\\ncontroller_server\\n+ pb_omni_pid_pursuit_controller"];
   smoother [label="nav2_smoother\\nsmoother_server"];
   planner [label="nav2_planner\\nplanner_server"];
@@ -83,8 +83,6 @@ digraph NavigationTopics {
   cmd_vel_nav2_result [label="/cmd_vel_nav2_result\\nTwist, smoothed Nav2 output"];
   cmd_vel [label="/cmd_vel\\nTwist, chassis command"];
   cmd_spin [label="/cmd_spin\\nFloat32"];
-  cmd_gimbal [label="/cmd_gimbal_joint\\nJointState"];
-  cmd_shoot [label="/cmd_shoot\\nUInt8"];
   backup_markers [label="/back_up_free_space_markers\\nMarkerArray, optional"];
   voxel_grid [label="/voxel_grid\\nVoxelGrid, optional debug"];
   tf_topic [label="/tf\\nTFMessage"];
@@ -179,13 +177,7 @@ digraph NavigationTopics {
 
   rviz_user -> initialpose [label="pub 2D Pose Estimate"];
   rviz_user -> bt [label="NavigateToPose / NavigateThroughPoses actions", style=dashed];
-  rviz_user -> joy [label="pub joystick via joy_node", style=dashed];
-  joy -> teleop [label="sub"];
-  tf_topic -> teleop [label="lookup map -> robot_base_frame"];
-  teleop -> cmd_vel [label="pub if teleop enabled"];
-  teleop -> cmd_spin [label="pub"];
-  teleop -> cmd_gimbal [label="pub"];
-  teleop -> cmd_shoot [label="pub"];
+  joy_driver -> joy [label="pub Joy for optional terrain clearing", style=dashed];
 
   bt -> planner [label="ComputePath action", style=dashed];
   bt -> smoother [label="SmoothPath action", style=dashed];

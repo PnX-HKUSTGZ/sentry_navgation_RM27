@@ -6,9 +6,9 @@
 
 ## 配置与使用
 
-实车：`src/pb2025_nav_bringup/config/reality/minco_params.yaml`。
+实车：`src/pnx-launch/launch_bringup/config/reality/minco_params.yaml`。
 
-仿真：`src/pb2025_nav_bringup/config/simulation/minco_params.yaml`。
+仿真：`src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml`。
 
 两者参数路径均为：
 
@@ -65,7 +65,7 @@ ros2 param get /planner_server MincoPlanner.rog_map.projection.prior_map.travers
 
 ## 首轮验证结果与实际限制（复核前历史记录）
 
-构建：`rog_map`、`minco_planner`、`pb2025_nav_bringup` 均通过。
+构建：`rog_map`、`minco_planner`、`launch_bringup` 均通过。
 
 回归：ROGMap 160 个、MINCO 143 个 GTest 用例全部通过。覆盖权重端点与中间值、逐项证据、非白区、完全盲区、邻域不传播、当前足迹不留下自由轨迹、坡面、移动障碍首帧阻挡、障碍保持、地图变换撤销白区、旧参数拒绝、实车与仿真实际配置加载，以及规划器未知／边缘容差／过期地图不能旁路。
 

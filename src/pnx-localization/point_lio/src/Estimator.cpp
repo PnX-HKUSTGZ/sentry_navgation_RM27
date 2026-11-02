@@ -365,7 +365,14 @@ void h_model_output(
 
 void h_model_IMU_output(state_output & s, esekfom::dyn_share_modified<double> & ekfom_data)
 {
-  std::memset(ekfom_data.satu_check, false, 6);
+  std::memset(ekfom_data.satu_check, false, sizeof(ekfom_data.satu_check));
+  // Non-finite readings are invalid input, not physical sensor saturation.
+  if (!angvel_avr.allFinite() || !acc_avr.allFinite() ||
+      !std::isfinite(G_m_s2) || G_m_s2 <= 0.0 ||
+      !std::isfinite(acc_norm) || acc_norm <= 0.0) {
+    ekfom_data.valid = false;
+    return;
+  }
   ekfom_data.z_IMU.block<3, 1>(0, 0) = angvel_avr - s.omg - s.bg;
   ekfom_data.z_IMU.block<3, 1>(3, 0) = acc_avr * G_m_s2 / acc_norm - s.acc - s.ba;
   ekfom_data.R_IMU << imu_meas_omg_cov, imu_meas_omg_cov, imu_meas_omg_cov, imu_meas_acc_cov,
