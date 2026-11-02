@@ -1,0 +1,36 @@
+# Overlay on the repository simulation nav2_params.yaml.
+# Use the reviewed isolated Point-LIO build for instantaneous Gazebo scans.
+ign_sim_pointcloud_tool:
+  ros__parameters:
+    instantaneous_scan: true
+point_lio:
+  ros__parameters:
+    preprocess:
+      instantaneous_scan: true
+loam_interface:
+  ros__parameters:
+    anchor_initial_base_frame: true
+fake_vel_transform:
+  ros__parameters:
+    # Manual survey owns /cmd_vel. Keep the idle Nav2 stop watchdog on its
+    # own output so it cannot cancel survey commands at 50 Hz.
+    output_cmd_vel_topic: mapping_nav2_cmd_vel
+pointcloud_to_laserscan:
+  ros__parameters:
+    # Use only the current registered scan, not a rolling terrain submap.
+    # Intensity is reflectivity here, not terrain-relative obstacle height.
+    min_height: 0.15
+    max_height: 2.0
+    min_intensity: -1.0
+    max_intensity: 1000000000.0
+    scan_time: 0.1
+slam_toolbox:
+  ros__parameters:
+    use_sim_time: true
+    use_scan_matching: true
+    do_loop_closing: true
+    transform_publish_period: 0.02
+    debug_logging: true
+    minimum_time_interval: 0.1
+    minimum_travel_distance: 0.08
+    minimum_travel_heading: 0.05

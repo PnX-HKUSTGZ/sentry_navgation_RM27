@@ -65,6 +65,9 @@ ament_target_dependencies(rm27_ground_truth_localizer
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_simulation_pose_handoff test/test_simulation_pose_handoff.py TIMEOUT 60)
+  ament_add_pytest_test(test_dds_transport test/test_dds_transport.py TIMEOUT 30)
   ament_add_gtest(test_pose_imu test/test_pose_imu.cpp)
   if(TARGET test_pose_imu)
     target_include_directories(test_pose_imu PRIVATE include)
@@ -144,7 +147,7 @@ install(DIRECTORY include/rm_27_stimulation
   DESTINATION include
 )
 
-install(PROGRAMS scripts/gimbal_control.py scripts/gimbal_panel.py scripts/wait_for_sim_clock.py
+install(PROGRAMS scripts/spawn_from_rviz.py scripts/gimbal_control.py scripts/gimbal_panel.py scripts/wait_for_sim_clock.py
   DESTINATION lib/${PROJECT_NAME})
 install(FILES scripts/gimbal_state.py DESTINATION lib/${PROJECT_NAME})
 

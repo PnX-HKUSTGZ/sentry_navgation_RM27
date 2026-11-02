@@ -3,7 +3,7 @@
 import os
 
 import yaml
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -12,6 +12,7 @@ from launch.actions import (
     LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
+    SetEnvironmentVariable,
     TimerAction,
 )
 from launch.event_handlers import OnProcessExit
@@ -30,6 +31,21 @@ def _as_bool(value):
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _configure_dds_transport(context):
+    path = LaunchConfiguration("dds_transport_profile").perform(context)
+    if not path:
+        return []
+    if not os.path.isfile(path):
+        raise RuntimeError(f"DDS transport profile does not exist: {path}")
+    # Scope this profile to launched processes. Preserve topic QoS and all
+    # freshness thresholds; provision enough local SHM for full lidar frames.
+    return [
+        SetEnvironmentVariable("FASTRTPS_DEFAULT_PROFILES_FILE", path),
+        SetEnvironmentVariable("FASTDDS_DEFAULT_PROFILES_FILE", path),
+        LogInfo(msg=f"Simulation DDS transport profile: {path}"),
+    ]
+
+
 def _launch_sim_stack(context, *args, **kwargs):
     del args, kwargs
 
@@ -39,6 +55,7 @@ def _launch_sim_stack(context, *args, **kwargs):
     use_ground_truth_odom = _as_bool(
         LaunchConfiguration("use_ground_truth_odom").perform(context)
     )
+    global_relocalization = _as_bool(LaunchConfiguration("global_relocalization").perform(context))
     if namespace:
         raise RuntimeError(
             "Non-empty namespace is not supported by the current single-robot "
@@ -60,6 +77,10 @@ def _launch_sim_stack(context, *args, **kwargs):
     bringup_share = get_package_share_directory("launch_bringup")
     worlds_config_path = LaunchConfiguration("worlds_config").perform(context)
     world_name = LaunchConfiguration("world").perform(context)
+    if global_relocalization and (world_name != "RMUC2026" or slam or
+                                   navigation_mode != "minco"):
+        raise RuntimeError("global_relocalization currently requires RMUC2026, MINCO, "
+                           "and slam:=false")
     nav_world = LaunchConfiguration("nav_world").perform(context)
     spawn_delay = float(LaunchConfiguration("spawn_delay").perform(context))
     requested_nav_start_delay = float(
@@ -122,6 +143,8 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "use_sim_time": LaunchConfiguration("use_sim_time").perform(context),
                 "spawn_delay": LaunchConfiguration("spawn_delay").perform(context),
                 "gimbal_panel": LaunchConfiguration("gimbal_panel").perform(context),
+                "rviz_spawn": "true" if global_relocalization else "false",
+                "spawn_map_yaml": os.path.join(bringup_share, "map", "simulation", nav_world + ".yaml"),
             }.items(),
         ),
         TimerAction(
@@ -135,7 +158,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                         "world": nav_world,
                         "use_sim_time": LaunchConfiguration("use_sim_time"),
                         "params_file": LaunchConfiguration("params_file"),
-                        "autostart": LaunchConfiguration("autostart"),
+                        "autostart": "false" if global_relocalization else LaunchConfiguration("autostart"),
                         "use_composition": LaunchConfiguration("use_composition"),
                         "use_respawn": LaunchConfiguration("use_respawn"),
                         "use_rviz": LaunchConfiguration("use_rviz"),
@@ -146,6 +169,10 @@ def _launch_sim_stack(context, *args, **kwargs):
                             "use_ground_truth_odom"
                         ),
                         "navigation_mode": LaunchConfiguration("navigation_mode"),
+                        "global_relocalization": LaunchConfiguration("global_relocalization"),
+                        "stationary_relocalization": LaunchConfiguration("stationary_relocalization"),
+                        **({"prior_pcd_file": LaunchConfiguration("relocalization_map")}
+                           if global_relocalization else {}),
                         "enable_legacy_terrain": LaunchConfiguration(
                             "enable_legacy_terrain"
                         ),
@@ -154,6 +181,31 @@ def _launch_sim_stack(context, *args, **kwargs):
             ],
         ),
     ]
+
+    if global_relocalization:
+        try:
+            reloc_share = get_package_share_directory("global_relocalization")
+        except PackageNotFoundError as exc:
+            raise RuntimeError(
+                "Global relocalization is not available in this shell. Use "
+                "tools/global_relocalization/navigate.bash, or source "
+                "tools/global_relocalization/environment.bash first."
+            ) from exc
+        reloc_map = LaunchConfiguration("relocalization_map").perform(context)
+        reloc_manifest = LaunchConfiguration("relocalization_manifest").perform(context)
+        if not os.path.isfile(reloc_map) or not os.path.isfile(reloc_manifest):
+            raise RuntimeError("global relocalization requires existing relocalization_map and relocalization_manifest")
+        actions.extend([
+            Node(package="global_relocalization", executable="global_relocalization_node",
+                 name="global_relocalization", output="screen",
+                 parameters=[os.path.join(reloc_share, "config", "competition.yaml"),
+                             {"map_path": reloc_map, "manifest_path": reloc_manifest,
+                              "use_sim_time": True, "cmd_vel_topic": "/relocalization/cmd_vel"}]),
+            TimerAction(period=nav_start_delay + 3.0, actions=[
+                Node(package="launch_bringup", executable="relocalize_then_navigate.py",
+                     output="screen", parameters=[{"use_sim_time": True}]),
+            ]),
+        ])
 
     if worlds.get(world_name, {}).get("wait_for_clock", False):
         # The create service exists before expensive collision initialization
@@ -181,6 +233,14 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument("stationary_relocalization", default_value="true",
+                                  description="Refine Point-LIO map alignment after stopping"),
+            DeclareLaunchArgument("global_relocalization", default_value="false",
+                                  description="Select spawn in RViz and initialize navigation by global relocalization"),
+            DeclareLaunchArgument("relocalization_map", default_value=os.path.join(
+                bringup_share, "pcd", "simulation", "RMUC2026.pcd")),
+            DeclareLaunchArgument("relocalization_manifest", default_value=os.path.join(
+                bringup_share, "pcd", "simulation", "RMUC2026_manifest.json")),
             DeclareLaunchArgument(
                 "world",
                 default_value="RMUC2026",
@@ -321,6 +381,13 @@ def generate_launch_description():
                 default_value="3.0",
                 description="Delay before spawning the robot, in seconds",
             ),
+            DeclareLaunchArgument(
+                "dds_transport_profile",
+                default_value=os.environ.get("FASTDDS_DEFAULT_PROFILES_FILE") or
+                    os.environ.get("FASTRTPS_DEFAULT_PROFILES_FILE") or "",
+                description="Fast DDS transport XML for large clouds; empty disables the override. Existing environment profiles take precedence by default.",
+            ),
+            OpaqueFunction(function=_configure_dds_transport),
             OpaqueFunction(function=_launch_sim_stack),
         ]
     )

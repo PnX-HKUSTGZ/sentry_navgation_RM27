@@ -181,6 +181,15 @@ use_rviz:=true
 
 当前 RM27 仿真和实车启动链均按单机器人维护，默认保持空 namespace；多机器人启动入口暂不作为当前稳定版本使用。
 
+可选的全局重定位初始化：
+
+```bash
+bash tools/global_relocalization/build.bash
+bash tools/global_relocalization/navigate.bash
+```
+
+该入口先用 RViz 选出生点，再自动完成全局重定位和位姿交接，随后开放导航。构建依赖、流程与限制见 [全局重定位接入](docs/simulation_global_navigation.md) 和 [移植验证](docs/global_relocalization_merge_20261102.md)。
+
 #### 2.3.2 实车
 
 建图模式：

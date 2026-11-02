@@ -69,6 +69,12 @@ if(BUILD_TESTING)
   target_link_directories(test_gicp_verification PRIVATE ${FLANN_LIBRARY_DIRS})
   ament_target_dependencies(test_gicp_verification rclcpp sensor_msgs geometry_msgs tf2_ros)
 
+  ament_add_gtest(test_stationary_gate test/test_stationary_gate.cpp)
+  target_include_directories(test_stationary_gate PRIVATE include)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_stationary_relocalization test/test_stationary_relocalization.py
+    TIMEOUT 90
+    ENV RELOCALIZATION_TEST_EXECUTABLE=$<TARGET_FILE:relocalization_manager_node>)
   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")
   set(ament_cmake_clang_tidy_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-tidy")
   find_package(ament_lint_auto REQUIRED)

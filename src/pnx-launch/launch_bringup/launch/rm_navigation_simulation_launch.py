@@ -291,7 +291,9 @@ def generate_launch_description():
         name="rm27_ground_truth_localizer",
         output="screen",
         namespace=namespace,
-        parameters=[configured_params],
+        parameters=[configured_params, {"wait_for_initial_pose": LaunchConfiguration("global_relocalization")}],
+        remappings=[("/rm27_ground_truth_localizer/initialpose_accepted",
+                     "/relocalization/initialpose_accepted")],
         condition=IfCondition(use_ground_truth_odom),
     )
 
@@ -322,6 +324,8 @@ def generate_launch_description():
             "use_respawn": use_respawn,
             "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
             "use_ground_truth_odom": use_ground_truth_odom,
+            "global_relocalization": LaunchConfiguration("global_relocalization"),
+            "stationary_relocalization": LaunchConfiguration("stationary_relocalization"),
             "deployment": "simulation",
             "navigation_mode": navigation_mode,
             "enable_legacy_terrain": enable_legacy_terrain,
@@ -346,6 +350,8 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
+    ld.add_action(DeclareLaunchArgument("global_relocalization", default_value="false"))
+    ld.add_action(DeclareLaunchArgument("stationary_relocalization", default_value="true"))
     ld.add_action(declare_navigation_mode_cmd)
     ld.add_action(declare_enable_legacy_terrain_cmd)
     ld.add_action(OpaqueFunction(function=_validate_localization_inputs))

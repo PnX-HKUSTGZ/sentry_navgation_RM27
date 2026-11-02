@@ -282,6 +282,8 @@ def generate_launch_description():
                     "container_name": "nav2_container",
                     "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
                     "use_ground_truth_odom": use_ground_truth_odom,
+                    "global_relocalization": LaunchConfiguration("global_relocalization"),
+                    "stationary_relocalization": LaunchConfiguration("stationary_relocalization"),
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -299,6 +301,8 @@ def generate_launch_description():
                     "container_name": "nav2_container",
                     "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
                     "use_ground_truth_odom": use_ground_truth_odom,
+                    "global_relocalization": LaunchConfiguration("global_relocalization"),
+                    "stationary_relocalization": LaunchConfiguration("stationary_relocalization"),
                     "deployment": deployment,
                     "navigation_mode": navigation_mode,
                     "enable_legacy_terrain": enable_legacy_terrain,
@@ -327,6 +331,8 @@ def generate_launch_description():
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
+    ld.add_action(DeclareLaunchArgument("stationary_relocalization", default_value="true"))
+    ld.add_action(DeclareLaunchArgument("global_relocalization", default_value="false"))
     ld.add_action(declare_deployment_cmd)
     ld.add_action(declare_navigation_mode_cmd)
     ld.add_action(declare_enable_legacy_terrain_cmd)

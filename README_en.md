@@ -177,6 +177,15 @@ slam:=True
 
 Save map：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
 
+Optional global relocalization initialization:
+
+```bash
+bash tools/global_relocalization/build.bash
+bash tools/global_relocalization/navigate.bash
+```
+
+Select a spawn pose in RViz; the coordinator completes global relocalization and timestamped pose handoff before enabling navigation. See the [integration guide](docs/simulation_global_navigation.md) and [migration validation](docs/global_relocalization_merge_20261102.md).
+
 #### 2.3.2 Physical Robot
 
 SLAM mode：
