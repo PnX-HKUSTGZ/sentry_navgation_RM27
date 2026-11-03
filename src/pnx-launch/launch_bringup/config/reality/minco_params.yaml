@@ -619,6 +619,19 @@ point_lio:
     prop_at_freq_of_imu: true
     check_satu: true
     init_map_size: 10
+
+    initialization:
+      method: joint  # joint=多帧联合初始化；legacy=旧 IMU 均值初始化。
+      window_frames: 20  # 联合估计的扫描帧数；10 Hz 时 20 帧约需 2 s 数据，另加初猜和计算。
+      seed_imu_samples: 51  # 重力方向初猜所需 IMU 样本数；200 Hz 时 31 个约 0.155 s。
+      maximum_refinements: 15  # 重去畸变与联合优化的外层轮数上限；收敛后提前结束。
+      num_threads: 2  # 初始化几何计算线程数；只影响计算耗时，不缩短数据积累。
+      sample_size: 0.1  # 初始化原始回波采样体素边长，单位 m；保留代表点及其真实时间。
+      minimum_planes: 10  # 联合优化要求的有效跨帧平面块数量下限。
+      minimum_directional_support: 15.0  # 平面法向支撑矩阵最小特征值下限，无量纲；约束最弱方向。
+      max_scan_points: 30000  # 每次送入初始化器的点数上限；超出时按索引等间隔抽样。
+      accel_bias: [0.0, 0.0, 0.0]  # IMU 系加速度零偏初值及先验中心，单位 m/s²；应来自标定。
+      accel_bias_std: [0.3, 0.3, 0.3]  # 零偏先验各轴标准差，单位 m/s²；越小越信任上述初值，非测量噪声。
     point_filter_num: 8
     space_down_sample: true
     filter_size_surf: 0.2
@@ -709,8 +722,8 @@ point_lio:
       ivox_grid_resolution: 0.5
       max_neighbor_distance: 1.4
       max_points_per_voxel: 64
-      gravity: [0.0, 0.0, -1.0]  # Livox 驱动已补偿 −45° 安装横滚角。
-      gravity_init: [0.0, 0.0, -1.0]  # 实车 MID360 的加速度单位为 g。
+      gravity: [0.0, 0.0, -9.81]  # 世界系 SI 重力；acc_norm=1.0 将原始 g 单位转换为 m/s²。
+      gravity_init: [0.0, 0.0, -9.81]  # 世界系 SI 重力；acc_norm=1.0 将原始 g 单位转换为 m/s²。
       extrinsic_T: [-0.011, -0.02329, 0.04412]  # MID360 内部雷达相对 IMU 的外参，不是底盘安装外参。
       extrinsic_R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 

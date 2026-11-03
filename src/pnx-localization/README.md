@@ -43,3 +43,29 @@ colcon build --packages-select point_lio --cmake-args -DBUILD_TESTING=ON
 colcon test --packages-select point_lio --event-handlers console_direct+
 colcon test-result --test-result-base build/point_lio --verbose
 ```
+
+## 联合启动初始化
+
+Point-LIO 默认 `initialization.method: joint`，使用 ZLIO 的多帧点云共面约束与
+IMU 预积分联合估计启动位姿、速度、零偏和重力方向。静止和运动采用同一流程：
+31 个 IMU 样本初猜、可配置帧数窗口、重去畸变与粗细优化、几何和联合信息验收，
+随后交接末帧状态、协方差和初始局部地图。核心默认/实车配置保留 20 帧，
+10 Hz 点云需要约 2.2～2.3 秒数据；仿真配置经参数对照改为 8 帧，约 1.0～1.1 秒。几何退化、饱和或同步异常时等待/重试，不强制输出初始化结果。
+
+`initialization.method: legacy` 保留原来的约 100 样本均值初始化以便回退和 A/B。
+参数更改后需重启。联合初始化要求启用 IMU、固定 LiDAR–IMU 外参，且
+`prior_pcd.enable: false`；全局地图定位仍交给后端。加速度统一为 SI：
+世界系重力通常 `[0,0,-9.81]`；原始 g 单位使用 `acc_norm: 1.0`，原始 m/s²
+使用 `acc_norm: 9.81`。实车配置已按此统一，但尚未进行实车验证。
+
+初始化进度在 `/point_lio/diagnostics` 的 `point_lio/initialization` 中输出，
+包含状态、原因、样本包数、传感器经过时间与累计计算耗时。
+启动核心的来源、提交和许可位于 `point_lio/third_party/zlio_startup`。
+
+实现与完整测试对比见 [联合初始化验收报告](../../docs/pointlio_joint_initialization_2026-11-03.md)。
+
+参数含义与 8 帧调优记录见 [初始化参数调优](../../docs/pointlio_initialization_tuning_2026-11-03.md)。
+
+8 帧、51 个 IMU 初猜样本、4 线程的完整新旧对比见
+[最终参数验证](../../docs/pointlio_final_initialization_2026-11-03.md)，包含静止、运动、
+非零外参及退化场景，并记录了非零固定外参在运行期的坐标转换问题。

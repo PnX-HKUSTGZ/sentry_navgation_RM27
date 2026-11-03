@@ -23,6 +23,8 @@
 
 #include "li_initialization.h"
 #include "instantaneous_scan.hpp"
+#include "startup_handover.hpp"
+#include "startup_config.hpp"
 
 using namespace std;
 
@@ -809,6 +811,12 @@ int main(int argc, char ** argv)
     }
   }
 
+  std::unique_ptr<point_lio::JointStartup> joint_startup;
+  if (initialization_method == "joint") {
+    joint_startup = std::make_unique<point_lio::JointStartup>(readJointStartupConfig(*nh));
+  }
+  RCLCPP_INFO(LOGGER, "Initialization method: %s", initialization_method.c_str());
+
   p_imu->lidar_type = p_pre->lidar_type = lidar_type;
   p_imu->imu_en = imu_en;
 
@@ -893,14 +901,19 @@ int main(int argc, char ** argv)
       if (flg_reset) {
         RCLCPP_WARN(LOGGER, "reset when rosbag play back");
         p_imu->Reset();
+        if (joint_startup) {joint_startup->reset();}
+        init_feats_world->clear();
+        last_published_odom_stamp = 0.0;
         feats_undistort.reset(new PointCloudXYZI());
         if (use_imu_as_input) {
           // state_in = kf_input.get_x();
           state_in = state_input();
+          kf_input.change_x(state_in);
           kf_input.change_P(P_init);
         } else {
           // state_out = kf_output.get_x();
           state_out = state_output();
+          kf_output.change_x(state_out);
           kf_output.change_P(P_init_output);
         }
         flg_first_scan = true;
@@ -919,6 +932,99 @@ int main(int argc, char ** argv)
         {
           ivox_.reset(new IVoxType(ivox_options_));
         }
+      }
+
+      if (joint_startup && p_imu->imu_need_init_) {
+        if (flg_first_scan) {
+          first_lidar_time = Measures.lidar_beg_time;
+          flg_first_scan = false;
+        }
+        G_m_s2 = Eigen::Vector3d(gravity[0], gravity[1], gravity[2]).norm();
+        zlio::Scan scan;
+        scan.reserve(Measures.lidar->size());
+        for (std::size_t i = 0; i < Measures.lidar->size(); ++i) {
+          const auto & point = Measures.lidar->points[i];
+          if (!std::isfinite(point.curvature) || point.curvature < 0 ||
+              point.curvature > max_scan_duration * 1000.0 + 1e-3) {
+            scan.clear();  // Reject the packet before converting invalid seconds to integer time.
+            break;
+          }
+          scan.push_back({Eigen::Vector3d(point.x, point.y, point.z),
+            zlio::nanoseconds(Measures.lidar_beg_time + point.curvature * 0.001), i});
+        }
+        std::vector<zlio::Imu> imus;
+        for (const auto & msg : Measures.imu) {
+          imus.push_back({rclcpp::Time(msg->header.stamp).nanoseconds(),
+            Eigen::Vector3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z),
+            Eigen::Vector3d(msg->linear_acceleration.x, msg->linear_acceleration.y,
+                            msg->linear_acceleration.z)});
+        }
+        auto seed = joint_startup->add(scan, zlio::nanoseconds(Measures.lidar_beg_time),
+                                      zlio::nanoseconds(lidar_end_time), imus);
+        diagnostic_msgs::msg::DiagnosticArray diagnostic;
+        diagnostic.header.stamp = get_ros_time(lidar_end_time);
+        diagnostic_msgs::msg::DiagnosticStatus status;
+        status.name = "point_lio/initialization";
+        status.hardware_id = "point_lio";
+        status.level = seed ? diagnostic_msgs::msg::DiagnosticStatus::OK :
+                             diagnostic_msgs::msg::DiagnosticStatus::WARN;
+        status.message = joint_startup->phase() + ": " + joint_startup->reason();
+        status.values = {diagnosticValue("method", initialization_method),
+          diagnosticValue("packets", joint_startup->acceptedPackets()),
+          diagnosticValue("sensor_elapsed_s", lidar_end_time - first_lidar_time),
+          diagnosticValue("compute_ms", joint_startup->computeMilliseconds())};
+        diagnostic.status.push_back(status);
+        pub_diagnostics->publish(diagnostic);
+        if (!seed) {
+          RCLCPP_INFO_THROTTLE(LOGGER, *nh->get_clock(), 1000,
+            "Joint initialization: %s", status.message.c_str());
+          continue;
+        }
+        point_lio::installStartupSeed(*seed, Lidar_R_wrt_IMU, Lidar_T_wrt_IMU,
+                                     kf_output, kf_input);
+        PointVector seed_points;
+        seed_points.reserve(seed->solution.map.size());
+        for (const auto & mapped : seed->solution.map) {
+          PointType point{};
+          point.x = mapped.point.x();
+          point.y = mapped.point.y();
+          point.z = mapped.point.z();
+          seed_points.push_back(point);
+        }
+        ivox_->AddPoints(seed_points);
+        init_map = true;
+        p_imu->imu_need_init_ = false;
+        p_imu->after_imu_init_ = true;
+        is_first_frame = false;
+        time_current = time_update_last = time_predict_last_const = t_last = lidar_end_time;
+        input_in.gyro = seed->boundary_imu.angular_velocity;
+        input_in.acc = seed->boundary_imu.acceleration;
+        imu_last.header.stamp = get_ros_time(lidar_end_time);
+        imu_last.angular_velocity.x = seed->boundary_imu.angular_velocity.x();
+        imu_last.angular_velocity.y = seed->boundary_imu.angular_velocity.y();
+        imu_last.angular_velocity.z = seed->boundary_imu.angular_velocity.z();
+        const auto raw_acc = (seed->boundary_imu.acceleration * acc_norm / G_m_s2).eval();
+        imu_last.linear_acceleration.x = raw_acc.x();
+        imu_last.linear_acceleration.y = raw_acc.y();
+        imu_last.linear_acceleration.z = raw_acc.z();
+        while (!imu_deque.empty() && get_time_sec(imu_deque.front()->header.stamp) <= lidar_end_time) {
+          imu_deque.pop_front();
+        }
+        imu_next = imu_deque.empty() ? imu_last : *imu_deque.front();
+        full_cloud_queue.clear();
+        full_cloud_world->clear();
+        full_cloud_anchor = makeStateSnapshot(lidar_end_time);
+        has_full_cloud_anchor = true;
+        temporal_scheduler.reset();
+        imu_gap_detected = false;
+        publish_odometry(pub_odom_aft_mapped, tf_broadcaster);
+        RCLCPP_INFO(LOGGER,
+          "Joint initialization READY: sensor_elapsed=%.3f s compute=%.1f ms map_points=%zu "
+          "speed=%.4f bg=[%.5f,%.5f,%.5f] ba=[%.5f,%.5f,%.5f]",
+          lidar_end_time - first_lidar_time, joint_startup->computeMilliseconds(), seed_points.size(),
+          kf_output.x_.vel.norm(), kf_output.x_.bg.x(), kf_output.x_.bg.y(), kf_output.x_.bg.z(),
+          kf_output.x_.ba.x(), kf_output.x_.ba.y(), kf_output.x_.ba.z());
+        continue;  // Startup observations must not be fused again by the running filter.
       }
 
       if (flg_first_scan) {
