@@ -1,239 +1,270 @@
-# pnx_sentry_nav
+# RM27 Sentry Navigation
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build and Test](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav/actions/workflows/ci.yml/badge.svg)](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav/actions/workflows/ci.yml)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
+[中文](README.md) · [AI development guide](AGENTS.md) · [Repository review](docs/repository_review_2026-11-05.md)
 
-Shenzhen MSU-BIT University PolarBear Robotics Team's Sentry Navigation Simulation/Reality Robot Package For RoboMaster 2025.
+PnX's RoboMaster RM27 navigation workspace, developed from the PolarBear/PB2025 navigation framework. It includes Livox MID360 LiDAR–inertial odometry, prior-map localization, Nav2 navigation, ROG-map + MINCO + MPC, and Gazebo simulation.
 
-![PolarBear Logo](https://raw.githubusercontent.com/SMBU-PolarBear-Robotics-Team/.github/main/.docs/image/polarbear_logo_text.png)
+**The current source targets Ubuntu 24.04, ROS 2 Jazzy, and Gazebo Harmonic.** The root Dockerfile and CI still use Humble and have not been aligned with the complete current workspace. This guide follows the current launch files, CMake, and YAML; historical documents and validation results must be read in their version context.
 
-[BiliBili: RM navigation simulation for beginners](https://www.bilibili.com/video/BV12qcXeHETR)
+## 1. Features and operating modes
 
-https://github.com/user-attachments/assets/d9e778e0-fa43-40c2-96c2-e71eaf7737d4
+Localization and navigation are separate choices: `use_ground_truth_odom` selects the simulation localization source, while `navigation_mode` selects planning and control.
 
-https://github.com/user-attachments/assets/ae4c19a0-4c73-46a0-95bd-909734da2a42
+| Scenario | Key settings | Behavior |
+| --- | --- | --- |
+| Default simulation | `slam:=false use_ground_truth_odom:=true navigation_mode:=legacy` | Gazebo ground-truth localization with the legacy Nav2 stack; useful for navigation and physics checks |
+| Point-LIO navigation | `slam:=false use_ground_truth_odom:=false` | Point-LIO with local GICP prior-map alignment; supports `legacy` or `minco` navigation |
+| Global initialization | `tools/global_relocalization/navigate.bash` | RMUC2026, MINCO, raw LiDAR/IMU retrieval, stationary confirmation, timestamped pose handoff, then navigation activation |
+| Online mapping | `slam:=true use_ground_truth_odom:=false navigation_mode:=legacy` | Point-LIO and slam_toolbox; saves a 2D map and Point-LIO point clouds |
+| Independent backend | YAML `rm27_backend.enabled: true` | Atomic Point-LIO scans, keyframes, and a bounded iSAM2 odometry graph; currently runs alongside navigation without publishing TF |
 
-## 1. Overview
+`legacy` uses `GridBased`/ThetaStar and `FollowPath`/Omni PID, with terrain nodes supplying dynamic obstacles. `minco` uses `MincoPlanner`, ROG-map, and `MincoMpc`: planar trajectory planning and SE(2) MPC, rather than full 3D planning. Modes are selected at startup; there is no automatic runtime fallback, and the old `minco_shadow` mode has been removed.
 
-This project is based on the [NAV2 Navigation Framework](https://github.com/ros-navigation/navigation2) and references the design of [autonomous_exploration_development_environment](https://github.com/HongbiaoZ/autonomous_exploration_development_environment/tree/humble).
+All four deployment YAML files currently enable the backend. The normal localization launch starts it according to that setting in Point-LIO mode and skips it in ground-truth mode. The backend currently receives only a first-pose gauge prior and odometry edges. Map/loop factors have interfaces and tests, but no actual measurement producers are connected. **It does not currently remove frontend drift.** See the [backend guide](src/pnx-localization/backend/README.md) and [backend validation](src/pnx-localization/backend/VALIDATION.md).
 
-- Coordinate Transformation：
+## 2. Repository and data flow
 
-    This project has optimized coordinate transformation logic significantly, considering the implicit transformation between the radar origin `lidar_odom` and the chassis origin `odom`.
+| Directory | Contents |
+| --- | --- |
+| `src/pnx-launch/` | `launch_bringup` launch files, four navigation profiles, maps/PCDs, BTs, and RViz; `pnx_sentry_nav` aggregate package; robot description and `ros_interfaces` |
+| `src/pnx-localization/` | Point-LIO, local relocalization manager, global relocalization and action interfaces, odometry adaptation, scan generation, independent backend and atomic-frame interfaces |
+| `src/pnx-navigation/` | `minco_planner`, `minco_controller`, `fake_vel_transform`, and the legacy controller submodule |
+| `src/pnx-perception/` | ROG-map and terrain nodes; Nav2 plugin and point-cloud-to-scan submodules |
+| `src/pnx-stimulation/` | `rm_27_stimulation` Harmonic simulation, `ign_sim_pointcloud_tool` conversion, and `rm27_rendering` helpers |
+| `src/livox_ros_driver2/` | Livox driver submodule |
+| `src/tools/map_edit/` | ROS map editor package |
+| `tools/global_relocalization/` | Isolated builds/launches, map provenance audits, capture, replay, evaluation, and station submaps experiments |
+| `tools/mapping/` | Point-LIO export, ERASOR2, CAD point clouds, and alignment checks; excluded from default colcon discovery |
+| `tools/stimulation/` | Simulation, initialization, odometry, and backend benchmarks; the existing directory spelling is intentional |
+| `docs/` | Architecture, tuning, historical validation, and map provenance |
 
-    The left Livox Mid360 is compensated in the Livox driver and exposed as `left_mid360`. It uses [point_lio](https://github.com/SMBU-PolarBear-Robotics-Team/point_lio/tree/RM2025_SMBU_auto_sentry) as odometry, [relocalization_manager](./src/pnx-localization/relocalization_manager/) to manage relocalization while using small_gicp internally for point cloud verification, and [loam_interface](./src/pnx-localization/loam_interface/) will transform PointCloud from `lidar_odom` frame to `odom` frame. The [sensor_scan_generation](./src/pnx-localization/sensor_scan_generation/) transform PointCloud from `odom` frame to `left_mid360` frame and publishes the transform `odom -> chassis`.
+Directory names are not always ROS package names: `backend` is `rm27_backend`, and `localization_interfaces` is `rm27_localization_interfaces`. Check `package.xml` and `colcon list --base-paths src`.
 
-    ![frames_2025_03_26](https://raw.githubusercontent.com/LihanChen2004/picx-images-hosting/master/frames_2025_03_26.67xmq3djvx.webp)
-
-- Path Planning：
-
-    The NAV2 default Global Planner is used as the global path planner, with the [pb_omni_pid_pursuit_controller](https://github.com/SMBU-PolarBear-Robotics-Team/pb_omni_pid_pursuit_controller) as the path follower.
-
-- Namespace:
-
-    The current RM27 setup is maintained as a single-robot system and keeps the namespace empty by default. If multi-robot support is added later, Gazebo plugins, Point-LIO, Nav2, TF, and topic remaps must be updated together.
-
-- LiDAR:
-
-    The Livox Mid360 is mounted 0.18 m to the left and 0.28 m above `base_link`. The physical `roll=-45 deg` mounting is compensated in the Livox driver, while TF exposes the compensated logical sensor frame as `left_mid360` with zero roll.
-
-    Note: In the simulation environment, the point cloud pattern is actually of the Velodyne-style mechanical scan. Additionally, the simulator's output point cloud lacks some fields, preventing point_lio from estimating the state correctly. Thus, the simulator’s output point cloud is processed by [ign_sim_pointcloud_tool](./src/pnx-stimulation/ign_sim_pointcloud_tool/) to add the `time` field.
-
-- File Structure
-
-    ```text
-    .
-    └── src
-        ├── livox_ros_driver2
-        ├── pnx-launch
-        │   ├── launch_bringup
-        │   ├── pnx_sentry_nav
-        │   ├── ros_interfaces
-        │   └── sentry_robot_description
-        ├── pnx-localization
-        │   ├── loam_interface
-        │   ├── point_lio
-        │   ├── relocalization_manager
-        │   └── sensor_scan_generation
-        ├── pnx-navigation
-        │   ├── fake_vel_transform
-        │   ├── minco_controller
-        │   ├── minco_planner
-        │   └── pb_omni_pid_pursuit_controller
-        ├── pnx-perception
-        │   ├── pb_nav2_plugins
-        │   ├── pointcloud_to_laserscan
-        │   ├── rog_map
-        │   ├── terrain_analysis
-        │   └── terrain_analysis_ext
-        ├── pnx-stimulation
-        │   ├── ign_sim_pointcloud_tool
-        │   └── rm_27_stimulation
-        └── tools
-            └── map_edit
-    ```
-
-The navigation launch package is `launch_bringup`, and the aggregate package is
-`pnx_sentry_nav`. Rebuild after moving or renaming packages, then run
-`source install/setup.bash` to load the new installation.
-
-## 2. Quick Start
-
-### 2.1 Option 1: Docker
-
-#### 2.1.1 Setup Environment
-
-- [Docker](https://docs.docker.com/engine/install/)
-
-- Allow Docker Container to access the host's X11 display
-
-    ```bash
-    xhost +local:docker
-    ```
-
-#### 2.1.2 Create Container
-
-```bash
-docker run -it --rm --name pnx_sentry_nav \
-  --network host \
-  -e "DISPLAY=$DISPLAY" \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v /dev:/dev \
-  ghcr.io/smbu-polarbear-robotics-team/pb2025_sentry_nav:1.3.2
+```mermaid
+flowchart TD
+  L[LiDAR + IMU] --> P[Point-LIO]
+  P --> I[loam_interface]
+  I --> S[sensor_scan_generation]
+  I --> R[relocalization_manager]
+  P --> B[rm27_backend parallel graph]
+  RAW[Raw LiDAR + IMU] --> G[global_relocalization optional initialization]
+  G --> H[Coordinator /initialpose timestamped handoff]
+  H --> R
+  I --> T[terrain legacy]
+  P --> M[ROG-map + MINCO]
+  T --> N[Nav2 legacy]
+  M --> C[MincoMpc]
+  N --> V[velocity_smoother]
+  C --> V
+  V --> F[fake_vel_transform]
+  F --> CMD["/cmd_vel"]
 ```
 
-### 2.2 Option 2: Build From Source
+This diagram describes Point-LIO mode. Ground-truth mode uses `rm27_ground_truth_localizer` for navigation localization inputs; SLAM mode lets slam_toolbox own `map → odom`.
 
-#### 2.2.1 Setup Environment
+Common topics:
 
-- Ubuntu 22.04
-- ROS: [Humble](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html)
-- Simulation package（Option）：[rmu_gazebo_simulator](https://github.com/SMBU-PolarBear-Robotics-Team/rmu_gazebo_simulator)
-- Install [small_icp](https://github.com/koide3/small_gicp):
+- Simulation sensors: `/livox/lidar`, `/livox/imu`; the converter publishes `/velodyne_points` with `ring/time` fields. GPU scans are instantaneous snapshots and do not establish that real sensor scan deskewing is correct.
+- Point-LIO: `/aft_mapped_to_init`, `/cloud_registered`, `/cloud_registered_full`, `/point_lio/diagnostics`.
+- Navigation adaptation: `/lidar_odometry`, `/registered_scan`, `/odometry`, `/sensor_scan`.
+- Atomic backend input: `/point_lio/backend_frame`, type `rm27_localization_interfaces/msg/FrontendFrame`; backend outputs are `~/odometry`, `~/keyframes`, and `~/diagnostics`.
+- Main velocity chain: `/cmd_vel_controller → /cmd_vel_nav2_result → /cmd_vel`. The global initialization coordinator temporarily owns velocity commands and releases control after handoff.
 
-    ```bash
-    sudo apt install -y libeigen3-dev libomp-dev
+## 3. Environment and build
 
-    git clone https://github.com/koide3/small_gicp.git
-    cd small_gicp
-    mkdir build && cd build
-    cmake .. -DCMAKE_BUILD_TYPE=Release && make -j
-    sudo make install
-    ```
+### 3.1 Source and dependencies
 
-#### 2.2.2 Create Workspace
+These commands build from the repository root. For an existing workspace, enter its checkout instead; do not copy old `build/` or `install/` artifacts.
 
 ```bash
-mkdir -p ~/ros_ws
-cd ~/ros_ws
+mkdir -p ~/nav_ws
+cd ~/nav_ws
+git clone --recurse-submodules https://github.com/PnX-HKUSTGZ/sentry_navgation_RM27.git sentry-navigation-RM27
+cd sentry-navigation-RM27
+git submodule update --init --recursive
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths src --ignore-src --rosdistro jazzy -r -y
 ```
+
+Before building:
+
+- Install ROS 2 Jazzy and Gazebo Harmonic/`ros_gz` dependencies. Simulation CMake explicitly requires `gz-sim8`, `gz-msgs10`, and `gz-transport13`; it no longer uses Gazebo Classic.
+- Initialize the four submodules in [.gitmodules](.gitmodules). Follow the Livox submodule's own instructions for Livox SDK2 and its ROS 2 driver, and ensure colcon discovers the driver package.
+- `rm27_backend` needs GTSAM 4.2, TBB, Eigen, and PCL. Point-LIO joint initialization also needs yaml-cpp, nanoflann, and glog. Follow the [backend dependency guide](src/pnx-localization/backend/README.md) for GTSAM. The user-local bootstrap supports Noble amd64 only.
+- Both `relocalization_manager` and `global_relocalization` fetch small_gicp through CMake FetchContent, requiring source access on first configuration. The global package pins a commit; the manager currently tracks `master`. A separate manual small_gicp installation is unnecessary for normal builds, but the two dependency versions have not yet been unified.
+- Resolve rosdep failures. `-r` continues processing other dependencies; it does not make failed dependencies optional.
 
 ```bash
-git clone --recursive https://github.com/PnX-HKUSTGZ/sentry_navgation_RM27.git src/sentry-navigation-RM27
+colcon list --base-paths src
+CMAKE_BUILD_PARALLEL_LEVEL=2 colcon build --base-paths src \
+  --symlink-install --executor sequential \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+source install/setup.bash
 ```
 
-Download prior point cloud:
+Source ROS and this workspace in each subsequent terminal. `--symlink-install` helps with installed launch/YAML edits; new files, CMake, interfaces, and C++ changes still require rebuilding. For a partial first build, use `--packages-up-to` to include workspace dependencies. Use `--packages-select` when those dependencies have already been built and sourced.
 
-Prior point clouds are used for point_lio and small_gicp. Due to large file size, they are not stored in Git. Please download them from [FlowUs](https://flowus.cn/lihanchen/share/87f81771-fc0c-4e09-a768-db01f4c136f4?code=4PP1RS).
+### 3.2 Map resources
 
-> Note: The performance of point_lio with prior_pcd in large scenes is not optimal, and it is more prone to drift than without prior point clouds. Debugging and optimization are ongoing.
+Occupancy maps live in `src/pnx-launch/launch_bringup/map/{simulation,reality}/`, and prior clouds in that package's `pcd/` directory. PCDs, occupancy maps, and simulation collisions must share units and coordinate conventions.
 
-#### 2.2.3 Build
+| Resource | Current state |
+| --- | --- |
+| RMUC2026 | Tracked PGM/YAML, PCD, and manifest; global tools also include a frozen PCD/manifest pair |
+| RMUL2027 | Tracked PGM/YAML, PCD, and world configuration; standalone simulation and ordinary navigation entries exist |
+| RMUC2027 | Tracked official CAD-derived PCD/manifest; no matching navigation world is configured, so `world:=RMUC2027` is unsupported |
+| Physical highbay/highbay2 | Occupancy maps exist; the physical PCD directory contains only a placeholder, so supply the actual prior |
+| Other historical worlds | Listed in `config/worlds.yaml`; some lack `nav_world` or a matching PCD and cannot be assumed to support combined navigation |
 
-```bash
-rosdep install -r --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y
-```
+The RMUC2027 PCD failed strict 3D compatibility checks against the existing RMUC2026 scene. Renaming it does not make it a replacement prior. See [CAD provenance and alignment](docs/rmuc2027_cad_pointcloud.md). Generation uses [separate dependencies](tools/mapping/rmuc2027_requirements.txt); ordinary navigation does not require the complete CAD tool environment.
 
-```bash
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-```
+## 4. Running
 
-> [!NOTE]
-> We highly recommend building your workspace using the symlink-install option since pnx_sentry_nav extensively utilizes launch_file and YAML resources. This option installs symbolic links to those non-compiled source files meaning that you don't need to rebuild again and again when you're for example tweaking a parameter file. Instead, your changes take effect immediately and you just need to restart your application.
+All commands below assume a built and sourced workspace. Keep the single-robot namespace at its empty default by **omitting `namespace`**. Nonempty namespaces are rejected; the multi-robot entry is outside the current supported setup.
 
-### 2.3 Running
+### 4.1 Ordinary simulation
 
-You can start the project with the following commands. Use the `Nav2 Goal` plugin in RViz to publish goal pose.
-
-#### 2.3.1 Simulation
-
-Navigation mode：
+Start with ground-truth localization and legacy navigation:
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-world:=RMUC2026 \
-slam:=False \
-gui:=true \
-use_rviz:=true
+  world:=RMUC2026 navigation_mode:=legacy \
+  use_ground_truth_odom:=true gui:=false use_rviz:=true
 ```
 
-SLAM mode：
+Explicitly enable Point-LIO when checking the estimation pipeline, for example with MINCO:
+
+```bash
+ros2 launch rm_27_stimulation sim_with_nav.launch.py \
+  world:=RMUC2026 navigation_mode:=minco \
+  use_ground_truth_odom:=false gui:=false use_rviz:=true
+```
+
+If Gazebo and the robot are already running, start navigation alone:
 
 ```bash
 ros2 launch launch_bringup rm_navigation_simulation_launch.py \
-slam:=True
+  world:=RMUC2026 navigation_mode:=minco use_ground_truth_odom:=false
 ```
 
-Save map：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
+The ordinary GICP manager performs local alignment only. Supply a sufficiently close initial pose through YAML `init_pose` or RViz **2D Pose Estimate**. After localization is ready, send a **Nav2 Goal**. Successful ground-truth navigation does not validate Point-LIO accuracy.
 
-Optional global relocalization initialization:
+### 4.2 Global relocalization followed by navigation
 
 ```bash
 bash tools/global_relocalization/build.bash
 bash tools/global_relocalization/navigate.bash
 ```
 
-Select a spawn pose in RViz; the coordinator completes global relocalization and timestamped pose handoff before enabling navigation. See the [integration guide](docs/simulation_global_navigation.md) and [migration validation](docs/global_relocalization_merge_20261102.md).
+The wrapper sources an isolated overlay at `tools/global_relocalization/.build/ros/install`, defaults to `ROS_DOMAIN_ID=87` and a separate `GZ_PARTITION`, and configures large-cloud DDS transport. Build the base navigation dependencies first. `GLOBAL_RELOCALIZATION_ROS_SETUP` and `GLOBAL_RELOCALIZATION_DEPENDENCY_INSTALL` select a custom ROS setup or dependency overlay; see [environment.bash](tools/global_relocalization/environment.bash).
 
-#### 2.3.2 Physical Robot
+Use RViz **2D Pose Estimate** to select the spawn location and heading. This selection creates the simulated robot and is not directly accepted as the localization result. The system performs raw LiDAR/IMU retrieval, rotation preparation, competition start, and three fresh stationary confirmations. It uses the original timestamp to hand off `map → odom`, restores the heading, and activates navigation. Then send a **Nav2 Goal**.
 
-SLAM mode：
+This integration requires RMUC2026, `slam:=false`, and MINCO. The competition profile searches the `x<0` half-field; choose an open location there for initial use. See [integration and sensor/gimbal limitations](docs/simulation_global_navigation.md). Append `stationary_relocalization:=false` to disable refinement after initialization. Ordinary launches leave the global workflow disabled.
+
+### 4.3 Mapping
+
+```bash
+ros2 launch rm_27_stimulation sim_with_nav.launch.py \
+  world:=RMUC2026 slam:=true navigation_mode:=legacy \
+  use_ground_truth_odom:=false gui:=false use_rviz:=true
+```
+
+SLAM supports legacy navigation only and is incompatible with ground-truth odometry. slam_toolbox dynamically publishes `map → odom`; this is not a static transform.
+
+Save the occupancy map from another sourced terminal:
+
+```bash
+ros2 run nav2_map_server map_saver_cli -f /tmp/my_map \
+  --ros-args -p use_sim_time:=true
+```
+
+Mapping enables Point-LIO's `pcd_save.pcd_save_en`. On exit, accumulated points are saved under the source tree at `src/pnx-localization/point_lio/PCD/scans.pcd`, using the compile-time `ROOT_DIR`. Check save conditions, source-path writability, and shutdown logs separately: saving the occupancy map does not establish that a PCD was saved. More complete export, dynamic-object removal, and provenance tools live in `tools/mapping/` and `tools/global_relocalization/` and are separate from this minimal workflow.
+
+### 4.4 Physical robot
+
+Configure [MID360 networking and compensation](src/pnx-launch/launch_bringup/config/reality/mid360_user_config.json), extrinsics, robot TF, occupancy map, and prior cloud first. This example explicitly disables the bundled robot description and assumes the complete robot system already publishes TF:
 
 ```bash
 ros2 launch launch_bringup rm_navigation_reality_launch.py \
-slam:=True \
-use_robot_state_pub:=False
+  world:=highbay2 navigation_mode:=minco slam:=false \
+  prior_pcd_file:=/absolute/path/to/highbay2.pcd \
+  use_robot_state_pub:=false
 ```
 
-Save map：`ros2 run nav2_map_server map_saver_cli -f <YOUR_MAP_NAME>`
-
-Navigation mode:
-
-Remember to change the `world` parameter to the actual map name.
+Physical mapping:
 
 ```bash
 ros2 launch launch_bringup rm_navigation_reality_launch.py \
-world:=<YOUR_WORLD_NAME> \
-slam:=False \
-use_robot_state_pub:=False
+  slam:=true navigation_mode:=legacy use_robot_state_pub:=false
 ```
 
-### 2.4 Launch Arguments
+The source default for `use_robot_state_pub` is actually `true`. Calibrate the fixed `sentry_robot_description` model before using it. The physical example description, articulated simulation, and driver compensation have separate settings; the old README's universal mounting offset/roll does not apply. The current driver JSON specifies `roll: 45.0`, which is not evidence of completed hardware calibration. Avoid compensating the same rotation twice in the driver and TF. The simulated LiDAR defaults to `[0, 0.126, 0.130] m` and roll `-30°` relative to `gimbal_yaw`; do not copy that configuration to hardware without calibration.
 
-Launch arguments are largely common to both simulation and physical robot. However, there is a group of arguments that apply only to hardware or only to the simulator. Below is a legend to the tables with all launch arguments.
+## 5. Common launch arguments
 
-| Symbol | Meaning                      |
-| ------ | ---------------------------- |
-| 🤖      | Available for physical robot |
-| 🖥️      | Available in simulation      |
+Check each entry's `--show-args`; top-level launches do not forward every internal parameter:
 
-| Available | Argument | Description | Type  | Default |
-|-|-|-|-|-|
-| 🤖 🖥️ | `namespace` | Top-level namespace. Keep empty for the current single-robot setup. | string | Simulation: ""; Reality: "" |
-| 🤖🖥️ | `use_sim_time` | Use simulation (Gazebo) clock if True | bool | Simulation: True; Reality: False |
-| 🤖 🖥️ | `slam` | Whether run a SLAM. If True, it will disable small_gicp and send static tf (map->odom). Then automatically save the pcd_file in [./point_lio/PCD/](./src/pnx-localization/point_lio/PCD/)| bool | False |
-| 🤖 🖥️ | `world` | In simulation, `RMUC2026` is the currently verified world. Older worlds require matching mesh/map/PCD checks before use. | string | Simulation: "RMUC2026" |
-|  |  | In reality, the `world` parameter name is the same as the file names of the grid map and prior pointcloud map | string | "" |
-| 🤖 🖥️ | `map` | Full path to map file to load. The path is constructed based on the `world` parameter | string | Simulation: [RMUC2026.yaml](./src/pnx-launch/launch_bringup/map/simulation/RMUC2026.yaml); Reality: AUTO_FILL |
-| 🤖 🖥️ | `prior_pcd_file` | Full path to prior pcd file to load. The path is constructed based on the `world` parameter | string | Simulation: [RMUC2026.pcd](./src/pnx-launch/launch_bringup/pcd/simulation/RMUC2026.pcd); Reality: AUTO_FILL |
-| 🤖 🖥️ | `params_file` | Full path to the ROS2 parameters file to use for all launched nodes | string | Simulation: [nav2_params.yaml](./src/pnx-launch/launch_bringup/config/simulation/nav2_params.yaml); Reality: [nav2_params.yaml](./src/pnx-launch/launch_bringup/config/reality/nav2_params.yaml) |
-| 🤖🖥️ | `rviz_config_file` | Full path to the RViz config file to use | string | [nav2_default_view.rviz](./src/pnx-launch/launch_bringup/rviz/nav2_default_view.rviz) |
-| 🤖 🖥️ | `autostart` | Automatically startup the nav2 stack | bool | True |
-| 🤖 🖥️ | `use_composition` | Whether to use composed bringup | bool | False |
-| 🤖 🖥️ | `use_respawn` | Whether to respawn if a node crashes. Applied when composition is disabled. | bool | False |
-| 🤖🖥️ | `use_rviz` | Whether to start RViz | bool | True |
-| 🤖 | `use_robot_state_pub` | Whether to start `robot_state_publisher`. The `rm_27_stimulation` simulator starts its own robot description in `spawn_robot.launch.py`; on the physical robot, TF should be provided by the complete robot system or an RM27-specific description package. Keep this disabled until the physical robot description is explicitly wired to RM27 frames. | bool | False |
+```bash
+ros2 launch rm_27_stimulation sim_with_nav.launch.py --show-args
+ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
+```
 
-> [!TIP]
-> For more details about this project and the deployment guide for the physical robot, please visit the [Wiki](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav/wiki).
+| Argument | Current default / constraint |
+| --- | --- |
+| `world` | Simulation: `RMUC2026`; hardware: `highbay` |
+| `nav_world` | Combined simulation: `auto`, resolved from `config/worlds.yaml` |
+| `slam` | `false`; requires legacy and Point-LIO when enabled |
+| `navigation_mode` | `legacy` or `minco`; default `legacy` |
+| `use_ground_truth_odom` | Simulation default `true`; explicitly set `false` for Point-LIO validation |
+| `namespace` | Empty default; omit it. Nonempty values are rejected |
+| `use_sim_time` | Simulation `true`; hardware `false` |
+| `params_file` | Selects simulation/reality `nav2_params.yaml` or `minco_params.yaml` by mode; custom MINCO files must be complete profiles |
+| `map` / `prior_pcd_file` | Navigation entries derive defaults from world; pass custom paths to those entries. The combined simulation entry does not provide generic forwarding arguments with these names |
+| `gui` / `use_rviz` | Combined simulation defaults `false` / `true`; set both to `false` without a display |
+| `use_robot_state_pub` | Physical entry only; source default `true`; explicitly disable when TF is supplied elsewhere |
+| `enable_legacy_terrain` | `auto`: on for legacy, off for MINCO |
+| `autostart` / `use_composition` / `use_respawn` | `true` / `false` / `false`; the global workflow delays activation |
+| `global_relocalization` | Simulation default `false`; requires matching PCD, manifest, global package, and coordinator |
+| `stationary_relocalization` | Default `true`; controls refinement after global initialization |
+
+The four navigation profiles are under [config](src/pnx-launch/launch_bringup/config). Launch also applies world and Point-LIO input profiles and generates temporary YAML. Inspect the parameters actually passed to nodes when debugging.
+
+## 6. Development, validation, and limitations
+
+Read [AGENTS.md](AGENTS.md) first. Example package checks after building with testing enabled:
+
+```bash
+colcon test --packages-select point_lio rm27_backend rog_map \
+  minco_planner minco_controller fake_vel_transform \
+  loam_interface sensor_scan_generation relocalization_manager \
+  launch_bringup rm_27_stimulation rm27_rendering \
+  --event-handlers console_direct+
+colcon test-result --verbose
+```
+
+The global pipeline has a separate check entry:
+
+```bash
+bash tools/global_relocalization/check.bash
+```
+
+This builds the global packages and runs CTest, tool pytest, and station submaps contract checks; it is more than lint. Simulation/backend performance entries are in `tools/stimulation/benchmark_*.py`. Use a separate ROS domain and output directory, and record maps, parameters, localization mode, simulation time, and wall time.
+
+The documentation review on 2026-11-05 reran **169 passing** tool/station submaps tests. The explicitly selected launch, handoff, and rendering tests produced **91 passes and 17 failures**. Optional CAD tests were not completed because the system Python lacks `shapely`. The 17 failures include configuration assertions and collision-structure differences and must not all be dismissed as harmless old tests. This change updates documentation only; it does not tune motion parameters or weaken assertions. See the [review record](docs/repository_review_2026-11-05.md) for commands, impact, and priorities. No fresh complete build, Gazebo navigation acceptance run, or physical-robot test was performed for this review.
+
+Additional limitations:
+
+- Simulation MINCO currently sets `projection.vehicle_height` to `0.040 m`, while the model declares `folded_vehicle_height=0.240 m`. Clearance tests fail as well; full-vehicle low-ceiling traversal is not established by this configuration.
+- Synthetic/simulation results for the backend and joint initialization do not replace hardware validation. A coordinate-consistency risk remains documented for fixed nonzero LiDAR–IMU extrinsics.
+- `tools/reality/start_nav.bash` and `tools/stimulation/start_nav_stimulation.bash` contain machine-specific paths and broad process cleanup. Prefer the direct launch commands above.
+- The root Dockerfile clones source from a remote repository and retains Humble. Old upstream images do not represent this checkout, and CI does not cover the current complete launch, global relocalization, and backend pipeline.
+
+## 7. Further reading and licenses
+
+- [Localization index](src/pnx-localization/README.md), [local GICP manager](src/pnx-localization/relocalization_manager/README.md), and [atomic-frame interface](src/pnx-localization/localization_interfaces/README.md).
+- [ROG/MINCO architecture](docs/rog_minco_navigation_architecture.md) and [tuning/debugging](docs/rog_minco_tuning_debug_guide.md): these include historical sections; current source controls modes and parameters.
+- [Global localization algorithms](docs/global_relocalization.md), [integration validation](docs/global_relocalization_merge_20261102.md), and [station submaps experiments](tools/global_relocalization/station_submaps/README.md).
+- [Simulation package](src/pnx-stimulation/rm_27_stimulation/README.md), [RMUL2027 world](docs/rmul2027_simulation_world.md), and [gimbal controls](docs/simulation_gimbal_controls.md).
+
+The root [LICENSE](LICENSE) is Apache-2.0; components and datasets retain their own licenses. In particular, Point-LIO's joint initialization core has [GPL-2.0-only provenance and licensing](src/pnx-localization/point_lio/third_party/zlio_startup/README.md), and official CAD-derived data has separate attribution and usage terms. Do not label every file in the workspace Apache-2.0. Thanks to PolarBear navigation, Nav2, Point-LIO, ROG-map, small_gicp, GTSAM, ZLIO, and related upstream projects.
