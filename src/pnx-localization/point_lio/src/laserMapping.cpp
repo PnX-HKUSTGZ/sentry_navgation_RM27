@@ -18,6 +18,8 @@
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <diagnostic_msgs/msg/diagnostic_status.hpp>
 #include <diagnostic_msgs/msg/key_value.hpp>
+#include <rm27_localization_interfaces/msg/frontend_frame.hpp>
+#include <unistd.h>
 #include <limits>
 #include <sstream>
 
@@ -62,6 +64,11 @@ geometry_msgs::msg::PoseStamped msg_body_pose;
 int sleep_time = 0;
 
 auto LOGGER = rclcpp::get_logger("laserMapping");
+
+using BackendFrame = rm27_localization_interfaces::msg::FrontendFrame;
+const std::string backend_instance = std::to_string(getpid()) + "_" +
+  std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+std::uint64_t backend_epoch = 0, backend_sequence = 0;
 
 struct FullCloudPoint
 {
@@ -412,7 +419,8 @@ void processFullCloudSegmentWithSnapshot(const StateSnapshot & current_snapshot)
 }
 
 void publishAccumulatedFullCloudWorld(
-  const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr & publisher, double stamp)
+  const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr & publisher, double stamp,
+  const rclcpp::Publisher<BackendFrame>::SharedPtr & backend_frame_publisher)
 {
   if (!publisher || !full_cloud_world || full_cloud_world->empty()) {
     return;
@@ -426,6 +434,20 @@ void publishAccumulatedFullCloudWorld(
   pcl::toROSMsg(*full_cloud_world, *message);
   message->header.stamp = get_ros_time(stamp);
   message->header.frame_id = "camera_init";
+  if (backend_frame_publisher && backend_frame_publisher->get_subscription_count() > 0) {
+    auto frame = std::make_unique<BackendFrame>();
+    frame->instance_id = backend_instance;
+    frame->epoch = backend_epoch;
+    frame->sequence = ++backend_sequence;
+    frame->odometry = odomAftMapped;
+    frame->odometry.header.stamp = message->header.stamp;
+    frame->cloud = *message;
+    frame->imu_saturated = frame_diagnostics.imu_saturated;
+    frame->rejected_imu_updates = frame_diagnostics.rejected_imu_updates;
+    frame->effective_points = frame_diagnostics.effective_points;
+    frame->lidar_updates = frame_diagnostics.lidar_updates;
+    backend_frame_publisher->publish(std::move(frame));
+  }
   publisher->publish(std::move(message));
   full_cloud_world->clear();
 }
@@ -875,6 +897,14 @@ int main(int argc, char ** argv)
   auto pub_path = nh->create_publisher<nav_msgs::msg::Path>("path", 20);
   auto pub_diagnostics =
     nh->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("point_lio/diagnostics", 10);
+  rclcpp::Publisher<BackendFrame>::SharedPtr backend_frame_publisher;
+  if (nh->declare_parameter<bool>("publish.backend_frame", true)) {
+    if (publish_odometry_without_downsample) {
+      throw std::invalid_argument("backend atomic frames require scan-end odometry output");
+    }
+    backend_frame_publisher = nh->create_publisher<BackendFrame>(
+      "point_lio/backend_frame", rclcpp::SensorDataQoS().keep_last(3));
+  }
   auto tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(nh);
 
   //------------------------------------------------------------------------------------------------------
@@ -899,6 +929,8 @@ int main(int argc, char ** argv)
       frame_diagnostics.reset();
       frame_diagnostics.raw_points = Measures.lidar ? Measures.lidar->size() : 0;
       if (flg_reset) {
+        ++backend_epoch;
+        backend_sequence = 0;
         RCLCPP_WARN(LOGGER, "reset when rosbag play back");
         p_imu->Reset();
         if (joint_startup) {joint_startup->reset();}
@@ -1696,7 +1728,8 @@ int main(int argc, char ** argv)
       } else if (has_full_cloud_anchor && lidar_end_time > full_cloud_anchor.stamp) {
         processFullCloudSegmentWithSnapshot(makeStateSnapshot(lidar_end_time));
       }
-      publishAccumulatedFullCloudWorld(pub_laser_cloud_full_world, lidar_end_time);
+      publishAccumulatedFullCloudWorld(pub_laser_cloud_full_world, lidar_end_time,
+                                      backend_frame_publisher);
       if (scan_pub_en && scan_body_pub_en) publish_frame_body(pub_laser_cloud_full_res_body);
       publish_diagnostics(pub_diagnostics, lidar_end_time, (t5 - t0) * 1000.0);
 

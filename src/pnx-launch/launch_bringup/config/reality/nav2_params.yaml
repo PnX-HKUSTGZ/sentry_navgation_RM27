@@ -131,6 +131,7 @@ point_lio:
       publish_odometry_without_downsample: False
 
     publish:
+      backend_frame: true  # 发布同刻位姿、点云、质量和重置代次的原子观测。
       path_en: False                                    # False: close the path output
       scan_publish_en: True                             # False: close all the point cloud output
       scan_bodyframe_pub_en: False                      # True: output the point cloud scans in IMU-body-frame
@@ -639,3 +640,40 @@ velocity_smoother:
     odom_duration: 0.1
     deadband_velocity: [0.03, 0.03, 0.0]
     velocity_timeout: 1.0
+
+rm27_backend:
+  ros__parameters:
+    enabled: true  # 启用旁路里程计图；导航 map→odom 仍由原管理器发布。
+    use_sim_time: false  # 仿真使用 /clock，实车使用系统时间。
+    input.frame_topic: /point_lio/backend_frame  # Point-LIO 原子扫描观测话题。
+    input.world_frame: camera_init  # 原始前端世界坐标系。
+    input.sensor_frame: body  # Point-LIO 的 IMU 原点坐标系，非底盘原点。
+    input.queue_depth: 3  # 接收队列长度；过载丢帧由序号统计。
+    input.max_points: 300000  # 单条输入点云点数上限。
+    input.max_gap: 1.0  # 连续输入最大间隔，单位 s；超出开启独立轨迹段。
+    input.max_linear_speed: 12.0  # 连续性检查最大线速度，单位 m/s。
+    input.max_angular_speed: 35.0  # 连续性检查最大角速度，单位 rad/s。
+    keyframe.distance: 0.5  # 相对上一关键帧的平移触发阈值，单位 m。
+    keyframe.angle_deg: 10.0  # 三维转角触发阈值，单位度。
+    keyframe.min_interval: 0.2  # 关键帧最小时间间隔，单位 s。
+    keyframe.max_interval: 0.5  # 关键帧定时触发间隔，单位 s。
+    cloud.voxel_size: 0.15  # 关键帧局部点云体素边长，单位 m；0 关闭。
+    cloud.max_points: 12000  # 体素滤波前等间隔采样的最大点数。
+    cloud.min_points: 30  # 滤波后关键帧最少有效点数。
+    quality.minimum_effective_points: 20  # 前端有效匹配少于此值标记降级。
+    quality.degraded_noise_multiplier: 10.0  # 区间降级或缺帧时里程计方差倍率。
+    odom_noise.translation_per_second: 0.0005  # 平移过程方差系数，单位 m²/s，待实车标定。
+    odom_noise.translation_per_meter: 0.0002  # 净位移附加方差系数，单位 m²/m。
+    odom_noise.rotation_per_second: 0.000001  # 旋转过程方差系数，单位 rad²/s。
+    odom_noise.rotation_per_radian: 0.0000003  # 净转角附加方差系数，单位 rad²/rad。
+    graph.lag_seconds: 30.0  # 图活动窗口时长，单位 s；0 只按数量裁剪。
+    graph.max_states: 120  # 活动位姿节点上限；过期节点边缘化。
+    graph.prior_translation_std: 0.01  # 首帧规范先验平移标准差，单位 m，并非赛场定位精度。
+    graph.prior_rotation_std: 0.01  # 首帧规范先验旋转标准差，单位 rad。
+    graph.relinearize_threshold: 0.01  # iSAM2 重新线性化阈值。
+    graph.num_threads: 2  # 本进程 TBB 最大并发线程数。
+    storage.cache_mb: 32  # 局部关键帧点云缓存预算，单位 MiB。
+    storage.queue_size: 4  # 异步存盘队列上限，不包含正在写入的一项。
+    storage.disk_mb: 1024  # 每次记录的保守磁盘配额，单位 MiB；满后报错停止存盘。
+    storage.directory: ""  # 空值关闭存盘；非空时自动创建唯一 run 子目录。
+    output.frame: rm27_graph  # 旁路坐标系前缀，实际附加段编号；不广播 TF，未接全局约束。

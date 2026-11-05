@@ -3,11 +3,14 @@
 定位相关的 ROS 2 包集中存放在此目录：
 
 - `point_lio`：激光惯性里程计，作为主仓库的普通目录维护。
+- `backend`（包名 `rm27_backend`）：Point-LIO 原子帧适配、关键帧与点云管理、里程计因子及有界 iSAM2 位姿图；地图/回环测量接口已预留。
+- `localization_interfaces`（包名 `rm27_localization_interfaces`）：前后端共用的原子扫描观测消息。
 - `loam_interface`：将 Point-LIO 输出转换为导航使用的里程计与点云。
 - `relocalization_manager`：先验点云匹配与 `map → odom` 变换管理。
 - `sensor_scan_generation`：将雷达位姿转换为机器人里程计，发布底盘 TF 和雷达坐标系点云。
 
-包名、可执行文件名和 ROS 接口保持原有约定。colcon 会递归发现这四个包。
+colcon 会递归发现这些包。后端当前旁路运行，保留原导航 TF 发布链；使用和测试见
+[rm27_backend](backend/README.md)。
 
 在工作区根目录构建：
 
