@@ -14,10 +14,11 @@
 
 
 import os
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable, OpaqueFunction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LoadComposableNodes, Node
@@ -253,6 +254,22 @@ def generate_launch_description():
 
     # Add the actions to launch all of the localiztion nodes
     ld.add_action(start_point_lio_node)
+    def start_backend(context):
+        with open(params_file.perform(context), encoding="utf-8") as stream:
+            configuration = yaml.safe_load(stream) or {}
+        enabled = configuration.get("rm27_backend", {}).get("ros__parameters", {}).get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError("rm27_backend.enabled must be a YAML boolean")
+        if not enabled:
+            return []
+        return [Node(
+            package="rm27_backend", executable="rm27_backend_node", name="rm27_backend",
+            output="screen", parameters=[configured_params],
+            arguments=["--ros-args", "--log-level", log_level],
+            condition=UnlessCondition(use_ground_truth_odom),
+        )]
+
+    ld.add_action(OpaqueFunction(function=start_backend))
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)
 

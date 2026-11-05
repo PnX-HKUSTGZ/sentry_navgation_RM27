@@ -12,6 +12,7 @@ int ivox_nearby_type = 6;
 
 std::vector<double> extrinT(3, 0.0);
 std::vector<double> extrinR(9, 0.0);
+std::string initialization_method;
 state_input state_in;
 state_output state_out;
 std::string lid_topic, imu_topic;
@@ -380,6 +381,15 @@ void readParameters(std::shared_ptr<rclcpp::Node> & nh)
     std::max(temporal_adaptive_config.min_points, temporal_adaptive_config.max_points);
   temporal_adaptive_config.latency_penalty =
     std::max(1.0e-12, temporal_adaptive_config.latency_penalty);
+  initialization_method = nh->declare_parameter<std::string>("initialization.method", "joint");
+  if (initialization_method != "joint" && initialization_method != "legacy") {
+    throw std::invalid_argument("initialization.method must be joint or legacy");
+  }
+  if (initialization_method == "joint" && (!imu_en || enable_prior_pcd || extrinsic_est_en)) {
+    throw std::invalid_argument(
+      "joint initialization requires IMU, fixed calibrated extrinsics, and a local seed map; "
+      "use relocalization_manager for the global prior or select legacy explicitly");
+  }
   p_imu->gravity_ << VEC_FROM_ARRAY(gravity);
 }
 

@@ -316,7 +316,18 @@ bool sync_packages(MeasureGroup & meas)
 
     if (!lose_lid && !imu_pushed) {
       /*** push imu data, and pop from imu buffer ***/
-      if (p_imu->imu_need_init_) {
+      if (p_imu->imu_need_init_ && initialization_method == "joint") {
+        // Keep the last sample at/before scan end and peek the next one, so the
+        // initializer can interpolate exact endpoints without consuming future IMU.
+        meas.imu.clear();
+        while (imu_deque.size() > 1 &&
+               get_time_sec(imu_deque[1]->header.stamp) <= lidar_end_time) {
+          meas.imu.emplace_back(imu_deque.front());
+          imu_deque.pop_front();
+        }
+        meas.imu.emplace_back(imu_deque.front());
+        if (imu_deque.size() > 1) {meas.imu.emplace_back(imu_deque[1]);}
+      } else if (p_imu->imu_need_init_) {
         double imu_time = get_time_sec(imu_deque.front()->header.stamp);
         imu_next = *(imu_deque.front());
         meas.imu.clear();

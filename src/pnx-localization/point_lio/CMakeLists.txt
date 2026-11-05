@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.16)
 project(point_lio)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -47,6 +47,7 @@ find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
+find_package(rm27_localization_interfaces REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -74,6 +75,20 @@ link_directories(
   ${PCL_LIBRARY_DIRS}
 )
 
+# ZLIO's pure C++ multi-frame initialization core (GPL-2.0-only).
+find_package(yaml-cpp REQUIRED)
+find_package(Threads REQUIRED)
+find_path(NANOFLANN_INCLUDE_DIR nanoflann.hpp REQUIRED)
+set(ZLIO_STARTUP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlio_startup)
+set(ZLIO_STARTUP_SOURCES config execution geometry initialization plane preintegration
+  registration state uncertainty window inertial trajectory input)
+list(TRANSFORM ZLIO_STARTUP_SOURCES PREPEND "${ZLIO_STARTUP_DIR}/src/")
+list(TRANSFORM ZLIO_STARTUP_SOURCES APPEND ".cpp")
+add_library(pointlio_joint_startup STATIC ${ZLIO_STARTUP_SOURCES} src/joint_startup.cpp)
+target_include_directories(pointlio_joint_startup PUBLIC include ${ZLIO_STARTUP_DIR}/include
+  PRIVATE ${NANOFLANN_INCLUDE_DIR})
+target_link_libraries(pointlio_joint_startup PUBLIC Eigen3::Eigen yaml-cpp Threads::Threads)
+
 # Declare a ROS2 executable
 add_executable(pointlio_mapping
   src/laserMapping.cpp
@@ -85,6 +100,7 @@ add_executable(pointlio_mapping
 )
 
 ament_target_dependencies(pointlio_mapping
+  rm27_localization_interfaces
   rclcpp
   rclpy
   geometry_msgs
@@ -98,7 +114,7 @@ ament_target_dependencies(pointlio_mapping
   livox_ros_driver2
 )
 
-target_link_libraries(pointlio_mapping ${PCL_LIBRARIES} ${PYTHON_LIBRARIES})
+target_link_libraries(pointlio_mapping pointlio_joint_startup ${PCL_LIBRARIES} ${PYTHON_LIBRARIES})
 target_include_directories(pointlio_mapping PRIVATE ${PYTHON_INCLUDE_DIRS})
 
 if(BUILD_TESTING)
@@ -107,6 +123,13 @@ if(BUILD_TESTING)
   target_include_directories(test_adaptive_lio PRIVATE include ${EIGEN3_INCLUDE_DIR} ${PCL_INCLUDE_DIRS})
   ament_target_dependencies(test_adaptive_lio rclcpp nav_msgs sensor_msgs tf2_ros)
   target_link_libraries(test_adaptive_lio ${PCL_LIBRARIES})
+  ament_add_gtest(test_joint_startup test/test_joint_startup.cpp TIMEOUT 180)
+  target_link_libraries(test_joint_startup pointlio_joint_startup ${PCL_LIBRARIES})
+  ament_target_dependencies(test_joint_startup rclcpp nav_msgs sensor_msgs tf2_ros)
+  add_executable(benchmark_startup test/benchmark_startup.cpp src/IMU_Processing.cpp)
+  target_include_directories(benchmark_startup PRIVATE src)
+  target_link_libraries(benchmark_startup pointlio_joint_startup ${PCL_LIBRARIES})
+  ament_target_dependencies(benchmark_startup rclcpp nav_msgs sensor_msgs tf2_ros pcl_conversions)
   ament_add_gtest(test_imu_update test/test_imu_update.cpp)
   target_include_directories(test_imu_update PRIVATE include ${EIGEN3_INCLUDE_DIR} ${PCL_INCLUDE_DIRS})
   ament_target_dependencies(test_imu_update rclcpp nav_msgs sensor_msgs tf2_ros)
@@ -141,3 +164,5 @@ ament_export_dependencies(
 )
 
 ament_package()
+
+install(DIRECTORY third_party/zlio_startup DESTINATION share/${PROJECT_NAME}/third_party)
