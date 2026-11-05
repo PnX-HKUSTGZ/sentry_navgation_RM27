@@ -12,7 +12,7 @@ def generate_launch_description():
     world = LaunchConfiguration('world')
     spawn = LaunchConfiguration('spawn_poses_config')
     return LaunchDescription([
-        DeclareLaunchArgument('world', default_value='RMUC2026'),
+        DeclareLaunchArgument('world', default_value='RMUC2027'),
         DeclareLaunchArgument('render_mode', default_value='auto'),
         DeclareLaunchArgument('gui', default_value='false'),
         DeclareLaunchArgument('verbose', default_value='false'),

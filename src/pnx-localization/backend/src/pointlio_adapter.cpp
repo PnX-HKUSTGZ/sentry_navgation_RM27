@@ -32,7 +32,7 @@ float read(const std::uint8_t *p, int offset) {
     std::memcpy(&v, p + offset, 4);
   return v;
 }
-} // namespace
+} // 匿名命名空间
 /// 校验坐标名称、采样点数范围和体素尺寸。
 PointlioAdapter::PointlioAdapter(AdapterConfig c) : config_(std::move(c)) {
   if (config_.world_frame.empty() || config_.sensor_frame.empty() ||
@@ -89,8 +89,8 @@ Frame PointlioAdapter::decode(const Message &m) const {
   for (int r = 0; r < 6; ++r)
     for (int col = 0; col < 6; ++col)
       raw(r, col) = o.pose.covariance[r * 6 + col];
-  // Point-LIO's documented mixed tangent: position world-additive, rotation
-  // body-right. Convert to local-right [rho,phi]; do not reuse as edge noise.
+  // Point-LIO 使用混合误差坐标：位置为世界系加法误差，旋转为
+  // 机体系右扰动。统一转换为局部右扰动 [平移, 旋转]，不直接用作里程计边噪声。
   Covariance j = Covariance::Identity();
   j.topLeftCorner<3, 3>() = f.odom.linear().transpose();
   f.local_covariance = j * raw * j.transpose();
@@ -106,8 +106,8 @@ Frame PointlioAdapter::decode(const Message &m) const {
 /// 先等间隔限点，再去除无效点并体素过滤；有效点不足时拒绝创建关键帧。
 Cloud::ConstPtr PointlioAdapter::cloud(const Message &m, const Frame &f) const {
   const auto &c = m.cloud;
-  // decode() is repeated only at this public boundary to prevent unsafe callers
-  // from bypassing layout validation; no point scan occurs there.
+  // 在此公开接口再次调用 decode()，防止调用方绕过消息布局校验；
+  // 该校验只读取元数据，不遍历点云。
   const Frame verified = decode(m);
   if (verified.identity != f.identity || verified.sequence != f.sequence ||
       !verified.odom.matrix().isApprox(f.odom.matrix(), 1e-12))
@@ -152,4 +152,4 @@ Cloud::ConstPtr PointlioAdapter::cloud(const Message &m, const Frame &f) const {
   out->is_dense = true;
   return out;
 }
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

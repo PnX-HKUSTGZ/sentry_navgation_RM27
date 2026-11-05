@@ -1052,6 +1052,11 @@ velocity_smoother:
 # 按仿真场景合并定位参数。
 simulation_world_profiles:
   ros__parameters:
+    RMUC2027:
+      relocalization_manager:
+        # 点云已包含场景实例及 visual 的完整位姿，不再施加旧 PCD 的 1.65 m 补偿。
+        prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        transform_prior_map_with_lidar_offset: false
     RMUL2027:
       relocalization_manager:
         # 该 PCD 已采用 Gazebo 世界坐标，长度单位为米。

@@ -70,7 +70,7 @@ PointlioAdapter::Message message() {
   }
   return m;
 }
-} // namespace
+} // 匿名命名空间
 /// 验证原子帧时间/坐标契约、局部点转换及畸形输入拒绝。
 TEST(Adapter, AtomicTimeCoordinatesAndMalformedInputs) {
   PointlioAdapter a;

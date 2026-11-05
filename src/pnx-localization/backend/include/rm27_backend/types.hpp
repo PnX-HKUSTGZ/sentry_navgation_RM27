@@ -42,8 +42,8 @@ struct Keyframe {
   Frame frame;
   Pose estimate = Pose::Identity();
 };
-// Covariances use local RIGHT perturbations [translation, rotation].
-// Z_from_to maps points from the destination sensor into the source sensor.
+// 协方差采用局部右扰动，分量顺序为 [平移, 旋转]。
+// Z_from_to 将目标传感器系的点转换到源传感器系。
 /// 同一轨迹段内的相对位姿测量；relative 将 to 帧坐标转换到 from 帧。
 /// 协方差使用局部右扰动 [平移, 旋转]，时间、净位移和净转角用于过程噪声建模。
 struct OdometryMeasurement {
@@ -52,8 +52,8 @@ struct OdometryMeasurement {
   Covariance covariance = Covariance::Identity();
   double seconds = 0, distance = 0, angle = 0;
 };
-// Interfaces for independently verified external observations. No ROS producer
-// is connected yet. Empty/stale/duplicate identities are rejected by PoseGraph.
+// 外部观测须先独立完成验收；当前尚未接入 ROS 观测生产者。
+// PoseGraph 会拒绝空测量标识、过期节点或身份不符及重复观测。
 /// 预留的先验地图位姿观测，提交前应完成外部几何验收并统一到图坐标系。
 /// sqrt_information 为 rank×6 矩阵，列顺序是局部右扰动 [平移, 旋转]。
 struct AbsolutePoseMeasurement {
@@ -62,7 +62,7 @@ struct AbsolutePoseMeasurement {
   std::uint64_t segment = 0;
   Pose pose = Pose::Identity();
   Eigen::MatrixXd
-      sqrt_information; // rank x 6, local right [translation, rotation]
+      sqrt_information; // 有效秩×6，局部右扰动 [平移, 旋转]
 };
 /// 预留的历史关键帧回环测量；relative 为 from←to，两个端点都必须仍在活动图中。
 struct LoopMeasurement {
@@ -89,4 +89,4 @@ inline bool positiveCovariance(const Covariance &p) {
   return p.allFinite() && p.isApprox(p.transpose(), 1e-8) &&
          Eigen::LLT<Covariance>(p).info() == Eigen::Success;
 }
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

@@ -68,4 +68,4 @@ private:
   std::uint64_t segment_ = 0, sequence_gaps_ = 0;
   bool interval_degraded_ = false;
 };
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

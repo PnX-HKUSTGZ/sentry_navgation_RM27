@@ -40,7 +40,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--mapper", required=True)
-    parser.add_argument("--route-map", type=Path, default=ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2026.yaml")
+    parser.add_argument("--route-map", type=Path, default=ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2027.yaml")
     parser.add_argument("--survey-waypoints", type=Path, default=HERE / "config/survey_full_uc.json")
     parser.add_argument("--params", type=Path, default=ROOT / "src/pnx-launch/launch_bringup/config/simulation/nav2_params.yaml")
     parser.add_argument("--pointlio-overrides", type=Path)

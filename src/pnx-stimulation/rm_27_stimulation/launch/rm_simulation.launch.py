@@ -196,7 +196,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument(
                 "sim_world",
-                default_value="RMUC2026",
+                default_value="RMUC2027",
                 description="World key from config/worlds.yaml",
             ),
             DeclareLaunchArgument(
@@ -234,7 +234,7 @@ def generate_launch_description():
                 default_value="gz-physics-bullet-featherstone-plugin",
                 description=(
                     "Gazebo physics engine plugin. Bullet Featherstone supports the "
-                    "RMUC2026 convex STL collision proxies and planar force controller."
+                    "RMUC2027 convex STL collision proxies and planar force controller."
                 ),
             ),
             DeclareLaunchArgument(

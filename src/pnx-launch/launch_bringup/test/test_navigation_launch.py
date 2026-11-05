@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import ast
+import hashlib
 import importlib.util
+import json
 import math
 from pathlib import Path
 import struct
@@ -24,6 +26,7 @@ import xml.etree.ElementTree as ET
 import pytest
 import yaml
 from launch import LaunchContext
+from launch.actions import DeclareLaunchArgument
 from launch.utilities import perform_substitutions
 
 
@@ -35,7 +38,7 @@ REALITY_LAUNCH_FILE = BRINGUP_DIR / "launch" / "rm_navigation_reality_launch.py"
 SIMULATION_LAUNCH_FILE = BRINGUP_DIR / "launch" / "rm_navigation_simulation_launch.py"
 BRINGUP_LAUNCH_FILE = BRINGUP_DIR / "launch" / "bringup_launch.py"
 SLAM_LAUNCH_FILE = BRINGUP_DIR / "launch" / "slam_launch.py"
-RMUC2026_MAP = BRINGUP_DIR / "map" / "simulation" / "RMUC2026.yaml"
+RMUC2026_MAP = BRINGUP_DIR / "map" / "simulation" / "RMUC2027.yaml"
 RMUC2026_ELEVATION_GENERATOR = BRINGUP_DIR / "tools" / "generate_rmuc2026_elevation.py"
 RMUC2026_STL = (
     SIMULATION_DIR
@@ -47,8 +50,8 @@ RMUC2026_STL = (
 RMUC2026_WORLD = (
     SIMULATION_DIR
     / "world"
-    / "RMUC2026_world"
-    / "RMUC2026_world.world"
+    / "RMUC2027_world"
+    / "RMUC2027_world.world"
 )
 SIMULATION_ROBOT_XACRO = (
     SIMULATION_DIR / "urdf" / "simulation_waking_robot.xacro"
@@ -202,7 +205,7 @@ def test_slam_toolbox_owns_dynamic_map_to_odom_transform():
 
 @pytest.mark.parametrize(
     ("deployment", "expected_name"),
-    [("simulation", "RMUC2026.yaml"), ("reality", "highbay.yaml")],
+    [("simulation", "RMUC2027.yaml"), ("reality", "highbay.yaml")],
 )
 def test_empty_map_selects_matching_deployment_default(deployment, expected_name):
     module = load_navigation_launch()
@@ -1232,6 +1235,56 @@ def test_simulation_entry_rejects_nonempty_namespace_before_starting_localizatio
     with pytest.raises(RuntimeError, match="Non-empty namespace") as error:
         module._validate_localization_inputs(context)
     assert "Omit the namespace argument" in str(error.value)
+
+
+@pytest.mark.parametrize("world,expected", [
+    ("RMUC2027", "RMUC2027.pcd"), ("RMUL2027", "RMUL2027.pcd"),
+    ("tunnel_ramp_test", "tunnel_ramp_test.pcd"),
+])
+def test_simulation_prior_uses_the_current_world_geometry(world, expected):
+    module = load_launch(SIMULATION_LAUNCH_FILE, "rm27_prior_selection")
+    context = LaunchContext()
+    context.launch_configurations["world"] = world
+    argument = next(action for action in module.generate_launch_description().entities
+                    if isinstance(action, DeclareLaunchArgument) and action.name == "prior_pcd_file")
+    assert Path(perform_substitutions(context, argument.default_value)).name == expected
+    # A supplied prior remains an explicit override of the world default.
+    context.launch_configurations["prior_pcd_file"] = "/tmp/custom.pcd"
+    argument.execute(context)
+    assert context.launch_configurations["prior_pcd_file"] == "/tmp/custom.pcd"
+
+
+@pytest.mark.parametrize("filename", ["nav2_params.yaml", "minco_params.yaml"])
+def test_rmuc2027_prior_is_not_translated_twice(filename):
+    module = load_launch(SIMULATION_LAUNCH_FILE, "rm27_prior_coordinates")
+    source = BRINGUP_DIR / "config/simulation" / filename
+    resolved = Path(module._apply_world_profile(str(source), "RMUC2027"))
+    try:
+        original = yaml.safe_load(source.read_text())
+        data = yaml.safe_load(resolved.read_text())
+        params = data["relocalization_manager"]["ros__parameters"]
+        assert params["prior_pcd_transform"] == [0.0] * 6
+        assert params["transform_prior_map_with_lidar_offset"] is False
+        for gate in ["max_mean_error", "min_inlier_ratio", "min_inliers", "max_delta_xy", "max_delta_z", "max_delta_yaw"]:
+            assert params[gate] == original["relocalization_manager"]["ros__parameters"][gate]
+        assert data["point_lio"] == original["point_lio"]
+    finally:
+        resolved.unlink()
+
+
+def test_rmuc2027_export_identity_density_and_provenance():
+    directory = BRINGUP_DIR / "pcd/simulation"
+    pcd = directory / "RMUC2027.pcd"
+    metadata = json.loads((directory / "RMUC2027_manifest.json").read_text())
+    assert 5_800_000 <= pcd.stat().st_size < 6_200_000
+    assert hashlib.sha256(pcd.read_bytes()).hexdigest() == metadata["map_sha256"]
+    assert metadata["source_type"] == "gazebo_RM27_world_visible_surface_prior"
+    assert metadata["frame_id"] == "map" and metadata["units"] == "metres"
+    assert metadata["prior_pcd_transform"] == [0.0] * 6
+    assert metadata["T_map_world"] == [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]
+    assert metadata["pcd_points"] > 450_000
+    for path, expected in metadata["source_asset_sha256"].items():
+        assert hashlib.sha256((BRINGUP_DIR.parents[2] / path).read_bytes()).hexdigest() == expected, path
 
 
 def test_tunnel_ramp_collision_surface_and_support_yaml_are_continuous():

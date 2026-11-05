@@ -77,9 +77,9 @@ def _launch_sim_stack(context, *args, **kwargs):
     bringup_share = get_package_share_directory("launch_bringup")
     worlds_config_path = LaunchConfiguration("worlds_config").perform(context)
     world_name = LaunchConfiguration("world").perform(context)
-    if global_relocalization and (world_name != "RMUC2026" or slam or
+    if global_relocalization and (world_name != "RMUC2027" or slam or
                                    navigation_mode != "minco"):
-        raise RuntimeError("global_relocalization currently requires RMUC2026, MINCO, "
+        raise RuntimeError("global_relocalization currently requires RMUC2027, MINCO, "
                            "and slam:=false")
     nav_world = LaunchConfiguration("nav_world").perform(context)
     spawn_delay = float(LaunchConfiguration("spawn_delay").perform(context))
@@ -238,12 +238,12 @@ def generate_launch_description():
             DeclareLaunchArgument("global_relocalization", default_value="false",
                                   description="Select spawn in RViz and initialize navigation by global relocalization"),
             DeclareLaunchArgument("relocalization_map", default_value=os.path.join(
-                bringup_share, "pcd", "simulation", "RMUC2026.pcd")),
+                bringup_share, "pcd", "simulation", "RMUC2027.pcd")),
             DeclareLaunchArgument("relocalization_manifest", default_value=os.path.join(
-                bringup_share, "pcd", "simulation", "RMUC2026_manifest.json")),
+                bringup_share, "pcd", "simulation", "RMUC2027_manifest.json")),
             DeclareLaunchArgument(
                 "world",
-                default_value="RMUC2026",
+                default_value="RMUC2027",
                 description="Simulation world key from config/worlds.yaml",
             ),
             DeclareLaunchArgument(
@@ -265,7 +265,7 @@ def generate_launch_description():
                 "slam",
                 default_value="False",
                 description=(
-                    "Run SLAM mode. Keep False for the default RMUC2026 navigation "
+                    "Run SLAM mode. Keep False for the default RMUC2027 navigation "
                     "simulation with small_gicp relocalization."
                 ),
             ),
@@ -296,7 +296,7 @@ def generate_launch_description():
                 default_value="gz-physics-bullet-featherstone-plugin",
                 description=(
                     "Gazebo physics engine plugin. Bullet Featherstone supports the "
-                    "RMUC2026 convex STL collision proxies and planar force controller."
+                    "RMUC2027 convex STL collision proxies and planar force controller."
                 ),
             ),
             DeclareLaunchArgument(

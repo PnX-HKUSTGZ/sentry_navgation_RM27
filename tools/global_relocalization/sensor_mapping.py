@@ -333,7 +333,7 @@ def main():
     parser.add_argument("--mapper", required=True)
     a_method = "repository_slam"
     parser.add_argument("--source-revision", default="working tree; executable and source SHA256 recorded")
-    parser.add_argument("--route-map", type=Path, default=ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2026.yaml")
+    parser.add_argument("--route-map", type=Path, default=ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2027.yaml")
     parser.add_argument("--survey-waypoints", type=Path, default=HERE / "config/survey_left_loop.json")
     parser.add_argument("--params", type=Path, default=ROOT / "src/pnx-launch/launch_bringup/config/simulation/nav2_params.yaml")
     parser.add_argument("--pointlio-overrides", type=Path)

@@ -59,4 +59,4 @@ private:
   std::map<std::string, std::pair<Key, Key>> observations_;
   std::uint64_t segment_ = 0, marginalized_ = 0;
 };
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

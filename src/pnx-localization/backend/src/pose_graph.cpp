@@ -84,7 +84,7 @@ public:
     return l_ * r;
   }
 };
-} // namespace
+} // 匿名命名空间
 /// 检查窗口、先验和线性化参数，再初始化第零轨迹段。
 PoseGraph::PoseGraph(GraphConfig c) : config_(c) {
   if (!std::isfinite(c.lag_seconds) || c.lag_seconds < 0 ||
@@ -113,7 +113,7 @@ bool PoseGraph::contains(Key k) const { return isam_->valueExists(k); }
 /// 异常可能使求解器处于不完整状态，调用方必须通过重置或断段恢复。
 void PoseGraph::submit(const gtsam::NonlinearFactorGraph &g,
                        const gtsam::Values &v) {
-  // An exception invalidates the estimator: the owner must start a new segment.
+  // 更新异常会使估计器状态不再可信，调用方必须开启新的轨迹段。
   isam_->update(g, v);
   isam_->update();
 }
@@ -175,16 +175,16 @@ void PoseGraph::trim() {
     if (i < count)
       expired.push_back(key);
   }
-  // Reorder the bounded active graph before marginalizing: old poses must be
-  // leaf/front variables, including when future loop factors join old cliques.
+  // 边缘化前重排有界活动图，使旧位姿处于可消元的叶端或前部变量位置；
+  // 后续回环因子连接历史团时，也必须满足这一条件。
   isam_->update(gtsam::NonlinearFactorGraph{}, gtsam::Values{}, {}, groups,
                 boost::none, re_eliminate);
   isam_->marginalizeLeaves(expired);
   for (std::size_t i = 0; i < count; ++i)
     times_.pop_front();
   marginalized_ += count;
-  // Marginalization in GTSAM 4.2 may leave unreused empty factor slots.
-  // Retain all live factors, including joint linear marginal information.
+  // GTSAM 4.2 边缘化后可能留下未复用的空因子槽。
+  // 重建时保留全部有效因子，包括联合线性边缘信息。
   if (isam_->getFactorsUnsafe().size() > 2 * times_.size() + 16) {
     gtsam::NonlinearFactorGraph live;
     for (const auto &factor : isam_->getFactorsUnsafe())
@@ -267,4 +267,4 @@ std::int64_t PoseGraph::stamp(Key key) const {
       return item.second;
   throw std::out_of_range("expired graph timestamp");
 }
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

@@ -61,7 +61,7 @@ def _configure_navigation_mode(context, bringup_dir):
         raise RuntimeError("deployment must be either reality or simulation")
     if not prior_map_yaml_file:
         default_map_name = (
-            "RMUC2026.yaml" if deployment == "simulation" else "highbay.yaml"
+            "RMUC2027.yaml" if deployment == "simulation" else "highbay.yaml"
         )
         prior_map_yaml_file = os.path.join(
             bringup_dir, "map", deployment, default_map_name

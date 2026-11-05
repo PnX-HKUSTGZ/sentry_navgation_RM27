@@ -113,7 +113,7 @@ def main():
             raise RuntimeError("No scored mapping data; inspect session mapping.log")
         from report_full_uc_mapping import report
         report(run, args.reference if args.reference.exists() else None,
-               ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2026.yaml")
+               ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2027.yaml")
         state["report"] = str(run / "report.html")
         write_state(state)
         print(f"Report: {run / 'report.html'}\nGazebo and RViz remain open. Stop with --stop.", flush=True)

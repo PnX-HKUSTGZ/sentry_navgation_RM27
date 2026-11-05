@@ -170,9 +170,9 @@ def generate_launch_description():
 
     declare_world_cmd = DeclareLaunchArgument(
         "world",
-        default_value="RMUC2026",
+        default_value="RMUC2027",
         description=(
-            "Navigation map/PCD key. RMUC2026 is the default validated RM27 "
+            "Navigation map/PCD key. RMUC2027 is the default validated RM27 "
             "simulation target."
         ),
     )
@@ -194,7 +194,7 @@ def generate_launch_description():
             world,
             TextSubstitution(text=".pcd"),
         ],
-        description="Full path to prior pcd file to load",
+        description="Full path to prior PCD; defaults to the selected world's map-frame point cloud",
     )
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(

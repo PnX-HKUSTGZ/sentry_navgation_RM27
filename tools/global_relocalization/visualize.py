@@ -129,7 +129,7 @@ def run(args):
             spawn = yaml.safe_load(
                 (ROOT / "src/pnx-stimulation/rm_27_stimulation/config/spawn_poses.yaml").read_text()
             )
-            spawn["spawn_poses"]["RMUC2026"].update(
+            spawn["spawn_poses"]["RMUC2027"].update(
                 x=-9.575, y=-1.285, z=0.089, yaw=-1.5707963267948966
             )
             (SESSION / "spawn_poses.yaml").write_text(yaml.safe_dump(spawn))

@@ -70,7 +70,7 @@ source install/setup.bash
 - 仿真 launch 会应用 `simulation_world_profiles`，MINCO 的 Point-LIO 模式还会应用 `minco_input_profiles` 并生成临时 YAML。检查最终参数及运行时 `ros2 param`，不能只读源文件某一段。
 - `enable_legacy_terrain:=auto` 在 legacy 开、MINCO 关。旧 terrain guard 和 MINCO 的 ROG freshness 门分别维护，不能在一条输入断开后默默退化为无动态障碍保护。
 - `sim_with_nav.launch.py` 不转发所有内部参数，例如普通 `map` / `prior_pcd_file`；自定义地图应检查具体导航入口，使用 `--show-args` 确认。
-- 全局组合流程仅支持 RMUC2026、MINCO、非 SLAM，比赛配置搜索负 X 半场。脚本默认 domain 87，独立 overlay、GZ partition 和 DDS profile；与普通工作区构建分开核对。
+- 全局组合流程仅支持 RMUC2027、MINCO、非 SLAM，比赛配置搜索负 X 半场。脚本默认 domain 87，独立 overlay、GZ partition 和 DDS profile；与普通工作区构建分开核对。
 
 ## 5. 坐标、时间与状态身份
 
@@ -93,7 +93,7 @@ source install/setup.bash
 - MINCO 不应添加绕过 MPC/ROG 门的运动 behavior；`fake_vel_transform` 的 `/cmd_spin` 兼容入口也不能绕过停车结果。改变模式时先取消任务并停止当前启动链。
 - 地图参数要同时核对分辨率、车高/车宽、footprint、物理 collision、自身滤波、地面支撑、净空、unknown 策略和实测障碍优先级。不能仅调小机器人尺寸或把未知变空闲来通过窄通道。
 - PGM 的 `negate`、`mode` 和占据阈值决定灰度是否未知；不要凭颜色判断可行驶。
-- PCD、manifest、栅格地图、场景 collision 与外参必须匹配。RMUC2027 CAD PCD 已提交，但不是 RMUC2026 的可直接替换先验；保留已有严格对齐失败结论。
+- PCD、manifest、栅格地图、场景 collision 与外参必须匹配。RMUC2027 世界现在使用从实际 RM27 visual 网格生成的 `RMUC2027.pcd`，该 PCD 已在 map 系，RMUC2027 profile 不再叠加 1.65 m 补偿。旧官方 CAD PCD 的严格对齐失败结论仍保留在历史报告中，不能与当前仿真网格点云混淆。
 - 全局定位 GT 只用于独立评分，不能流入估计、候选筛选或训练；固定 holdout 分母和失败记录，不能删失败样本或复用训练点提升成功率。
 - `station_submaps` 和离线地图实验独立运行，使用新输出目录，保留原始采集、来源哈希、冻结参数及失败结果，不能覆盖已有实验或偷偷改比赛配置。
 - 保留队列、图窗口、点云缓存和存盘预算。后端归档是诊断快照，不能当成完整 iSAM2 会话恢复或已具备历史回环能力。
@@ -141,7 +141,7 @@ git diff --check
 - `point_lio` 是普通目录；四个子模块见 `.gitmodules`。修改子模块或第三方代码前先确认任务涉及它们，保留来源、版本和许可说明。
 - 根许可证不是所有文件的统一许可证。ZLIO 启动核心为 GPL-2.0-only，CAD 派生数据另有条款；保留其 attribution 和 manifest。
 - `build/`、`install/`、`log/`、`.build/`、数据采集和大多数 PCD 是生成物，不提交；已跟踪的少数 PCD/manifest 是交付资源，不随意删除或重新生成。
-- 根 `.gitignore` 忽略新 `docs/` 文件。任务确需交付新的文档/验证摘要时，检查内容后对具体文件 `git add -f <path>`；不要批量强制添加整个目录或运行日志。
+- 根 `.gitignore` 忽略整个 `docs/` 目录，文档和验证摘要默认仅保留在本地，不自动强制添加；只有用户明确要求将具体文档纳入版本控制时才可添加。
 - 不自动运行 `tools/reality/start_nav.bash`、`tools/stimulation/start_nav_stimulation.bash` 等遗留脚本；其中有固定机器路径和宽泛 `pkill`。优先直接 launch，清理时仅管理当前任务创建的进程。
 - 文档、静态审查和常规单元测试不需要启动实车或发布 `/cmd_vel`。需要运行时检查时使用隔离仿真、独立 domain/partition 和新输出目录。
 - 不为本地验证自行 push、发布或发信；用户要求时再执行。提交前查看 diff 和状态，只包含本任务文件，报告实际通过、失败、跳过及未验证项。

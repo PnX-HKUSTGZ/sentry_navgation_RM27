@@ -15,7 +15,7 @@ void pose(std::ostream &o, const Pose &p) {
     << p.translation().z() << ',' << q.x() << ',' << q.y() << ',' << q.z()
     << ',' << q.w();
 }
-} // namespace
+} // 匿名命名空间
 /// 校验资源预算；开启归档时拒绝复用已有目录，建立清单和索引后启动工作线程。
 CloudStore::CloudStore(StorageConfig c) : config_(std::move(c)) {
   if (config_.cache_bytes == 0 || config_.queue_size == 0 ||
@@ -159,8 +159,8 @@ void CloudStore::worker() {
 /// 检查保守磁盘配额，先将 PCD 写到临时文件再改名，随后追加关键帧与里程计索引。
 /// 跨文件写入不是原子事务，失败可能留下未索引点云；成功后才累计保存数量和配额。
 void CloudStore::save(const Work &w) {
-  // Conservative reservation covers PCD payload, headers and metadata. Stop
-  // recording at the quota; never silently delete previous archive entries.
+  // 按保守估算预留 PCD 点数据、文件头和元数据的磁盘空间；
+  // 达到配额时拒绝本次写入，不静默删除已有归档。
   const std::uint64_t reserve = w.cloud->size() * sizeof(pcl::PointXYZI) + 8192;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -203,4 +203,4 @@ void CloudStore::save(const Work &w) {
   stats_.disk_bytes += reserve;
   ++stats_.saved;
 }
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

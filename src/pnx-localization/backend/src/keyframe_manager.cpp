@@ -26,8 +26,8 @@ void KeyframeManager::breakSegment() {
   graph_.reset(segment_);
   keyframes_.clear();
   latest_.reset();
-  // Keep the input identity/sequence watermark even when the estimator fails;
-  // delayed frames must not become eligible again after clearing graph state.
+  // 估计器失败后仍保留输入身份与序号水位；
+  // 避免清空图状态后重新接纳延迟到达的旧帧。
   last_edge_.reset();
   interval_degraded_ = false;
 }
@@ -197,4 +197,4 @@ KeyframeManager::predictionCovariance(const Frame &f,
                config_.rotation_variance_per_radian * angle(delta));
   return .5 * (p + p.transpose()).eval();
 }
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

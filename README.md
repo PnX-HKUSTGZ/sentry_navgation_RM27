@@ -14,7 +14,7 @@ PnX RoboMaster RM27 导航工作区，基于 PolarBear/PB2025 导航框架继续
 | --- | --- | --- |
 | 默认仿真 | `slam:=false use_ground_truth_odom:=true navigation_mode:=legacy` | Gazebo 真值定位，旧版 Nav2 规划控制；用于导航与物理仿真检查 |
 | Point-LIO 导航 | `slam:=false use_ground_truth_odom:=false` | Point-LIO + 局部 GICP 先验匹配；导航可选 `legacy` 或 `minco` |
-| 全局初始化 | `tools/global_relocalization/navigate.bash` | RMUC2026、MINCO、原始 LiDAR/IMU 全局检索、停车确认、同时间戳位姿交接，再开放导航 |
+| 全局初始化 | `tools/global_relocalization/navigate.bash` | RMUC2027、MINCO、原始 LiDAR/IMU 全局检索、停车确认、同时间戳位姿交接，再开放导航 |
 | 在线建图 | `slam:=true use_ground_truth_odom:=false navigation_mode:=legacy` | Point-LIO + slam_toolbox；保存二维地图及 Point-LIO 点云 |
 | 独立后端 | YAML 中 `rm27_backend.enabled: true` | Point-LIO 原子扫描、关键帧、有界 iSAM2 里程计图；当前旁路输出，不发布 TF |
 
@@ -110,13 +110,13 @@ source install/setup.bash
 
 | 资源 | 当前状态 |
 | --- | --- |
-| RMUC2026 | 已跟踪 PGM/YAML、PCD 和 manifest；全局工具另带一套冻结的 PCD/manifest |
+| RMUC2026 历史点云 | 保留旧 PCD/manifest 和冻结的全局实验资源供复现 |
 | RMUL2027 | 已跟踪 PGM/YAML、PCD 与世界配置，支持独立仿真和普通导航入口 |
-| RMUC2027 | 已跟踪官方 CAD 派生 PCD/manifest；未配置对应导航 world，不能直接作为 `world:=RMUC2027` 启动 |
+| RMUC2027 | 从当前 RM27 仿真网格生成的 PCD/manifest，约 5.98 MB；默认场景、PGM/YAML 与点云统一使用 `RMUC2027` |
 | 实车 highbay/highbay2 | 有二维地图；实车 PCD 目录只有占位文件，需要提供实际先验 |
 | 其他历史世界 | 见 `config/worlds.yaml`；部分没有 `nav_world` 或配套 PCD，不能假定均可一键导航 |
 
-RMUC2027 PCD 与现有 RMUC2026 场景的严格三维兼容性检查未通过，不能只改文件名替换当前先验。来源、许可和对齐结论见 [CAD 点云说明](docs/rmuc2027_cad_pointcloud.md)。生成工具使用 [独立依赖文件](tools/mapping/rmuc2027_requirements.txt)，不要求普通导航环境安装全部 CAD 工具。
+当前 `RMUC2027.pcd` 从 RMUC2027 世界实际加载的 RM27 视觉网格采样，已通过坐标、Point-LIO/GICP 与短程往返导航检查。MINCO 和 legacy 的 RMUC2027 profile 均使用零先验变换；启动仍用 `world:=RMUC2027`。生成与验证见 [仿真点云说明](docs/rmuc2027_simulation_pointcloud.md)。旧官方 CAD 点云的严格兼容性失败结论见 [历史 CAD 报告](docs/rmuc2027_cad_pointcloud.md)。
 
 ## 4. 启动
 
@@ -128,7 +128,7 @@ RMUC2027 PCD 与现有 RMUC2026 场景的严格三维兼容性检查未通过，
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-  world:=RMUC2026 navigation_mode:=legacy \
+  world:=RMUC2027 navigation_mode:=legacy \
   use_ground_truth_odom:=true gui:=false use_rviz:=true
 ```
 
@@ -136,7 +136,7 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py \
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-  world:=RMUC2026 navigation_mode:=minco \
+  world:=RMUC2027 navigation_mode:=minco \
   use_ground_truth_odom:=false gui:=false use_rviz:=true
 ```
 
@@ -144,7 +144,7 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py \
 
 ```bash
 ros2 launch launch_bringup rm_navigation_simulation_launch.py \
-  world:=RMUC2026 navigation_mode:=minco use_ground_truth_odom:=false
+  world:=RMUC2027 navigation_mode:=minco use_ground_truth_odom:=false
 ```
 
 普通 GICP 管理器只做局部校准，需要 YAML `init_pose` 或 RViz **2D Pose Estimate** 提供接近真实位姿的初值。定位就绪后，通过 **Nav2 Goal** 发送导航目标。默认真值模式运行成功不能作为 Point-LIO 精度验证。
@@ -160,13 +160,13 @@ bash tools/global_relocalization/navigate.bash
 
 在 RViz 用 **2D Pose Estimate** 选择出生位置和朝向；此选点用于生成机器人，不直接当作定位结果。系统执行原始 LiDAR/IMU 检索、自转准备、比赛开始及三帧停车确认，通过原始时间戳完成 `map → odom` 交接，再恢复朝向并激活导航。随后使用 **Nav2 Goal**。
 
-此接入仅支持 RMUC2026、`slam:=false` 和 MINCO；比赛配置搜索 `x<0` 半场，初次使用应选择该半场开放位置。参数及活动云台/实车限制见 [全局接入](docs/simulation_global_navigation.md)。可追加 `stationary_relocalization:=false` 关闭初始化后的停车修正；普通启动默认未启用全局流程。
+此接入仅支持 RMUC2027、`slam:=false` 和 MINCO；比赛配置搜索 `x<0` 半场，初次使用应选择该半场开放位置。参数及活动云台/实车限制见 [全局接入](docs/simulation_global_navigation.md)。可追加 `stationary_relocalization:=false` 关闭初始化后的停车修正；普通启动默认未启用全局流程。
 
 ### 4.3 建图
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-  world:=RMUC2026 slam:=true navigation_mode:=legacy \
+  world:=RMUC2027 slam:=true navigation_mode:=legacy \
   use_ground_truth_odom:=false gui:=false use_rviz:=true
 ```
 
@@ -212,7 +212,7 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 
 | 参数 | 当前默认 / 约束 |
 | --- | --- |
-| `world` | 仿真 `RMUC2026`；实车 `highbay` |
+| `world` | 仿真 `RMUC2027`；实车 `highbay` |
 | `nav_world` | 仿真组合入口为 `auto`，从 `config/worlds.yaml` 解析导航地图 key |
 | `slam` | `false`；启用时须为 legacy、Point-LIO |
 | `navigation_mode` | `legacy` 或 `minco`，默认 `legacy` |
@@ -220,7 +220,7 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 | `namespace` | 默认空，省略；当前拒绝非空值 |
 | `use_sim_time` | 仿真 `true`，实车 `false` |
 | `params_file` | 按 simulation/reality 及模式选择 `nav2_params.yaml` 或 `minco_params.yaml`；自定义 MINCO 文件须为完整 profile |
-| `map` / `prior_pcd_file` | 导航入口按 world 拼接默认路径；自定义文件直接传给对应导航入口。组合仿真入口没有同名通用转发参数 |
+| `map` / `prior_pcd_file` | 导航入口按 world 选择默认路径；RMUC2027 世界使用 RMUC2027 栅格和 RMUC2027 点云。自定义文件直接传给导航入口；组合仿真入口没有同名通用转发参数 |
 | `gui` / `use_rviz` | 组合仿真默认 `false` / `true`；无显示环境将两者均设为 `false` |
 | `use_robot_state_pub` | 仅实车入口，源码默认 `true`；已有 TF 发布者时显式关闭 |
 | `enable_legacy_terrain` | `auto`：legacy 开、MINCO 关 |

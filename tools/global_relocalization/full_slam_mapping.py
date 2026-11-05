@@ -398,7 +398,7 @@ def main():
     params["point_lio"]["ros__parameters"].setdefault("diagnostics", {})["trace_file"] = str(out / "estimator_trace.csv")
     params_path = out / "mapping_params.yaml"
     params_path.write_text(yaml.safe_dump(params))
-    route_map = ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2026.yaml"
+    route_map = ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2027.yaml"
     planner = Route(route_map, [-11.7, 3.1], 0.55, terrain=a.survey_terrain)
     protocol = None
     if a.survey_route:

@@ -177,7 +177,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument(
                 "sim_world",
-                default_value="RMUC2026",
+                default_value="RMUC2027",
                 description="World key used to select the spawn pose",
             ),
             DeclareLaunchArgument(

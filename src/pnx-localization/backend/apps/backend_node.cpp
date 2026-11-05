@@ -147,7 +147,7 @@ private:
       if (f.degraded)
         ++degraded_;
       if (manager_->shouldCreate(f)) {
-        // Geometry must be ready before committing the graph/keyframe pair.
+        // 先准备好有效点云，再提交对应的关键帧与图状态。
         auto cloud = adapter_->cloud(m, f);
         const auto graph_start = std::chrono::steady_clock::now();
         Keyframe k;
@@ -189,8 +189,8 @@ private:
         out.child_frame_id = sensor_frame_;
         poseMessage(estimated, out.pose.pose);
         out.twist = m.odometry.twist;
-        // Move the anchor's right perturbation through the odometry increment
-        // and add configured process noise. This is a model approximation.
+        // 通过里程计增量传播锚点的右扰动协方差，
+        // 并加入配置的过程噪声；该结果属于模型近似。
         {
           Covariance j = Covariance::Zero();
           j.topLeftCorner<3, 3>() = estimated.linear();
@@ -289,7 +289,7 @@ private:
   double process_ms_ = 0, process_ms_max_ = 0, process_ms_total_ = 0,
          graph_ms_ = 0, graph_ms_max_ = 0;
 };
-} // namespace rm27_backend
+} // 命名空间 rm27_backend
 /// 初始化 ROS，运行后端单线程执行器；退出时先释放节点及写盘线程，再关闭 ROS。
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);

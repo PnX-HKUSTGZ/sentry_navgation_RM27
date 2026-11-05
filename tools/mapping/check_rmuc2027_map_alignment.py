@@ -32,7 +32,7 @@ def pose_matrix(text):
 def world_triangles():
     """Read the existing, independently imported Gazebo visual geometry."""
     package = ROOT/'src/pnx-stimulation/rm_27_stimulation'
-    world_path = package/'world/RMUC2026_world/RMUC2026_world.world'
+    world_path = package/'world/RMUC2027_world/RMUC2027_world.world'
     model_path = package/'meshes/RM27_battlefield_visual/model.sdf'
     world = ET.parse(world_path)
     instance = next(x for x in world.findall('.//include')
@@ -142,7 +142,7 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     points = read_pcd(args.pcd)
     metadata = json.loads(args.pcd.with_name(args.pcd.stem+'_manifest.json').read_text())
-    config_path = BRINGUP/'map/simulation/RMUC2026.yaml'
+    config_path = BRINGUP/'map/simulation/RMUC2027.yaml'
     config = yaml.safe_load(config_path.read_text())
     image_path = config_path.parent/config['image']
     pixels = np.asarray(Image.open(image_path))

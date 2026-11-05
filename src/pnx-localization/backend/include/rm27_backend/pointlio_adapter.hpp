@@ -26,4 +26,4 @@ public:
 private:
   AdapterConfig config_;
 };
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

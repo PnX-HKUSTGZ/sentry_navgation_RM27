@@ -37,7 +37,7 @@ Blender 工程、渲染图和重新生成方法见 [RMUL2027 使用说明](../..
 已提供对应的 5 cm 降采样 PCD 和 PGM/YAML。启动该世界后，可在第二个终端运行
 `ros2 launch launch_bringup rm_navigation_simulation_launch.py world:=RMUL2027 navigation_mode:=minco use_ground_truth_odom:=false`。
 
-## RMUC2026 场地资源
+## RMUC2027 场地资源
 
 Gazebo 使用 `RM27_Gazebo_Harmonic_part1.tar.xz` 和 `part2.tar.xz` 中的详细场地：
 85 份 DAE、185 个视觉对象，以及 548 份凸 STL 组成的 607 个碰撞体。视觉与碰撞
@@ -105,27 +105,32 @@ Xacro 默认 `use_cad_visual:=true`、
 只启动 Gazebo：
 
 ```bash
-ros2 launch rm_27_stimulation rm_simulation.launch.py sim_world:=RMUC2026 gui:=true
+ros2 launch rm_27_stimulation rm_simulation.launch.py sim_world:=RMUC2027 gui:=true
 ```
 
 另开终端生成机器人：
 
 ```bash
-ros2 launch rm_27_stimulation spawn_robot.launch.py sim_world:=RMUC2026
+ros2 launch rm_27_stimulation spawn_robot.launch.py sim_world:=RMUC2027
 ```
 
 一键启动 Gazebo、机器人和 RM27 导航：
 
 ```bash
-ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False gui:=true use_rviz:=true
+ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2027 slam:=False gui:=true use_rviz:=true
 ```
 
-当前默认 world 是 `RMUC2026`，并且已有对应地图。仿真导航默认使用 Gazebo
+当前默认 world 是 `RMUC2027`，并且已有对应地图。仿真导航默认使用 Gazebo
 真值里程计，避免简化车辆模型的 IMU / Point-LIO 漂移进入导航闭环：
 
 ```bash
-ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False gui:=false use_rviz:=true
+ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2027 slam:=False gui:=false use_rviz:=true
 ```
+
+RMUC2027 世界的定位先验默认是 `launch_bringup/pcd/simulation/RMUC2027.pcd`，
+从当前实际加载的 RM27 视觉网格生成，约 5.98 MB，坐标已在 world/map 系。
+该世界的 MINCO / legacy profile 使用零先验变换，不再叠加旧点云的 1.65 m 补偿。
+验证 Point-LIO/GICP 时必须显式设置 `use_ground_truth_odom:=false`。
 
 MINCO 仿真速度集中在 `launch_bringup/config/simulation/minco_params.yaml`：
 `controller_server.MincoMpc.max_planar_speed` 和优化器 `max_velocity` 均为 `1.5 m/s`，
@@ -144,7 +149,7 @@ Gazebo 原生 `--headless-rendering`，通过 EGL 渲染雷达；`gui:=true` 时
 远程桌面下启动 MINCO 仿真：
 
 ```bash
-ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 navigation_mode:=minco gui:=true use_rviz:=true
+ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2027 navigation_mode:=minco gui:=true use_rviz:=true
 ```
 
 启动后查看 `~/.gz/rendering/ogre2.log` 中的 `GL_RENDERER`。当前 Intel 机器应显示
@@ -162,14 +167,14 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 navigation_
 只在单独调试 Point-LIO 和 small_gicp 时关闭真值模式：
 
 ```bash
-ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False use_ground_truth_odom:=false
+ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2027 slam:=False use_ground_truth_odom:=false
 ```
 
 ## 可用 world
 
 - `rmuc_2024`
 - `rmuc_2025`
-- `RMUC2026`
+- `RMUC2027`
 - `RMUL2027`
 - `rmul_2024`
 - `rmul_2024_dynamic`
@@ -213,7 +218,7 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2026 slam:=False
   `extrinsic_T=[0.0, 0.0, 0.0]`、`extrinsic_R=I`。
 - `meshes/mid360.stl` 仍是 Git LFS 指针文件；默认 CAD 外观已经包含真实 Mid360，只有
   `use_cad_visual:=false` 时才显示简单盒子回退模型。
-- `RM27_battlefield_collision` 和 `RMUC2026_world/meshes/RMUC2026.stl` 是可直接使用的
+- `RM27_battlefield_collision` 和 `RMUC2027_world/meshes/RMUC2027.stl` 是可直接使用的
   真实 mesh；其他旧 world 下的 `.stl` 多数还是 Git LFS 指针文件，不能作为当前定位
   问题的验证基准。
 - 仿真 Point-LIO 参数按当前 URDF 配置：`PoseImuSystem` 从传感器实际运动生成 200 Hz IMU，

@@ -294,8 +294,8 @@ relocalization_manager:
     moving_linear_speed_threshold: 0.05
     motion_command_timeout: 0.5
     required_consecutive_gicp_acceptances: 3
-    init_pose: [-11.7, 3.1, 0.08, 0.0, 0.0, 0.0]   # Initial base_footprint pose; matches RMUC2026 spawn_poses.yaml.
-    prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 将先验 PCD 整体抬高 1.65 m，对齐 RMUC2026 world 中同样抬高的 STL 场地模型
+    init_pose: [-11.7, 3.1, 0.08, 0.0, 0.0, 0.0]   # Initial base_footprint pose; matches RMUC2027 spawn_poses.yaml.
+    prior_pcd_transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0] # 历史 STL 先验的补偿；RMUC2027 world profile 覆盖为零。
     transform_prior_map_with_lidar_offset: False # 不把 left_mid360 相对底盘的安装外参叠加到全局 PCD 地图上
     # The prior_pcd_file does not need to be specified since it going to be set by defaults in launch.
     # prior_pcd_file: ""
@@ -664,6 +664,11 @@ waypoint_follower:
 
 simulation_world_profiles:
   ros__parameters:
+    RMUC2027:
+      relocalization_manager:
+        # RMUC2027.pcd is sampled from this world's placed RM27 visual meshes.
+        prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        transform_prior_map_with_lidar_offset: false
     RMUL2027:
       relocalization_manager:
         init_pose: [0.0, 0.0, 0.091, 0.0, 0.0, 0.0]

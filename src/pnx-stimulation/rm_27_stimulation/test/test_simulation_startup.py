@@ -34,7 +34,7 @@ class SimulationStartup(unittest.TestCase):
         module = load('rm_simulation')
         context = context_for(module, sim_world='RMUL2027')
         self.assertTrue(module._resolve_gui_config(context).endswith('/config/rmul2027_gui.config'))
-        context.launch_configurations['sim_world'] = 'RMUC2026'
+        context.launch_configurations['sim_world'] = 'RMUC2027'
         self.assertTrue(module._resolve_gui_config(context).endswith('/config/gazebo_gui.config'))
         context.launch_configurations['gui_config'] = '/tmp/custom_view.config'
         self.assertEqual(module._resolve_gui_config(context), '/tmp/custom_view.config')
@@ -62,7 +62,7 @@ class SimulationStartup(unittest.TestCase):
 
     def test_existing_world_keeps_its_startup_policy(self):
         module = load('sim_with_nav')
-        actions = module._launch_sim_stack(context_for(module, world='RMUC2026'))
+        actions = module._launch_sim_stack(context_for(module, world='RMUC2027'))
         self.assertEqual(sum(isinstance(a, IncludeLaunchDescription) for a in actions), 2)
         self.assertTrue(any(isinstance(a, TimerAction) for a in actions))
 

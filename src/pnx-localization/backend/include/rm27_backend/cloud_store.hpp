@@ -15,7 +15,7 @@ struct StorageConfig {
   std::size_t cache_bytes = 32 * 1024 * 1024, queue_size = 4;
   std::uint64_t disk_bytes = 1024ULL * 1024 * 1024;
   std::string
-      directory; // empty: bounded memory only; archive does not imply resume
+      directory; // 空值表示仅使用有界内存；归档不代表可恢复优化会话
 };
 /// 存储统计快照；缓存容量、队列积压、逐出、保存和错误信息分别计数。
 struct StorageStats {
@@ -65,4 +65,4 @@ private:
   bool stop_ = false, working_ = false;
   std::thread thread_;
 };
-} // namespace rm27_backend
+} // 命名空间 rm27_backend

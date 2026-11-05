@@ -269,7 +269,7 @@ def fullstack(args,node):
             params=d/'params.yaml';params.write_text(yaml.safe_dump(config))
             log=(d/'launch.log').open('w');environment=dict(os.environ,GZ_PARTITION=f'rm27_backend_{os.getpid()}_{repeat}_{enabled}')
             proc=subprocess.Popen(['ros2','launch','rm_27_stimulation','sim_with_nav.launch.py',
-                'world:=RMUC2026','gui:=false','use_rviz:=false','gimbal_panel:=false',
+                'world:=RMUC2027','gui:=false','use_rviz:=false','gimbal_panel:=false',
                 'use_ground_truth_odom:=false','navigation_mode:=minco','params_file:='+str(params)],
                 cwd=ROOT,env=environment,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
             monitor=Monitor(lambda:[proc.pid]);observer=Observer(node) if enabled else None
@@ -302,7 +302,7 @@ def fullstack(args,node):
                 if goal_status=='accepted' and result_future.done():goal_status=int(result_future.result().status)
                 resources=monitor.finish(d,since=start+15)
                 result=dict(repeat=repeat,enabled=enabled,resources=resources,duration_wall_s=args.duration,
-                            workload='headless RMUC2026 navigation goal (5.5,4.9)' if args.navigate else 'headless RMUC2026 stationary full navigation',
+                            workload='headless RMUC2027 navigation goal (5.5,4.9)' if args.navigate else 'headless RMUC2027 stationary full navigation',
                             goal_status=goal_status)
                 if len(truth_samples)>1:
                     points=np.array(truth_samples)[:,1:]

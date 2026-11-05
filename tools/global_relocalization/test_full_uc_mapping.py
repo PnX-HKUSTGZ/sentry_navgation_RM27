@@ -11,7 +11,7 @@ from full_uc_mapping import HERE, ROOT, make_route
 from report_full_uc_mapping import occupancy_metrics
 from sensor_mapping import Route
 
-MAP = ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2026.yaml"
+MAP = ROOT / "src/pnx-launch/launch_bringup/map/simulation/RMUC2027.yaml"
 
 
 def test_full_route_crosses_both_halves_and_stays_on_inflated_surveyed_ground():

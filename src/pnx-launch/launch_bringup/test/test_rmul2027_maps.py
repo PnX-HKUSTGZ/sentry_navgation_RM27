@@ -61,7 +61,7 @@ def test_rmul_registration_profile_is_applied_without_changing_other_worlds(file
     spec=importlib.util.spec_from_file_location('rmul_entry',path)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     source=BRINGUP/'config/simulation'/filename
-    assert module._apply_world_profile(str(source),'RMUC2026')==str(source)
+    assert module._apply_world_profile(str(source),'unconfigured_world')==str(source)
     resolved=Path(module._apply_world_profile(str(source),'RMUL2027'))
     try:
         assert not any(isinstance(token,yaml.tokens.AliasToken) for token in yaml.scan(resolved.read_text()))

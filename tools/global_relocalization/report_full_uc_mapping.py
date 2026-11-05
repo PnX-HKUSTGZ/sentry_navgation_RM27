@@ -220,7 +220,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--result", type=Path, required=True)
     parser.add_argument("--reference", type=Path)
-    parser.add_argument("--route-map", type=Path, default=Path(__file__).resolve().parents[2] / "src/pnx-launch/launch_bringup/map/simulation/RMUC2026.yaml")
+    parser.add_argument("--route-map", type=Path, default=Path(__file__).resolve().parents[2] / "src/pnx-launch/launch_bringup/map/simulation/RMUC2027.yaml")
     args = parser.parse_args()
     report(args.result, args.reference, args.route_map)
 

@@ -14,7 +14,7 @@ Localization and navigation are separate choices: `use_ground_truth_odom` select
 | --- | --- | --- |
 | Default simulation | `slam:=false use_ground_truth_odom:=true navigation_mode:=legacy` | Gazebo ground-truth localization with the legacy Nav2 stack; useful for navigation and physics checks |
 | Point-LIO navigation | `slam:=false use_ground_truth_odom:=false` | Point-LIO with local GICP prior-map alignment; supports `legacy` or `minco` navigation |
-| Global initialization | `tools/global_relocalization/navigate.bash` | RMUC2026, MINCO, raw LiDAR/IMU retrieval, stationary confirmation, timestamped pose handoff, then navigation activation |
+| Global initialization | `tools/global_relocalization/navigate.bash` | RMUC2027, MINCO, raw LiDAR/IMU retrieval, stationary confirmation, timestamped pose handoff, then navigation activation |
 | Online mapping | `slam:=true use_ground_truth_odom:=false navigation_mode:=legacy` | Point-LIO and slam_toolbox; saves a 2D map and Point-LIO point clouds |
 | Independent backend | YAML `rm27_backend.enabled: true` | Atomic Point-LIO scans, keyframes, and a bounded iSAM2 odometry graph; currently runs alongside navigation without publishing TF |
 
@@ -110,13 +110,13 @@ Occupancy maps live in `src/pnx-launch/launch_bringup/map/{simulation,reality}/`
 
 | Resource | Current state |
 | --- | --- |
-| RMUC2026 | Tracked PGM/YAML, PCD, and manifest; global tools also include a frozen PCD/manifest pair |
+| Historical RMUC2026 prior | Previous PCD/manifest and frozen global experiment assets remain for reproduction |
 | RMUL2027 | Tracked PGM/YAML, PCD, and world configuration; standalone simulation and ordinary navigation entries exist |
-| RMUC2027 | Tracked official CAD-derived PCD/manifest; no matching navigation world is configured, so `world:=RMUC2027` is unsupported |
+| RMUC2027 | PCD/manifest sampled from the current RM27 simulation meshes, about 5.98 MB; the default world, occupancy maps, and cloud all use `RMUC2027` |
 | Physical highbay/highbay2 | Occupancy maps exist; the physical PCD directory contains only a placeholder, so supply the actual prior |
 | Other historical worlds | Listed in `config/worlds.yaml`; some lack `nav_world` or a matching PCD and cannot be assumed to support combined navigation |
 
-The RMUC2027 PCD failed strict 3D compatibility checks against the existing RMUC2026 scene. Renaming it does not make it a replacement prior. See [CAD provenance and alignment](docs/rmuc2027_cad_pointcloud.md). Generation uses [separate dependencies](tools/mapping/rmuc2027_requirements.txt); ordinary navigation does not require the complete CAD tool environment.
+The current `RMUC2027.pcd` samples the actual RM27 visual meshes loaded by the RMUC2027 world. Coordinate checks, Point-LIO/GICP, and short round-trip navigation passed. Both MINCO and legacy RMUC2027 profiles use an identity prior transform; continue launching `world:=RMUC2027`. See [simulation prior validation](docs/rmuc2027_simulation_pointcloud.md). The failed compatibility checks for the previous official CAD prior remain in the [historical CAD report](docs/rmuc2027_cad_pointcloud.md).
 
 ## 4. Running
 
@@ -128,7 +128,7 @@ Start with ground-truth localization and legacy navigation:
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-  world:=RMUC2026 navigation_mode:=legacy \
+  world:=RMUC2027 navigation_mode:=legacy \
   use_ground_truth_odom:=true gui:=false use_rviz:=true
 ```
 
@@ -136,7 +136,7 @@ Explicitly enable Point-LIO when checking the estimation pipeline, for example w
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-  world:=RMUC2026 navigation_mode:=minco \
+  world:=RMUC2027 navigation_mode:=minco \
   use_ground_truth_odom:=false gui:=false use_rviz:=true
 ```
 
@@ -144,7 +144,7 @@ If Gazebo and the robot are already running, start navigation alone:
 
 ```bash
 ros2 launch launch_bringup rm_navigation_simulation_launch.py \
-  world:=RMUC2026 navigation_mode:=minco use_ground_truth_odom:=false
+  world:=RMUC2027 navigation_mode:=minco use_ground_truth_odom:=false
 ```
 
 The ordinary GICP manager performs local alignment only. Supply a sufficiently close initial pose through YAML `init_pose` or RViz **2D Pose Estimate**. After localization is ready, send a **Nav2 Goal**. Successful ground-truth navigation does not validate Point-LIO accuracy.
@@ -160,13 +160,13 @@ The wrapper sources an isolated overlay at `tools/global_relocalization/.build/r
 
 Use RViz **2D Pose Estimate** to select the spawn location and heading. This selection creates the simulated robot and is not directly accepted as the localization result. The system performs raw LiDAR/IMU retrieval, rotation preparation, competition start, and three fresh stationary confirmations. It uses the original timestamp to hand off `map → odom`, restores the heading, and activates navigation. Then send a **Nav2 Goal**.
 
-This integration requires RMUC2026, `slam:=false`, and MINCO. The competition profile searches the `x<0` half-field; choose an open location there for initial use. See [integration and sensor/gimbal limitations](docs/simulation_global_navigation.md). Append `stationary_relocalization:=false` to disable refinement after initialization. Ordinary launches leave the global workflow disabled.
+This integration requires RMUC2027, `slam:=false`, and MINCO. The competition profile searches the `x<0` half-field; choose an open location there for initial use. See [integration and sensor/gimbal limitations](docs/simulation_global_navigation.md). Append `stationary_relocalization:=false` to disable refinement after initialization. Ordinary launches leave the global workflow disabled.
 
 ### 4.3 Mapping
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-  world:=RMUC2026 slam:=true navigation_mode:=legacy \
+  world:=RMUC2027 slam:=true navigation_mode:=legacy \
   use_ground_truth_odom:=false gui:=false use_rviz:=true
 ```
 
@@ -212,7 +212,7 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 
 | Argument | Current default / constraint |
 | --- | --- |
-| `world` | Simulation: `RMUC2026`; hardware: `highbay` |
+| `world` | Simulation: `RMUC2027`; hardware: `highbay` |
 | `nav_world` | Combined simulation: `auto`, resolved from `config/worlds.yaml` |
 | `slam` | `false`; requires legacy and Point-LIO when enabled |
 | `navigation_mode` | `legacy` or `minco`; default `legacy` |
@@ -220,7 +220,7 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 | `namespace` | Empty default; omit it. Nonempty values are rejected |
 | `use_sim_time` | Simulation `true`; hardware `false` |
 | `params_file` | Selects simulation/reality `nav2_params.yaml` or `minco_params.yaml` by mode; custom MINCO files must be complete profiles |
-| `map` / `prior_pcd_file` | Navigation entries derive defaults from world; pass custom paths to those entries. The combined simulation entry does not provide generic forwarding arguments with these names |
+| `map` / `prior_pcd_file` | Navigation entries select defaults by world; RMUC2027 uses the RMUC2027 grid and RMUC2027 cloud. Pass custom paths to those entries. The combined simulation entry does not provide generic forwarding arguments with these names |
 | `gui` / `use_rviz` | Combined simulation defaults `false` / `true`; set both to `false` without a display |
 | `use_robot_state_pub` | Physical entry only; source default `true`; explicitly disable when TF is supplied elsewhere |
 | `enable_legacy_terrain` | `auto`: on for legacy, off for MINCO |

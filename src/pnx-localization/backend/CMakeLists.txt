@@ -15,8 +15,8 @@ find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io filters)
 find_package(Threads REQUIRED)
 find_package(TBB REQUIRED)
-# Standard system GTSAM takes precedence. The documented user-local bootstrap
-# is a fallback for machines without administrator installation access.
+# 优先使用系统安装的 GTSAM；文档中的用户目录安装脚本
+# 用于无法取得管理员安装权限的环境。
 find_package(GTSAM 4.2 QUIET)
 if(NOT GTSAM_FOUND)
   find_package(GTSAM 4.2 REQUIRED PATHS
@@ -28,7 +28,7 @@ if(_gtsam_location)
   set(CMAKE_BUILD_RPATH "${_gtsam_library_dir}")
   set(CMAKE_INSTALL_RPATH "${_gtsam_library_dir}")
 endif()
-# Permit transitive dependencies of a user-local GTSAM install (e.g. METIS).
+# 允许加载用户目录中 GTSAM 的间接依赖库，例如 METIS。
 if(UNIX AND NOT APPLE)
   add_link_options("LINKER:--disable-new-dtags")
 endif()

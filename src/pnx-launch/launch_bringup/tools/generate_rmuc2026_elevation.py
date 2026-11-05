@@ -418,10 +418,10 @@ def main():
     source = package.parent
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--map-yaml", type=Path, default=package / "map/simulation/RMUC2026.yaml"
+        "--map-yaml", type=Path, default=package / "map/simulation/RMUC2027.yaml"
     )
     parser.add_argument(
-        "--map-pgm", type=Path, default=package / "map/simulation/RMUC2026.pgm"
+        "--map-pgm", type=Path, default=package / "map/simulation/RMUC2027.pgm"
     )
     parser.add_argument(
         "--stl",
@@ -431,10 +431,10 @@ def main():
     parser.add_argument(
         "--world",
         type=Path,
-        default=source / "rm_27_stimulation/world/RMUC2026_world/RMUC2026_world.world",
+        default=source / "rm_27_stimulation/world/RMUC2027_world/RMUC2027_world.world",
     )
     parser.add_argument(
-        "--output", type=Path, default=package / "map/simulation/RMUC2026_elevation.pgm"
+        "--output", type=Path, default=package / "map/simulation/RMUC2027_elevation.pgm"
     )
     parser.add_argument("--max-slope", type=float, default=28.0)
     parser.add_argument("--max-height", type=float, default=0.60)
