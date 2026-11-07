@@ -160,9 +160,11 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py \
   navigation_mode:=minco use_ground_truth_odom:=false gui:=true use_rviz:=true
 ```
 
-No `global_relocalization:=true` suffix is used. The YAML switch defaults to `false`; restart after changing it. Simulation requires RMUC2027, MINCO and `slam:=false`. The competition profile searches `x<0`.
+No `global_relocalization:=true` suffix is used. The simulation MINCO profile currently enables this YAML switch; the physical profile leaves it disabled. Restart after changing it. Simulation requires RMUC2027, MINCO and `slam:=false`. The competition profile searches `x<0`.
 
-Use RViz **2D Pose Estimate** to select the spawn location and heading. This creates the robot and is never used as a localization seed. The `relocalization_manager` package runs raw LiDAR/IMU retrieval, rotation preparation, start trigger and three fresh stopped confirmations. Its local manager accepts the original timestamp, establishes `map → odom`, acknowledges the pose and allows heading restoration followed by Nav2 activation. Failure keeps navigation inactive and stops startup commands. Then send a **Nav2 Goal**.
+Use RViz **2D Pose Estimate** to select the spawn location and heading. This creates the robot and is never used as a localization seed. The `relocalization_manager` package runs raw LiDAR/IMU retrieval, rotation preparation, start trigger and three fresh stopped confirmations. Its local manager accepts the original timestamp, establishes `map → odom`, acknowledges the pose; simulation then physically returns to the selected spawn heading in the localized frame before navigation handoff. After releasing startup velocity control, permanently retiring the simulation yaw assistance and stopping the global server, `complete_initialization` restores the `774bc1a` normal continuous-GICP branch, reliable depth-10 cloud input, 10-second TF cache and ordinary `/initialpose` interface before Nav2 activation; the private global channel still rejects late or different repeated results. The coordinator and spawn selector then exit; global initialization no longer subscribes to navigation-time raw sensors. Failure keeps navigation inactive and stops startup commands. Then send a **Nav2 Goal**.
+
+Normal simulation contacts, the chassis controller and all navigation parameters retain the `774bc1a` baseline; Point-LIO IMU receive depth remains 100. Point-LIO uses monotonic `rclcpp::WallRate` for its 500 Hz input polling so host realtime corrections cannot suspend IMU ingestion; sensor/ROS timestamps and estimation, planning and control algorithms retain their original semantics. In-place retrieval uses a separate bounded startup yaw assist with a command timeout. Its permanent retirement and velocity unsubscribe must be acknowledged before navigation activates. Simulation sets `relocalize_then_navigate.restore_spawn_heading: true` to restore the selected heading during startup, so a random retrieval endpoint does not become the baseline controller's normal chassis heading; hardware keeps it `false`.
 
 The raw global frontend can start before Point-LIO odometry. The stopped-confirmation trigger waits for stable Point-LIO odometry; handoff rechecks freshness and the manager queries TF at the original confirmation timestamp. This lets Point-LIO initialize after rotation exposes new geometry.
 
@@ -230,13 +232,17 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 | `params_file` | Selects simulation/reality `nav2_params.yaml` or `minco_params.yaml` by mode; custom MINCO files must be complete profiles |
 | `map` / `prior_pcd_file` | Navigation entries select defaults by world; RMUC2027 uses the RMUC2027 grid and RMUC2027 cloud. Pass custom paths to those entries. The combined simulation entry does not provide generic forwarding arguments with these names |
 | `gui` / `use_rviz` | Combined simulation defaults `false` / `true`; set both to `false` without a display |
+| YAML `simulation_rendering.render_mode` | Defaults to `auto` in simulation `nav2_params.yaml` / `minco_params.yaml`: Gazebo and RViz try GPU, then warn and fall back to llvmpipe. `gpu` requires hardware; `cpu` requires llvmpipe |
+| `render_mode` | Empty by default, reading the YAML above; explicit `auto` / `gpu` / `cpu` overrides both Gazebo and RViz. Standalone Gazebo reads `rm_27_stimulation/config/rendering.yaml`, replaceable with `rendering_config` |
 | `use_robot_state_pub` | Physical entry only; source default `true`; explicitly disable when TF is supplied elsewhere |
 | `enable_legacy_terrain` | `auto`: on for legacy, off for MINCO |
 | `autostart` / `use_composition` / `use_respawn` | `true` / `false` / `false`; the global workflow delays activation |
-| YAML `global_relocalization.enabled` | Defaults to `false` in each `minco_params.yaml`; the manager package starts the global server/coordinator when enabled |
-| YAML `relocalization_manager.enable_stationary_refinement` | Defaults to `true`; stationary refinement after global initialization |
+| YAML `global_relocalization.enabled` | Currently `true` for simulation MINCO and `false` for hardware; enables the one-shot global server/coordinator |
+| YAML `relocalization_manager.continuous_refinement` | Retains baseline `true`; motion-time continuous GICP resumes after global handoff |
 
 The four navigation profiles are under [config](src/pnx-launch/launch_bringup/config). Launch also applies world and Point-LIO input profiles and generates temporary YAML. Inspect the parameters actually passed to nodes when debugging.
+
+The full rendering key is `simulation_rendering.ros__parameters.render_mode`. It controls display and sensor rendering; Point-LIO, GICP, planning, and MPC continue to run on CPU. Precedence is explicit `render_mode`, explicit legacy `hardware_acceleration` / `rviz_hardware_acceleration`, then YAML; legacy `true` maps to `auto`, and `false` to `cpu`. Native Linux uses EGL without a GUI and can use VirtualGL with a GUI. WSLg uses D3D12/GLX even for headless lidar, and required GPU mode expects an NVIDIA adapter. Startup logs report the actual renderer. Physical-robot display defaults remain separate.
 
 ## 6. Development, validation, and limitations
 

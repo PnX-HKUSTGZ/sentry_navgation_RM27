@@ -5,6 +5,7 @@ import os
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from relocalization_manager_launch.config import global_settings, select_params_file
+from rm27_rendering.config import configured_render_mode
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -81,6 +82,17 @@ def _launch_sim_stack(context, *args, **kwargs):
         LaunchConfiguration("params_file").perform(context), "simulation", navigation_mode)
     settings = global_settings(context, params_file, navigation_mode, "simulation",
                                slam, use_ground_truth_odom, world_name)
+    explicit_mode = LaunchConfiguration("render_mode").perform(context)
+    gazebo_render_mode = configured_render_mode(
+        params_file,
+        explicit_mode,
+        LaunchConfiguration("hardware_acceleration").perform(context),
+    )
+    rviz_render_mode = configured_render_mode(
+        params_file,
+        explicit_mode,
+        LaunchConfiguration("rviz_hardware_acceleration").perform(context),
+    )
     global_relocalization = settings.get("enabled", False)
     nav_world = LaunchConfiguration("nav_world").perform(context)
     spawn_delay = float(LaunchConfiguration("spawn_delay").perform(context))
@@ -120,6 +132,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "sim_world": world_name,
                 "worlds_config": worlds_config_path,
                 "gui": LaunchConfiguration("gui").perform(context),
+                "render_mode": gazebo_render_mode,
                 "hardware_acceleration": LaunchConfiguration(
                     "hardware_acceleration"
                 ).perform(context),
@@ -147,6 +160,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                 "spawn_delay": LaunchConfiguration("spawn_delay").perform(context),
                 "gimbal_panel": LaunchConfiguration("gimbal_panel").perform(context),
                 "rviz_spawn": "true" if global_relocalization else "false",
+                "startup_assist": "true" if global_relocalization else "false",
                 "spawn_map_yaml": os.path.join(bringup_share, "map", "simulation", nav_world + ".yaml"),
             }.items(),
         ),
@@ -165,6 +179,7 @@ def _launch_sim_stack(context, *args, **kwargs):
                         "use_composition": LaunchConfiguration("use_composition"),
                         "use_respawn": LaunchConfiguration("use_respawn"),
                         "use_rviz": LaunchConfiguration("use_rviz"),
+                        "render_mode": rviz_render_mode,
                         "rviz_hardware_acceleration": LaunchConfiguration(
                             "rviz_hardware_acceleration"
                         ),
@@ -245,9 +260,14 @@ def generate_launch_description():
             DeclareLaunchArgument("gimbal_panel", default_value="true",
                                   description="Open the two-button yaw/roll control window (disabled for headless runs)"),
             DeclareLaunchArgument(
+                "render_mode",
+                default_value="",
+                description="Override selected simulation YAML for Gazebo and RViz: auto, gpu, cpu",
+            ),
+            DeclareLaunchArgument(
                 "hardware_acceleration",
-                default_value="true",
-                description="Use EGL without GUI, or VirtualGL / EGL for the GUI when available",
+                default_value="",
+                description="Legacy Gazebo override: true=auto, false=cpu; empty reads YAML",
             ),
             DeclareLaunchArgument(
                 "verbose",
@@ -294,8 +314,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "rviz_hardware_acceleration",
-                default_value="true",
-                description="Use VirtualGL / EGL to accelerate RViz when available",
+                default_value="",
+                description="Legacy RViz override: true=auto, false=cpu; empty reads YAML",
             ),
             DeclareLaunchArgument(
                 "use_ground_truth_odom",

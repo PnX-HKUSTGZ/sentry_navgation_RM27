@@ -9,6 +9,7 @@ from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 import pytest
 import rclpy
+import yaml
 
 spec = importlib.util.spec_from_file_location('startup', Path(__file__).parents[3] / 'pnx-localization/relocalization_manager/scripts/relocalize_then_navigate.py')
 startup = importlib.util.module_from_spec(spec)
@@ -40,7 +41,8 @@ def test_rotation_sweep_rejects_unknown_obstacles_and_map_edge():
 @pytest.fixture
 def node(monkeypatch):
     rclpy.init(domain_id=196)
-    n = startup.Startup()
+    from rclpy.parameter import Parameter
+    n = startup.Startup(parameter_overrides=[Parameter("restore_spawn_heading", value=True)])
     n.map = free_map()
     n.seed = PoseWithCovarianceStamped()
     n.seed.pose.pose.orientation.w = 1.
@@ -191,7 +193,7 @@ def test_reality_waits_for_sensors_without_simulation_spawn_contract():
         n.seed = PoseWithCovarianceStamped()
         n.state = 'HANDOFF'
         n.accepted(n.seed)
-        assert n.state == 'STARTING_NAVIGATION'
+        assert n.state == 'RETIRING_GLOBAL'
         assert n.command_pub is n.command_sub is None
     finally:
         n.destroy_node()
@@ -260,3 +262,47 @@ def test_stopped_confirmation_waits_for_pointlio_ready(node):
     node.tick()
     assert len(calls) == 1 and node.triggered
     assert not node.released
+
+
+def test_handoff_without_heading_restoration_uses_confirmed_heading():
+    rclpy.init(domain_id=198)
+    n = startup.Startup()
+    try:
+        assert not n.restore_spawn_heading
+        n.seed = PoseWithCovarianceStamped()
+        n.seed.header.frame_id = 'map'
+        n.seed.pose.pose.orientation.z = math.sin(1.2 / 2)
+        n.seed.pose.pose.orientation.w = math.cos(1.2 / 2)
+        n.selected_yaw = 0.
+        n.state = 'HANDOFF'
+        n.accepted(n.seed)
+        assert n.state == 'RETIRING_ASSIST'
+        assert n.command_pub is n.command_sub is None
+        assert n.seed.pose.pose.orientation.z == pytest.approx(math.sin(1.2 / 2))
+    finally:
+        n.destroy_node()
+        rclpy.shutdown()
+
+
+def test_simulation_profile_keeps_control_until_spawn_heading_is_restored():
+    from rclpy.parameter import Parameter
+    profile = yaml.safe_load((Path(__file__).parents[1] / 'config/simulation/minco_params.yaml').read_text())
+    settings = profile['relocalize_then_navigate']['ros__parameters']
+    rclpy.init(domain_id=198)
+    n = startup.Startup(parameter_overrides=[
+        Parameter('restore_spawn_heading', value=settings['restore_spawn_heading'])])
+    try:
+        n.seed = PoseWithCovarianceStamped()
+        n.seed.header.frame_id = 'map'
+        n.seed.header.stamp.sec = 10
+        n.seed.pose.pose.orientation.z = math.sin(2.13 / 2)
+        n.seed.pose.pose.orientation.w = math.cos(2.13 / 2)
+        n.selected_yaw = 0.
+        n.state = 'HANDOFF'
+        n.accepted(n.seed)
+        assert n.state == 'ALIGNING_HEADING'
+        assert n.command_pub is not None and n.command_sub is not None
+        assert n.seed.header.stamp.sec == 10
+    finally:
+        n.destroy_node()
+        rclpy.shutdown()

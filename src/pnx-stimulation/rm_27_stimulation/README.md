@@ -138,31 +138,37 @@ MINCO 仿真速度集中在 `launch_bringup/config/simulation/minco_params.yaml`
 `uphill_startup_min_command_speed: 1.0` 是有安全运动方向时的上坡助力指令，
 不是实际车速保证，也不绕过碰撞或停车检查。
 
-### 核显加速
+### GPU 渲染
 
-两个仿真启动入口默认启用 `hardware_acceleration:=true`。`gui:=false` 时使用
-Gazebo 原生 `--headless-rendering`，通过 EGL 渲染雷达；`gui:=true` 时优先寻找
-`vglrun`，包括 NoMachine 自带的 `/usr/NX/scripts/vgl/vglrun`，通过 VirtualGL
-的 EGL 后端渲染 Gazebo 窗口。没有 VirtualGL 的机器保留桌面 OpenGL 启动方式。
-该设置只作用于 Gazebo，不向导航节点注入 VirtualGL，也不改变物理、碰撞或雷达采样。
+组合入口读取选中的 `launch_bringup/config/simulation/nav2_params.yaml` 或
+`minco_params.yaml`，单独 `rm_simulation.launch.py` 读取本包的
+`config/rendering.yaml`（可用 `rendering_config:=<path>` 替换）。修改对应 YAML：
 
-远程桌面下启动 MINCO 仿真：
+```yaml
+simulation_rendering:
+  ros__parameters:
+    render_mode: auto
+```
+
+`auto` 优先 GPU，失败后警告并回退到 CPU llvmpipe；`gpu` 要求硬件 OpenGL，
+不可用就终止启动；`cpu` 强制 llvmpipe。两者均要求 OpenGL 3.3 及以上。
+组合入口同时控制 Gazebo 和 RViz；单独导航入口也读取所选仿真 YAML 的 RViz 策略。
+命令行 `render_mode:=auto|gpu|cpu` 可临时覆盖。优先级为显式模式、显式旧布尔参数、
+YAML；旧 `hardware_acceleration:=true|false` 分别映射到 Gazebo 的 `auto|cpu`，
+`rviz_hardware_acceleration` 同理，只覆盖 RViz。
+
+原生 Linux 无 GUI 时用 EGL 渲染雷达；有 GUI 时可用 VirtualGL（包括 NoMachine 的
+`vglrun`），否则探测桌面 OpenGL。WSLg 有无 GUI 均使用 D3D12/GLX，要求 NVIDIA
+适配器，不使用 VirtualGL 或 `--headless-rendering`。该参数与 WSLg 后端冲突时启动报错。
+日志报告请求模式、实际模式、后端及 renderer，可结合 `~/.gz/rendering/ogre2.log` 核对。
+渲染环境及 VirtualGL 前缀仅作用于对应子进程，不改变物理、碰撞或雷达采样。
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2027 navigation_mode:=minco gui:=true use_rviz:=true
 ```
 
-启动后查看 `~/.gz/rendering/ogre2.log` 中的 `GL_RENDERER`。当前 Intel 机器应显示
-`Mesa Intel(R) Graphics (ADL GT2)`；`llvmpipe` 表示仍在软件渲染。核显驱动或权限
-不可用时，EGL 也可能回退到软件渲染，不能仅凭启动参数判断加速已经生效。
-需要对比原启动方式时加 `hardware_acceleration:=false`。
-
-实车的 Point-LIO、ROG 地图、MINCO 规划和 MPC 控制当前使用 CPU，不依赖核显。
-实车、仿真和单独启动 RViz 都默认启用 `rviz_hardware_acceleration:=true`，
-使用同样的 VirtualGL / EGL 后端减少显示占用的 CPU。该开关独立于 Gazebo 的
-`hardware_acceleration`，只作用于 RViz 进程；需要恢复桌面 OpenGL 时加
-`rviz_hardware_acceleration:=false`。没有 VirtualGL 时使用桌面 OpenGL。
-不需要本机显示时可关闭 RViz。
+Point-LIO、GICP、ROG 地图、MINCO 规划和 MPC 仍使用 CPU。实车及独立 RViz 默认
+保持原有桌面 OpenGL / VirtualGL 选择，不启用仿真探测策略。无需显示时可关闭 RViz。
 
 只在单独调试 Point-LIO 和 small_gicp 时关闭真值模式：
 

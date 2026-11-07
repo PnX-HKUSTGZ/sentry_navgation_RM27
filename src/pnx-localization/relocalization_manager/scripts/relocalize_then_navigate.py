@@ -2,6 +2,7 @@
 """Sequence sensors, raw global localization, timestamped handoff, then Nav2."""
 import json
 import math
+import subprocess
 import time
 
 import rclpy
@@ -56,6 +57,7 @@ class Startup(Node):
     def __init__(self, **kwargs):
         super().__init__('relocalize_then_navigate', **kwargs)
         self.deployment = self.declare_parameter('deployment', 'simulation').value
+        self.restore_spawn_heading = self.declare_parameter('restore_spawn_heading', False).value
         if self.deployment not in ('simulation', 'reality'):
             raise ValueError('deployment must be simulation or reality')
         raw_topic = self.declare_parameter('raw_cloud_topic', '/livox/lidar').value
@@ -91,6 +93,8 @@ class Startup(Node):
         self.map_change = self.create_client(ChangeState, '/map_server/change_state')
         self.nav_client = self.create_client(ManageLifecycleNodes, '/lifecycle_manager_navigation/manage_nodes')
         self.trigger = self.create_client(Trigger, '/global_relocalization/start_match')
+        self.retire_client = self.create_client(Trigger, '/global_relocalization/retire')
+        self.complete_client = self.create_client(Trigger, '/relocalization_manager/complete_initialization')
         self.action = ActionClient(self, Relocalize, '/global_relocalization/run')
         self.state = None
         self.started = time.monotonic()
@@ -167,7 +171,7 @@ class Startup(Node):
         if self.state != 'HANDOFF' or self.seed is None or msg != self.seed:
             return
         self.command_pub.publish(Twist())
-        if self.deployment == 'reality':
+        if self.deployment == 'reality' or not self.restore_spawn_heading:
             self.release_control()
             return
         if self.selected_yaw is None:
@@ -188,7 +192,25 @@ class Startup(Node):
             self.destroy_subscription(subscription)
         self.sensor_subs.clear()
         self.future = None
-        self.set_state('STARTING_NAVIGATION')
+        self.set_state('RETIRING_ASSIST' if self.deployment == 'simulation' else 'RETIRING_GLOBAL')
+
+    def finish_initialization(self, client, next_state, retry=False):
+        if self.future is None:
+            if client.service_is_ready():
+                self.future = client.call_async(Trigger.Request())
+            return
+        if not self.future.done():
+            return
+        try:
+            response = self.future.result()
+            self.future = None
+            if response and response.success:
+                self.set_state(next_state, response.message)
+            elif not retry:
+                self.fail('Initialization handoff rejected: ' +
+                          (response.message if response else 'no response'))
+        except Exception as exc:
+            self.fail(f'Initialization handoff failed: {exc}')
 
     def align_heading(self):
         # This uses the confirmed map transform and normal relative odometry;
@@ -376,6 +398,21 @@ class Startup(Node):
                 self.pose_pub.publish(self.seed)
         elif self.state == 'ALIGNING_HEADING':
             self.align_heading()
+        elif self.state == 'RETIRING_ASSIST':
+            try:
+                response = subprocess.run(
+                    ['gz', 'service', '-s', '/rm27/startup_assist/retire',
+                     '--reqtype', 'gz.msgs.Empty', '--reptype', 'gz.msgs.Boolean',
+                     '--timeout', '1000', '--req', ''],
+                    capture_output=True, text=True, timeout=2.0)
+                if response.returncode == 0 and 'data: true' in response.stdout:
+                    self.set_state('RETIRING_GLOBAL')
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                self.fail(f'Startup assistance retirement failed: {exc}')
+        elif self.state == 'RETIRING_GLOBAL':
+            self.finish_initialization(self.retire_client, 'RESTORING_LOCALIZATION')
+        elif self.state == 'RESTORING_LOCALIZATION':
+            self.finish_initialization(self.complete_client, 'STARTING_NAVIGATION', retry=True)
         elif self.state == 'STARTING_NAVIGATION':
             self.lifecycle(self.nav_client, 'READY')
         if self.state not in ('READY', 'FAILED', 'WAITING_FOR_INITIAL_POSE') and now - self.state_since > (self.relocalization_timeout if self.state == 'RELOCALIZING' else self.state_timeout):
@@ -386,16 +423,30 @@ def main():
     rclpy.init()
     node = Startup()
     try:
-        rclpy.spin(node)
+        while rclpy.ok() and node.state not in ('READY', 'FAILED'):
+            rclpy.spin_once(node, timeout_sec=0.1)
+        # Flush terminal status/zero and any action cancellation before retiring
+        # the initialization-only process and its TF/sensor interfaces.
+        if rclpy.ok():
+            deadline = time.monotonic() + 0.2
+            while time.monotonic() < deadline:
+                rclpy.spin_once(node, timeout_sec=0.02)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         if node.command_pub and rclpy.ok():
-            node.command_pub.publish(Twist())
+            try:
+                node.command_pub.publish(Twist())
+            except RuntimeError:
+                # SIGINT may invalidate the context after the ok() check.
+                # The chassis watchdog handles an already-closed transport.
+                if rclpy.ok():
+                    raise
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+    return 1 if node.state == 'FAILED' else 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

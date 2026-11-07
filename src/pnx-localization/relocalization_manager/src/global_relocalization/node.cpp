@@ -186,6 +186,28 @@ public:
         result_=SearchResult{};stage_ros_times_=nlohmann::json::object();stage_times_=nlohmann::json::object();stage_="IDLE";changeStage("SETTLING");
       });
     timer_=create_wall_timer(std::chrono::milliseconds(50),[this]{tick();});
+    retire_service_=create_service<std_srvs::srv::Trigger>("/global_relocalization/retire",
+      [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+             std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(handle_ || stage_!="SUCCEEDED") {
+          response->message="Only a consumed successful initialization can retire";
+          return;
+        }
+        shutting_down_.store(true);cancel_.store(true);
+        timer_->cancel();if(visual_timer_)visual_timer_->cancel();
+        if(raw_pipeline_){raw_pipeline_->cancel();raw_pipeline_->waitIdle();}
+        {std::lock_guard<std::mutex> imu_lock(raw_imu_mutex_);raw_ingress_.active=false;}
+        cloud_sub_.reset();imu_sub_.reset();odom_sub_.reset();
+        tf_listener_.reset();tf_buffer_.reset();
+        publishCommand(geometry_msgs::msg::Twist{});
+        response->success=true;response->message="Initialization inputs retired";
+        // Send the service reply before destroying this process/context. The
+        // coordinator has already consumed the action result and released cmd_vel.
+        retirement_timer_=create_wall_timer(std::chrono::milliseconds(250),[this]{
+          get_node_base_interface()->get_context()->shutdown("initialization retired");
+        });
+      });
     if(visualization_) {
       visual_group_=create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
       visual_timer_=create_wall_timer(std::chrono::milliseconds(50),[this]{
@@ -727,6 +749,8 @@ private:
   std::mutex raw_imu_mutex_;RawImuIngress raw_ingress_;
   rclcpp::CallbackGroup::SharedPtr imu_group_,cloud_group_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr retire_service_;
+  rclcpp::TimerBase::SharedPtr retirement_timer_;
   std::vector<Cloud> confirmations_;
   nlohmann::json confirmation_gravity_status_;
   nlohmann::json raw_status_;nlohmann::json stage_ros_times_=nlohmann::json::object();

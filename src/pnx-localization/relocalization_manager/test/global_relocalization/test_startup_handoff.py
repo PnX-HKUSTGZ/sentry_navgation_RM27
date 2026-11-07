@@ -23,7 +23,7 @@ from nav2_msgs.srv import ManageLifecycleNodes
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu, PointCloud2
 from std_srvs.srv import Trigger
-from tf2_ros import TransformBroadcaster
+from tf2_ros import TransformBroadcaster, TransformException
 
 spec = importlib.util.spec_from_file_location(
     'integrated_startup', Path(__file__).parents[2] / 'scripts/relocalize_then_navigate.py')
@@ -44,7 +44,8 @@ def test_action_result_handoff_ack_and_navigation_gate(tmp_path, success):
     process = subprocess.Popen([
         os.environ['RELOCALIZATION_TEST_EXECUTABLE'], '--ros-args',
         '-p', f'prior_pcd_file:={pcd}', '-p', 'wait_for_initial_pose:=true',
-        '-p', 'base_frame:=base_footprint', '-p', 'enable_stationary_refinement:=false',
+        '-p', 'base_frame:=base_footprint', '-p', 'robot_base_frame:=base_footprint',
+        '-p', 'enable_stationary_refinement:=false',
     ], env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
        text=True, start_new_session=True)
     rclpy.init(domain_id=int(environment['ROS_DOMAIN_ID']))
@@ -53,7 +54,7 @@ def test_action_result_handoff_ack_and_navigation_gate(tmp_path, success):
     executor = MultiThreadedExecutor(num_threads=3)
     executor.add_node(peer)
     executor.add_node(coordinator)
-    commands, navigation_requests, result_stamps = [], [], []
+    commands, navigation_requests, result_stamps, retirements = [], [], [], []
     peer.create_subscription(Twist, '/cmd_vel', commands.append, 10)
     command_pub = peer.create_publisher(Twist, '/relocalization/cmd_vel', 10)
     lidar = peer.create_publisher(PointCloud2, '/livox/lidar', 10)
@@ -72,7 +73,15 @@ def test_action_result_handoff_ack_and_navigation_gate(tmp_path, success):
         response.success = True
         return response
 
+    def retire(_request, response):
+        assert coordinator.state == "RETIRING_GLOBAL"
+        assert coordinator.command_pub is coordinator.command_sub is None
+        retirements.append(True)
+        response.success = True
+        return response
+
     def navigation(request, response):
+        assert retirements == [True]
         navigation_requests.append(request.command)
         assert coordinator.state == 'STARTING_NAVIGATION'
         assert coordinator.command_pub is coordinator.command_sub is None
@@ -105,11 +114,13 @@ def test_action_result_handoff_ack_and_navigation_gate(tmp_path, success):
     peer.create_service(Trigger, '/global_relocalization/start_match', start_match,
                         callback_group=group)
     peer.create_service(ManageLifecycleNodes, '/lifecycle_manager_navigation/manage_nodes', navigation)
+    peer.create_service(Trigger, "/global_relocalization/retire", retire)
     server = ActionServer(peer, Relocalize, '/global_relocalization/run', execute,
                           callback_group=group)
     started = time.monotonic()
+    observed_transform = None
     try:
-        while time.monotonic()-started < 15 and coordinator.state not in ('READY', 'FAILED'):
+        while time.monotonic()-started < 15:
             stamp = peer.get_clock().now().to_msg()
             cloud = PointCloud2()
             cloud.header.stamp = stamp
@@ -134,20 +145,28 @@ def test_action_result_handoff_ack_and_navigation_gate(tmp_path, success):
                 transforms.append(transform)
             broadcaster.sendTransform(transforms)
             executor.spin_once(timeout_sec=.02)
+            # The lifecycle reply and map->odom arrive on independent DDS
+            # streams. Observe the actual transform within the same deadline;
+            # an arbitrary post-READY sleep is not a delivery barrier.
+            if coordinator.state == 'READY':
+                try:
+                    observed_transform = coordinator.tf_buffer.lookup_transform(
+                        'map', 'odom', rclpy.time.Time())
+                    break
+                except TransformException:
+                    pass
+            elif coordinator.state == 'FAILED' and commands and commands[-1].angular.z == 0.:
+                break
             time.sleep(.005)
-        # Action, acknowledgment, TF and cmd_vel are separate DDS streams.
-        # Observe their callbacks before checking the terminal publications.
-        deadline = time.monotonic() + .3
-        while time.monotonic() < deadline:
-            executor.spin_once(timeout_sec=.01)
         assert coordinator.state == ('READY' if success else 'FAILED')
         assert bool(navigation_requests) == success
+        assert bool(retirements) == success
         assert commands and all(c.linear.x == c.linear.y == 0. for c in commands)
         if success:
             assert coordinator.seed.header.stamp == result_stamps[0]
-            transform = coordinator.tf_buffer.lookup_transform('map', 'odom', rclpy.time.Time())
-            assert transform.transform.translation.x == pytest.approx(9.)
-            assert transform.transform.translation.y == pytest.approx(4.)
+            assert observed_transform is not None
+            assert observed_transform.transform.translation.x == pytest.approx(9.)
+            assert observed_transform.transform.translation.y == pytest.approx(4.)
         else:
             assert coordinator.seed is None
             assert coordinator.command_pub is not None

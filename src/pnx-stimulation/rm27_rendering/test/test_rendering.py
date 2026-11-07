@@ -248,3 +248,129 @@ def test_selected_child_environment_is_applied_only_to_that_child(monkeypatch):
     assert inherited == original
     assert selection.set_env["GALLIUM_DRIVER"] == "llvmpipe"
     assert "MESA_D3D12_DEFAULT_ADAPTER_NAME" in selection.unset_env
+
+
+def test_wrapper_appends_user_launch_overrides_after_defaults(tmp_path):
+    workspace = tmp_path / "workspace"
+    stimulation_dir = workspace / "tools" / "stimulation"
+    install_dir = workspace / "install"
+    fake_bin = tmp_path / "fake-bin"
+    stimulation_dir.mkdir(parents=True)
+    install_dir.mkdir()
+    fake_bin.mkdir()
+
+    script = (
+        Path(__file__).resolve().parents[4]
+        / "tools"
+        / "stimulation"
+        / "start_nav_stimulation.bash"
+    )
+    (stimulation_dir / "start_nav_stimulation.bash").write_text(script.read_text())
+    record_path = tmp_path / "ros2-argv.json"
+    fake_ros2 = fake_bin / "ros2"
+    fake_ros2.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "with open(os.environ['RM27_TEST_ARGV'], 'w') as stream:\n"
+        "    json.dump({'argv': sys.argv[1:], "
+        "'local_setup': os.environ.get('RM27_LOCAL_SETUP')}, stream)\n"
+    )
+    fake_ros2.chmod(0o755)
+    copied_script = stimulation_dir / "start_nav_stimulation.bash"
+    copied_script.chmod(0o755)
+    (install_dir / "local_setup.bash").write_text(
+        "export RM27_LOCAL_SETUP=loaded\n" f'export PATH={str(fake_bin)!r}:"$PATH"\n'
+    )
+    arguments = [
+        "render_mode:=gpu",
+        "hardware_acceleration:=false",
+        "gui:=false",
+        "use_rviz:=false",
+    ]
+    completed = subprocess.run(
+        [str(stimulation_dir / "start_nav_stimulation.bash"), *arguments],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "AMENT_PREFIX_PATH": "",
+            "COLCON_PREFIX_PATH": "",
+            "CMAKE_PREFIX_PATH": "",
+            "ROS_PACKAGE_PATH": "",
+            "PYTHONPATH": "",
+            "LD_LIBRARY_PATH": "",
+            "GZ_SIM_RESOURCE_PATH": "",
+            "GZ_CONFIG_PATH": "",
+            "RM27_TEST_ARGV": str(record_path),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    recorded = json.loads(record_path.read_text())
+    forwarded = recorded["argv"]
+    assert forwarded[:3] == ["launch", "rm_27_stimulation", "sim_with_nav.launch.py"]
+    assert forwarded[-len(arguments) :] == arguments
+    assert forwarded.index("gui:=true") < forwarded.index("gui:=false")
+    assert forwarded.index("use_rviz:=true") < forwarded.index("use_rviz:=false")
+    assert "render_mode:=auto" not in forwarded
+    assert recorded["local_setup"] == "loaded"
+
+
+@pytest.mark.parametrize("mode", ["auto", "gpu", "cpu"])
+def test_yaml_render_mode_and_cli_precedence(tmp_path, mode):
+    from rm27_rendering.config import configured_render_mode
+
+    profile = tmp_path / "params.yaml"
+    profile.write_text(
+        "simulation_rendering:\n  ros__parameters:\n    render_mode: " + mode + "\n"
+    )
+    assert configured_render_mode(profile) == mode
+    assert configured_render_mode(profile, legacy="false") == "cpu"
+    assert configured_render_mode(profile, legacy="true") == "auto"
+    assert configured_render_mode(profile, mode="gpu", legacy="false") == "gpu"
+
+
+@pytest.mark.parametrize("value", ["false", "null", "''", "invalid"])
+def test_invalid_yaml_render_mode_is_rejected(tmp_path, value):
+    from rm27_rendering.config import configured_render_mode
+
+    profile = tmp_path / "params.yaml"
+    profile.write_text(
+        "simulation_rendering:\n  ros__parameters:\n    render_mode: " + value + "\n"
+    )
+    with pytest.raises(ValueError, match="render_mode"):
+        configured_render_mode(profile)
+
+
+def test_old_custom_profile_without_rendering_defaults_to_auto(tmp_path):
+    from rm27_rendering.config import configured_render_mode
+
+    profile = tmp_path / "params.yaml"
+    profile.write_text(
+        "controller_server:\n  ros__parameters:\n    use_sim_time: true\n"
+    )
+    assert configured_render_mode(profile) == "auto"
+
+
+@pytest.mark.parametrize("gui, backend", [(False, "egl"), (True, "glx")])
+def test_native_linux_gpu_uses_egl_headless_or_virtualgl_for_gui(
+    monkeypatch, gui, backend
+):
+    monkeypatch.setattr(rendering, "is_wsl", lambda _environment: False)
+    monkeypatch.setattr(
+        rendering, "_virtualgl", lambda _environment: ("vglrun", "-d", "egl0")
+    )
+    calls = []
+
+    def probe(environment, **options):
+        calls.append(options)
+        return rendering.ProbeResult(renderer="Mesa Intel Graphics", version="4.6")
+
+    monkeypatch.setattr(rendering, "probe_renderer", probe)
+    result = rendering.select_rendering("gpu", gui=gui, purpose="gazebo", environ={})
+    assert result.mode == "gpu"
+    assert result.backend == backend
+    assert calls[0]["backend"] == backend
+    assert result.prefix == (("vglrun", "-d", "egl0") if gui else ())

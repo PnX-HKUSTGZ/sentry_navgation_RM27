@@ -119,6 +119,13 @@ target_include_directories(pointlio_mapping PRIVATE ${PYTHON_INCLUDE_DIRS})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    ament_add_gtest(test_sensor_polling_clock test/test_sensor_polling_clock.cpp)
+    target_include_directories(test_sensor_polling_clock PRIVATE include)
+    ament_target_dependencies(test_sensor_polling_clock rclcpp)
+    target_link_options(test_sensor_polling_clock PRIVATE
+      "-Wl,--export-dynamic-symbol=clock_gettime")
+  endif()
   ament_add_gtest(test_adaptive_lio test/test_adaptive_lio.cpp)
   target_include_directories(test_adaptive_lio PRIVATE include ${EIGEN3_INCLUDE_DIR} ${PCL_INCLUDE_DIRS})
   ament_target_dependencies(test_adaptive_lio rclcpp nav_msgs sensor_msgs tf2_ros)

@@ -33,6 +33,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "relocalization_manager/stationary_gate.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "std_srvs/srv/trigger.hpp"
 #include "small_gicp/ann/kdtree_omp.hpp"
 #include "small_gicp/factors/gicp_factor.hpp"
 #include "small_gicp/pcl/pcl_point.hpp"
@@ -145,15 +146,21 @@ private:
   void logLocalizationState();
   void recordAcceptedGicpVerification(const std::string & reason);
   void resetAcceptedGicpVerificationStreak();
+  void completeInitialization(std_srvs::srv::Trigger::Response & response);
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr motion_command_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr global_initial_pose_sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_pcd_map_pub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_sub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_ack_pub_;
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr accepted_initial_pose_;
   bool wait_for_initial_pose_{false};
+  bool global_initialization_{false};
+  std::string normal_robot_base_frame_;
+  std::string normal_initial_pose_topic_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr complete_initialization_service_;
   bool initialized_{true};
   bool enable_stationary_refinement_{true};
   StationaryGate stationary_gate_;

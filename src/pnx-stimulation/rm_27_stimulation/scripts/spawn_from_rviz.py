@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Use RViz's first initial-pose selection for Gazebo placement, never localization."""
 import math
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,6 +12,7 @@ import numpy as np
 from PIL import Image
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from std_msgs.msg import Bool, String
@@ -99,6 +101,7 @@ class SpawnFromRviz(Node):
         self.map = PlacementMap(self.get_parameter("map_yaml").value)
         self.process = None
         self.spawned = False
+        self.retired = False
         self.started = 0.0
         qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.ready = self.create_publisher(Bool, "/simulation/spawned", qos)
@@ -111,6 +114,7 @@ class SpawnFromRviz(Node):
             PoseWithCovarianceStamped, "/initialpose", self.select, 10
         )
         self.create_timer(0.1, self.poll)
+        self.create_subscription(String, '/relocalize_then_navigate/status', self.startup_status, qos)
         self.report(
             "Waiting for RViz 2D Pose Estimate: select position and drag a heading on the left half"
         )
@@ -118,6 +122,12 @@ class SpawnFromRviz(Node):
     def report(self, text):
         self.get_logger().info(text)
         self.status.publish(String(data=text))
+
+    def startup_status(self, msg):
+        try:
+            self.retired = self.spawned and json.loads(msg.data).get('state') == 'READY'
+        except (ValueError, AttributeError):
+            pass
 
     def select(self, msg):
         if self.spawned or self.process is not None:
@@ -180,8 +190,9 @@ def main():
     rclpy.init()
     node = SpawnFromRviz()
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
+        while rclpy.ok() and not node.retired:
+            rclpy.spin_once(node, timeout_sec=0.1)
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         if node.process is not None and node.process.poll() is None:

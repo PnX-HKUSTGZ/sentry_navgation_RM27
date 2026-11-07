@@ -391,6 +391,13 @@ slam_toolbox:
     minimum_distance_penalty: 0.5
     use_response_expansion: true
 
+# Launch-only policy for both Gazebo and RViz; no rendering node is started.
+# auto tries GPU then warns/falls back to llvmpipe; gpu requires hardware;
+# cpu requires llvmpipe. CLI render_mode overrides this value.
+simulation_rendering:
+  ros__parameters:
+    render_mode: auto
+
 bt_navigator:
   ros__parameters:
     use_sim_time: True

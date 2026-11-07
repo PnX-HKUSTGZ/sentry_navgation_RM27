@@ -235,3 +235,75 @@ def test_existing_continuous_navigation_refines_without_global_seed(backend):
         pump(n, .2, feed)
     assert aligned(), n.backend_log.read_text()
     assert not n.acks
+
+
+@pytest.mark.parametrize('backend', [{'continuous_refinement': 'true',
+                                     'robot_base_frame': 'base_footprint',
+                                     'enable_stationary_refinement': 'false'}], indirect=True)
+def test_completed_global_seed_restores_normal_tracking_during_motion(backend):
+    from std_srvs.srv import Trigger
+    from rclpy.qos import ReliabilityPolicy
+    n = backend
+    complete = n.create_client(Trigger, '/relocalization_manager/complete_initialization')
+    assert complete.wait_for_service(timeout_sec=3)
+
+    def request():
+        future = complete.call_async(Trigger.Request())
+        deadline = time.monotonic() + 3
+        while not future.done() and time.monotonic() < deadline:
+            rclpy.spin_once(n, timeout_sec=.02)
+        assert future.done()
+        return future.result()
+
+    assert not request().success  # No accepted timestamped seed.
+    stamp = n.get_clock().now().to_msg()
+    p = seed(n, stamp)
+    pump(n, .3, lambda: n.tf.publish(TFMessage(transforms=[odom_tf(stamp)])))
+    pump(n, .3, lambda: n.seed.publish(p))
+    assert n.acks
+    target = np.zeros(3)
+
+    def feed(speed=0.):
+        current = n.get_clock().now().to_msg()
+        command = Twist()
+        command.linear.x = speed
+        n.cmd.publish(command)
+        measurement = Odometry()
+        measurement.header = Header(stamp=current, frame_id='odom')
+        measurement.child_frame_id = 'base_footprint'
+        measurement.pose.pose.orientation.w = 1.
+        measurement.twist.twist = command
+        n.odom.publish(measurement)
+        n.tf.publish(TFMessage(transforms=[odom_tf(current)]))
+        n.cloud.publish(create_cloud_xyz32(Header(stamp=current, frame_id='odom'), n.points-target))
+
+    pump(n, .3, lambda: feed(.2))
+    assert not request().success  # A moving/stale robot cannot hand over control.
+    pump(n, 1.2, feed)
+    assert request().success
+    pump(n, .3, feed)
+    endpoint = next(e for e in n.get_subscriptions_info_by_topic('/registered_scan')
+                    if e.node_name == 'relocalization_manager')
+    # Fast DDS discovery does not expose history depth (reports 0).
+    assert endpoint.qos_profile.reliability == ReliabilityPolicy.RELIABLE
+    target = np.array([.12, -.06, .02])
+    deadline = time.monotonic()+8
+    def position():
+        t = n.transforms[-1].transform.translation
+        return np.array([t.x,t.y,t.z])
+    while not np.allclose(position(), target, atol=.015) and time.monotonic()<deadline:
+        pump(n, .2, lambda: feed(.2))
+    assert position() == pytest.approx(target, abs=.015), n.backend_log.read_text()
+    # Normal tracking must not reopen the global seed channel to late results.
+    pump(n, .4, lambda: (feed(.2), n.seed.publish(seed(n, n.get_clock().now().to_msg(), 50.))))
+    assert position() == pytest.approx(target, abs=.015)
+    assert request().success  # Completion is idempotent during normal navigation.
+    # Restore the baseline's explicit operator reset on the ordinary topic,
+    # while delayed results on the private global topic remain one-shot.
+    operator = n.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
+    pump(n, .4, lambda: n.tf.publish(TFMessage(transforms=[odom_tf(n.get_clock().now().to_msg())])))
+    reset = seed(n, n.get_clock().now().to_msg(), 2., -1.)
+    pump(n, .4, lambda: operator.publish(reset))
+    assert position() == pytest.approx([2., -1., 0.], abs=.015), n.backend_log.read_text()
+    pump(n, .3, lambda: n.seed.publish(seed(n, n.get_clock().now().to_msg(), 50.)))
+    assert position() == pytest.approx([2., -1., 0.], abs=.015)

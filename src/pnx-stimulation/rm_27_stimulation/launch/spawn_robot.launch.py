@@ -75,7 +75,7 @@ def _spawn_robot(context, *args, **kwargs):
     robot_description_file = LaunchConfiguration("robot_description_file").perform(context)
     robot_description = {
         "robot_description": ParameterValue(_convex_collision_description(
-            xacro.process_file(robot_description_file).toxml()), value_type=str)
+            xacro.process_file(robot_description_file, mappings={"startup_assist": LaunchConfiguration("startup_assist", default="false").perform(context)}).toxml()), value_type=str)
     }
 
     if LaunchConfiguration("rviz_spawn").perform(context).lower() in (
@@ -168,7 +168,8 @@ def generate_launch_description():
 
     robot_description = {
         "robot_description": ParameterValue(
-            Command([FindExecutable(name="xacro"), " ", robot_description_file]),
+            Command([FindExecutable(name="xacro"), " ", robot_description_file,
+                     " startup_assist:=", LaunchConfiguration("startup_assist")]),
             value_type=str,
         )
     }
@@ -218,6 +219,7 @@ def generate_launch_description():
                 description="Kept for launch-file compatibility; ros_gz_sim create does not use it",
             ),
             DeclareLaunchArgument("gimbal_panel", default_value="true"),
+            DeclareLaunchArgument("startup_assist", default_value="false"),
             Node(package="rm_27_stimulation", executable="gimbal_control.py",
                  parameters=[os.path.join(package_share, "config", "gimbal_control.yaml"),
                              {"use_sim_time": use_sim_time}], output="screen"),

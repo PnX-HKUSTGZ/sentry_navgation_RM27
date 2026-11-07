@@ -30,6 +30,21 @@ def context_for(module, **overrides):
 
 
 class SimulationStartup(unittest.TestCase):
+    def test_standalone_spawn_resolves_description_in_launch_order(self):
+        # Expand real node parameters without starting ROS/Gazebo processes.
+        # Standalone spawning has no parent's launch arguments to mask a late
+        # declaration of startup_assist.
+        module = load('spawn_robot')
+        context = LaunchContext()
+        for action in module.generate_launch_description().entities:
+            if isinstance(action, DeclareLaunchArgument):
+                action.execute(context)
+            elif isinstance(action, Node) and action.node_executable == 'robot_state_publisher':
+                action._perform_substitutions(context)
+                self.assertEqual(context.launch_configurations['startup_assist'], 'false')
+                return
+        self.fail('Robot state publisher was not created')
+
     def test_world_view_and_explicit_override(self):
         module = load('rm_simulation')
         context = context_for(module, sim_world='RMUL2027')

@@ -811,7 +811,6 @@ terrain_analysis_ext:
 
 relocalization_manager:
   ros__parameters:
-    enable_stationary_refinement: true  # 全局初始化后的局部停车修正。
     use_sim_time: false
     num_threads: 4
     num_neighbors: 20
@@ -1098,5 +1097,7 @@ global_relocalization:
 
 relocalize_then_navigate:
   ros__parameters:
+    # 使用全局确认的实际朝向；导航底盘物理保持 774bc1a 基准。
+    restore_spawn_heading: false
     state_timeout_sec: 60.0
     relocalization_timeout_sec: 180.0

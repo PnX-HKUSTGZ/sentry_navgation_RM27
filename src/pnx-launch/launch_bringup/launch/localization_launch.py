@@ -18,7 +18,10 @@ import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable, OpaqueFunction
+from launch.actions import (DeclareLaunchArgument, GroupAction, SetEnvironmentVariable,
+                            OpaqueFunction, RegisterEventHandler, EmitEvent)
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from relocalization_manager_launch.config import configure_global_relocalization
@@ -280,17 +283,23 @@ def generate_launch_description():
         with open(parameter_file.evaluate(context), encoding="utf-8") as stream:
             settings = yaml.safe_load(stream)["global_relocalization"]["ros__parameters"]
         deployment = LaunchConfiguration("deployment", default="reality").perform(context)
-        return [
-            Node(package="relocalization_manager", executable="global_relocalization_node",
-                 name="global_relocalization", output="screen", parameters=[configured_params]),
-            Node(package="relocalization_manager", executable="relocalize_then_navigate.py",
+        global_server = Node(package="relocalization_manager", executable="global_relocalization_node",
+                 name="global_relocalization", output="screen", parameters=[configured_params])
+        coordinator = Node(package="relocalization_manager", executable="relocalize_then_navigate.py",
                  name="relocalize_then_navigate", output="screen",
                  parameters=[configured_params, {"use_sim_time": use_sim_time,
                              "deployment": deployment,
                              "raw_cloud_topic": settings["raw_cloud_topic"],
                              "imu_topic": settings["imu_topic"],
-                             "odom_topic": settings["odom_topic"]}]),
-        ]
+                             "odom_topic": settings["odom_topic"]}])
+        def stop_failed_startup(event, context):
+            del context
+            if event.returncode != 0:
+                return [EmitEvent(event=Shutdown(reason="Global initialization handoff failed"))]
+            return []
+        return [RegisterEventHandler(OnProcessExit(target_action=coordinator,
+                                                   on_exit=stop_failed_startup)),
+                global_server, coordinator]
 
     ld.add_action(OpaqueFunction(function=start_global))
 

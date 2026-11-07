@@ -160,9 +160,11 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py \
   navigation_mode:=minco use_ground_truth_odom:=false gui:=true use_rviz:=true
 ```
 
-不再追加 `global_relocalization:=true`。YAML 开关默认 `false`，修改后重启生效。仿真要求 RMUC2027、MINCO、`slam:=false`，比赛配置搜索 `x<0` 半场。
+不再追加 `global_relocalization:=true`。仿真 MINCO profile 当前开启该 YAML 开关，实车 profile 保持关闭；修改后重启生效。仿真要求 RMUC2027、MINCO、`slam:=false`，比赛配置搜索 `x<0` 半场。
 
-在 RViz 用 **2D Pose Estimate** 选择出生位置和朝向；选点只生成机器人，不作为定位初值。`relocalization_manager` 包执行原始 LiDAR/IMU 检索、自转准备、开始触发及三帧停车确认。局部管理器按原始时间戳建立 `map → odom` 并确认接收，随后恢复朝向、激活 Nav2。失败时导航保持未激活，初始化速度入口停车。完成后用 **Nav2 Goal** 发送目标。
+在 RViz 用 **2D Pose Estimate** 选择出生位置和朝向；选点只生成机器人，不作为定位初值。`relocalization_manager` 包执行原始 LiDAR/IMU 检索、自转准备、开始触发及三帧停车确认。局部管理器按原始时间戳建立 `map → odom` 并确认接收；仿真在定位坐标系内实际转回所选出生朝向后再交接导航。初始化速度入口释放、仿真旋转助力退役、全局服务器退出后，管理器通过 `complete_initialization` 恢复 `774bc1a` 的常态连续 GICP 分支、可靠深度 10 点云输入、10 秒 TF 缓存和普通 `/initialpose` 接口，再激活 Nav2；私有全局通道继续拒绝迟到或不同的重复结果。协调器和出生选择节点随后退出；全局节点不再订阅导航期间的原始传感器。失败时导航保持未激活，初始化速度入口停车。完成后用 **Nav2 Goal** 发送目标。
+
+仿真常态模型的接触参数、底盘控制器及全部导航参数保持 `774bc1a`；Point-LIO IMU 接收深度保持 100。 Point-LIO 的 500 Hz 采集节拍使用单调时钟 `rclcpp::WallRate`，避免主机系统对时回拨阻塞 IMU 接收；传感器/ROS 时间戳及估计、规划、控制算法保持原有语义。原地检索使用独立、有限幅且带超时的启动旋转助力；助力必须在导航激活前确认永久停用并退订速度话题。仿真设置 `relocalize_then_navigate.restore_spawn_heading: true`，在启动阶段恢复所选出生朝向，避免随机自转终点成为基线控制器的常态朝向；实车保持 `false`。
 
 原始全局前端可先于 Point-LIO 里程计启动。停车确认的开始触发等待 Point-LIO 里程计稳定，交接前再次检查里程计新鲜度，并由管理器查询确认时间戳的 TF；这允许 Point-LIO 在自转获得新几何后完成初始化。
 
@@ -230,13 +232,17 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 | `params_file` | 按 simulation/reality 及模式选择 `nav2_params.yaml` 或 `minco_params.yaml`；自定义 MINCO 文件须为完整 profile |
 | `map` / `prior_pcd_file` | 导航入口按 world 选择默认路径；RMUC2027 世界使用 RMUC2027 栅格和 RMUC2027 点云。自定义文件直接传给导航入口；组合仿真入口没有同名通用转发参数 |
 | `gui` / `use_rviz` | 组合仿真默认 `false` / `true`；无显示环境将两者均设为 `false` |
+| YAML `simulation_rendering.render_mode` | 仿真 `nav2_params.yaml` / `minco_params.yaml` 中默认为 `auto`；Gazebo 与 RViz 优先 GPU，探测失败后警告并回退 llvmpipe。`gpu` 强制硬件，`cpu` 强制 llvmpipe |
+| `render_mode` | 默认为空，读取上述 YAML；显式 `auto` / `gpu` / `cpu` 同时覆盖 Gazebo 和 RViz。单独 Gazebo 读取 `rm_27_stimulation/config/rendering.yaml`，可用 `rendering_config` 替换 |
 | `use_robot_state_pub` | 仅实车入口，源码默认 `true`；已有 TF 发布者时显式关闭 |
 | `enable_legacy_terrain` | `auto`：legacy 开、MINCO 关 |
 | `autostart` / `use_composition` / `use_respawn` | `true` / `false` / `false`；全局流程延后激活 |
-| YAML `global_relocalization.enabled` | 两套 `minco_params.yaml` 默认 `false`；启用后由管理器包启动全局服务与协调器 |
-| YAML `relocalization_manager.enable_stationary_refinement` | 默认 `true`；全局初始化后的停车修正 |
+| YAML `global_relocalization.enabled` | 仿真 MINCO 当前 `true`、实车 `false`；启用后由管理器包启动一次性全局服务与协调器 |
+| YAML `relocalization_manager.continuous_refinement` | 保留基准 `true`；全局交接后恢复运动中的连续 GICP 修正 |
 
 四份导航配置位于 [config](src/pnx-launch/launch_bringup/config)。launch 还会应用场景 profile、Point-LIO 输入 profile 并生成临时 YAML；调试时检查最终传入节点的参数，而不只看原文件。
+
+渲染设置的完整键为 `simulation_rendering.ros__parameters.render_mode`，只控制显示和传感器渲染，不加速 Point-LIO、GICP、规划或 MPC。优先级为显式 `render_mode`、显式旧参数 `hardware_acceleration` / `rviz_hardware_acceleration`、YAML；旧参数 `true` 对应 `auto`，`false` 对应 `cpu`。原生 Linux 无 GUI 使用 EGL，GUI 可使用 VirtualGL；WSLg 使用 D3D12/GLX（包括无 GUI 雷达），强制 GPU 时要求 NVIDIA 适配器。启动日志报告实际 renderer；实车默认显示策略保持独立。
 
 ## 6. 开发、验证与当前限制
 

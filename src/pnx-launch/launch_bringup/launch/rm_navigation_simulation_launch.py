@@ -34,11 +34,11 @@ from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
+from rm27_rendering.config import configured_render_mode
 
 
 def _as_bool(value):
     return value.strip().lower() in {"true", "1", "yes", "on"}
-
 
 
 def _validate_localization_inputs(context):
@@ -98,6 +98,15 @@ def _validate_localization_inputs(context):
 def configure_global_relocalization_for_sim(context):
     context.launch_configurations["deployment"] = "simulation"
     return configure_global_relocalization(context)
+
+
+def _configure_simulation_rendering(context):
+    mode = configured_render_mode(
+        LaunchConfiguration("params_file").perform(context),
+        LaunchConfiguration("render_mode").perform(context),
+        LaunchConfiguration("rviz_hardware_acceleration").perform(context),
+    )
+    return [SetLaunchConfiguration("render_mode", mode)]
 
 
 def generate_launch_description():
@@ -231,8 +240,14 @@ def generate_launch_description():
 
     declare_rviz_hardware_acceleration_cmd = DeclareLaunchArgument(
         "rviz_hardware_acceleration",
-        default_value="true",
-        description="Use VirtualGL / EGL to accelerate RViz when available",
+        default_value="",
+        description="Legacy RViz override: true=auto, false=cpu; empty reads YAML",
+    )
+
+    declare_render_mode_cmd = DeclareLaunchArgument(
+        "render_mode",
+        default_value="",
+        description="Override simulation YAML rendering for RViz: auto, gpu, cpu",
     )
 
     declare_use_ground_truth_odom_cmd = DeclareLaunchArgument(
@@ -285,6 +300,8 @@ def generate_launch_description():
             "namespace": namespace,
             "use_sim_time": use_sim_time,
             "rviz_config": rviz_config_file,
+            "render_mode": LaunchConfiguration("render_mode"),
+            "simulation_rendering": "true",
             "rviz_hardware_acceleration": LaunchConfiguration(
                 "rviz_hardware_acceleration"
             ),
@@ -326,6 +343,7 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_rviz_hardware_acceleration_cmd)
+    ld.add_action(declare_render_mode_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
@@ -333,6 +351,7 @@ def generate_launch_description():
     ld.add_action(declare_enable_legacy_terrain_cmd)
     ld.add_action(OpaqueFunction(function=configure_global_relocalization_for_sim))
     ld.add_action(OpaqueFunction(function=_validate_localization_inputs))
+    ld.add_action(OpaqueFunction(function=_configure_simulation_rendering))
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(start_velodyne_convert_tool)

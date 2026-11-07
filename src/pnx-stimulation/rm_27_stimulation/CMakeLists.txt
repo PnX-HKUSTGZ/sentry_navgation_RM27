@@ -16,6 +16,11 @@ find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 
+add_library(rm27_startup_yaw_assist_system SHARED src/startup_yaw_assist_system.cpp)
+target_compile_features(rm27_startup_yaw_assist_system PRIVATE cxx_std_17)
+target_link_libraries(rm27_startup_yaw_assist_system gz-msgs10::gz-msgs10
+  gz-plugin2::gz-plugin2 gz-sim8::gz-sim8 gz-transport13::gz-transport13)
+
 add_library(rm27_cad_collision_cache_system SHARED src/cad_collision_cache_system.cpp)
 target_compile_features(rm27_cad_collision_cache_system PRIVATE cxx_std_17)
 target_link_libraries(rm27_cad_collision_cache_system
@@ -72,7 +77,8 @@ if(BUILD_TESTING)
       --package "${CMAKE_CURRENT_SOURCE_DIR}" --output "${actuation_world}"
       --actuator-plugin $<TARGET_FILE:rm27_cmd_vel_pose_control_system>
       --cad-plugin $<TARGET_FILE:rm27_cad_collision_cache_system>
-    DEPENDS rm27_cmd_vel_pose_control_system rm27_cad_collision_cache_system
+      --startup-plugin $<TARGET_FILE:rm27_startup_yaw_assist_system>
+    DEPENDS rm27_cmd_vel_pose_control_system rm27_cad_collision_cache_system rm27_startup_yaw_assist_system
       test/make_cmd_vel_physics_world.py launch/spawn_robot.launch.py
       urdf/simulation_waking_robot.xacro urdf/mid360.xacro
     VERBATIM)
@@ -143,7 +149,7 @@ if(BUILD_TESTING)
   endif()
 endif()
 
-install(TARGETS
+install(TARGETS rm27_startup_yaw_assist_system
   rm27_cad_collision_cache_system
   rm27_cmd_vel_pose_control_system
   rm27_ground_truth_odometry_system

@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--actuator-plugin', required=True)
     parser.add_argument('--cad-plugin', required=True)
+    parser.add_argument('--startup-plugin', required=True)
     args = parser.parse_args()
     spec = importlib.util.spec_from_file_location(
         'spawn_robot', args.package / 'launch/spawn_robot.launch.py')
@@ -21,7 +22,7 @@ def main():
     # Support a first build before this package has an ament index entry.
     text = (args.package / 'urdf/simulation_waking_robot.xacro').read_text()
     document = xacro.parse(text.replace('$(find rm_27_stimulation)', str(args.package)))
-    xacro.process_doc(document)
+    xacro.process_doc(document, mappings={"startup_assist":"true"})
     model = ET.fromstring(spawn._convex_collision_description(document.toxml())).find('model')
     assert len(model.findall('.//collision/geometry/mesh')) == 9
     ET.SubElement(model, 'pose').text = '0 0 0.082 0 0 0'
@@ -34,6 +35,8 @@ def main():
         name = plugin.get('name', '')
         if name == 'rm_27_stimulation::CmdVelPoseControlSystem':
             plugin.set('filename', args.actuator_plugin)
+        elif name == 'rm_27_stimulation::StartupYawAssistSystem':
+            plugin.set('filename', args.startup_plugin)
         elif name == 'rm_27_stimulation::CadCollisionCacheSystem':
             plugin.set('filename', args.cad_plugin)
         elif name != 'gz::sim::systems::JointPositionController':

@@ -22,6 +22,9 @@ if(BUILD_TESTING)
     test/test_navigation_launch.py
     TIMEOUT 30
   )
+  ament_add_pytest_test(test_rendering_launch test/test_rendering_launch.py TIMEOUT 30)
+  ament_add_pytest_test(test_baseline_navigation_contract
+    test/test_baseline_navigation_contract.py TIMEOUT 30)
   ament_add_pytest_test(test_rmul2027_maps test/test_rmul2027_maps.py TIMEOUT 30)
   ament_add_pytest_test(test_simulation_collision_footprint
     test/test_simulation_collision_footprint.py TIMEOUT 30)

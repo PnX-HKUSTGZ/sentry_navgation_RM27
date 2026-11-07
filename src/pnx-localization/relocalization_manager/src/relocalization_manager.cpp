@@ -614,6 +614,7 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   previous_map_to_odom_(Eigen::Isometry3d::Identity())
 {
   wait_for_initial_pose_ = this->declare_parameter("wait_for_initial_pose", false);
+  global_initialization_ = wait_for_initial_pose_;
   initialized_ = !wait_for_initial_pose_;
   robot_moving_.store(wait_for_initial_pose_);
   enable_stationary_refinement_ = this->declare_parameter("enable_stationary_refinement", true);
@@ -696,6 +697,8 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
   this->get_parameter("input_cloud_topic", input_cloud_topic_);
   this->get_parameter("initial_pose_topic", initial_pose_topic_);
   this->get_parameter("motion_command_topic", motion_command_topic_);
+  normal_robot_base_frame_ = robot_base_frame_;
+  normal_initial_pose_topic_ = initial_pose_topic_;
   if (wait_for_initial_pose_) {
     // RViz /initialpose selects the Gazebo spawn, not a localization seed.
     initial_pose_topic_ = "relocalization/initialpose";
@@ -776,7 +779,16 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
 
   initial_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
     initial_pose_topic_, 10,
-    std::bind(&RelocalizationManagerNode::initialPoseCallback, this, std::placeholders::_1));
+    [this](const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
+      // Keep delayed global results separate from the ordinary RViz interface.
+      if (global_initialization_ && !wait_for_initial_pose_) {
+        if (accepted_initial_pose_ && *msg == *accepted_initial_pose_) {
+          initial_pose_ack_pub_->publish(*accepted_initial_pose_);
+        }
+        return;
+      }
+      initialPoseCallback(msg);
+    });
 
   register_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(500),
@@ -784,6 +796,64 @@ RelocalizationManagerNode::RelocalizationManagerNode(const rclcpp::NodeOptions &
 
   transform_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(50), std::bind(&RelocalizationManagerNode::publishTransform, this));
+  complete_initialization_service_ = this->create_service<std_srvs::srv::Trigger>(
+    "~/complete_initialization",
+    [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+           std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+      completeInitialization(*response);
+    });
+}
+
+void RelocalizationManagerNode::completeInitialization(std_srvs::srv::Trigger::Response & response)
+{
+  if (!global_initialization_ || !accepted_initial_pose_ || !initialized_) {
+    response.message = "No timestamped global pose has been accepted";
+    return;
+  }
+  if (!wait_for_initial_pose_) {
+    response.success = true;
+    response.message = "Normal localization already active";
+    return;
+  }
+  updateMotionState();
+  if (!stationary_gate_.stationary(this->now().seconds()) || registration_future_.valid()) {
+    response.message = "Waiting for fresh stopped odometry and outstanding registration";
+    return;
+  }
+  // Only the startup policy changes. Keep the committed timestamped alignment;
+  // never reseed the filter or add a second map->odom publisher.
+  wait_for_initial_pose_ = false;
+  robot_base_frame_ = normal_robot_base_frame_;
+  accumulated_cloud_->clear();
+  reset_accumulated_cloud_.store(false);
+  resetAcceptedGicpVerificationStreak();
+  robot_moving_.store(false);
+  {
+    std::lock_guard<std::mutex> lock(motion_command_mutex_);
+    has_motion_command_ = false;
+  }
+  // Restore the ordinary 774bc1a input history and TF cache after exact-time
+  // startup matching has finished. Normal tracking uses the unchanged branch.
+  pcd_sub_.reset();
+  pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+    input_cloud_topic_, rclcpp::QoS(10),
+    std::bind(&RelocalizationManagerNode::registeredPcdCallback, this, std::placeholders::_1));
+  tf_listener_.reset();
+  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock(), tf2::durationFromSec(10.0));
+  tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
+  global_initial_pose_sub_ = std::move(initial_pose_sub_);
+  initial_pose_topic_ = normal_initial_pose_topic_;
+  initial_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    initial_pose_topic_, 10,
+    std::bind(&RelocalizationManagerNode::initialPoseCallback, this, std::placeholders::_1));
+  this->set_parameters({rclcpp::Parameter("wait_for_initial_pose", false),
+                        rclcpp::Parameter("initial_pose_topic", initial_pose_topic_),
+                        rclcpp::Parameter("robot_base_frame", robot_base_frame_)});
+  setLocalizationState(LocalizationState::LOCALIZING, "normal tracking after global initialization");
+  response.success = true;
+  response.message = "Normal localization active; continuous_refinement=" +
+    std::string(continuous_refinement_ ? "true" : "false");
+  RCLCPP_INFO(this->get_logger(), "%s", response.message.c_str());
 }
 
 void RelocalizationManagerNode::publishPriorPcdMap(

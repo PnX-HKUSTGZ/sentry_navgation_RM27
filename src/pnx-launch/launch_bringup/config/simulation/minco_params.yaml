@@ -1,4 +1,11 @@
 # MINCO 仿真配置；传统导航使用 nav2_params.yaml。输入源由启动参数选择。
+# Launch-only policy for both Gazebo and RViz; no rendering node is started.
+# auto tries GPU then warns/falls back to llvmpipe; gpu requires hardware;
+# cpu requires llvmpipe. CLI render_mode overrides this value.
+simulation_rendering:
+  ros__parameters:
+    render_mode: auto
+
 bt_navigator:
   ros__parameters:
     # 当前异步规划仅支持单目标导航。
@@ -880,7 +887,6 @@ terrain_analysis_ext:
 
 relocalization_manager:
   ros__parameters:
-    enable_stationary_refinement: true  # 全局初始化后的局部停车修正。
     use_sim_time: true
     # 运动或物理停滞期间继续修正定位；质量和位姿增量门槛始终生效。
     continuous_refinement: true
@@ -1217,5 +1223,7 @@ global_relocalization:
 
 relocalize_then_navigate:
   ros__parameters:
+    # 导航前实际转回所选出生朝向；助力退役后使用 774bc1a 常态底盘。
+    restore_spawn_heading: true
     state_timeout_sec: 60.0
     relocalization_timeout_sec: 180.0

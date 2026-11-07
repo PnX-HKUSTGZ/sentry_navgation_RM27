@@ -27,6 +27,7 @@
 #include "instantaneous_scan.hpp"
 #include "startup_handover.hpp"
 #include "startup_config.hpp"
+#include "sensor_polling_rate.hpp"
 
 using namespace std;
 
@@ -909,7 +910,10 @@ int main(int argc, char ** argv)
 
   //------------------------------------------------------------------------------------------------------
   signal(SIGINT, SigHandle);
-  rclcpp::Rate rate(500);
+  // Poll sensor callbacks on monotonic time. A host wall-clock correction must
+  // not suspend ingestion while GPU simulation keeps publishing 200 Hz IMU.
+  // Sensor stamps and all estimator propagation remain on their original clock.
+  point_lio::SensorPollingRate rate(500);
   while (rclcpp::ok()) {
     if (flg_exit) break;
     executor.spin_some();
