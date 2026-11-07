@@ -314,7 +314,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--map-dir", type=Path, required=True)
     parser.add_argument("--node", required=True)
-    parser.add_argument("--params", type=Path, default=HERE.parents[1] / "src/pnx-localization/global_relocalization/config/competition.yaml")
+    parser.add_argument("--params", type=Path, default=HERE.parents[1] / "src/pnx-localization/relocalization_manager/config/competition.yaml")
     parser.add_argument("--trials", type=Path,
                         help="explicit trial matrix; positions are checked against all other history")
     parser.add_argument("--limit", type=int)

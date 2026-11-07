@@ -11,7 +11,7 @@ fi
 _global_reloc_overlay="$_global_reloc_root/tools/global_relocalization/.build/ros/install"
 if [[ -f "$_global_reloc_overlay/local_setup.bash" ]]; then
   source "$_global_reloc_overlay/local_setup.bash"
-  export LD_LIBRARY_PATH="$_global_reloc_overlay/global_relocalization/lib:${LD_LIBRARY_PATH:-}"
+  export LD_LIBRARY_PATH="$_global_reloc_overlay/relocalization_manager/lib:${LD_LIBRARY_PATH:-}"
 fi
 # The raw lidar stream requires the same large-cloud transport for every
 # participant. Respect a caller-supplied profile; otherwise use the profile

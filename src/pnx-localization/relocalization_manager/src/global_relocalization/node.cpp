@@ -55,6 +55,8 @@ public:
     raw_params_.gyro_noise_density=number("raw_gyro_noise_density",0.005);raw_params_.rotation_sigma_floor=number("raw_rotation_sigma_floor",0.005);
     raw_diagnostic_directory_=str("raw_diagnostic_directory","");
     raw_calibration_sec_=number("raw_calibration_sec",2.0);
+    raw_imu_accel_scale_=number("raw_imu_accel_scale",1.0);
+    if(raw_imu_accel_scale_<=0)throw std::invalid_argument("raw_imu_accel_scale must be positive");
     raw_params_.leaf_size=number("raw_local_leaf_size",.12);
     raw_params_.max_correspondence=number("raw_local_max_correspondence",.5);
     raw_params_.max_iterations=declare_parameter<int>("raw_local_max_iterations",15);
@@ -381,6 +383,8 @@ private:
     RawImuSample sample;sample.stamp=stamp;
     sample.angular_velocity<<msg->angular_velocity.x,msg->angular_velocity.y,msg->angular_velocity.z;
     sample.linear_acceleration<<msg->linear_acceleration.x,msg->linear_acceleration.y,msg->linear_acceleration.z;
+    // Livox publishes g; the raw frontend's stationary gravity contract is SI.
+    sample.linear_acceleration*=raw_imu_accel_scale_;
     std::string reason;
     if(!ingress.frontend->addImu(sample,&reason)){ingress.error=reason;++ingress.rejected_count;return;}
     ++ingress.accepted_count;ingress.stamp_sec=stamp;ingress.stamp=msg->header.stamp;
@@ -717,7 +721,7 @@ private:
   double latest_imu_stamp_{-1},raw_yaw_at_spin_{0},raw_latest_yaw_{0},raw_stable_ros_stamp_{0};
   std::atomic<uint64_t> raw_generation_{0};std::atomic<int> raw_capture_mode_{0};std::atomic_bool raw_ingress_fault_{false};
   std::string imu_frame_;
-  std::string input_mode_,raw_scan_model_,raw_diagnostic_directory_,raw_recovery_stage_;bool raw_recovery_stop_tick_{false};double raw_calibration_sec_;int raw_confirmation_frames_;
+  std::string input_mode_,raw_scan_model_,raw_diagnostic_directory_,raw_recovery_stage_;bool raw_recovery_stop_tick_{false};double raw_calibration_sec_,raw_imu_accel_scale_;int raw_confirmation_frames_;
   RawFrontendParams raw_params_;std::shared_ptr<StationaryRawFrontend> raw_frontend_;
   std::unique_ptr<RawPipeline> raw_pipeline_;std::shared_ptr<RawCapture> raw_capture_;
   std::mutex raw_imu_mutex_;RawImuIngress raw_ingress_;

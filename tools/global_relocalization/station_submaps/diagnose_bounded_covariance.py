@@ -17,10 +17,10 @@ def run(source_input,station_id,output,resume_contract_build=False):
     if len(matches)!=1:raise ValueError('named station must uniquely exist')
     if original['params']['max_iterations']!=15 or original['params']['retry_iterations']!=15:
         raise ValueError('diagnostic requires unchanged original15+15 budgets')
-    guard_paths=[REPO/'src/pnx-localization/global_relocalization/config/competition.yaml',
+    guard_paths=[REPO/'src/pnx-localization/relocalization_manager/config/competition.yaml',
         REPO/'tools/global_relocalization/.build/station_submaps/offline_station_submaps',
-        REPO/'tools/global_relocalization/.build/ros/install/global_relocalization/lib/libglobal_relocalization_core.so',
-        REPO/'tools/global_relocalization/.build/ros/install/global_relocalization/lib/global_relocalization/global_relocalization_node']
+        REPO/'tools/global_relocalization/.build/ros/install/relocalization_manager/lib/libglobal_relocalization_core.so',
+        REPO/'tools/global_relocalization/.build/ros/install/relocalization_manager/lib/relocalization_manager/global_relocalization_node']
     before_guard={str(p):sha256(p)for p in guard_paths}
     if resume_contract_build:
         out=Path(output).resolve()

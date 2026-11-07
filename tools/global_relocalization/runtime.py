@@ -23,7 +23,7 @@ def digest(path):
 
 def source_hashes():
     files = {}
-    for package in ("global_relocalization", "global_relocalization_interfaces"):
+    for package in ("relocalization_manager", "global_relocalization_interfaces"):
         for path in sorted((ROOT / "src/pnx-localization" / package).rglob("*")):
             if path.is_file() and "__pycache__" not in path.parts:
                 files[str(path.relative_to(ROOT))] = digest(path)
@@ -31,11 +31,14 @@ def source_hashes():
 
 
 def binaries():
-    library = INSTALL / "global_relocalization/lib"
+    library = INSTALL / "relocalization_manager/lib"
     return [
         library / "libglobal_relocalization_core.so",
-        library / "global_relocalization/global_relocalization_node",
-        library / "global_relocalization/display_helper.py",
+        library / "relocalization_manager/global_relocalization_node",
+        library / "relocalization_manager/display_helper.py",
+        library / "librelocalization_manager.so",
+        library / "relocalization_manager/relocalization_manager_node",
+        library / "relocalization_manager/relocalize_then_navigate.py",
     ]
 
 
@@ -52,8 +55,8 @@ def build_current():
 def freeze_build():
     # colcon install does not remove deleted profiles or launch files.
     for name in ("config", "launch", "rviz"):
-        source = ROOT / "src/pnx-localization/global_relocalization" / name
-        installed = INSTALL / "global_relocalization/share/global_relocalization" / name
+        source = ROOT / "src/pnx-localization/relocalization_manager" / name
+        installed = INSTALL / "relocalization_manager/share/relocalization_manager" / name
         if installed.exists():
             for path in installed.rglob("*"):
                 if (
@@ -61,9 +64,9 @@ def freeze_build():
                     and not (source / path.relative_to(installed)).is_file()
                 ):
                     path.unlink()
-    executable_dir = INSTALL / "global_relocalization/lib/global_relocalization"
+    executable_dir = INSTALL / "relocalization_manager/lib/relocalization_manager"
     for path in executable_dir.glob("*.py"):
-        if path.name != "display_helper.py":
+        if path.name not in {"display_helper.py", "relocalize_then_navigate.py"}:
             path.unlink()
     content = {
         "sources": source_hashes(),

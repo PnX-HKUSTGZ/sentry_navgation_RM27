@@ -10,7 +10,7 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 import pytest
 import rclpy
 
-spec = importlib.util.spec_from_file_location('startup', Path(__file__).parents[1] / 'scripts/relocalize_then_navigate.py')
+spec = importlib.util.spec_from_file_location('startup', Path(__file__).parents[3] / 'pnx-localization/relocalization_manager/scripts/relocalize_then_navigate.py')
 startup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(startup)
 
@@ -130,4 +130,133 @@ def test_pose_ack_enters_alignment_instead_of_activating_navigation(node):
     node.state = 'HANDOFF'
     node.accepted(node.seed)
     assert node.state == 'ALIGNING_HEADING'
+    assert not node.released
+
+
+def test_result_retains_original_stamp_and_navigation_waits_for_matching_ack(node):
+    from action_msgs.msg import GoalStatus
+    from geometry_msgs.msg import PoseStamped
+    pose = PoseStamped()
+    pose.header.frame_id = 'map'
+    pose.header.stamp.sec = 8  # Result timestamp must survive delayed delivery.
+    pose.pose.orientation.w = 1.
+    reply = SimpleNamespace(status=GoalStatus.STATUS_SUCCEEDED,
+                            result=SimpleNamespace(success=True, pose=pose,
+                                                   fitness=.1, inlier_ratio=.8))
+    node.state = 'RELOCALIZING'
+    node.result(SimpleNamespace(result=lambda: reply))
+    assert node.state == 'HANDOFF' and not node.released
+    assert node.seed.header == pose.header
+    wrong = PoseWithCovarianceStamped()
+    wrong.header.frame_id = 'map'
+    wrong.header.stamp.sec = 9
+    wrong.pose.pose = pose.pose
+    node.accepted(wrong)
+    assert node.state == 'HANDOFF' and not node.released
+    node.accepted(node.seed)
+    assert node.state == 'ALIGNING_HEADING' and not node.released
+
+
+def test_failed_action_never_hands_off_pose_or_activates_navigation(node):
+    from action_msgs.msg import GoalStatus
+    node.state = 'RELOCALIZING'
+    reply = SimpleNamespace(status=GoalStatus.STATUS_ABORTED,
+                            result=SimpleNamespace(success=False, reason='ambiguous candidate'))
+    node.result(SimpleNamespace(result=lambda: reply))
+    assert node.state == 'FAILED' and not node.released
+    assert node.commands[-1].angular.z == 0.
+    node.accepted(node.seed)
+    assert node.state == 'FAILED' and not node.released
+
+
+def test_goal_accepted_after_timeout_is_canceled(node):
+    canceled = []
+    goal = SimpleNamespace(accepted=True, cancel_goal_async=lambda: canceled.append(True))
+    node.state = 'FAILED'
+    node.goal_response(SimpleNamespace(result=lambda: goal))
+    assert canceled == [True]
+    assert not node.released
+
+
+def test_reality_waits_for_sensors_without_simulation_spawn_contract():
+    from rclpy.parameter import Parameter
+    rclpy.init(domain_id=197)
+    n = startup.Startup(parameter_overrides=[Parameter('deployment', value='reality')])
+    try:
+        assert n.spawned and n.selected_yaw is None
+        assert all('/simulation/' not in sub.topic_name for sub in n.subscriptions)
+        n.state = 'WAITING_FOR_INITIAL_POSE'
+        n.tick()
+        assert n.state == 'WAITING_FOR_SENSORS'
+        n.seed = PoseWithCovarianceStamped()
+        n.state = 'HANDOFF'
+        n.accepted(n.seed)
+        assert n.state == 'STARTING_NAVIGATION'
+        assert n.command_pub is n.command_sub is None
+    finally:
+        n.destroy_node()
+        rclpy.shutdown()
+
+
+def test_raw_startup_does_not_wait_for_pointlio_odometry(node):
+    requested = []
+    node.state = 'WAITING_FOR_SENSORS'
+    node.odom = None
+    node.odom_ready_since = None
+    node.action = SimpleNamespace(
+        server_is_ready=lambda: True,
+        send_goal_async=lambda *a, **k: SimpleNamespace(
+            add_done_callback=lambda callback: requested.append(callback)))
+    node.trigger = SimpleNamespace(service_is_ready=lambda: True)
+    node.tick()
+    assert node.state == 'RELOCALIZING'
+    assert len(requested) == 1
+    assert not node.released
+
+
+def test_handoff_waits_for_fresh_stable_external_odometry(node):
+    published = []
+    node.pose_pub = SimpleNamespace(publish=published.append)
+    node.state = 'HANDOFF'
+    node.odom = None
+    node.odom_ready_since = None
+    node.tick()
+    assert not published
+    measurement = Odometry()
+    node.odometry(measurement)
+    node.tick()
+    assert not published
+    node.odom_ready_since -= 1.1
+    node.tick()
+    assert published == [node.seed]
+    assert not node.released
+
+
+def test_handoff_rejects_an_odometry_reception_gap(node):
+    node.state = 'HANDOFF'
+    node.odom_ready_since = time.monotonic() - 2.
+    node.sensor_times['odom'] = time.monotonic() - .6
+    published = []
+    node.pose_pub = SimpleNamespace(publish=published.append)
+    node.tick()
+    assert not published
+    assert not node.released
+
+
+def test_stopped_confirmation_waits_for_pointlio_ready(node):
+    calls = []
+    node.state = 'RELOCALIZING'
+    node.armed = True
+    node.odom = None
+    node.odom_ready_since = None
+    node.trigger = SimpleNamespace(
+        service_is_ready=lambda: True,
+        call_async=lambda request: SimpleNamespace(
+            add_done_callback=lambda callback: calls.append(request)))
+    node.tick()
+    assert not calls and not node.triggered
+    node.odometry(Odometry())
+    node.odom_ready_since -= 1.1
+    node.tick()
+    assert len(calls) == 1 and node.triggered
     assert not node.released

@@ -21,7 +21,7 @@ from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 
 HERE = Path(__file__).resolve().parent
-FROZEN_CORE = HERE.parent / ".build/ros/install/global_relocalization/lib/libglobal_relocalization_core.so"
+FROZEN_CORE = HERE.parent / ".build/ros/install/relocalization_manager/lib/libglobal_relocalization_core.so"
 sys.path.insert(0, str(HERE.parent))
 from evaluation import interpolate, matrix, score_pose
 from sensor_mapping import base_sensor, stats, stop

@@ -46,9 +46,9 @@ def run(source_input,station_id,baseline_native,output):
     station=next(s for s in original['stations']if s['id']==station_id)
     baseline=read_json(inputs.add(Path(baseline_native)/station_id/'poses.json'))
     out=new_directory(output);project=out/'project';project.mkdir();build=out/'build'
-    guard={str(p):sha256(p)for p in [REPO/'src/pnx-localization/global_relocalization/config/competition.yaml',
+    guard={str(p):sha256(p)for p in [REPO/'src/pnx-localization/relocalization_manager/config/competition.yaml',
         REPO/'tools/global_relocalization/.build/station_submaps/offline_station_submaps',
-        REPO/'tools/global_relocalization/.build/ros/install/global_relocalization/lib/libglobal_relocalization_core.so']}
+        REPO/'tools/global_relocalization/.build/ros/install/relocalization_manager/lib/libglobal_relocalization_core.so']}
     for name in ['CMakeLists.txt','generate_frontend.py','offline_station_submaps.cpp','test_mapping_retry.cpp']:
         inputs.add(HERE/name)
     inputs.add(Path(__file__))

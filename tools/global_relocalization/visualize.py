@@ -133,13 +133,13 @@ def run(args):
                 x=-9.575, y=-1.285, z=0.089, yaw=-1.5707963267948966
             )
             (SESSION / "spawn_poses.yaml").write_text(yaml.safe_dump(spawn))
-        library = INSTALL / "global_relocalization/lib/global_relocalization"
-        share = INSTALL / "global_relocalization/share/global_relocalization"
+        library = INSTALL / "relocalization_manager/lib/relocalization_manager"
+        share = INSTALL / "relocalization_manager/share/relocalization_manager"
         commands = {
             "gazebo": [
                 "ros2",
                 "launch",
-                str(ROOT / "src/pnx-localization/global_relocalization/launch/simulation.launch.py"),
+                str(ROOT / "src/pnx-localization/relocalization_manager/launch/simulation.launch.py"),
                 "gui:=true",
                 "render_mode:=" + args.render_mode,
                 "robot_description_file:="
@@ -278,7 +278,7 @@ def main():
     parser.add_argument(
         "--params",
         type=Path,
-        default=ROOT / "src/pnx-localization/global_relocalization/config/competition.yaml",
+        default=ROOT / "src/pnx-localization/relocalization_manager/config/competition.yaml",
     )
     parser.add_argument("--render-mode", choices=("auto", "gpu", "cpu"), default="auto")
     parser.add_argument(

@@ -14,6 +14,7 @@
 
 
 import os
+from relocalization_manager_launch.config import configure_global_relocalization
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -282,6 +283,7 @@ def generate_launch_description():
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(OpaqueFunction(function=_validate_launch_contract))
+    ld.add_action(OpaqueFunction(function=configure_global_relocalization))
     ld.add_action(start_robot_state_publisher_cmd)
     ld.add_action(start_livox_ros_driver2_node)
     ld.add_action(bringup_cmd)

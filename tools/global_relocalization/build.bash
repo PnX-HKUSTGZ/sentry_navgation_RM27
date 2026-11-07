@@ -16,7 +16,7 @@ if [[ -f "$cache/CMakeLists.txt" ]]; then
 fi
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
 colcon --log-base "$base/log" build \
-  --base-paths "$root/src/pnx-localization/global_relocalization_interfaces" "$root/src/pnx-localization/global_relocalization" \
+  --base-paths "$root/src/pnx-localization/global_relocalization_interfaces" "$root/src/pnx-localization/relocalization_manager" \
   --build-base "$base/build" --install-base "$base/install" \
   --executor sequential --cmake-args "${cmake_args[@]}"
 /usr/bin/python3 "$root/tools/global_relocalization/runtime.py" freeze-build

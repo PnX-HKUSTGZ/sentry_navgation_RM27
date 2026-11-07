@@ -14,4 +14,4 @@ fi
 if [[ -f "$root/tools/global_relocalization/.build/robot_velocity.urdf" ]]; then
   set -- "robot_description_file:=$root/tools/global_relocalization/.build/robot_velocity.urdf" "$@"
 fi
-exec ros2 launch "$root/src/pnx-localization/global_relocalization/launch/simulation.launch.py" "$@"
+exec ros2 launch "$root/src/pnx-localization/relocalization_manager/launch/simulation.launch.py" "$@"

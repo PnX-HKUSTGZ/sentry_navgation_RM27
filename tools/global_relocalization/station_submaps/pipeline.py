@@ -13,7 +13,7 @@ def main(argv=None):
     p = commands.add_parser('prepare', help='extract raw/IMU; calibrate and freeze actual gyro full-turn roles')
     p.add_argument('--capture', type=Path, required=True)
     p.add_argument('--raw-prior', type=Path, required=True)
-    p.add_argument('--profile', type=Path, default=REPO/'src/pnx-localization/global_relocalization/config/competition.yaml')
+    p.add_argument('--profile', type=Path, default=REPO/'src/pnx-localization/relocalization_manager/config/competition.yaml')
     p.add_argument('--bag', type=Path)
     p.add_argument('--output', type=Path, required=True)
     p = commands.add_parser('local', help='run existing isolated native frontend; all scans required')

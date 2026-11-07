@@ -2,7 +2,7 @@
 """Generate an isolated class from the exact frozen frontend; never edits src/."""
 from pathlib import Path
 import argparse,hashlib
-p=argparse.ArgumentParser();p.add_argument('root',type=Path);p.add_argument('output',type=Path);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True);root=a.root;source=root/'src/pnx-localization/global_relocalization/src/stationary_raw_frontend.cpp';original=source.read_text();old='StationaryRawFrontend';new='ExperimentalCalibratedFrontend';header=(root/'src/pnx-localization/global_relocalization/include/global_relocalization/stationary_raw_frontend.hpp').read_text();body=header[header.index('class '+old+' {'):header.index('}  // namespace global_relocalization')].replace(old,new)
+p=argparse.ArgumentParser();p.add_argument('root',type=Path);p.add_argument('output',type=Path);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True);root=a.root;source=root/'src/pnx-localization/relocalization_manager/src/global_relocalization/stationary_raw_frontend.cpp';original=source.read_text();old='StationaryRawFrontend';new='ExperimentalCalibratedFrontend';header=(root/'src/pnx-localization/relocalization_manager/include/global_relocalization/stationary_raw_frontend.hpp').read_text();body=header[header.index('class '+old+' {'):header.index('}  // namespace global_relocalization')].replace(old,new)
 extra='''
   TrustedCalibration exportCalibration(const std::string & source_sha256) const;
   void restoreLocalMap(const TrustedCalibration &, const Eigen::Matrix3d & reference_from_sensor_at_first_scan, double first_scan_stamp);

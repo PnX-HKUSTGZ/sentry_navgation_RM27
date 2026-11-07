@@ -11,7 +11,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    share = get_package_share_directory("global_relocalization")
+    share = get_package_share_directory("relocalization_manager")
     return LaunchDescription(
         [
             DeclareLaunchArgument("map_path"),
@@ -26,7 +26,7 @@ def generate_launch_description():
                 "visualization_enabled", default_value=LaunchConfiguration("rviz")
             ),
             Node(
-                package="global_relocalization",
+                package="relocalization_manager",
                 executable="global_relocalization_node",
                 name="global_relocalization",
                 output="screen",
@@ -46,7 +46,7 @@ def generate_launch_description():
                 ],
             ),
             Node(
-                package="global_relocalization",
+                package="relocalization_manager",
                 executable="display_helper.py",
                 condition=IfCondition(LaunchConfiguration("visualization_enabled")),
             ),

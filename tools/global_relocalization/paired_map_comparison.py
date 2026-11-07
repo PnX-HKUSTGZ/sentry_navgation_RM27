@@ -80,7 +80,7 @@ def main():
     batch = a.batch.resolve()
     trials = json.loads((batch / "trials.json").read_text())["trials"][:a.limit]
     executable = HERE / ".build/map_compare/offline_map_compare"
-    core = HERE / ".build/ros/install/global_relocalization/lib/libglobal_relocalization_core.so"
+    core = HERE / ".build/ros/install/relocalization_manager/lib/libglobal_relocalization_core.so"
     frozen_core = json.loads((batch / "provenance.json").read_text())["sha256"][str(core.resolve())]
     if hashlib.sha256(core.read_bytes()).hexdigest() != frozen_core:
         raise RuntimeError("comparison Core differs from online batch")

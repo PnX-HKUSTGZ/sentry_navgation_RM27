@@ -66,6 +66,26 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   find_package(ament_cmake_pytest REQUIRED)
+  set(actuation_world "${CMAKE_CURRENT_BINARY_DIR}/cmd_vel_physics_world.sdf")
+  add_custom_command(OUTPUT "${actuation_world}"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/test/make_cmd_vel_physics_world.py"
+      --package "${CMAKE_CURRENT_SOURCE_DIR}" --output "${actuation_world}"
+      --actuator-plugin $<TARGET_FILE:rm27_cmd_vel_pose_control_system>
+      --cad-plugin $<TARGET_FILE:rm27_cad_collision_cache_system>
+    DEPENDS rm27_cmd_vel_pose_control_system rm27_cad_collision_cache_system
+      test/make_cmd_vel_physics_world.py launch/spawn_robot.launch.py
+      urdf/simulation_waking_robot.xacro urdf/mid360.xacro
+    VERBATIM)
+  add_custom_target(cmd_vel_physics_world DEPENDS "${actuation_world}")
+  ament_add_gtest(test_cmd_vel_physics test/test_cmd_vel_physics.cpp TIMEOUT 90)
+  target_compile_features(test_cmd_vel_physics PRIVATE cxx_std_17)
+  target_compile_definitions(test_cmd_vel_physics PRIVATE
+    RM27_ACTUATOR_PLUGIN="$<TARGET_FILE:rm27_cmd_vel_pose_control_system>"
+    RM27_ACTUATION_WORLD="${actuation_world}"
+    RM27_RESOURCE_PARENT="${CMAKE_CURRENT_SOURCE_DIR}/..")
+  target_link_libraries(test_cmd_vel_physics
+    gz-msgs10::gz-msgs10 gz-sim8::gz-sim8 gz-transport13::gz-transport13)
+  add_dependencies(test_cmd_vel_physics cmd_vel_physics_world)
   ament_add_pytest_test(test_simulation_pose_handoff test/test_simulation_pose_handoff.py TIMEOUT 60)
   ament_add_pytest_test(test_dds_transport test/test_dds_transport.py TIMEOUT 30)
   ament_add_gtest(test_pose_imu test/test_pose_imu.cpp)

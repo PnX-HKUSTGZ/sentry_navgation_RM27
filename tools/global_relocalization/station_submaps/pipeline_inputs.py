@@ -187,8 +187,8 @@ def prepare(capture_dir, raw_prior, profile, output, bag=None):
     params_path = inputs.add(capture_dir / 'mapping_params.yaml')
     inputs.add(profile)
     for path in [Path(__file__), HERE / 'gyro_turns.py', HERE / 'pipeline_common.py',
-                 REPO / 'src/pnx-localization/global_relocalization/include/global_relocalization/stationary_raw_frontend.hpp',
-                 REPO / 'src/pnx-localization/global_relocalization/src/stationary_raw_frontend.cpp']:
+                 REPO / 'src/pnx-localization/relocalization_manager/include/global_relocalization/stationary_raw_frontend.hpp',
+                 REPO / 'src/pnx-localization/relocalization_manager/src/global_relocalization/stationary_raw_frontend.cpp']:
         inputs.add(path)
     capture, manifest = read_json(source_path), read_json(manifest_path)
     if (capture.get('failure') is not None or capture.get('completed_waypoints') != capture.get('total_waypoints')

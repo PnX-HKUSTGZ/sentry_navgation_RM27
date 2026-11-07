@@ -14,11 +14,13 @@
 
 
 import os
-import tempfile
 
-import yaml
 
 from ament_index_python.packages import get_package_share_directory
+from relocalization_manager_launch.config import (
+    apply_world_profile as _apply_world_profile,
+    configure_global_relocalization,
+)
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -37,32 +39,6 @@ from nav2_common.launch import RewrittenYaml
 def _as_bool(value):
     return value.strip().lower() in {"true", "1", "yes", "on"}
 
-
-def _apply_world_profile(params_file, world):
-    """Resolve world-specific geometry/registration settings into one file."""
-    if not world:
-        return params_file
-    with open(params_file, encoding="utf-8") as stream:
-        configuration = yaml.safe_load(stream)
-    # The profile block is input metadata, not a runtime node. Removing it
-    # also avoids YAML aliases when its list values become node parameters;
-    # ROS's C parameter parser does not support aliases.
-    profile = configuration.pop("simulation_world_profiles", {}).get(
-        "ros__parameters", {}).get(world)
-    if not profile:
-        return params_file
-    def merge(target, overrides):
-        for key, value in overrides.items():
-            if isinstance(value, dict):
-                merge(target.setdefault(key, {}), value)
-            else:
-                target[key] = value
-    for node_name, parameters in profile.items():
-        merge(configuration.setdefault(node_name, {}).setdefault("ros__parameters", {}), parameters)
-    with tempfile.NamedTemporaryFile(mode="w", prefix="rm27_world_params_", suffix=".yaml",
-                                     encoding="utf-8", delete=False) as stream:
-        yaml.safe_dump(configuration, stream, sort_keys=False)
-        return stream.name
 
 
 def _validate_localization_inputs(context):
@@ -117,6 +93,11 @@ def _validate_localization_inputs(context):
             "a matching relocalization init_pose, or use_ground_truth_odom:=true."
         )
     return actions
+
+
+def configure_global_relocalization_for_sim(context):
+    context.launch_configurations["deployment"] = "simulation"
+    return configure_global_relocalization(context)
 
 
 def generate_launch_description():
@@ -291,7 +272,7 @@ def generate_launch_description():
         name="rm27_ground_truth_localizer",
         output="screen",
         namespace=namespace,
-        parameters=[configured_params, {"wait_for_initial_pose": LaunchConfiguration("global_relocalization")}],
+        parameters=[configured_params, {"wait_for_initial_pose": LaunchConfiguration("_global_relocalization_enabled", default="false")}],
         remappings=[("/rm27_ground_truth_localizer/initialpose_accepted",
                      "/relocalization/initialpose_accepted")],
         condition=IfCondition(use_ground_truth_odom),
@@ -324,8 +305,6 @@ def generate_launch_description():
             "use_respawn": use_respawn,
             "cmd_vel_smoothed_topic": cmd_vel_smoothed_topic,
             "use_ground_truth_odom": use_ground_truth_odom,
-            "global_relocalization": LaunchConfiguration("global_relocalization"),
-            "stationary_relocalization": LaunchConfiguration("stationary_relocalization"),
             "deployment": "simulation",
             "navigation_mode": navigation_mode,
             "enable_legacy_terrain": enable_legacy_terrain,
@@ -350,10 +329,9 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
-    ld.add_action(DeclareLaunchArgument("global_relocalization", default_value="false"))
-    ld.add_action(DeclareLaunchArgument("stationary_relocalization", default_value="true"))
     ld.add_action(declare_navigation_mode_cmd)
     ld.add_action(declare_enable_legacy_terrain_cmd)
+    ld.add_action(OpaqueFunction(function=configure_global_relocalization_for_sim))
     ld.add_action(OpaqueFunction(function=_validate_localization_inputs))
 
     # Add the actions to launch all of the navigation nodes

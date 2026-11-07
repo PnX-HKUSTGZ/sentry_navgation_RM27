@@ -21,6 +21,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable, OpaqueFunction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
+from relocalization_manager_launch.config import configure_global_relocalization
 from launch_ros.actions import LoadComposableNodes, Node
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from nav2_common.launch import RewrittenYaml
@@ -43,7 +44,7 @@ def generate_launch_description():
     log_level = LaunchConfiguration("log_level")
     use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
 
-    global_relocalization = LaunchConfiguration("global_relocalization")
+    global_relocalization = LaunchConfiguration("_global_relocalization_enabled", default="false")
     run_gicp = UnlessCondition(use_ground_truth_odom)
     lifecycle_nodes = ["map_server"]
 
@@ -170,7 +171,6 @@ def generate_launch_description():
                     {
                         "prior_pcd_file": prior_pcd_file,
                         "wait_for_initial_pose": global_relocalization,
-                        "enable_stationary_refinement": LaunchConfiguration("stationary_relocalization"),
                     },
                 ],
                 arguments=["--ros-args", "--log-level", log_level],
@@ -210,7 +210,6 @@ def generate_launch_description():
                     {
                         "prior_pcd_file": prior_pcd_file,
                         "wait_for_initial_pose": global_relocalization,
-                        "enable_stationary_refinement": LaunchConfiguration("stationary_relocalization"),
                     },
                 ],
                 condition=run_gicp,
@@ -249,8 +248,9 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
-    ld.add_action(DeclareLaunchArgument("global_relocalization", default_value="false"))
-    ld.add_action(DeclareLaunchArgument("stationary_relocalization", default_value="true"))
+    ld.add_action(DeclareLaunchArgument("navigation_mode", default_value="legacy"))
+    ld.add_action(DeclareLaunchArgument("deployment", default_value="reality"))
+    ld.add_action(OpaqueFunction(function=configure_global_relocalization))
 
     # Add the actions to launch all of the localiztion nodes
     ld.add_action(start_point_lio_node)
@@ -272,5 +272,26 @@ def generate_launch_description():
     ld.add_action(OpaqueFunction(function=start_backend))
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)
+
+    def start_global(context):
+        if global_relocalization.perform(context) != "true":
+            return []
+        parameter_file = ParameterFile(params_file, allow_substs=True)
+        with open(parameter_file.evaluate(context), encoding="utf-8") as stream:
+            settings = yaml.safe_load(stream)["global_relocalization"]["ros__parameters"]
+        deployment = LaunchConfiguration("deployment", default="reality").perform(context)
+        return [
+            Node(package="relocalization_manager", executable="global_relocalization_node",
+                 name="global_relocalization", output="screen", parameters=[configured_params]),
+            Node(package="relocalization_manager", executable="relocalize_then_navigate.py",
+                 name="relocalize_then_navigate", output="screen",
+                 parameters=[configured_params, {"use_sim_time": use_sim_time,
+                             "deployment": deployment,
+                             "raw_cloud_topic": settings["raw_cloud_topic"],
+                             "imu_topic": settings["imu_topic"],
+                             "odom_topic": settings["odom_topic"]}]),
+        ]
+
+    ld.add_action(OpaqueFunction(function=start_global))
 
     return ld

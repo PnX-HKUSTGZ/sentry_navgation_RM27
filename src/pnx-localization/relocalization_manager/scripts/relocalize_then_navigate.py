@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sequence map, RViz placement, global pose handoff, then Nav2 activation."""
+"""Sequence sensors, raw global localization, timestamped handoff, then Nav2."""
 import json
 import math
 import time
@@ -7,6 +7,7 @@ import time
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.clock import Clock, ClockType
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from action_msgs.msg import GoalStatus
@@ -52,18 +53,29 @@ def rotation_clear(grid, x, y, radius=0.45):
 
 
 class Startup(Node):
-    def __init__(self):
-        super().__init__('relocalize_then_navigate')
+    def __init__(self, **kwargs):
+        super().__init__('relocalize_then_navigate', **kwargs)
+        self.deployment = self.declare_parameter('deployment', 'simulation').value
+        if self.deployment not in ('simulation', 'reality'):
+            raise ValueError('deployment must be simulation or reality')
+        raw_topic = self.declare_parameter('raw_cloud_topic', '/livox/lidar').value
+        imu_topic = self.declare_parameter('imu_topic', '/livox/imu').value
+        odom_topic = self.declare_parameter('odom_topic', '/odometry').value
+        self.state_timeout = self.declare_parameter('state_timeout_sec', 60.0).value
+        self.relocalization_timeout = self.declare_parameter('relocalization_timeout_sec', 180.0).value
+        if any(not math.isfinite(v) or v <= 0 for v in (self.state_timeout, self.relocalization_timeout)):
+            raise ValueError('Startup timeouts must be positive and finite')
         qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.status_pub = self.create_publisher(String, '~/status', qos)
         self.command_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.command_sub = self.create_subscription(Twist, '/relocalization/cmd_vel', self.command, 10)
         self.pose_pub = self.create_publisher(PoseWithCovarianceStamped, '/relocalization/initialpose', 10)
         self.create_subscription(PoseWithCovarianceStamped, '/relocalization/initialpose_accepted', self.accepted, qos)
-        self.create_subscription(Bool, '/simulation/spawned', self.spawn, qos)
-        self.create_subscription(PoseWithCovarianceStamped, '/simulation/spawn_pose', self.selection, qos)
+        if self.deployment == 'simulation':
+            self.create_subscription(Bool, '/simulation/spawned', self.spawn, qos)
+            self.create_subscription(PoseWithCovarianceStamped, '/simulation/spawn_pose', self.selection, qos)
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_received, qos)
-        self.odom_sub = self.create_subscription(Odometry, '/odometry', self.odometry, qos_profile_sensor_data)
+        self.odom_sub = self.create_subscription(Odometry, odom_topic, self.odometry, qos_profile_sensor_data)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.map = None
@@ -72,8 +84,8 @@ class Startup(Node):
         self.selected_yaw = None
         self.aligned_since = None
         self.sensor_subs = [
-            self.create_subscription(PointCloud2, '/livox/lidar', lambda _: self.sensor('lidar'), qos_profile_sensor_data),
-            self.create_subscription(Imu, '/livox/imu', lambda _: self.sensor('imu'), qos_profile_sensor_data),
+            self.create_subscription(PointCloud2, raw_topic, lambda _: self.sensor('lidar'), qos_profile_sensor_data),
+            self.create_subscription(Imu, imu_topic, lambda _: self.sensor('imu'), qos_profile_sensor_data),
         ]
         self.map_state = self.create_client(GetState, '/map_server/get_state')
         self.map_change = self.create_client(ChangeState, '/map_server/change_state')
@@ -84,7 +96,7 @@ class Startup(Node):
         self.started = time.monotonic()
         self.state_since = self.started
         self.sensor_times = {}
-        self.spawned = False
+        self.spawned = self.deployment == 'reality'
         self.last_command = 0.0
         self.future = None
         self.map_step = 'get'
@@ -135,6 +147,12 @@ class Startup(Node):
         self.sensor_times['odom'] = now
         self.odom = msg
 
+    def odometry_ready(self, steady):
+        return (self.odom is not None and
+                steady - self.sensor_times.get('odom', 0) < 0.5 and
+                self.odom_ready_since is not None and
+                steady - self.odom_ready_since >= 1.0)
+
     def command(self, msg):
         if self.state != 'RELOCALIZING' or not self.command_pub:
             return
@@ -149,6 +167,9 @@ class Startup(Node):
         if self.state != 'HANDOFF' or self.seed is None or msg != self.seed:
             return
         self.command_pub.publish(Twist())
+        if self.deployment == 'reality':
+            self.release_control()
+            return
         if self.selected_yaw is None:
             self.fail('Missing RViz spawn heading; cannot complete heading alignment')
             return
@@ -227,6 +248,9 @@ class Startup(Node):
             self.goal = future.result()
             if not self.goal.accepted:
                 self.fail('Global relocalization rejected the request')
+                return
+            if self.state != 'RELOCALIZING':
+                self.goal.cancel_goal_async()
                 return
             self.goal.get_result_async().add_done_callback(self.result)
         except Exception as exc:
@@ -322,13 +346,19 @@ class Startup(Node):
         elif self.state == 'WAITING_FOR_INITIAL_POSE' and self.spawned:
             self.set_state('WAITING_FOR_SENSORS')
         elif self.state == 'WAITING_FOR_SENSORS':
-            if (self.selected_yaw is not None and
-                    all(now - self.sensor_times.get(k, 0) < 0.5 for k in ('lidar', 'imu', 'odom')) and
-                    self.odom_ready_since is not None and now - self.odom_ready_since >= 1.0 and
+            # The raw action has its own local LiDAR/IMU frontend. Requiring
+            # Point-LIO here deadlocks joint startup in a weak stationary view:
+            # Point-LIO needs new geometry while global rotation waits for it.
+            if ((self.deployment == 'reality' or self.selected_yaw is not None) and
+                    all(now - self.sensor_times.get(k, 0) < 0.5 for k in ('lidar', 'imu')) and
                     self.action.server_is_ready() and self.trigger.service_is_ready()):
                 self.set_state('RELOCALIZING')
                 self.action.send_goal_async(Relocalize.Goal(), feedback_callback=self.feedback).add_done_callback(self.goal_response)
-        elif self.state == 'RELOCALIZING' and self.armed and not self.triggered and self.trigger.service_is_ready():
+        elif (self.state == 'RELOCALIZING' and self.armed and not self.triggered and
+              self.odometry_ready(now) and self.trigger.service_is_ready()):
+            # Point-LIO may initialize while the independent raw action turns.
+            # Begin the stopped confirmations only after external odometry is
+            # ready, so their original timestamps have an odom->base TF history.
             self.triggered = True
             def finished(future):
                 try:
@@ -339,12 +369,16 @@ class Startup(Node):
                     self.fail(f'Start-match trigger error: {exc}')
             self.trigger.call_async(Trigger.Request()).add_done_callback(finished)
         elif self.state == 'HANDOFF':
-            self.pose_pub.publish(self.seed)
+            # Retain the external-odometry freshness and stable-reception gate
+            # at the point where it is needed. The manager additionally checks
+            # exact-time TF; the original confirmed pose stamp is never changed.
+            if self.odometry_ready(now):
+                self.pose_pub.publish(self.seed)
         elif self.state == 'ALIGNING_HEADING':
             self.align_heading()
         elif self.state == 'STARTING_NAVIGATION':
             self.lifecycle(self.nav_client, 'READY')
-        if self.state not in ('READY', 'FAILED', 'WAITING_FOR_INITIAL_POSE') and now - self.state_since > (180 if self.state == 'RELOCALIZING' else 60):
+        if self.state not in ('READY', 'FAILED', 'WAITING_FOR_INITIAL_POSE') and now - self.state_since > (self.relocalization_timeout if self.state == 'RELOCALIZING' else self.state_timeout):
             self.fail(f'Timeout in {self.state}')
 
 
@@ -353,10 +387,10 @@ def main():
     node = Startup()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        if node.command_pub:
+        if node.command_pub and rclpy.ok():
             node.command_pub.publish(Twist())
         node.destroy_node()
         if rclpy.ok():

@@ -14,7 +14,7 @@ PnX RoboMaster RM27 导航工作区，基于 PolarBear/PB2025 导航框架继续
 | --- | --- | --- |
 | 默认仿真 | `slam:=false use_ground_truth_odom:=true navigation_mode:=legacy` | Gazebo 真值定位，旧版 Nav2 规划控制；用于导航与物理仿真检查 |
 | Point-LIO 导航 | `slam:=false use_ground_truth_odom:=false` | Point-LIO + 局部 GICP 先验匹配；导航可选 `legacy` 或 `minco` |
-| 全局初始化 | `tools/global_relocalization/navigate.bash` | RMUC2027、MINCO、原始 LiDAR/IMU 全局检索、停车确认、同时间戳位姿交接，再开放导航 |
+| 全局初始化 | MINCO YAML 中 `global_relocalization.enabled: true` | RMUC2027、MINCO、原始 LiDAR/IMU 全局检索、停车确认、同时间戳位姿交接，再开放导航 |
 | 在线建图 | `slam:=true use_ground_truth_odom:=false navigation_mode:=legacy` | Point-LIO + slam_toolbox；保存二维地图及 Point-LIO 点云 |
 | 独立后端 | YAML 中 `rm27_backend.enabled: true` | Point-LIO 原子扫描、关键帧、有界 iSAM2 里程计图；当前旁路输出，不发布 TF |
 
@@ -47,7 +47,7 @@ flowchart TD
   I --> S[sensor_scan_generation]
   I --> R[relocalization_manager]
   P --> B[rm27_backend 旁路图]
-  RAW[原始 LiDAR + IMU] --> G[global_relocalization 可选初始化]
+  RAW[原始 LiDAR + IMU] --> G[relocalization_manager 可选全局初始化]
   G --> H[协调器 /initialpose 同时间戳交接]
   H --> R
   I --> T[terrain legacy]
@@ -91,7 +91,7 @@ rosdep install --from-paths src --ignore-src --rosdistro jazzy -r -y
 - 安装 ROS 2 Jazzy 与 Gazebo Harmonic/`ros_gz` 依赖。仿真 CMake 明确依赖 `gz-sim8`、`gz-msgs10`、`gz-transport13`，不再使用 Gazebo Classic。
 - 四个子模块由 [.gitmodules](.gitmodules) 管理。按 Livox 子模块自身说明准备 Livox SDK2 和 ROS 2 驱动；确认 colcon 能发现驱动包。
 - `rm27_backend` 需要 GTSAM 4.2、TBB、Eigen、PCL；Point-LIO 联合初始化还需要 yaml-cpp、nanoflann、glog。GTSAM 可按 [后端依赖说明](src/pnx-localization/backend/README.md) 安装。用户目录 bootstrap 仅支持 Noble amd64，不是跨平台安装器。
-- `relocalization_manager` 与 `global_relocalization` 通过 CMake FetchContent 获取 small_gicp，首次配置需要访问源码。全局包固定提交，管理器目前跟踪 `master`；正常构建无需再手动安装一份 small_gicp，但两处版本尚未统一。
+- `relocalization_manager` 已集成局部匹配与全局检索，共用 FetchContent small_gicp，固定提交 `fa0cfc983417c044b6036f71dfa448038bb9c820`。首次配置需要访问源码或使用匹配的离线缓存。
 - 检查 rosdep 的失败项；`-r` 仅继续处理其他依赖，不表示失败项可以忽略。
 
 ```bash
@@ -117,6 +117,8 @@ source install/setup.bash
 | 其他历史世界 | 见 `config/worlds.yaml`；部分没有 `nav_world` 或配套 PCD，不能假定均可一键导航 |
 
 当前 `RMUC2027.pcd` 从 RMUC2027 世界实际加载的 RM27 视觉网格采样，已通过坐标、Point-LIO/GICP 与短程往返导航检查。MINCO 和 legacy 的 RMUC2027 profile 均使用零先验变换；启动仍用 `world:=RMUC2027`。生成与验证见 [仿真点云说明](docs/rmuc2027_simulation_pointcloud.md)。旧官方 CAD 点云的严格兼容性失败结论见 [历史 CAD 报告](docs/rmuc2027_cad_pointcloud.md)。
+
+RM27 仿真全向轮显式设置扭转摩擦系数为 `0.0`，保留切向摩擦 `0.05` 和全部 CAD 碰撞几何，避免继承 Bullet 的额外接触自转阻力。偏航速度控制使用 `angular_velocity_gain=4.0`、`angular_velocity_integral_gain=4.0`、`max_yaw_integral_torque=6.0 N·m`，总力矩上限仍为 `8.0 N·m`；零指令、失效指令和看门狗超时清除积分。`test_cmd_vel_physics` 直接使用实际 CAD 模型，检查静止后慢速转向、正反整圈自转、零指令及超时停车。
 
 ## 4. 启动
 
@@ -151,16 +153,22 @@ ros2 launch launch_bringup rm_navigation_simulation_launch.py \
 
 ### 4.2 全局重定位后导航
 
+在 [simulation/minco_params.yaml](src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml) 中设置 `global_relocalization.ros__parameters.enabled: true`。地图、manifest、传感器话题、检索与确认参数也在该文件中。重新构建/安装修改的包后，使用普通启动入口：
+
 ```bash
-bash tools/global_relocalization/build.bash
-bash tools/global_relocalization/navigate.bash
+ros2 launch rm_27_stimulation sim_with_nav.launch.py \
+  navigation_mode:=minco use_ground_truth_odom:=false gui:=true use_rviz:=true
 ```
 
-该脚本加载 `tools/global_relocalization/.build/ros/install` 独立 overlay，默认 `ROS_DOMAIN_ID=87`、独立 `GZ_PARTITION`，并配置大点云 DDS transport；基础导航依赖仍须先构建。自定义 ROS 安装或外部依赖 overlay 可通过 `GLOBAL_RELOCALIZATION_ROS_SETUP`、`GLOBAL_RELOCALIZATION_DEPENDENCY_INSTALL` 指定，见 [environment.bash](tools/global_relocalization/environment.bash)。
+不再追加 `global_relocalization:=true`。YAML 开关默认 `false`，修改后重启生效。仿真要求 RMUC2027、MINCO、`slam:=false`，比赛配置搜索 `x<0` 半场。
 
-在 RViz 用 **2D Pose Estimate** 选择出生位置和朝向；此选点用于生成机器人，不直接当作定位结果。系统执行原始 LiDAR/IMU 检索、自转准备、比赛开始及三帧停车确认，通过原始时间戳完成 `map → odom` 交接，再恢复朝向并激活导航。随后使用 **Nav2 Goal**。
+在 RViz 用 **2D Pose Estimate** 选择出生位置和朝向；选点只生成机器人，不作为定位初值。`relocalization_manager` 包执行原始 LiDAR/IMU 检索、自转准备、开始触发及三帧停车确认。局部管理器按原始时间戳建立 `map → odom` 并确认接收，随后恢复朝向、激活 Nav2。失败时导航保持未激活，初始化速度入口停车。完成后用 **Nav2 Goal** 发送目标。
 
-此接入仅支持 RMUC2027、`slam:=false` 和 MINCO；比赛配置搜索 `x<0` 半场，初次使用应选择该半场开放位置。参数及活动云台/实车限制见 [全局接入](docs/simulation_global_navigation.md)。可追加 `stationary_relocalization:=false` 关闭初始化后的停车修正；普通启动默认未启用全局流程。
+原始全局前端可先于 Point-LIO 里程计启动。停车确认的开始触发等待 Point-LIO 里程计稳定，交接前再次检查里程计新鲜度，并由管理器查询确认时间戳的 TF；这允许 Point-LIO 在自转获得新几何后完成初始化。
+
+[reality/minco_params.yaml](src/pnx-launch/launch_bringup/config/reality/minco_params.yaml) 有独立开关，默认关闭；启用前必须填写匹配的实车 PCD/manifest，并核对原始 `PointCloud2`/IMU 话题、扫描模型及外参。实车协调器等待传感器，不等待仿真出生消息或执行出生朝向恢复；实车配置使用 `/livox/lidar/pointcloud`（驱动 `xfer_format=4` 的 PointCloud2 输出），`raw_imu_accel_scale: 9.81` 将 g 转为 m/s²；仿真缩放为 1.0。当前原始前端仅实现瞬时扫描模型，实车时序扫描和硬件链路仍需适配及实测。
+
+`tools/global_relocalization/build.bash` 现构建管理器和已有 Action 接口包的独立 overlay；`navigate.bash` 保留 domain 87 / DDS 包装，但也读取 YAML 开关，不再强制开启。普通工作区构建同样包含全局可执行文件，无需独立 `global_relocalization` 算法包。保留 `global_relocalization_interfaces/action/Relocalize` Action 和 `/global_relocalization/*` 接口。
 
 ### 4.3 建图
 
@@ -225,8 +233,8 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 | `use_robot_state_pub` | 仅实车入口，源码默认 `true`；已有 TF 发布者时显式关闭 |
 | `enable_legacy_terrain` | `auto`：legacy 开、MINCO 关 |
 | `autostart` / `use_composition` / `use_respawn` | `true` / `false` / `false`；全局流程延后激活 |
-| `global_relocalization` | 仿真默认 `false`，需配套 PCD、manifest、全局包和协调器 |
-| `stationary_relocalization` | 默认 `true`；控制全局初始化后的停车修正 |
+| YAML `global_relocalization.enabled` | 两套 `minco_params.yaml` 默认 `false`；启用后由管理器包启动全局服务与协调器 |
+| YAML `relocalization_manager.enable_stationary_refinement` | 默认 `true`；全局初始化后的停车修正 |
 
 四份导航配置位于 [config](src/pnx-launch/launch_bringup/config)。launch 还会应用场景 profile、Point-LIO 输入 profile 并生成临时 YAML；调试时检查最终传入节点的参数，而不只看原文件。
 

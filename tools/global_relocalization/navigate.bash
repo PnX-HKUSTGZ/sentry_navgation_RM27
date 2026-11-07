@@ -13,8 +13,6 @@ export FASTDDS_DEFAULT_PROFILES_FILE="${FASTDDS_DEFAULT_PROFILES_FILE:-$root/too
 export FASTRTPS_DEFAULT_PROFILES_FILE="$FASTDDS_DEFAULT_PROFILES_FILE"
 # Use the normal physical wheel-force actuator: gravity must remain unconstrained.
 exec ros2 launch rm_27_stimulation sim_with_nav.launch.py \
-  global_relocalization:=true gui:=true use_rviz:=true \
+  gui:=true use_rviz:=true \
   navigation_mode:=minco use_ground_truth_odom:=false \
-  relocalization_map:="$root/src/pnx-launch/launch_bringup/pcd/simulation/RMUC2027.pcd" \
-  relocalization_manifest:="$root/src/pnx-launch/launch_bringup/pcd/simulation/RMUC2027_manifest.json" \
   "$@"

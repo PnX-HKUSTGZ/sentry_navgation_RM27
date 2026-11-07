@@ -70,6 +70,12 @@
     <collision>
       <surface>
         <friction>
+          <!-- Bullet Featherstone defaults a missing torsional coefficient to
+               1.0. The ideal omni contact uses the nonzero tangential friction
+               below; do not add a separate spin-lock torque at every contact. -->
+          <torsional>
+            <coefficient>0.0</coefficient>
+          </torsional>
           <bullet>
             <friction>${omni_friction}</friction>
             <friction2>${omni_friction}</friction2>
@@ -308,6 +314,10 @@
       <!-- The 11.8-degree, low-friction test ramp needs about 21 N to hold this 10.2 kg model. -->
       <linear_velocity_integral_gain>45.0</linear_velocity_integral_gain>
       <angular_velocity_gain>4.0</angular_velocity_gain>
+      <!-- Bounded velocity-error integral overcomes static contact drag during
+           the slow heading restoration; zero/stale commands clear it. -->
+      <angular_velocity_integral_gain>4.0</angular_velocity_integral_gain>
+      <max_yaw_integral_torque>6.0</max_yaw_integral_torque>
       <max_planar_force>120.0</max_planar_force>
       <max_planar_integral_force>35.0</max_planar_integral_force>
       <!-- Add force only after measured motion stalls along a non-zero command.

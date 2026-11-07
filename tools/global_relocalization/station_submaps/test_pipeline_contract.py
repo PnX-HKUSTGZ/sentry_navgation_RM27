@@ -393,7 +393,7 @@ def test_three_visit_synthetic_stage_pipeline_with_raw_gyro_split_and_whole_turn
         return result
     monkeypatch.setitem(sys.modules,'sensor_msgs_py',types.SimpleNamespace(point_cloud2=types.SimpleNamespace(read_points=read_points)))
     prepared=tmp_path/'prepared'
-    assert pin.prepare(source,prior,REPO/'src/pnx-localization/global_relocalization/config/competition.yaml',prepared)
+    assert pin.prepare(source,prior,REPO/'src/pnx-localization/relocalization_manager/config/competition.yaml',prepared)
     plan=read_json(prepared/'input.json')
     assert len(plan['stations'])==3 and plan['all_gyro_turns_complete']
     assert plan['all_settle_sensor_selfchecks_passed']
@@ -482,7 +482,7 @@ def test_three_visit_synthetic_stage_pipeline_with_raw_gyro_split_and_whole_turn
     # after retaining raw/ledger for every visit, without replacing its bias.
     w[(it>=24_300_000_000)&(it<=24_600_000_000),0]=.1
     dynamic=tmp_path/'dynamic_settle_inputs'
-    assert pin.prepare(source,prior,REPO/'src/pnx-localization/global_relocalization/config/competition.yaml',dynamic)is False
+    assert pin.prepare(source,prior,REPO/'src/pnx-localization/relocalization_manager/config/competition.yaml',dynamic)is False
     bad_plan=read_json(dynamic/'input.json')
     assert len(bad_plan['stations'])==3 and bad_plan['all_settle_sensor_selfchecks_passed']is False
     assert len(read_json(dynamic/'raw_inventory.json'))==len(rt)

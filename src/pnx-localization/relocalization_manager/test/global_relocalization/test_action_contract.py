@@ -218,7 +218,8 @@ def test_cancel_retry_timeout_keeps_motor_stopped():
 
 
 @pytest.mark.parametrize("numerical_recovery", [False, True])
-def test_raw_imu_calibration_worker_cancel_and_reset(numerical_recovery):
+@pytest.mark.parametrize("accel_scale", [1.0, 9.81])
+def test_raw_imu_calibration_worker_cancel_and_reset(numerical_recovery, accel_scale):
     """Raw mode operates without odometry, and retries require fresh calibration."""
     import json
     import numpy as np
@@ -232,7 +233,7 @@ def test_raw_imu_calibration_worker_cancel_and_reset(numerical_recovery):
                         f"WIDTH {len(points)}\nHEIGHT 1\nPOINTS {len(points)}\nDATA ascii\n"
                         + "".join(f"{x} {y} {z}\n" for x, y, z in points))
         process = subprocess.Popen([str(binary), "--ros-args", "-p", "use_sim_time:=true", "-p", f"map_path:={path}",
-            "-p", "input_mode:=raw_imu", "-p", "raw_calibration_sec:=0.4",
+            "-p", "input_mode:=raw_imu", "-p", f"raw_imu_accel_scale:={accel_scale}", "-p", "raw_calibration_sec:=0.4",
             "-p", "settle_sec:=0.1", "-p", "timeout_sec:=4.0"] + (["-p", "raw_numerical_recovery:=true", "-p", "raw_deterministic:=true", "-p", "raw_local_max_iterations:=1", "-p", "raw_local_retry_iterations:=0"] if numerical_recovery else []), env=os.environ.copy(),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
         context = rclpy.context.Context()
@@ -272,6 +273,7 @@ def test_raw_imu_calibration_worker_cancel_and_reset(numerical_recovery):
         burst_sent = False
 
         imu_process = subprocess.Popen(["/usr/bin/python3", "-c", """
+import sys
 import rclpy
 from sensor_msgs.msg import Imu
 rclpy.init()
@@ -292,7 +294,7 @@ def emit():
         message = Imu()
         message.header.stamp = rclpy.time.Time(nanoseconds=last_sample_ns).to_msg()
         message.header.frame_id = 'left_mid360'
-        message.linear_acceleration.z = 9.81
+        message.linear_acceleration.z = 9.81 / float(sys.argv[1])
         pub.publish(message)
 node.create_timer(.01, emit)
 try:
@@ -303,7 +305,7 @@ finally:
     node.destroy_node()
     if rclpy.ok():
         rclpy.shutdown()
-"""], env=os.environ.copy(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+""", str(accel_scale)], env=os.environ.copy(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         def feed(duration):
             nonlocal burst_sent

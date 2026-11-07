@@ -49,6 +49,10 @@ public:
                                 this->linearVelocityIntegralGain_);
     this->ReadNonnegativeFinite(_sdf, "angular_velocity_gain",
                                 this->angularVelocityGain_);
+    this->ReadNonnegativeFinite(_sdf, "angular_velocity_integral_gain",
+                                this->angularVelocityIntegralGain_);
+    this->ReadNonnegativeFinite(_sdf, "max_yaw_integral_torque",
+                                this->maxYawIntegralTorque_);
     this->ReadNonnegativeFinite(_sdf, "max_planar_force",
                                 this->maxPlanarForce_);
     this->ReadNonnegativeFinite(_sdf, "max_planar_integral_force",
@@ -106,6 +110,7 @@ public:
     const auto dt = std::chrono::duration<double>(_info.dt).count();
     if (!std::isfinite(dt) || dt <= 0.0) {
       this->planarVelocityPi_.Reset();
+      this->yawVelocityPi_.Reset();
       return;
     }
 
@@ -133,6 +138,7 @@ public:
                                this->commandAge_ <= this->commandTimeout_;
     if (!commandActive) {
       this->planarVelocityPi_.Reset();
+      this->yawVelocityPi_.Reset();
       this->stictionAssist_.Reset();
     }
     auto vx = commandActive ? this->ClampFinite(cmd.linear().x(),
@@ -149,6 +155,7 @@ public:
     const auto yaw = pose.Rot().Euler().Z();
     if (!std::isfinite(yaw)) {
       this->planarVelocityPi_.Reset();
+      this->yawVelocityPi_.Reset();
       this->stictionAssist_.Reset();
       return;
     }
@@ -175,6 +182,7 @@ public:
         !std::isfinite(currentLinear.Y()) ||
         !std::isfinite(currentAngular.Z())) {
       this->planarVelocityPi_.Reset();
+      this->yawVelocityPi_.Reset();
       this->stictionAssist_.Reset();
       return;
     }
@@ -201,9 +209,14 @@ public:
     const auto planarForce =
         gz::math::Vector3d(assistedForce.x, assistedForce.y, 0.0);
 
-    const auto yawTorque =
-        this->Clamp((wz - currentAngular.Z()) * this->angularVelocityGain_,
-                    this->maxYawTorque_);
+    // Reuse the bounded PI in one scalar channel. Keep the existing total
+    // torque limit; a fresh zero command also discards the friction integral
+    // immediately so an old turn cannot resume motion after a stop.
+    const bool turning = commandActive && wz != 0.0;
+    const auto yawTorque = this->yawVelocityPi_.Update(
+        wz - currentAngular.Z(), 0.0, dt, this->angularVelocityGain_,
+        turning ? this->angularVelocityIntegralGain_ : 0.0,
+        turning ? this->maxYawIntegralTorque_ : 0.0, this->maxYawTorque_).x;
     this->driveLink_.AddWorldForce(_ecm, planarForce);
     this->driveLink_.AddWorldWrench(_ecm, gz::math::Vector3d::Zero,
                                     gz::math::Vector3d(0.0, 0.0, yawTorque));
@@ -276,10 +289,13 @@ private:
   double linearVelocityGain_{80.0};
   double linearVelocityIntegralGain_{0.0};
   double angularVelocityGain_{4.0};
+  double angularVelocityIntegralGain_{0.0};
+  double maxYawIntegralTorque_{0.0};
   double maxPlanarForce_{120.0};
   double maxPlanarIntegralForce_{0.0};
   double maxYawTorque_{8.0};
   PlanarVelocityPi planarVelocityPi_;
+  PlanarVelocityPi yawVelocityPi_;
   StictionAssistConfig stictionAssistConfig_;
   StictionAssist stictionAssist_;
   std::mutex mutex_;

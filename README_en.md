@@ -14,7 +14,7 @@ Localization and navigation are separate choices: `use_ground_truth_odom` select
 | --- | --- | --- |
 | Default simulation | `slam:=false use_ground_truth_odom:=true navigation_mode:=legacy` | Gazebo ground-truth localization with the legacy Nav2 stack; useful for navigation and physics checks |
 | Point-LIO navigation | `slam:=false use_ground_truth_odom:=false` | Point-LIO with local GICP prior-map alignment; supports `legacy` or `minco` navigation |
-| Global initialization | `tools/global_relocalization/navigate.bash` | RMUC2027, MINCO, raw LiDAR/IMU retrieval, stationary confirmation, timestamped pose handoff, then navigation activation |
+| Global initialization | `global_relocalization.enabled: true` in MINCO YAML | RMUC2027, MINCO, raw LiDAR/IMU retrieval, stationary confirmation, timestamped pose handoff, then navigation activation |
 | Online mapping | `slam:=true use_ground_truth_odom:=false navigation_mode:=legacy` | Point-LIO and slam_toolbox; saves a 2D map and Point-LIO point clouds |
 | Independent backend | YAML `rm27_backend.enabled: true` | Atomic Point-LIO scans, keyframes, and a bounded iSAM2 odometry graph; currently runs alongside navigation without publishing TF |
 
@@ -47,7 +47,7 @@ flowchart TD
   I --> S[sensor_scan_generation]
   I --> R[relocalization_manager]
   P --> B[rm27_backend parallel graph]
-  RAW[Raw LiDAR + IMU] --> G[global_relocalization optional initialization]
+  RAW[Raw LiDAR + IMU] --> G[relocalization_manager optional global initialization]
   G --> H[Coordinator /initialpose timestamped handoff]
   H --> R
   I --> T[terrain legacy]
@@ -91,7 +91,7 @@ Before building:
 - Install ROS 2 Jazzy and Gazebo Harmonic/`ros_gz` dependencies. Simulation CMake explicitly requires `gz-sim8`, `gz-msgs10`, and `gz-transport13`; it no longer uses Gazebo Classic.
 - Initialize the four submodules in [.gitmodules](.gitmodules). Follow the Livox submodule's own instructions for Livox SDK2 and its ROS 2 driver, and ensure colcon discovers the driver package.
 - `rm27_backend` needs GTSAM 4.2, TBB, Eigen, and PCL. Point-LIO joint initialization also needs yaml-cpp, nanoflann, and glog. Follow the [backend dependency guide](src/pnx-localization/backend/README.md) for GTSAM. The user-local bootstrap supports Noble amd64 only.
-- Both `relocalization_manager` and `global_relocalization` fetch small_gicp through CMake FetchContent, requiring source access on first configuration. The global package pins a commit; the manager currently tracks `master`. A separate manual small_gicp installation is unnecessary for normal builds, but the two dependency versions have not yet been unified.
+- `relocalization_manager` includes local tracking and global retrieval. Both use one FetchContent small_gicp dependency pinned to `fa0cfc983417c044b6036f71dfa448038bb9c820`. The first configuration needs source access or a matching offline cache.
 - Resolve rosdep failures. `-r` continues processing other dependencies; it does not make failed dependencies optional.
 
 ```bash
@@ -117,6 +117,8 @@ Occupancy maps live in `src/pnx-launch/launch_bringup/map/{simulation,reality}/`
 | Other historical worlds | Listed in `config/worlds.yaml`; some lack `nav_world` or a matching PCD and cannot be assumed to support combined navigation |
 
 The current `RMUC2027.pcd` samples the actual RM27 visual meshes loaded by the RMUC2027 world. Coordinate checks, Point-LIO/GICP, and short round-trip navigation passed. Both MINCO and legacy RMUC2027 profiles use an identity prior transform; continue launching `world:=RMUC2027`. See [simulation prior validation](docs/rmuc2027_simulation_pointcloud.md). The failed compatibility checks for the previous official CAD prior remain in the [historical CAD report](docs/rmuc2027_cad_pointcloud.md).
+
+RM27 simulation omni-wheel contacts explicitly set torsional friction to `0.0`, preserving tangential friction `0.05` and all CAD collision geometry so Bullet does not add unintended contact spin resistance. The yaw velocity servo uses `angular_velocity_gain=4.0`, `angular_velocity_integral_gain=4.0` and `max_yaw_integral_torque=6.0 N·m`, retaining the total `8.0 N·m` torque limit. Zero commands, invalid commands and watchdog expiry clear the integral. `test_cmd_vel_physics` uses the actual CAD model to check slow turns from rest, full turns in both directions, explicit stops and watchdog stops.
 
 ## 4. Running
 
@@ -151,16 +153,22 @@ The ordinary GICP manager performs local alignment only. Supply a sufficiently c
 
 ### 4.2 Global relocalization followed by navigation
 
+Set `global_relocalization.ros__parameters.enabled: true` in [simulation/minco_params.yaml](src/pnx-launch/launch_bringup/config/simulation/minco_params.yaml). This same file contains the map, manifest, sensor topics, search and confirmation parameters. Rebuild/install the changed packages, then use the ordinary launch:
+
 ```bash
-bash tools/global_relocalization/build.bash
-bash tools/global_relocalization/navigate.bash
+ros2 launch rm_27_stimulation sim_with_nav.launch.py \
+  navigation_mode:=minco use_ground_truth_odom:=false gui:=true use_rviz:=true
 ```
 
-The wrapper sources an isolated overlay at `tools/global_relocalization/.build/ros/install`, defaults to `ROS_DOMAIN_ID=87` and a separate `GZ_PARTITION`, and configures large-cloud DDS transport. Build the base navigation dependencies first. `GLOBAL_RELOCALIZATION_ROS_SETUP` and `GLOBAL_RELOCALIZATION_DEPENDENCY_INSTALL` select a custom ROS setup or dependency overlay; see [environment.bash](tools/global_relocalization/environment.bash).
+No `global_relocalization:=true` suffix is used. The YAML switch defaults to `false`; restart after changing it. Simulation requires RMUC2027, MINCO and `slam:=false`. The competition profile searches `x<0`.
 
-Use RViz **2D Pose Estimate** to select the spawn location and heading. This selection creates the simulated robot and is not directly accepted as the localization result. The system performs raw LiDAR/IMU retrieval, rotation preparation, competition start, and three fresh stationary confirmations. It uses the original timestamp to hand off `map → odom`, restores the heading, and activates navigation. Then send a **Nav2 Goal**.
+Use RViz **2D Pose Estimate** to select the spawn location and heading. This creates the robot and is never used as a localization seed. The `relocalization_manager` package runs raw LiDAR/IMU retrieval, rotation preparation, start trigger and three fresh stopped confirmations. Its local manager accepts the original timestamp, establishes `map → odom`, acknowledges the pose and allows heading restoration followed by Nav2 activation. Failure keeps navigation inactive and stops startup commands. Then send a **Nav2 Goal**.
 
-This integration requires RMUC2027, `slam:=false`, and MINCO. The competition profile searches the `x<0` half-field; choose an open location there for initial use. See [integration and sensor/gimbal limitations](docs/simulation_global_navigation.md). Append `stationary_relocalization:=false` to disable refinement after initialization. Ordinary launches leave the global workflow disabled.
+The raw global frontend can start before Point-LIO odometry. The stopped-confirmation trigger waits for stable Point-LIO odometry; handoff rechecks freshness and the manager queries TF at the original confirmation timestamp. This lets Point-LIO initialize after rotation exposes new geometry.
+
+[reality/minco_params.yaml](src/pnx-launch/launch_bringup/config/reality/minco_params.yaml) has a separate disabled switch. Before enabling it, supply matching physical map/manifest and verify raw `PointCloud2`/IMU topics, scan model and extrinsics. The physical coordinator waits for sensors without simulation spawn messages or spawn-heading restoration. The physical profile uses `/livox/lidar/pointcloud` (the driver’s PointCloud2 output with `xfer_format=4`) and `raw_imu_accel_scale: 9.81` to convert g to m/s²; simulation uses 1.0. The raw frontend currently implements only instantaneous scans. Physical timed-scan adaptation and hardware validation remain required.
+
+`tools/global_relocalization/build.bash` now builds the manager and the existing Action interface package in an isolated overlay. `navigate.bash` remains an optional domain-87/DDS wrapper and reads the YAML switch without forcing it on. Ordinary workspace builds also include the global executables; no separate `global_relocalization` algorithm package is required. The existing `global_relocalization_interfaces/action/Relocalize` Action and `/global_relocalization/*` endpoints are preserved.
 
 ### 4.3 Mapping
 
@@ -225,8 +233,8 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 | `use_robot_state_pub` | Physical entry only; source default `true`; explicitly disable when TF is supplied elsewhere |
 | `enable_legacy_terrain` | `auto`: on for legacy, off for MINCO |
 | `autostart` / `use_composition` / `use_respawn` | `true` / `false` / `false`; the global workflow delays activation |
-| `global_relocalization` | Simulation default `false`; requires matching PCD, manifest, global package, and coordinator |
-| `stationary_relocalization` | Default `true`; controls refinement after global initialization |
+| YAML `global_relocalization.enabled` | Defaults to `false` in each `minco_params.yaml`; the manager package starts the global server/coordinator when enabled |
+| YAML `relocalization_manager.enable_stationary_refinement` | Defaults to `true`; stationary refinement after global initialization |
 
 The four navigation profiles are under [config](src/pnx-launch/launch_bringup/config). Launch also applies world and Point-LIO input profiles and generates temporary YAML. Inspect the parameters actually passed to nodes when debugging.
 
