@@ -107,7 +107,8 @@ bool KeyframeManager::shouldCreate(const Frame &f) const {
 }
 /// 构造首帧先验或相邻里程计增量，并根据区间时间、运动和质量生成过程协方差。
 /// 完成图更新后登记关键帧及最近测量；图更新异常由上层捕获并开启新段。
-Keyframe KeyframeManager::commit(const Frame &f) {
+Keyframe KeyframeManager::commit(const Frame &f,
+                                 const std::optional<PosePrior> &first_prior) {
   if (!shouldCreate(f))
     throw std::invalid_argument("frame is not an eligible keyframe");
   Keyframe k;
@@ -137,6 +138,8 @@ Keyframe KeyframeManager::commit(const Frame &f) {
                             config_.rotation_variance_per_radian * e.angle));
     graph_.addOdometry(k, e);
     edge = e;
+  } else if (first_prior) {
+    graph_.addFirst(k, *first_prior);
   } else {
     graph_.addFirst(k);
   }

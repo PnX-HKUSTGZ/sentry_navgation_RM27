@@ -15,11 +15,11 @@ PnX RoboMaster RM27 导航工作区，基于 PolarBear/PB2025 导航框架继续
 | 默认仿真 | `slam:=false use_ground_truth_odom:=true navigation_mode:=legacy` | Gazebo 真值定位，旧版 Nav2 规划控制；用于导航与物理仿真检查 |
 | Point-LIO 导航 | `slam:=false use_ground_truth_odom:=false` | Point-LIO + 局部 GICP 先验匹配；导航可选 `legacy` 或 `minco` |
 | 在线建图 | `slam:=true use_ground_truth_odom:=false navigation_mode:=legacy` | Point-LIO + slam_toolbox；保存二维地图及 Point-LIO 点云 |
-| 独立后端 | YAML 中 `rm27_backend.enabled: true` | Point-LIO 原子扫描、关键帧、有界 iSAM2 里程计图；当前旁路输出，不发布 TF |
+| 独立后端 | YAML 中 `rm27_backend.enabled: true` | Point-LIO 原子扫描、关键帧、有界 iSAM2 里程计图及先验地图配准因子；当前旁路输出，不发布 TF |
 
 `legacy` 使用 `GridBased`/ThetaStar 与 `FollowPath`/Omni PID，动态障碍来自 terrain 链。`minco` 使用 `MincoPlanner`、ROG-map 与 `MincoMpc`，是平面轨迹规划和 SE(2) MPC，不能等同于完整三维规划。两种模式在启动时选择；当前没有在线自动回退，旧 `minco_shadow` 模式已移除。
 
-当前四份部署 YAML 均启用后端配置，普通定位 launch 在 Point-LIO 模式下按该开关启动后端；真值模式跳过。后端仅接入首帧规范先验和里程计边，地图/回环因子虽有接口和测试，尚无实际测量生产者，**不能宣称它已消除前端漂移**。详见 [后端说明](src/pnx-localization/backend/README.md) 和 [后端验收](src/pnx-localization/backend/VALIDATION.md)。
+当前四份部署 YAML 均启用后端配置，普通定位 launch 在 Point-LIO 模式下按该开关启动后端；真值模式跳过。后端接入里程计边和先验地图配准因子（`prior_map.enabled`，与定位管理器共用先验 PCD）：锚定后图建立在 `map` 系，经质量、校正上限和 NIS 验收的 scan-to-map 观测入图以抑制前端漂移；回环因子仍只有接口，尚无测量生产者。后端仍为旁路，`map → odom` 继续由 `relocalization_manager` 发布。详见 [后端说明](src/pnx-localization/backend/README.md) 和 [后端验收](src/pnx-localization/backend/VALIDATION.md)。
 
 ## 2. 仓库结构与数据流
 

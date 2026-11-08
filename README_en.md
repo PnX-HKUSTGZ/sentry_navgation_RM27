@@ -15,11 +15,11 @@ Localization and navigation are separate choices: `use_ground_truth_odom` select
 | Default simulation | `slam:=false use_ground_truth_odom:=true navigation_mode:=legacy` | Gazebo ground-truth localization with the legacy Nav2 stack; useful for navigation and physics checks |
 | Point-LIO navigation | `slam:=false use_ground_truth_odom:=false` | Point-LIO with local GICP prior-map alignment; supports `legacy` or `minco` navigation |
 | Online mapping | `slam:=true use_ground_truth_odom:=false navigation_mode:=legacy` | Point-LIO and slam_toolbox; saves a 2D map and Point-LIO point clouds |
-| Independent backend | YAML `rm27_backend.enabled: true` | Atomic Point-LIO scans, keyframes, and a bounded iSAM2 odometry graph; currently runs alongside navigation without publishing TF |
+| Independent backend | YAML `rm27_backend.enabled: true` | Atomic Point-LIO scans, keyframes, a bounded iSAM2 odometry graph, and prior-map registration factors; currently runs alongside navigation without publishing TF |
 
 `legacy` uses `GridBased`/ThetaStar and `FollowPath`/Omni PID, with terrain nodes supplying dynamic obstacles. `minco` uses `MincoPlanner`, ROG-map, and `MincoMpc`: planar trajectory planning and SE(2) MPC, rather than full 3D planning. Modes are selected at startup; there is no automatic runtime fallback, and the old `minco_shadow` mode has been removed.
 
-All four deployment YAML files currently enable the backend. The normal localization launch starts it according to that setting in Point-LIO mode and skips it in ground-truth mode. The backend currently receives only a first-pose gauge prior and odometry edges. Map/loop factors have interfaces and tests, but no actual measurement producers are connected. **It does not currently remove frontend drift.** See the [backend guide](src/pnx-localization/backend/README.md) and [backend validation](src/pnx-localization/backend/VALIDATION.md).
+All four deployment YAML files currently enable the backend. The normal localization launch starts it according to that setting in Point-LIO mode and skips it in ground-truth mode. The backend receives odometry edges and prior-map registration factors (`prior_map.enabled`, sharing the prior PCD with the relocalization manager): once anchored, the graph lives in `map`, and scan-to-map observations that pass quality, correction-limit, and NIS checks are added to suppress frontend drift. Loop factors still have only an interface and no measurement producer. The backend remains a side output; `map → odom` is still published by `relocalization_manager`. See the [backend guide](src/pnx-localization/backend/README.md) and [backend validation](src/pnx-localization/backend/VALIDATION.md).
 
 ## 2. Repository and data flow
 

@@ -7,6 +7,13 @@
 
 namespace rm27_backend {
 /// 位姿图配置：时间/数量窗口、首帧规范先验标准差及重新线性化阈值。
+/// 外部观测入图前的新息检验结果；nis 为白化新息的马氏距离平方。
+struct Innovation {
+  bool valid = false;
+  double nis = 0;
+  int dof = 0;
+  double probability = 0; // 卡方上尾概率，越小越不一致
+};
 struct GraphConfig {
   double lag_seconds = 30.;
   std::size_t max_states = 120;
@@ -23,11 +30,15 @@ public:
   void reset(std::uint64_t segment);
   /// 以原始首帧位姿建立规范先验；该先验不代表已获得赛场绝对定位。
   void addFirst(const Keyframe &keyframe);
+  /// 以外部提供的位姿先验建立本段坐标基准，例如先验地图配准得到的 map 位姿。
+  void addFirst(const Keyframe &keyframe, const PosePrior &prior);
   /// 添加相邻里程计边和目标节点，完成增量更新后裁剪过期状态。
   void addOdometry(const Keyframe &keyframe,
                    const OdometryMeasurement &measurement);
   /// 接入已验收的地图位姿观测；身份不符、重复或节点过期返回 false，非法测量抛异常。
   bool addAbsolute(const AbsolutePoseMeasurement &measurement);
+  /// 不修改图，用当前边缘协方差计算绝对位姿观测的新息卡方统计；节点无效时 valid=false。
+  Innovation assessAbsolute(const AbsolutePoseMeasurement &measurement) const;
   /// 接入已验收的回环观测并使用鲁棒核；不支持连接已边缘化的节点。
   bool addLoop(const LoopMeasurement &measurement);
   /// 查询指定活动节点的优化位姿；无效键由求解器报告异常。

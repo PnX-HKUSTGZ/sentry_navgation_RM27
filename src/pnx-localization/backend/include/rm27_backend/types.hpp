@@ -72,6 +72,12 @@ struct LoopMeasurement {
   Pose relative = Pose::Identity();
   Eigen::MatrixXd sqrt_information;
 };
+/// 带协方差的位姿先验；协方差为局部右扰动 [平移, 旋转]。
+/// 用于以先验地图配准结果建立本段图的 map 坐标基准。
+struct PosePrior {
+  Pose pose = Pose::Identity();
+  Covariance covariance = Covariance::Identity();
+};
 /// 检查齐次矩阵数值有限、末行合法，且旋转满足 SO(3) 的正交性和行列式要求。
 inline bool validPose(const Pose &p) {
   return p.matrix().allFinite() &&

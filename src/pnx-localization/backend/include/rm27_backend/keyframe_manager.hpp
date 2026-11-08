@@ -28,7 +28,9 @@ public:
   /// 判断已接纳帧是否满足首帧或运动/时间触发条件，不修改状态。
   bool shouldCreate(const Frame &frame) const;
   /// 为候选帧生成首帧先验或里程计边，提交图后登记关键帧；点云应由调用方预先准备。
-  Keyframe commit(const Frame &frame);
+  /// first_prior 仅作用于本段首帧：提供时以其坐标系（如 map）建立图，否则用原始 odom。
+  Keyframe commit(const Frame &frame,
+                  const std::optional<PosePrior> &first_prior = std::nullopt);
   /// 将最近关键帧的局部右扰动协方差传播到当前帧，并加入配置的过程噪声。
   Covariance predictionCovariance(const Frame &frame,
                                   const Covariance &anchor) const;

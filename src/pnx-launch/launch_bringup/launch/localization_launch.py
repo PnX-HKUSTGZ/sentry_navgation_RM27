@@ -253,7 +253,8 @@ def generate_launch_description():
             return []
         return [Node(
             package="rm27_backend", executable="rm27_backend_node", name="rm27_backend",
-            output="screen", parameters=[configured_params],
+            # 与 relocalization_manager 使用同一份先验 PCD，供地图配准因子加载。
+            output="screen", parameters=[configured_params, {"prior_map.file": prior_pcd_file}],
             arguments=["--ros-args", "--log-level", log_level],
             condition=UnlessCondition(use_ground_truth_odom),
         )]

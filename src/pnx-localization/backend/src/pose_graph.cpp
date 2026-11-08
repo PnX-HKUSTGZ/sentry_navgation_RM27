@@ -1,5 +1,6 @@
 #include "rm27_backend/pose_graph.hpp"
 #include <Eigen/SVD>
+#include <boost/math/distributions/chi_squared.hpp>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/linear/NoiseModel.h>
 #include <gtsam/slam/BetweenFactor.h>
@@ -120,18 +121,26 @@ void PoseGraph::submit(const gtsam::NonlinearFactorGraph &g,
 /// 以原始首帧位姿和配置标准差构造规范先验，固定本段坐标自由度。
 /// 先验只定义局部坐标基准，不提供独立的地图定位信息。
 void PoseGraph::addFirst(const Keyframe &k) {
-  if (!times_.empty() || k.segment != segment_ || !validPose(k.frame.odom))
-    throw std::invalid_argument("invalid first graph state");
-  Covariance cov = Covariance::Zero();
-  cov.diagonal().head<3>().setConstant(
+  PosePrior prior;
+  prior.pose = k.frame.odom;
+  prior.covariance.setZero();
+  prior.covariance.diagonal().head<3>().setConstant(
       std::pow(config_.prior_translation_std, 2));
-  cov.diagonal().tail<3>().setConstant(std::pow(config_.prior_rotation_std, 2));
+  prior.covariance.diagonal().tail<3>().setConstant(
+      std::pow(config_.prior_rotation_std, 2));
+  addFirst(k, prior);
+}
+/// 校验先验位姿与协方差后插入首个节点；先验的坐标系即本段图坐标系。
+void PoseGraph::addFirst(const Keyframe &k, const PosePrior &prior) {
+  if (!times_.empty() || k.segment != segment_ || !validPose(prior.pose) ||
+      !positiveCovariance(prior.covariance))
+    throw std::invalid_argument("invalid first graph state");
   gtsam::NonlinearFactorGraph g;
   gtsam::Values v;
   g.add(gtsam::PriorFactor<gtsam::Pose3>(
-      k.id, toGtsam(k.frame.odom),
-      gtsam::noiseModel::Gaussian::Covariance(reorder(cov))));
-  v.insert(k.id, toGtsam(k.frame.odom));
+      k.id, toGtsam(prior.pose),
+      gtsam::noiseModel::Gaussian::Covariance(reorder(prior.covariance))));
+  v.insert(k.id, toGtsam(prior.pose));
   submit(g, v);
   times_.emplace_back(k.id, k.frame.stamp_ns);
 }
@@ -222,6 +231,40 @@ bool PoseGraph::addAbsolute(const AbsolutePoseMeasurement &m) {
   submit(g, gtsam::Values{});
   observations_[m.measurement_id] = {m.key, m.key};
   return true;
+}
+/// 白化新息 e = L·Local(z, x̂)，雅可比 J = L·∂Local/∂x，协方差 S = I + J P Jᵀ。
+/// 预测协方差 P 取 iSAM2 当前边缘协方差；被拒观测不会进入图，避免错误匹配污染估计。
+Innovation PoseGraph::assessAbsolute(const AbsolutePoseMeasurement &m) const {
+  Innovation out;
+  if (m.segment != segment_ || !contains(m.key) || !validPose(m.pose))
+    return out;
+  Eigen::MatrixXd l;
+  try {
+    l = information(m.sqrt_information);
+  } catch (const std::exception &) {
+    return out;
+  }
+  const gtsam::Pose3 x = isam_->calculateEstimate<gtsam::Pose3>(m.key);
+  gtsam::Matrix66 j;
+  const gtsam::Vector6 r = toGtsam(m.pose).localCoordinates(x, boost::none, j);
+  const Eigen::VectorXd e = l * r;
+  const Eigen::MatrixXd h = l * j;
+  Eigen::MatrixXd s = Eigen::MatrixXd::Identity(l.rows(), l.rows()) +
+                      h * isam_->marginalCovariance(m.key) * h.transpose();
+  s = .5 * (s + s.transpose()).eval();
+  Eigen::LDLT<Eigen::MatrixXd> ldlt(s);
+  if (ldlt.info() != Eigen::Success || (ldlt.vectorD().array() <= 1e-12).any())
+    return out;
+  out.nis = std::max(0., e.dot(ldlt.solve(e)));
+  out.dof = int(l.rows());
+  try {
+    out.probability = boost::math::cdf(boost::math::complement(
+        boost::math::chi_squared(double(out.dof)), out.nis));
+  } catch (const std::exception &) {
+    return out;
+  }
+  out.valid = std::isfinite(out.nis) && std::isfinite(out.probability);
+  return out;
 }
 /// 接收已验收的相对回环测量，并通过鲁棒因子更新两个活动端点。
 /// 拒绝同端点、过期节点及重复测量，避免错误连接历史段或重复计权。

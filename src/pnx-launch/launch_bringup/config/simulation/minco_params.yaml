@@ -1057,6 +1057,8 @@ simulation_world_profiles:
         # 点云已包含场景实例及 visual 的完整位姿，不再施加旧 PCD 的 1.65 m 补偿。
         prior_pcd_transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         transform_prior_map_with_lidar_offset: false
+      rm27_backend:
+        prior_map.transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 与本场景定位管理器的 PCD 变换保持一致。
     RMUL2027:
       relocalization_manager:
         # 该 PCD 已采用 Gazebo 世界坐标，长度单位为米。
@@ -1068,6 +1070,8 @@ simulation_world_profiles:
         registered_leaf_size: 0.05
         max_iterations: 60
         max_dist_sq: 0.25
+      rm27_backend:
+        prior_map.transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # 与本场景定位管理器的 PCD 变换保持一致。
       point_lio:
         filter_size_surf: 0.08
         filter_size_map: 0.08
@@ -1096,7 +1100,7 @@ minco_input_profiles:
 
 rm27_backend:
   ros__parameters:
-    enabled: true  # 启用旁路里程计图；导航 map→odom 仍由原管理器发布。
+    enabled: true  # 启用旁路位姿图；导航 map→odom 仍由原管理器发布。
     use_sim_time: true  # 仿真使用 /clock，实车使用系统时间。
     input.frame_topic: /point_lio/backend_frame  # Point-LIO 原子扫描观测话题。
     input.world_frame: camera_init  # 原始前端世界坐标系。
@@ -1129,4 +1133,27 @@ rm27_backend:
     storage.queue_size: 4  # 异步存盘队列上限，不包含正在写入的一项。
     storage.disk_mb: 1024  # 每次记录的保守磁盘配额，单位 MiB；满后报错停止存盘。
     storage.directory: ""  # 空值关闭存盘；非空时自动创建唯一 run 子目录。
-    output.frame: rm27_graph  # 旁路坐标系前缀，实际附加段编号；不广播 TF，未接全局约束。
+    output.frame: rm27_graph  # 未锚定先验地图时的旁路坐标系前缀，附加段编号；锚定后输出 map 系，均不广播 TF。
+    prior_map.enabled: true  # 启用先验地图配准因子；PCD 加载失败时诊断报错并退回纯里程计图。
+    prior_map.map_frame: map  # 先验地图坐标系，锚定后后端估计与对齐输出使用该坐标系。
+    prior_map.transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0]  # map←PCD 的 [x,y,z,roll,pitch,yaw]，须与 relocalization_manager 的 prior_pcd_transform 一致。
+    prior_map.seed_source: tf  # 锚定初值来源：tf 查询 map←camera_init，parameter 使用 initial_alignment。
+    prior_map.initial_alignment: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # seed_source=parameter 时的 map←camera_init 初值。
+    prior_map.voxel_size: 0.1  # 先验地图体素边长，单位 m；越小越精细但内存和建树时间更高。
+    prior_map.source_voxel_size: 0.2  # 跟踪源点云体素边长，单位 m。
+    prior_map.source_keyframes: 3  # 一次配准最多合并的近邻关键帧数，信息量按帧数折减。
+    prior_map.correction_period: 0.5  # 两次地图跟踪配准的最小间隔，单位 s。
+    prior_map.max_correspondence_distance: 1.0  # GICP 与点到面统计的最大对应距离，单位 m。
+    prior_map.min_inliers: 300  # 有效平面对应点下限。
+    prior_map.min_inlier_ratio: 0.5  # 有效平面对应点占源点比例下限。
+    prior_map.max_rmse: 0.15  # 点到面残差 RMSE 上限，单位 m。
+    prior_map.residual_std_floor: 0.03  # 由残差估计观测噪声时的标准差下限，单位 m。
+    prior_map.translation_std_floor: 0.01  # 地图因子共模平移标准差下限，单位 m，防止大量相关点导致过度自信。
+    prior_map.rotation_std_floor_deg: 0.1  # 地图因子共模旋转标准差下限，单位度。
+    prior_map.max_condition: 100.0  # 平衡 Hessian 条件数门限，更弱的退化方向不提供约束。
+    prior_map.max_translation_correction: 1.0  # 常规校正相对图估计的平移上限，单位 m；超出计为冲突。
+    prior_map.max_rotation_correction_deg: 15.0  # 常规校正旋转上限，单位度。
+    prior_map.rejection_probability: 0.001  # NIS 卡方上尾概率低于该值则拒绝入图。
+    prior_map.max_conflicts: 7  # 连续冲突次数达到后进入 suspect，需两次一致满秩配准才恢复。
+    prior_map.acquisition_max_translation: 1.5  # 锚定配准相对种子的平移上限，单位 m。
+    prior_map.acquisition_max_rotation_deg: 20.0  # 锚定配准相对种子的旋转上限，单位度。

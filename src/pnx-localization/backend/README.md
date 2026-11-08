@@ -1,11 +1,12 @@
 # rm27_backend
 
 RM27 的独立 Point-LIO 位姿图后端。目录名 `backend`，包名 `rm27_backend`。
-本阶段接入原子扫描观测、关键帧与局部点云管理、里程计过程噪声和 GTSAM 4.2 iSAM2。
-地图位姿观测与回环测量已有 C++ 接口及测试，尚未接入任何实际匹配结果。
+本阶段接入原子扫描观测、关键帧与局部点云管理、里程计过程噪声、GTSAM 4.2 iSAM2，
+以及先验地图配准因子（`prior_map.*`）。回环测量仍只有 C++ 接口及测试，尚未接入实际匹配。
 
-本阶段仅有首帧规范先验和里程计链。输出用于旁路验证，不发布 TF，不替代
-`relocalization_manager` 的 `map→odom`。只有里程计链时不能消除前端漂移。
+启用先验地图后，本段图直接建立在 `map` 系，关键帧上的 scan-to-map 配准作为部分秩绝对位姿因子
+入图，可消除前端漂移。输出仍为旁路，不发布 TF，不替代 `relocalization_manager` 的 `map→odom`；
+`~/map_alignment` 给出等价的 map←camera_init 估计，供后续接管 TF 前对比。
 
 ## 构建与依赖
 
@@ -124,6 +125,32 @@ rotation_variance    = max(1e-12, q_time * dt + q_angle * net_rotation)
 局部右扰动，并添加上述过程噪声；这是模型预测近似。输出位置/旋转误差通过旋转变换到
 世界固定轴表达，再填入 Odometry。速度沿用前端，不产生独立后端速度估计。
 
+## 先验地图配准因子
+
+设计参照 z-localization 的 tracking/registration 流程，按本工程的 Point-LIO 原子帧和有界图改写。
+
+- **地图**：后台线程加载导航 launch 传入的 `prior_pcd_file`（参数 `prior_map.file`），先施加
+  `prior_map.transform`（须与定位管理器的 `prior_pcd_transform` 一致），再按 `prior_map.voxel_size`
+  体素化，建立 KD 树、法向和协方差，并按特征值比标记平面点。加载失败时诊断报错并退回纯里程计图。
+- **锚定（坐标基准）**：地图就绪后不再用原始 odom 建首帧先验。用 `seed_source=tf` 查询同刻
+  `map←camera_init`（定位链已有 TF；精确时刻不可用时退回最新）或参数初值，再对当前帧做配准。
+  只有满秩、质量合格且相对种子不超过 `acquisition_max_*` 的结果，才外推到下一帧作为首帧
+  map 先验。断段后 2 s 内优先以上一段最后的 map 位姿为种子。
+- **跟踪**：非首关键帧按 `correction_period` 排队，初值为图估计，源点云为最多
+  `source_keyframes` 个近邻关键帧（按原始里程计相对位姿合并）。后台单线程、单任务槽，忙时跳过，
+  提交时检查代次、段号和节点是否仍在图中。
+- **配准与信息**：small_gicp GICP（头文件方式固定提交 `fa0cfc98`，不安装其库）求位姿；随后按
+  平面对应重建点到面 Hessian，雅可比对应 IMU 局部右扰动。门限为平面对应数/比例、RMSE、
+  36 扇区水平覆盖。残差方差取 `max(floor², rmse²·n/(n−rank))`，信息再除以源帧数；平衡 Hessian
+  特征分解后丢弃弱于 `λmax/max_condition` 的方向，因此退化走廊只约束可观方向；最后叠加
+  `translation/rotation_std_floor` 共模协方差，避免大量相关点导致过度自信。
+- **入图检验**：校正量超过 `max_*_correction` 或 NIS（当前边缘协方差，卡方上尾概率低于
+  `rejection_probability`）不通过时，观测不进图并计一次冲突；连续 `max_conflicts` 次后进入
+  `suspect`，此后两次连续满秩配准推得的 map←camera_init 一致时才跳过 NIS 接入，回到 `tracking`。
+- **已知限制**：NIS 依赖里程计噪声模型；若实车前端的旋转漂移持续超过 `odom_noise.rotation_*`
+  所允许的量，地图校正会被拒并周期性经 suspect 恢复，需先标定噪声。固定窗口仍不能跨已边缘化节点
+  建回环；地图因子不使用鲁棒核，依赖上述验收。
+
 ## iSAM2 资源管理与预留接口
 
 默认 30 s 固定滞后、最多 120 个活跃位姿，两个条件中先达到者生效。过期节点先重排到
@@ -132,15 +159,17 @@ rotation_variance    = max(1e-12, q_time * dt + q_angle * net_rotation)
 （包括线性边缘因子）和当前状态重建求解器。测试比较完整图与裁剪/压缩图的位姿和协方差。
 本实现每次过期重排整个有界窗口，因此窗口扩大后开销会增加。
 
-预留的接口已实现并测试，但没有接入 ROS 测量生产者：
+外部测量接口：
 
-- `PoseGraph::addAbsolute(AbsolutePoseMeasurement)`：地图绝对位姿＋rank×6 平方根信息。
-- `PoseGraph::addLoop(LoopMeasurement)`：两个活跃节点间的相对位姿＋rank×6 平方根信息。
+- `PoseGraph::addAbsolute(AbsolutePoseMeasurement)`：地图绝对位姿＋rank×6 平方根信息，
+  已由上节的先验地图定位器使用；`assessAbsolute` 提供入图前的 NIS 检验。
+- `PoseGraph::addLoop(LoopMeasurement)`：两个活跃节点间的相对位姿＋rank×6 平方根信息，
+  尚无 ROS 测量生产者。
 
 两个接口都支持 1～6 维独立信息行，保持方向耦合；拒绝非法矩阵、错误 segment、过期节点和
 重复测量 ID。每个活动窗口最多保留 1024 个外部测量身份，ID 长度最多 256。
-回环因子使用 Cauchy 鲁棒核。接口接受的是已经完成几何/一致性验收的测量，当前没有实现
-NIS、描述子召回、回环候选验证或先验匹配；鲁棒核不能替代这些验收。
+回环因子使用 Cauchy 鲁棒核。回环接口接受的是已经完成几何/一致性验收的测量，当前没有实现
+描述子召回或回环候选验证；鲁棒核不能替代这些验收。
 
 固定窗口不能接受连接已边缘化历史节点的回环。未来建图模式须选择完整图或另设全局图，
 而不能把磁盘上有历史点云误认为图节点仍存在。
@@ -149,10 +178,14 @@ NIS、描述子召回、回环候选验证或先验匹配；鲁棒核不能替�
 
 - `~/odometry`：每个有效原子帧的图预测位姿、模型协方差和前端速度。
 - `~/keyframes`：有界活动关键帧 Path，保留各自时间戳。
-- `~/diagnostics`：输入计数、拒绝/缺帧/分段、图节点与槽数、处理时间、缓存和归档状态。
+- `~/diagnostics`：输入计数、拒绝/缺帧/分段、图节点与槽数、处理时间、缓存和归档状态；
+  启用地图时另有 `map_state`、各类拒绝计数、最近 RMSE/秩/NIS/校正量和配准耗时。
+- `~/map_alignment`（仅锚定后）：`TransformStamped`，map←`input.world_frame`。
 
-坐标系名称为 `output.frame` 加 `_s<segment>`，例如 `rm27_graph_s0`，避免重置前后的独立轨迹
-被当作同一坐标系。它与本段 Point-LIO 世界系采用相同初始规范，但不广播 TF；默认导航链不消费它。
+锚定后 `~/odometry`、`~/keyframes` 使用 `prior_map.map_frame`（默认 `map`）。未启用地图或
+地图加载失败时，坐标系名称为 `output.frame` 加 `_s<segment>`，例如 `rm27_graph_s0`，避免重置前后
+的独立轨迹被当作同一坐标系，它与本段 Point-LIO 世界系采用相同初始规范。均不广播 TF；
+默认导航链不消费它。
 
 ## 测试与边界
 
