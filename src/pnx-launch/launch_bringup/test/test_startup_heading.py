@@ -38,6 +38,30 @@ def test_rotation_sweep_rejects_unknown_obstacles_and_map_edge():
     assert not startup.rotation_clear(grid, float('nan'), 0.)
 
 
+@pytest.mark.parametrize('current,target', [
+    (20., 0.), (70., 90.), (133., 90.), (170., 180.),
+    (-179., -180.), (-130., -90.), (-20., 0.),
+    (45., 90.), (-45., 0.), (135., 180.), (-135., -90.),
+])
+def test_nearest_axis_heading_selects_shortest_square_chassis_alignment(current, target):
+    actual = startup.nearest_axis_heading(math.radians(current))
+    error = math.atan2(math.sin(actual-math.radians(target)),
+                       math.cos(actual-math.radians(target)))
+    assert error == pytest.approx(0., abs=1e-12)
+
+
+def test_nearest_axis_heading_bounds_turn_over_full_circle_and_rejects_nonfinite():
+    for index in range(-1440, 1441):
+        current = math.radians(index / 4)
+        target = startup.nearest_axis_heading(current)
+        error = math.atan2(math.sin(target-current), math.cos(target-current))
+        assert abs(error) <= math.pi/4 + 1e-12
+        assert abs(math.sin(2*target)) <= 1e-12
+    for invalid in (float('nan'), float('inf'), -float('inf')):
+        with pytest.raises(ValueError):
+            startup.nearest_axis_heading(invalid)
+
+
 @pytest.fixture
 def node(monkeypatch):
     rclpy.init(domain_id=196)
@@ -79,6 +103,69 @@ def test_alignment_uses_shortest_turn_and_bounded_command(node):
     assert abs(node.commands[-1].angular.z) <= .6
     assert not node.released
     assert node.commands[-1].linear.x == node.commands[-1].linear.y == 0.
+
+
+def test_nearest_axis_uses_fresh_base_feedback_and_latches_target(node):
+    node.heading_alignment_mode = 'nearest_axis'
+    node.selected_yaw = 0.
+    # Confirmed scan is older than current feedback. Do not round its yaw or
+    # the operator's spawn selection, and never rewrite the confirmed seed.
+    node.seed.header.stamp.sec = 8
+    node.seed.pose.pose.orientation.z = math.sin(math.radians(100)/2)
+    node.seed.pose.pose.orientation.w = math.cos(math.radians(100)/2)
+    node.tf.transform.rotation.z = math.sin(math.radians(136)/2)
+    node.tf.transform.rotation.w = math.cos(math.radians(136)/2)
+    node.align_heading()
+    assert node.alignment_yaw == pytest.approx(math.pi)
+    assert 0. < node.commands[-1].angular.z <= .6
+    # A disturbance crosses a rounding boundary; keep the latched target.
+    node.tf.transform.rotation.z = math.sin(math.radians(134)/2)
+    node.tf.transform.rotation.w = math.cos(math.radians(134)/2)
+    node.align_heading()
+    assert node.alignment_yaw == pytest.approx(math.pi)
+    assert node.commands[-1].angular.z > 0.
+    assert node.seed.header.stamp.sec == 8
+    assert startup.planar_yaw(node.seed.pose.pose.orientation) == pytest.approx(math.radians(100))
+    assert not node.released
+
+
+def test_nearest_axis_waits_for_valid_feedback_before_target_selection(node):
+    node.heading_alignment_mode = 'nearest_axis'
+    node.test_time = 11.
+    node.align_heading()
+    assert node.alignment_yaw is None
+    assert node.commands[-1].angular.z == 0.
+    assert not node.released
+
+
+def test_nearest_axis_still_requires_settle_and_rejects_obstacles(node):
+    node.heading_alignment_mode = 'nearest_axis'
+    node.selected_yaw = 0.
+    node.tf.transform.rotation.z = node.tf.transform.rotation.w = math.sqrt(.5)
+    node.align_heading()
+    assert node.alignment_yaw == pytest.approx(math.pi/2)
+    assert node.aligned_since == 10. and not node.released
+    node.test_time = 10.4
+    node.odom.header.stamp.nanosec = node.tf.header.stamp.nanosec = 400000000
+    node.map.data[40*80+40] = 100
+    node.align_heading()
+    assert node.state == 'FAILED' and not node.released
+    assert node.commands[-1].angular.z == 0.
+
+
+def test_nearest_axis_releases_only_after_alignment_and_stationary_dwell(node):
+    node.heading_alignment_mode = 'nearest_axis'
+    node.tf.transform.rotation.z = node.tf.transform.rotation.w = math.sqrt(.5)
+    node.odom.twist.twist.angular.z = .2
+    node.align_heading()
+    assert node.aligned_since is None and not node.released
+    node.odom.twist.twist.angular.z = 0.
+    node.align_heading()
+    assert node.aligned_since == 10. and not node.released
+    node.test_time = 10.4
+    node.odom.header.stamp.nanosec = node.tf.header.stamp.nanosec = 400000000
+    node.align_heading()
+    assert node.released
 
 
 def test_stale_feedback_stops_and_resets_settle_confirmation(node):
@@ -284,13 +371,13 @@ def test_handoff_without_heading_restoration_uses_confirmed_heading():
         rclpy.shutdown()
 
 
-def test_simulation_profile_keeps_control_until_spawn_heading_is_restored():
+def test_simulation_profile_keeps_control_until_nearest_axis_is_aligned():
     from rclpy.parameter import Parameter
     profile = yaml.safe_load((Path(__file__).parents[1] / 'config/simulation/minco_params.yaml').read_text())
     settings = profile['relocalize_then_navigate']['ros__parameters']
     rclpy.init(domain_id=198)
     n = startup.Startup(parameter_overrides=[
-        Parameter('restore_spawn_heading', value=settings['restore_spawn_heading'])])
+        Parameter('heading_alignment_mode', value=settings['heading_alignment_mode'])])
     try:
         n.seed = PoseWithCovarianceStamped()
         n.seed.header.frame_id = 'map'
@@ -301,6 +388,8 @@ def test_simulation_profile_keeps_control_until_spawn_heading_is_restored():
         n.state = 'HANDOFF'
         n.accepted(n.seed)
         assert n.state == 'ALIGNING_HEADING'
+        assert n.heading_alignment_mode == 'nearest_axis'
+        assert n.alignment_yaw is None  # First fresh TF chooses the target.
         assert n.command_pub is not None and n.command_sub is not None
         assert n.seed.header.stamp.sec == 10
     finally:

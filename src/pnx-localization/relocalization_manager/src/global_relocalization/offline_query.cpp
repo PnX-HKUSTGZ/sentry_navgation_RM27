@@ -50,7 +50,7 @@ int main(int argc,char** argv) {
     nlohmann::json out={{"success",result.success},{"reason",result.reason},{"ground_truth_used",false},{"map_sha256",result.map_hash},{"top_k",p.top_k},{"ring_key_candidates",p.ring_key_candidates},{"retrieval_all_views",p.retrieval_all_views},
       {"candidate_workers",p.candidate_workers},{"fallback_candidate_count",p.fallback_candidate_count},{"deterministic_preprocessing",p.deterministic_preprocessing},
       {"database_size",result.database_size},{"retrieval_scored_views",result.retrieval_scored_views},{"retrieval_candidate_count",result.retrieval_candidate_count},{"retrieval_ring_added",result.retrieval_ring_added},
-      {"candidates_tested",result.candidates_tested},{"retrieval_sec",result.retrieval_sec},{"gicp_sec",result.gicp_sec},{"confirmation_sec",result.confirmation_sec},
+      {"candidates_tested",result.candidates_tested},{"database_sec",result.database_sec},{"retrieval_sec",result.retrieval_sec},{"gicp_sec",result.gicp_sec},{"confirmation_sec",result.confirmation_sec},
       {"total_wall_sec",std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count()},{"candidate",candidateJson(result.candidate)},{"hypotheses",nlohmann::json::array()},{"confirmations",nlohmann::json::array()}};
     for(const auto & c:result.hypotheses)out["hypotheses"].push_back(candidateJson(c));
     for(const auto & c:result.confirmations)out["confirmations"].push_back(candidateJson(c));

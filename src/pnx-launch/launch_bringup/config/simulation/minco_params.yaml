@@ -1152,7 +1152,7 @@ global_relocalization:
     cloud_topic: /registered_scan
     odom_topic: /odometry
     cmd_vel_topic: /relocalization/cmd_vel
-    settle_sec: 2.0
+    settle_sec: 0.2  # 仿真起转前静止等待；与原始 IMU 校准窗口配套。
     spin_speed: 2.25
     competition_mode: true
     stop_settle_sec: 0.2
@@ -1185,7 +1185,7 @@ global_relocalization:
     imu_topic: /livox/imu
     raw_scan_model: instantaneous
     raw_imu_accel_scale: 1.0  # 仿真 IMU 已使用 m/s²。
-    raw_calibration_sec: 2.0
+    raw_calibration_sec: 0.2  # 仿真原始 IMU 静止校准窗口，使用传感器时间。
     raw_local_leaf_size: 0.12
     # Local IMU prediction permits a tighter 2.5 x voxel correspondence window.
     raw_local_max_correspondence: 0.3
@@ -1223,7 +1223,8 @@ global_relocalization:
 
 relocalize_then_navigate:
   ros__parameters:
-    # 导航前实际转回所选出生朝向；助力退役后使用 774bc1a 常态底盘。
-    restore_spawn_heading: true
+    # 定位交接后对齐最近的地图轴向（0/90/180/270°），初始转角不超过 45°。
+    # 保留完整旋转净空与停车确认；助力退役后使用常态底盘。
+    heading_alignment_mode: nearest_axis
     state_timeout_sec: 60.0
     relocalization_timeout_sec: 180.0

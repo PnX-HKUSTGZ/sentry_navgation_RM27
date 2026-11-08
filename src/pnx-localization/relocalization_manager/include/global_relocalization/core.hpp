@@ -74,7 +74,8 @@ struct SearchResult {
   bool success{false};
   std::string reason;
   Candidate candidate;
-  double retrieval_sec{0.0}, gicp_sec{0.0}, confirmation_sec{0.0};
+  // database_sec is the cold-build portion of retrieval_sec (zero on cache hit).
+  double database_sec{0.0}, retrieval_sec{0.0}, gicp_sec{0.0}, confirmation_sec{0.0};
   size_t database_size{0}, candidates_tested{0}, retrieval_scored_views{0}, retrieval_candidate_count{0}, retrieval_ring_added{0};
   // Preparation counts exclude target-map preprocessing and never depend on candidate count.
   size_t query_preparations{0}, independent_preparations{0};
@@ -113,7 +114,9 @@ public:
   explicit Core(const Params & params);
   ~Core();
   void loadMap(const std::string & path);
-  void buildDatabase(const Eigen::Vector3d & base_to_lidar_translation);
+  // A canceled build never publishes a partial database; it can be retried.
+  bool buildDatabase(const Eigen::Vector3d & base_to_lidar_translation,
+    const std::function<bool()> & canceled = []{return false;});
   // Calls on one Core must be serialized, including loadMap/buildDatabase.
   PreparedSearch prepare(const Cloud & query_reference,
     const Eigen::Vector3d & base_to_lidar_translation, const std::function<bool()> & canceled,

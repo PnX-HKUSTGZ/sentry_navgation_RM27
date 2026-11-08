@@ -28,6 +28,15 @@ def planar_yaw(q):
     return math.atan2(2 * (q.w*q.z + q.x*q.y), 1 - 2 * (q.y*q.y + q.z*q.z))
 
 
+def nearest_axis_heading(yaw):
+    """Nearest map-axis heading, with counterclockwise choice at exact 45° ties."""
+    if not math.isfinite(yaw):
+        raise ValueError('Heading must be finite')
+    yaw = math.atan2(math.sin(yaw), math.cos(yaw))
+    target = math.floor((yaw + math.pi/4) / (math.pi/2)) * (math.pi/2)
+    return math.atan2(math.sin(target), math.cos(target))
+
+
 def rotation_clear(grid, x, y, radius=0.45):
     """Conservative swept disk, including every cell touched by the chassis.
 
@@ -58,6 +67,12 @@ class Startup(Node):
         super().__init__('relocalize_then_navigate', **kwargs)
         self.deployment = self.declare_parameter('deployment', 'simulation').value
         self.restore_spawn_heading = self.declare_parameter('restore_spawn_heading', False).value
+        # Preserve the legacy boolean for existing profiles; the explicit mode
+        # selects the startup policy without changing the confirmed pose.
+        self.heading_alignment_mode = self.declare_parameter(
+            'heading_alignment_mode', 'spawn' if self.restore_spawn_heading else 'none').value
+        if self.heading_alignment_mode not in ('none', 'spawn', 'nearest_axis'):
+            raise ValueError('heading_alignment_mode must be none, spawn or nearest_axis')
         if self.deployment not in ('simulation', 'reality'):
             raise ValueError('deployment must be simulation or reality')
         raw_topic = self.declare_parameter('raw_cloud_topic', '/livox/lidar').value
@@ -84,6 +99,7 @@ class Startup(Node):
         self.odom = None
         self.odom_ready_since = None
         self.selected_yaw = None
+        self.alignment_yaw = None
         self.aligned_since = None
         self.sensor_subs = [
             self.create_subscription(PointCloud2, raw_topic, lambda _: self.sensor('lidar'), qos_profile_sensor_data),
@@ -171,15 +187,16 @@ class Startup(Node):
         if self.state != 'HANDOFF' or self.seed is None or msg != self.seed:
             return
         self.command_pub.publish(Twist())
-        if self.deployment == 'reality' or not self.restore_spawn_heading:
+        if self.deployment == 'reality' or self.heading_alignment_mode == 'none':
             self.release_control()
             return
-        if self.selected_yaw is None:
+        if self.heading_alignment_mode == 'spawn' and self.selected_yaw is None:
             self.fail('Missing RViz spawn heading; cannot complete heading alignment')
             return
+        self.alignment_yaw = None
         self.set_state('ALIGNING_HEADING',
-                       f'localized_yaw={planar_yaw(msg.pose.pose.orientation):.6f} '
-                       f'target_yaw={self.selected_yaw:.6f}')
+                       f'mode={self.heading_alignment_mode} '
+                       f'localized_yaw={planar_yaw(msg.pose.pose.orientation):.6f}')
 
     def release_control(self):
         # The global localizer only publishes to the private input. Release the
@@ -242,8 +259,20 @@ class Startup(Node):
                 abs(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w-1.) > 1e-3):
             self.fail('Heading alignment received invalid orientation or velocity')
             return
-        error = math.atan2(math.sin(self.selected_yaw-planar_yaw(q)),
-                           math.cos(self.selected_yaw-planar_yaw(q)))
+        current_yaw = planar_yaw(q)
+        if self.heading_alignment_mode == 'nearest_axis':
+            if self.alignment_yaw is None:
+                # Select once from fresh, validated physical-base feedback.
+                # Latching avoids target flips near the ±45° boundaries.
+                self.alignment_yaw = nearest_axis_heading(current_yaw)
+                self.get_logger().info(
+                    f'Nearest map-axis heading: current_yaw={current_yaw:.6f} '
+                    f'target_yaw={self.alignment_yaw:.6f}')
+            target_yaw = self.alignment_yaw
+        else:
+            target_yaw = self.selected_yaw
+        error = math.atan2(math.sin(target_yaw-current_yaw),
+                           math.cos(target_yaw-current_yaw))
         command = Twist()
         if abs(error) > .01:
             command.angular.z = max(-.6, min(.6, 1.5*error))

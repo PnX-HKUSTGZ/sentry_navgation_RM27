@@ -217,9 +217,11 @@ def test_cancel_retry_timeout_keeps_motor_stopped():
             assert process.returncode == 0, output
 
 
-@pytest.mark.parametrize("numerical_recovery", [False, True])
-@pytest.mark.parametrize("accel_scale", [1.0, 9.81])
-def test_raw_imu_calibration_worker_cancel_and_reset(numerical_recovery, accel_scale):
+@pytest.mark.parametrize("numerical_recovery,accel_scale,competition_mode", [
+    (False, 1.0, False), (True, 1.0, False),
+    (False, 9.81, False), (True, 9.81, False), (False, 1.0, True),
+])
+def test_raw_imu_calibration_worker_cancel_and_reset(numerical_recovery, accel_scale, competition_mode):
     """Raw mode operates without odometry, and retries require fresh calibration."""
     import json
     import numpy as np
@@ -234,7 +236,7 @@ def test_raw_imu_calibration_worker_cancel_and_reset(numerical_recovery, accel_s
                         + "".join(f"{x} {y} {z}\n" for x, y, z in points))
         process = subprocess.Popen([str(binary), "--ros-args", "-p", "use_sim_time:=true", "-p", f"map_path:={path}",
             "-p", "input_mode:=raw_imu", "-p", f"raw_imu_accel_scale:={accel_scale}", "-p", "raw_calibration_sec:=0.4",
-            "-p", "settle_sec:=0.1", "-p", "timeout_sec:=4.0"] + (["-p", "raw_numerical_recovery:=true", "-p", "raw_deterministic:=true", "-p", "raw_local_max_iterations:=1", "-p", "raw_local_retry_iterations:=0"] if numerical_recovery else []), env=os.environ.copy(),
+            "-p", "settle_sec:=0.1", "-p", "timeout_sec:=4.0"] + (["-p", "competition_mode:=true"] if competition_mode else []) + (["-p", "raw_numerical_recovery:=true", "-p", "raw_deterministic:=true", "-p", "raw_local_max_iterations:=1", "-p", "raw_local_retry_iterations:=0"] if numerical_recovery else []), env=os.environ.copy(),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
         context = rclpy.context.Context()
         rclpy.init(context=context)
@@ -346,6 +348,9 @@ finally:
             assert any(m.angular.z != 0 for m in commands)
             assert not active_result.done(), "Continuous input was rejected during a processing burst"
             assert any(s.get("raw_frontend", {}).get("gravity_initialized") for s in states)
+            if competition_mode:
+                assert any(s["metrics"]["database_warmup_ready"] for s in states), states[-3:]
+                assert any(s["metrics"]["database_warmup_sec"] > 0 for s in states)
             if numerical_recovery:
                 recovering = [(t,s) for t,s in state_events if s["stage"] == "RECOVERING"]
                 assert recovering, states[-3:]
@@ -377,6 +382,8 @@ finally:
             start = len(commands)
             feed(.15)
             assert all(m.angular.z == 0 for m in commands[start:])
+            if competition_mode:
+                assert not states[-1]["metrics"]["database_warmup_ready"]
             assert wait(retry.cancel_goal_async()).goals_canceling
             assert wait(retry.get_result_async()).status == 5
             assert not poses
@@ -409,7 +416,9 @@ def test_searching_uses_live_raw_sensor_health_after_freezing_scan(break_stream)
         process = subprocess.Popen([str(binary), "--ros-args", "-p", "use_sim_time:=true", "-p", f"map_path:={path}",
             "-p", "input_mode:=raw_imu", "-p", "raw_calibration_sec:=0.4",
             "-p", "settle_sec:=0.1", "-p", "spin_angle:=0.05", "-p", "timeout_sec:=12.0",
-            "-p", "data_timeout_sec:=0.3", "-p", "db_grid_resolution:=0.015",
+            # Keep the real search longer than the freshness window even with
+            # four database/retrieval workers, without adding a solver delay.
+            "-p", "data_timeout_sec:=0.3", "-p", "db_grid_resolution:=0.0075",
             "-p", "db_min_points:=80"], env=os.environ.copy(), stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, start_new_session=True)
         context = rclpy.context.Context()
@@ -511,10 +520,18 @@ def test_searching_uses_live_raw_sensor_health_after_freezing_scan(break_stream)
                 step(feed=not break_stream)
             assert result.done()
             reason = result.result().result.reason
-            assert time.monotonic()-search_start > .3, "Fixture must exceed the frozen scan timeout"
             if break_stream:
                 assert "stale" in reason, reason
+                # Expiration starts at the last sensor arrival, which predates
+                # SEARCHING. Cancellable database workers can now finish before
+                # .3 s has elapsed from observing that stage; check the actual
+                # freshness gate rather than relying on slow cancellation.
+                health = json.loads(reason[reason.index('{'):])
+                assert max(health[key] for key in (
+                    'cloud_ros_age_sec', 'cloud_wall_age_sec',
+                    'odom_ros_age_sec', 'odom_wall_age_sec')) >= .3, health
             else:
+                assert time.monotonic()-search_start > .3, "Fixture must exceed the frozen scan timeout"
                 assert "stale" not in reason, reason
                 assert "timeout" not in reason, reason
             assert commands[-1].angular.z == 0.

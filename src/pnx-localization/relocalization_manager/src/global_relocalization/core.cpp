@@ -29,6 +29,7 @@
 #include <atomic>
 #include <future>
 #include <mutex>
+#include <optional>
 #include <nlohmann/json.hpp>
 
 namespace global_relocalization {
@@ -374,12 +375,15 @@ void Core::loadMap(const std::string & path) {
   for(int i=0;i<impl_->params.candidate_workers;++i){auto quality=std::make_unique<pcl::KdTreeFLANN<pcl::PointXYZ>>();quality->setInputCloud(impl_->map);impl_->quality_trees.push_back(std::move(quality));}
   impl_->database.clear();
 }
-void Core::buildDatabase(const Eigen::Vector3d & offset) {
+bool Core::buildDatabase(const Eigen::Vector3d & offset,const std::function<bool()> & canceled) {
   if(!impl_->map)throw std::runtime_error("Map must be loaded before database construction");
-  if(!impl_->database.empty()&&(impl_->database_offset-offset).norm()<1e-6)return;
+  if(canceled())return false;
+  if(!impl_->database.empty()&&(impl_->database_offset-offset).norm()<1e-6)return true;
   ++impl_->provenance->revision;
-  impl_->database.clear();impl_->database_offset=offset;
+  impl_->database.clear();
   pcl::PointXYZ lo,hi;pcl::getMinMax3D(*impl_->map,lo,hi);const auto & p=impl_->params;
+  struct Job {Eigen::Vector3d base;size_t location;};
+  std::vector<Job> jobs;
   size_t location=0;
   for(double x=lo.x;x<=hi.x;x+=p.db_grid_resolution)for(double y=lo.y;y<=hi.y;y+=p.db_grid_resolution,++location) {
     for(const double height:p.db_base_z_offsets) {
@@ -390,12 +394,33 @@ void Core::buildDatabase(const Eigen::Vector3d & offset) {
     const double sensor_x=base.x()+offset.x(),mount_radius=std::hypot(offset.x(),offset.y());
     if(p.search_side=="negative_x"&&sensor_x-mount_radius>=p.side_boundary_x)continue;
     if(p.search_side=="positive_x"&&sensor_x+mount_radius<=p.side_boundary_x)continue;
-    Cloud visible=impl_->visible(base+offset);
-    if(int(visible.size())<p.db_min_points)continue;
-    impl_->database.push_back({base,scanContext(visible,p.sc_rings,p.sc_sectors,p.db_max_radius),location});
+    jobs.push_back({base,location});
     }
   }
+  // Each view uses an independent spherical z-buffer. Keep at most four in
+  // flight, and commit in the original lattice order so tie ranks cannot vary
+  // with worker completion order. No nested OpenMP work is used here.
+  std::vector<std::optional<Impl::View>> views(jobs.size());
+  std::atomic<size_t> next{0};std::atomic_bool stop{false};std::mutex cancel_mutex;
+  const auto evaluate=[&] {
+    while(!stop.load()) {
+      {std::lock_guard<std::mutex> lock(cancel_mutex);if(canceled()){stop.store(true);break;}}
+      const size_t index=next.fetch_add(1);if(index>=jobs.size())break;
+      const auto & job=jobs[index];const Cloud visible=impl_->visible(job.base+offset);
+      if(int(visible.size())>=p.db_min_points)
+        views[index]=Impl::View{job.base,scanContext(visible,p.sc_rings,p.sc_sectors,p.db_max_radius),job.location};
+    }
+  };
+  {
+    std::vector<std::future<void>> tasks;
+    for(size_t worker=0;worker<std::min(size_t(4),jobs.size());++worker)
+      tasks.push_back(std::async(std::launch::async,evaluate));
+    for(auto & task:tasks)task.get();
+  }
+  if(stop.load()||canceled())return false;
+  for(auto & view:views)if(view)impl_->database.push_back(std::move(*view));
   if(impl_->database.empty())throw std::runtime_error("No usable virtual views in prior PCD");
+  impl_->database_offset=offset;return true;
 }
 const std::string & Core::mapHash()const{return impl_->hash;}
 size_t Core::databaseSize()const{return impl_->database.size();}
@@ -442,7 +467,9 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
   std::mutex cancel_mutex;
   const auto checkedCancel=[&]{std::lock_guard<std::mutex> lock(cancel_mutex);return canceled();};
   omp_set_num_threads(4);
-  buildDatabase(offset);out.database_size=impl_->database.size();
+  const bool cold_database=impl_->database.empty()||(impl_->database_offset-offset).norm()>=1e-6;
+  if(!buildDatabase(offset,checkedCancel)){out.reason="canceled during database construction";return out;}
+  out.database_sec=cold_database?seconds(start):0.;out.database_size=impl_->database.size();
   if(checkedCancel()){out.reason="canceled before retrieval";return out;}
   const auto & p=impl_->params;
   const Descriptor descriptor=scanContext(translated(query,-offset),p.sc_rings,p.sc_sectors,p.db_max_radius);
@@ -452,6 +479,26 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
   std::sort(shortlist.begin(),shortlist.end());
   const int fallback_count=p.fallback_candidate_count?p.fallback_candidate_count:p.top_k;
   const size_t shortlist_limit=p.retrieval_all_views?shortlist.size():std::min(shortlist.size(),p.db_base_z_offsets.size()*size_t(std::max({40,p.top_k*10,p.ring_key_candidates,p.top_k+fallback_count})));
+  // Score independent descriptors concurrently, then consume in ring-key order.
+  // Diagnostic output reuses these exact scores instead of matching every view
+  // a second time. Neither the shortlist nor any candidate budget is reduced.
+  const size_t match_count=p.diagnostic_output_dir.empty()?shortlist_limit:shortlist.size();
+  std::vector<std::pair<double,double>> matches(match_count);
+  std::atomic<size_t> next_match{0};std::atomic_bool matching_canceled{false};
+  const auto match_views=[&] {
+    while(!matching_canceled.load()) {
+      if(checkedCancel()){matching_canceled.store(true);break;}
+      const size_t index=next_match.fetch_add(1);if(index>=match_count)break;
+      matches[index]=descriptorMatch(descriptor,impl_->database[shortlist[index].second].descriptor);
+    }
+  };
+  {
+    std::vector<std::future<void>> tasks;
+    for(size_t worker=0;worker<std::min(size_t(4),match_count);++worker)
+      tasks.push_back(std::async(std::launch::async,match_views));
+    for(auto & task:tasks)task.get();
+  }
+  if(matching_canceled.load()||checkedCancel()){out.retrieval_sec=seconds(start);out.reason="canceled during retrieval";return out;}
   // Optional offline diagnostics never consume a pose or influence retrieval.
   if(!p.diagnostic_output_dir.empty()) {
     const auto directory=std::filesystem::path(p.diagnostic_output_dir)/("search_"+std::to_string(++impl_->diagnostic_search_count));
@@ -462,7 +509,7 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
       {"sensor_offset",{offset.x(),offset.y(),offset.z()}},{"shortlist_limit",shortlist_limit},{"top_k",p.top_k},{"fallback_candidate_count",fallback_count},{"ring_key_candidates",p.ring_key_candidates},{"retrieval_all_views",p.retrieval_all_views},{"db_base_z_offsets",p.db_base_z_offsets},{"candidate_budget_unit","independent XY locations; all height layers retained"},{"views",nlohmann::json::array()}};
     for(size_t rank=0;rank<shortlist.size();++rank) {
       const auto & item=shortlist[rank];const auto & view=impl_->database[item.second];
-      const auto match=descriptorMatch(descriptor,view.descriptor);
+      const auto match=matches[rank];
       const auto seed=basePoseFromSensorView(view.base+offset,offset,match.second);
       data["views"].push_back({{"database_index",item.second},{"database_location",view.location},{"ring_rank",rank+1},{"in_shortlist",rank<shortlist_limit},{"ring_distance",item.first},
         {"descriptor_distance",match.first},{"yaw",match.second},{"view_base",{view.base.x(),view.base.y(),view.base.z()}},
@@ -474,7 +521,7 @@ PreparedSearch Core::prepare(const Cloud & query,const Eigen::Vector3d & offset,
   std::vector<Candidate> guesses;
   size_t ring_rank=0;
   for(const auto & item:shortlist) {
-    ++ring_rank;const auto match=descriptorMatch(descriptor,impl_->database[item.second].descriptor);
+    const auto match=matches[ring_rank++];
     Candidate c;c.descriptor_distance=match.first;c.ring_key_rank=ring_rank;
     c.database_location=impl_->database[item.second].location;
     c.map_from_reference=basePoseFromSensorView(impl_->database[item.second].base+offset,offset,match.second);

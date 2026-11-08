@@ -344,10 +344,11 @@ TEST(Registration,ParallelCandidatesPreserveAllSeedsQualityOrderAndConfirmations
   EXPECT_EQ(rejected.reason,"independent stopped scan failed quality or search-side gates");
   // Cancel from inside optimizer-stage checks after retrieval has selected >2
   // candidates. Joining must return diagnostics without accepting any result.
-  int checks=0;std::chrono::steady_clock::time_point requested;
+  int checks=0;bool in_gicp=false;std::chrono::steady_clock::time_point requested;
   const auto interrupted=parallel.search(query,std::vector<Cloud>{independent,independent,independent},Eigen::Vector3d::Zero(),[&]{
+    if(!in_gicp)return false;
     if(++checks<30)return false;if(checks==30)requested=std::chrono::steady_clock::now();return true;
-  });
+  },[&](const SearchEvent & event){if(event.stage=="RETRIEVAL_COMPLETE")in_gicp=true;});
   const double join_sec=std::chrono::duration<double>(std::chrono::steady_clock::now()-requested).count();
   EXPECT_FALSE(interrupted.success);EXPECT_GT(interrupted.retrieval_candidate_count,2u);
   EXPECT_EQ(interrupted.reason,"canceled during GICP");EXPECT_LT(join_sec,1.0);
@@ -423,6 +424,50 @@ TEST_F(StagedRegistration,MatchesLegacyNumericsAndDefersAllConfirmationEvents) {
     EXPECT_TRUE(result.confirmations[i].map_from_reference.matrix().isApprox(legacy.confirmations[i].map_from_reference.matrix(),1e-6));
   }
   EXPECT_FALSE(core.confirm(prepared,stopped(),[]{return false;}).success);
+}
+TEST_F(StagedRegistration,DatabaseWarmupPreservesAllSeedsAndCanceledBuildCanRetry) {
+  Core cold(p),warm(p);cold.loadMap(path);warm.loadMap(path);
+  const auto original=prepare(cold);ASSERT_TRUE(original.ready())<<original.diagnostics().reason;
+  EXPECT_GT(original.diagnostics().database_sec,0.);
+  int checks=0;
+  EXPECT_FALSE(warm.buildDatabase(offset,[&]{return ++checks>8;}));
+  EXPECT_EQ(warm.databaseSize(),0u); // No partially completed views are cached.
+  ASSERT_TRUE(warm.buildDatabase(offset));
+  EXPECT_EQ(warm.databaseSize(),original.diagnostics().database_size);
+  const auto prepared=prepare(warm);ASSERT_TRUE(prepared.ready())<<prepared.diagnostics().reason;
+  EXPECT_DOUBLE_EQ(prepared.diagnostics().database_sec,0.);
+  const auto & a=original.diagnostics();const auto & b=prepared.diagnostics();
+  ASSERT_EQ(a.hypotheses.size(),b.hypotheses.size());
+  for(size_t i=0;i<a.hypotheses.size();++i) {
+    const auto & x=a.hypotheses[i];const auto & y=b.hypotheses[i];
+    EXPECT_EQ(x.database_location,y.database_location);
+    EXPECT_EQ(x.scan_context_rank,y.scan_context_rank);EXPECT_EQ(x.ring_key_rank,y.ring_key_rank);
+    EXPECT_DOUBLE_EQ(x.descriptor_distance,y.descriptor_distance);EXPECT_DOUBLE_EQ(x.seed_yaw,y.seed_yaw);
+    EXPECT_TRUE(x.seed_translation.isApprox(y.seed_translation,1e-12));
+    EXPECT_TRUE(x.map_from_reference.matrix().isApprox(y.map_from_reference.matrix(),1e-6));
+    EXPECT_NEAR(x.fitness,y.fitness,1e-6);EXPECT_DOUBLE_EQ(x.inlier_ratio,y.inlier_ratio);
+  }
+  EXPECT_TRUE(warm.buildDatabase(offset));EXPECT_TRUE(prepared.ready()); // Cache hit preserves provenance.
+  auto other_offset=offset;other_offset.z()+=.1;
+  checks=0;EXPECT_FALSE(warm.buildDatabase(other_offset,[&]{return ++checks>8;}));
+  EXPECT_FALSE(prepared.ready());EXPECT_EQ(warm.databaseSize(),0u);
+  ASSERT_TRUE(warm.buildDatabase(other_offset));
+  const auto result=cold.confirm(original,stopped(),[]{return false;});EXPECT_TRUE(result.success)<<result.reason;
+}
+TEST_F(StagedRegistration,CancellationDuringColdDatabaseAndRetrievalNeverProducesReadyPose) {
+  Core core(p);core.loadMap(path);
+  int checks=0;
+  const auto cold=core.prepare(query,offset,[&]{return ++checks>8;});
+  EXPECT_FALSE(cold.ready());EXPECT_FALSE(cold.diagnostics().success);
+  EXPECT_EQ(cold.diagnostics().reason,"canceled during database construction");
+  EXPECT_EQ(core.databaseSize(),0u);
+  ASSERT_TRUE(core.buildDatabase(offset));
+  checks=0;
+  const auto retrieval=core.prepare(query,offset,[&]{return ++checks>8;});
+  EXPECT_FALSE(retrieval.ready());EXPECT_FALSE(retrieval.diagnostics().success);
+  EXPECT_EQ(retrieval.diagnostics().reason,"canceled during retrieval");
+  EXPECT_TRUE(retrieval.diagnostics().hypotheses.empty());
+  EXPECT_TRUE(prepare(core).ready());
 }
 TEST_F(StagedRegistration,RejectsForeignStaleCanceledAndFabricatedContinuations) {
   Core core(p),other(p);core.loadMap(path);

@@ -178,6 +178,7 @@ public:
           raw_frontend_.reset();raw_recovery_stage_.clear();raw_recovery_stop_tick_=false;confirmations_.clear();confirmation_stamps_.clear();have_cloud_=have_odom_=false;raw_status_=rawInitialStatus();latest_imu_stamp_=-1;raw_yaw_at_spin_=raw_latest_yaw_=0;raw_bias_.setZero();
         }
         if(competition_mode_) {
+          database_worker_={};database_warmup_sec_.store(0.);database_warmup_ready_.store(false);
           competition_generation_.store(competition_.begin());competition_query_points_=0;confirmation_stamps_.clear();
           competition_prepare_sec_=trigger_to_stable_scan_sec_=trigger_to_first_stopped_scan_sec_=trigger_to_pose_sec_=-1;match_ros_sec_=-1;
           competition_capture_started_.store(false);competition_spin_origin_.store(0);competition_ready_.store(false);prepared_search_=PreparedSearch{};
@@ -234,6 +235,7 @@ public:
     catch(const std::exception & e){std::cerr<<"global_relocalization shutdown stop publication: "<<e.what()<<std::endl;}
     if(worker_.valid())worker_.wait();
     if(prepare_worker_.valid())prepare_worker_.wait();
+    if(database_worker_.valid())database_worker_.wait();
     if(raw_pipeline_)raw_pipeline_->close();
     // ServerGoalHandle's destructor auto-cancels active goals and invokes its
     // weak Server terminal callback. Release Server first so shutdown cannot
@@ -274,6 +276,18 @@ private:
     if(!visualization_)return {};
     return [this,generation](const SearchEvent & event){visualization_->observe(event,generation);};
   }
+  void warmDatabase() {
+    if(database_worker_.valid())return;
+    // The raw reference/mount is now known. Build while the first turn is
+    // collected; Core access stays serialized by joining before prepare().
+    const auto offset=raw_reference_sensor_offset_;
+    database_worker_=std::async(std::launch::async,[this,offset] {
+      const auto start=Clock::now();
+      const bool ready=core_->buildDatabase(offset,[this]{return cancel_.load()||match_latched_.load();});
+      database_warmup_sec_.store(std::chrono::duration<double>(Clock::now()-start).count());
+      database_warmup_ready_.store(ready);return ready;
+    }).share();
+  }
   void startPreparation(std::shared_ptr<const Cloud> snapshot) {
     if(!snapshot||snapshot->size()<100){failure_="insufficient first-turn accumulated points";cancel_.store(true);return;}
     competition_query_points_=snapshot->size();prepare_start_=Clock::now();
@@ -281,7 +295,9 @@ private:
     const auto observer=searchObserver();const auto visual_generation=visual_generation_.load();
     changeStage("PREPARING");
     prepare_generation_=generation;
-    prepare_worker_=std::async(std::launch::async,[this,snapshot=std::move(snapshot),offset,observer,visual_generation]{
+    const auto database=database_worker_;
+    prepare_worker_=std::async(std::launch::async,[this,snapshot=std::move(snapshot),offset,observer,visual_generation,database]{
+      if(database.valid()&&!database.get())return PreparedSearch{};
       if(visualization_)visualization_->query(*snapshot,visual_generation,true);
       return core_->prepare(*snapshot,offset,[this]{return cancel_.load()||match_latched_.load();},observer);
     });
@@ -585,6 +601,7 @@ private:
       {"input_health",input_health_},
       {"stage_wall_sec",stage_times_},{"stage_ros_sec",stage_ros_times_},{"input_mode",input_mode_},
       {"accumulated_yaw",yaw_},{"metrics",{{"fitness",result_.candidate.fitness},{"inlier_ratio",result_.candidate.inlier_ratio},
+      {"database_sec",result_.database_sec},{"database_warmup_sec",database_warmup_sec_.load()},{"database_warmup_ready",database_warmup_ready_.load()},
       {"retrieval_sec",result_.retrieval_sec},{"gicp_sec",result_.gicp_sec},{"confirmation_sec",result_.confirmation_sec},
       {"database_size",result_.database_size},{"candidates_tested",result_.candidates_tested},
       {"candidate_workers",result_.candidate_workers},{"retrieval_scored_views",result_.retrieval_scored_views},{"retrieval_candidate_count",result_.retrieval_candidate_count},{"retrieval_ring_added",result_.retrieval_ring_added}}}};
@@ -647,6 +664,10 @@ private:
     // A start callback has already published zero and is waiting for this
     // state mutex. Yield without changing preparation/readiness at that event.
     if(competition_mode_&&match_latched_.load()&&!competition_.started()){publishCommand(cmd);return;}
+    if(!cancel_.load()&&database_worker_.valid()&&database_worker_.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
+      try{if(!database_worker_.get()){failure_="database warmup canceled";cancel_.store(true);}}
+      catch(const std::exception & e){failure_=std::string("database warmup failed: ")+e.what();cancel_.store(true);}
+    }
     const bool timed_out=competition_mode_?(match_latched_.load()?std::chrono::duration<double>(Clock::now()-match_wall_).count()>post_start_timeout_sec_:elapsed()>prestart_timeout_sec_):elapsed()>timeout_sec_;
     if(timed_out){failure_=competition_mode_?(match_latched_.load()?"post-start confirmation timeout":"prestart preparation/wait timeout"):"wall-clock experiment timeout";
       if(!input_error_.empty())failure_+=": "+input_error_;
@@ -654,6 +675,7 @@ private:
     if(cancel_.load()) {
       if(raw_pipeline_&&raw_capture_mode_.exchange(0)!=0)raw_pipeline_->cancel();
       publishCommand(cmd);
+      if(database_worker_.valid()&&database_worker_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
       if(prepare_worker_.valid()&&prepare_worker_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
       if(prepare_worker_.valid())try{prepare_worker_.get();}catch(...){}
       if(worker_.valid()&&worker_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
@@ -675,6 +697,7 @@ private:
         try {base_lidar_=transform(base_frame_,lidar_frame_,cloud_stamp_);odom_reference_=latest_base_;have_reference_=true;}
         catch(const std::exception & e){stable_start_=Clock::now();publishStatus(e.what());publishCommand(cmd);return;}
       }
+      if(competition_mode_)warmDatabase();
       if(linear_speed_>0.04||angular_speed_>0.06)stable_start_=Clock::now();
       if(std::chrono::duration<double>(Clock::now()-stable_start_).count()>=settle_sec_){yaw_=0;raw_yaw_at_spin_=raw_latest_yaw_;competition_spin_origin_.store(raw_latest_yaw_);competition_capture_started_.store(true);changeStage("SPINNING");}
     }else if(stage_=="SPINNING"||(competition_mode_&&competitionSpinning())) {
@@ -734,6 +757,8 @@ private:
   double stop_settle_sec_,prestart_timeout_sec_,post_start_timeout_sec_;
   double match_ros_sec_{-1},competition_prepare_sec_{-1},trigger_to_stable_scan_sec_{-1},trigger_to_first_stopped_scan_sec_{-1},trigger_to_pose_sec_{-1};
   std::future<PreparedSearch> prepare_worker_;PreparedSearch prepared_search_;uint64_t prepare_generation_{0};
+  std::shared_future<bool> database_worker_;
+  std::atomic<double> database_warmup_sec_{0.};std::atomic_bool database_warmup_ready_{false};
   size_t competition_query_points_{0};std::vector<double> confirmation_stamps_;
   rclcpp::CallbackGroup::SharedPtr match_group_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr match_service_;
