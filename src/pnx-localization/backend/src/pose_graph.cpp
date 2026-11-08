@@ -3,6 +3,7 @@
 #include <boost/math/distributions/chi_squared.hpp>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/linear/NoiseModel.h>
+#include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/PriorFactor.h>
 
@@ -63,10 +64,10 @@ class LoopFactor : public gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Pose3> {
 
 public:
   /// 保存 from←to 测量及信息矩阵，按残差维数设置鲁棒核尺度。
-  LoopFactor(Key a, Key b, const Pose &z, const Eigen::MatrixXd &l)
+  LoopFactor(Key a, Key b, const Pose &z, const Eigen::MatrixXd &l, double size)
       : NoiseModelFactor2(gtsam::noiseModel::Robust::Create(
                               gtsam::noiseModel::mEstimator::Cauchy::Create(
-                                  std::sqrt(double(l.rows()))),
+                                  size * std::sqrt(double(l.rows()))),
                               gtsam::noiseModel::Unit::Create(l.rows())),
                           a, b),
         z_(toGtsam(z)), l_(l) {}
@@ -92,7 +93,8 @@ PoseGraph::PoseGraph(GraphConfig c) : config_(c) {
       (c.max_states && c.max_states < 3) ||
       !std::isfinite(c.prior_translation_std) || c.prior_translation_std <= 0 ||
       !std::isfinite(c.prior_rotation_std) || c.prior_rotation_std <= 0 ||
-      !std::isfinite(c.relinearize_threshold) || c.relinearize_threshold <= 0)
+      !std::isfinite(c.relinearize_threshold) || c.relinearize_threshold <= 0 ||
+      !std::isfinite(c.loop_cauchy_size) || c.loop_cauchy_size <= 0)
     throw std::invalid_argument("invalid graph configuration");
   reset(0);
 }
@@ -266,6 +268,60 @@ Innovation PoseGraph::assessAbsolute(const AbsolutePoseMeasurement &m) const {
   out.valid = std::isfinite(out.nis) && std::isfinite(out.probability);
   return out;
 }
+/// 回环新息 e = L·Local(z, x̂_a⁻¹x̂_b)，H = [L·J·J_a, L·J·J_b]，S = I + H P_ab Hᵀ。
+/// P_ab 为两端联合边缘协方差，由当前图全量线性化得到；仅在回环提交前调用，开销可接受。
+Innovation PoseGraph::assessLoop(const LoopMeasurement &m) const {
+  Innovation out;
+  if (m.segment != segment_ || m.from == m.to || !contains(m.from) ||
+      !contains(m.to) || !validPose(m.relative))
+    return out;
+  Eigen::MatrixXd l;
+  try {
+    l = information(m.sqrt_information);
+  } catch (const std::exception &) {
+    return out;
+  }
+  const gtsam::Values values = isam_->calculateEstimate();
+  const auto a = values.at<gtsam::Pose3>(m.from);
+  const auto b = values.at<gtsam::Pose3>(m.to);
+  gtsam::Matrix66 ja, jb, j;
+  const gtsam::Pose3 predicted = a.between(b, ja, jb);
+  const gtsam::Vector6 r = toGtsam(m.relative).localCoordinates(predicted, boost::none, j);
+  const Eigen::VectorXd e = l * r;
+  Eigen::MatrixXd h(l.rows(), 12);
+  h.leftCols(6) = l * j * ja;
+  h.rightCols(6) = l * j * jb;
+  Eigen::MatrixXd p(12, 12);
+  try {
+    gtsam::NonlinearFactorGraph live;
+    for (const auto &factor : isam_->getFactorsUnsafe())
+      if (factor)
+        live.push_back(factor);
+    const gtsam::Marginals marginals(live, values);
+    const auto joint = marginals.jointMarginalCovariance({m.from, m.to});
+    p.topLeftCorner(6, 6) = joint.at(m.from, m.from);
+    p.topRightCorner(6, 6) = joint.at(m.from, m.to);
+    p.bottomLeftCorner(6, 6) = joint.at(m.to, m.from);
+    p.bottomRightCorner(6, 6) = joint.at(m.to, m.to);
+  } catch (const std::exception &) {
+    return out;
+  }
+  Eigen::MatrixXd s = Eigen::MatrixXd::Identity(l.rows(), l.rows()) + h * p * h.transpose();
+  s = .5 * (s + s.transpose()).eval();
+  Eigen::LDLT<Eigen::MatrixXd> ldlt(s);
+  if (ldlt.info() != Eigen::Success || (ldlt.vectorD().array() <= 1e-12).any())
+    return out;
+  out.nis = std::max(0., e.dot(ldlt.solve(e)));
+  out.dof = int(l.rows());
+  try {
+    out.probability = boost::math::cdf(boost::math::complement(
+        boost::math::chi_squared(double(out.dof)), out.nis));
+  } catch (const std::exception &) {
+    return out;
+  }
+  out.valid = std::isfinite(out.nis) && std::isfinite(out.probability);
+  return out;
+}
 /// 接收已验收的相对回环测量，并通过鲁棒因子更新两个活动端点。
 /// 拒绝同端点、过期节点及重复测量，避免错误连接历史段或重复计权。
 bool PoseGraph::addLoop(const LoopMeasurement &m) {
@@ -278,7 +334,8 @@ bool PoseGraph::addLoop(const LoopMeasurement &m) {
     throw std::invalid_argument("invalid loop pose");
   gtsam::NonlinearFactorGraph g;
   g.emplace_shared<LoopFactor>(m.from, m.to, m.relative,
-                               information(m.sqrt_information));
+                               information(m.sqrt_information),
+                               config_.loop_cauchy_size);
   submit(g, gtsam::Values{});
   observations_[m.measurement_id] = {m.from, m.to};
   return true;
@@ -292,11 +349,12 @@ Covariance PoseGraph::covariance(Key k) const {
   Covariance p = reorder(isam_->marginalCovariance(k));
   return .5 * (p + p.transpose()).eval();
 }
-/// 按活动时间表取得节点位姿快照，不包含已边缘化节点。
+/// 按活动时间表取得节点位姿快照，不包含已边缘化节点；一次整体回代，避免逐节点求解。
 std::map<Key, Pose> PoseGraph::estimates() const {
   std::map<Key, Pose> out;
+  const gtsam::Values values = isam_->calculateEstimate();
   for (const auto &k : times_)
-    out.emplace(k.first, estimate(k.first));
+    out.emplace_hint(out.end(), k.first, fromGtsam(values.at<gtsam::Pose3>(k.first)));
   return out;
 }
 /// 读取因子容器总槽数，用于检查空槽积累。

@@ -19,6 +19,7 @@ struct GraphConfig {
   std::size_t max_states = 120;
   double prior_translation_std = .01, prior_rotation_std = .01;
   double relinearize_threshold = .01;
+  double loop_cauchy_size = 1.; // 回环 Cauchy 核按白化残差分量 RMS 的尺度，实际阈值乘 √rank
 };
 /// 封装 iSAM2 位姿图及有界历史管理；调用方必须串行执行读写。
 /// 只含里程计链时复现前端相对运动；绝对位姿与回环约束由外部验收后提交。
@@ -39,6 +40,8 @@ public:
   bool addAbsolute(const AbsolutePoseMeasurement &measurement);
   /// 不修改图，用当前边缘协方差计算绝对位姿观测的新息卡方统计；节点无效时 valid=false。
   Innovation assessAbsolute(const AbsolutePoseMeasurement &measurement) const;
+  /// 用两端联合边缘协方差计算回环观测的新息卡方统计，不修改图。
+  Innovation assessLoop(const LoopMeasurement &measurement) const;
   /// 接入已验收的回环观测并使用鲁棒核；不支持连接已边缘化的节点。
   bool addLoop(const LoopMeasurement &measurement);
   /// 查询指定活动节点的优化位姿；无效键由求解器报告异常。

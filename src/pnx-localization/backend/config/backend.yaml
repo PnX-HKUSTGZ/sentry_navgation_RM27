@@ -34,7 +34,7 @@ rm27_backend:
     storage.disk_mb: 1024  # 每次记录的保守磁盘配额，单位 MiB；满后报错停止存盘。
     storage.directory: ""  # 空值关闭存盘；非空时自动创建唯一 run 子目录。
     output.frame: rm27_graph  # 未锚定先验地图时的旁路坐标系前缀，附加段编号；锚定后输出 map 系，均不广播 TF。
-    prior_map.enabled: false  # 单独启动时默认关闭；导航 launch 会传入先验 PCD 并按部署 YAML 开启。
+    constraint.mode: odometry  # 全局约束三选一：prior_map、loop 或 odometry；单独启动默认仅里程计，导航 launch 按部署 YAML 选择。
     prior_map.file: ""  # 先验 PCD 路径，导航 launch 自动填入 prior_pcd_file。
     prior_map.map_frame: map  # 先验地图坐标系，锚定后后端估计与对齐输出使用该坐标系。
     prior_map.transform: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # map←PCD 的 [x,y,z,roll,pitch,yaw]。

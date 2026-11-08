@@ -32,6 +32,7 @@ void validate(const MatcherConfig &c) {
   for (double x : {c.map_voxel, c.max_plane_ratio, c.source_voxel,
                    c.max_correspondence_distance, c.huber_delta,
                    c.min_inlier_ratio, c.max_rmse, c.residual_std_floor,
+                   c.overlap_distance,
                    c.information_scale})
     if (!std::isfinite(x) || x <= 0)
       throw std::invalid_argument("invalid prior map matcher parameter");
@@ -166,14 +167,18 @@ MatchResult PriorMap::match(const Cloud &source, const Pose &initial,
   Matrix6 h = Matrix6::Zero();
   double squared = 0;
   std::array<int, 36> sectors{};
+  std::size_t overlapping = 0;
+  const double overlap_sq = config_.overlap_distance * config_.overlap_distance;
   for (std::size_t i = 0; i < src->size(); ++i) {
     const Eigen::Vector3d p = src->point(i).head<3>();
     const Eigen::Vector3d q = out.pose * p;
     std::size_t index = 0;
     double distance = 0;
     if (!impl_->tree->nearest_neighbor_search(
-            Eigen::Vector4d(q.x(), q.y(), q.z(), 1.), &index, &distance) ||
-        distance > max_sq || !impl_->planar[index])
+            Eigen::Vector4d(q.x(), q.y(), q.z(), 1.), &index, &distance))
+      continue;
+    overlapping += distance <= overlap_sq;
+    if (distance > max_sq || !impl_->planar[index])
       continue;
     const Eigen::Vector3d n = impl_->cloud->normal(index).head<3>().normalized();
     const double e = n.dot(q - impl_->cloud->point(index).head<3>());
@@ -195,6 +200,7 @@ MatchResult PriorMap::match(const Cloud &source, const Pose &initial,
   for (int count : sectors)
     out.coverage_sectors += count >= 3;
   out.inlier_ratio = double(out.inliers) / double(src->size());
+  out.overlap_ratio = double(overlapping) / double(src->size());
   out.rmse = out.inliers ? std::sqrt(squared / double(out.inliers))
                          : std::numeric_limits<double>::infinity();
   if (out.inliers < std::size_t(config_.min_inliers))

@@ -155,17 +155,21 @@ Keyframe KeyframeManager::commit(const Frame &f,
   return k;
 }
 /// 从活动图刷新关键帧估计，移除已边缘化元数据，原始前端位姿保持不变。
+/// 全图模式节点多，一次取全部估计，避免逐节点回代。
 void KeyframeManager::synchronizeEstimates() {
+  const auto estimates = graph_.estimates();
   for (auto it = keyframes_.begin(); it != keyframes_.end();) {
-    if (!graph_.contains(it->first))
+    const auto found = estimates.find(it->first);
+    if (found == estimates.end())
       it = keyframes_.erase(it);
     else {
-      it->second.estimate = graph_.estimate(it->first);
+      it->second.estimate = found->second;
       ++it;
     }
   }
-  if (latest_ && graph_.contains(latest_->id))
-    latest_->estimate = graph_.estimate(latest_->id);
+  if (latest_)
+    if (const auto found = estimates.find(latest_->id); found != estimates.end())
+      latest_->estimate = found->second;
 }
 /// 将最近关键帧协方差通过相对运动的逆 Adjoint 传播到当前传感器系。
 /// 保留平移与旋转的耦合，再添加区间过程噪声；它是模型预测，不是新的独立测量。

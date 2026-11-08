@@ -2,7 +2,8 @@
 
 RM27 的独立 Point-LIO 位姿图后端。目录名 `backend`，包名 `rm27_backend`。
 本阶段接入原子扫描观测、关键帧与局部点云管理、里程计过程噪声、GTSAM 4.2 iSAM2，
-以及先验地图配准因子（`prior_map.*`）。回环测量仍只有 C++ 接口及测试，尚未接入实际匹配。
+以及两种互斥的全局约束：先验地图配准因子（`prior_map.*`）和 Scan Context 回环因子（`loop.*`、
+`scan_context.*`），由 `constraint.mode: prior_map | loop | odometry` 选择，照搬 z-localization 的互斥规则。
 
 启用先验地图后，本段图直接建立在 `map` 系，关键帧上的 scan-to-map 配准作为部分秩绝对位姿因子
 入图，可消除前端漂移。输出仍为旁路，不发布 TF，不替代 `relocalization_manager` 的 `map→odom`；
@@ -151,6 +152,43 @@ rotation_variance    = max(1e-12, q_time * dt + q_angle * net_rotation)
   所允许的量，地图校正会被拒并周期性经 suspect 恢复，需先标定噪声。固定窗口仍不能跨已边缘化节点
   建回环；地图因子不使用鲁棒核，依赖上述验收。
 
+## Scan Context 回环因子（`constraint.mode: loop`）
+
+照搬 z-localization 的 `scan_context/descriptor.cpp`、`loop.cpp`、`loop_consistency.cpp`，配准复用
+上节的 GICP + 点到面信息构造（`PriorMap::fromPoints` 建目标子图）。
+
+- **图结构**：回环需要历史节点仍在图中，回环模式关闭时间滞后，改为全图，以 `loop.max_keyframes`
+  （默认 3000）为节点与回环库上限；图坐标为本段 `camera_init`（与纯里程计相同，`rm27_graph_s<段号>`）。
+  回环库只覆盖当前轨迹段，前端重置或连续性中断开启新段时清空。
+- **描述子**：每个关键帧的局部点云先用原始里程计 roll/pitch 整平（Point-LIO 的 `camera_init` 重力对齐），
+  0.6 m 体素后编码为 30 环 × 90 扇区的最大高度图（z 加 `lidar_height`），另存 2 个横向 ±2 m 平移增广。
+  检索时最新帧只用原始描述子，与候选的各增广比较：扇区键定粗列移，再逐列移取有效列余弦相似度，
+  距离 = 1 − 相似度，列移取反为 source→target 偏航。
+- **候选**：图估计位置在 `candidate_max_distance`（7 m）内、排除最近 15 帧、距离 < 0.8 的前
+  `scan_context.candidates` 个（部署 6，z-localization 15）；精搜索列移限于粗对齐 ±`search_ratio`/2 周
+  （部署 0.1）。检索限频：距上次检索原始里程计行程 ≥ `loop.query_distance`（1 m），行程不足时间隔
+  ≥ `loop.query_interval`（5 s，静止时仍低频检索）；接受回环后冷却 5 帧；后台单任务，忙时跳过。
+  回环模式下关键帧定时触发间隔改为 `loop.keyframe_max_interval`（2 s），静止时少建帧。
+- **验证（后台，`loop.threads` 个 TBB 线程）**：源为最新帧及之前最多 3 帧（原始里程计拼接）。目标子图默认
+  （`loop.target_same_pass: true`）取候选前后相邻最多 17 帧、12 m 内，按原始里程计拼接到候选系，避免多趟
+  之间尚未校正的偏差把子图拼花；设为 false 时照搬 z-localization 取 12 m 内空间近邻并按图估计拼接。
+  初值为图预测平移 + 描述子偏航（经两端整平旋转换回原始 IMU 系）。
+  依次检验：配准质量（≥80 平面对应、比例 ≥0.5、RMSE ≤0.25 m、≥6 扇区覆盖）、0.5 m 重叠率 ≥0.45、
+  测量平移 ≤3 m、原始里程计下 z 闭合差 ≤0.5 m 与 roll/pitch ≤`max_roll_pitch_deg`（部署 1°；
+  Point-LIO 横滚/俯仰由重力可观，超出多为配准倾斜失败，z-localization 为 10°）、几何与描述子偏航差 ≤60°、
+  PCM（历史回环经原始里程计闭合误差 ≤1 m/15°，至少一条一致或无可比历史），
+  最后对同源候选求最大一致团，只提交其中 RMSE 最小者。
+- **入图**：两端联合边缘协方差的 NIS（p < 0.001 拒绝）通过后，以 `candidate←latest` 方向的 rank×6
+  平方根信息、Cauchy 核（`graph.loop_cauchy_size`=0.5，乘 √秩）写入。共模下限
+  `loop.translation_std_floor`/`rotation_std_floor_deg` 部署为 1 cm/0.1°（仿真真值实测回环误差约
+  0.5～0.8 cm、0.06°；z-localization 为 5 mm/0.02°，过紧会把厘米级配准偏差当高精度约束）。
+  每条入图回环以 `loop accepted ... from_ns= to_ns= rel=` 单行写日志，
+  `benchmark_rm27_prior_map.py loops` 据此按真值统计回环测量误差。
+- **已知限制**：联合 NIS 依赖里程计噪声模型；漂移若系统性超过噪声模型（长回环时整圈闭合差远大于
+  √N 累积的不确定度），回环会按设计被拒，须先标定 `odom_noise.*`。回环只是相对约束，误差上界取决于
+  回环频度，不能像先验地图那样提供绝对基准；Point-LIO 本身几乎不漂时，回环最多与其持平。
+  全图节点随时间增长，外部测量身份上限 1024 条。
+
 ## iSAM2 资源管理与预留接口
 
 默认 30 s 固定滞后、最多 120 个活跃位姿，两个条件中先达到者生效。过期节点先重排到
@@ -164,15 +202,14 @@ rotation_variance    = max(1e-12, q_time * dt + q_angle * net_rotation)
 - `PoseGraph::addAbsolute(AbsolutePoseMeasurement)`：地图绝对位姿＋rank×6 平方根信息，
   已由上节的先验地图定位器使用；`assessAbsolute` 提供入图前的 NIS 检验。
 - `PoseGraph::addLoop(LoopMeasurement)`：两个活跃节点间的相对位姿＋rank×6 平方根信息，
-  尚无 ROS 测量生产者。
+  由上节回环模块使用；`assessLoop` 提供基于联合边缘协方差的入图前 NIS 检验。
 
 两个接口都支持 1～6 维独立信息行，保持方向耦合；拒绝非法矩阵、错误 segment、过期节点和
 重复测量 ID。每个活动窗口最多保留 1024 个外部测量身份，ID 长度最多 256。
-回环因子使用 Cauchy 鲁棒核。回环接口接受的是已经完成几何/一致性验收的测量，当前没有实现
-描述子召回或回环候选验证；鲁棒核不能替代这些验收。
+回环因子使用 Cauchy 鲁棒核；鲁棒核不能替代上节的几何与一致性验收。
 
-固定窗口不能接受连接已边缘化历史节点的回环。未来建图模式须选择完整图或另设全局图，
-而不能把磁盘上有历史点云误认为图节点仍存在。
+固定窗口不能接受连接已边缘化历史节点的回环，因此回环模式使用全图；先验地图与纯里程计模式仍用
+30 s / 120 帧固定窗口。不能把磁盘上有历史点云误认为图节点仍存在。
 
 ## 对外输出
 

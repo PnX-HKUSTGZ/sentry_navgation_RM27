@@ -1128,13 +1128,13 @@ rm27_backend:
     graph.prior_translation_std: 0.01  # 首帧规范先验平移标准差，单位 m，并非赛场定位精度。
     graph.prior_rotation_std: 0.01  # 首帧规范先验旋转标准差，单位 rad。
     graph.relinearize_threshold: 0.01  # iSAM2 重新线性化阈值。
-    graph.num_threads: 4  # 本进程 TBB 最大并发线程数。
+    graph.num_threads: 6  # 本进程 TBB 最大并发线程数。
     storage.cache_mb: 32  # 局部关键帧点云缓存预算，单位 MiB。
     storage.queue_size: 4  # 异步存盘队列上限，不包含正在写入的一项。
     storage.disk_mb: 1024  # 每次记录的保守磁盘配额，单位 MiB；满后报错停止存盘。
     storage.directory: ""  # 空值关闭存盘；非空时自动创建唯一 run 子目录。
     output.frame: rm27_graph  # 未锚定先验地图时的旁路坐标系前缀，附加段编号；锚定后输出 map 系，均不广播 TF。
-    prior_map.enabled: true  # 启用先验地图配准因子；PCD 加载失败时诊断报错并退回纯里程计图。
+    constraint.mode: prior_map  # 全局约束三选一：prior_map 先验地图配准，loop Scan Context 回环（全图），odometry 仅里程计；先验地图与回环互斥。
     prior_map.map_frame: map  # 先验地图坐标系，锚定后后端估计与对齐输出使用该坐标系。
     prior_map.transform: [0.0, 0.0, 1.65, 0.0, 0.0, 0.0]  # map←PCD 的 [x,y,z,roll,pitch,yaw]，须与 relocalization_manager 的 prior_pcd_transform 一致。
     prior_map.seed_source: tf  # 锚定初值来源：tf 查询 map←camera_init，parameter 使用 initial_alignment。
@@ -1157,3 +1157,42 @@ rm27_backend:
     prior_map.max_conflicts: 7  # 连续冲突次数达到后进入 suspect，需两次一致满秩配准才恢复。
     prior_map.acquisition_max_translation: 1.5  # 锚定配准相对种子的平移上限，单位 m。
     prior_map.acquisition_max_rotation_deg: 20.0  # 锚定配准相对种子的旋转上限，单位度。
+    graph.loop_cauchy_size: 0.5  # 回环因子 Cauchy 鲁棒核尺度（白化残差分量 RMS），实际阈值乘 √秩。
+    scan_context.num_rings: 30  # Scan Context 径向环数。
+    scan_context.num_sectors: 90  # Scan Context 方位扇区数，每扇区 4°。
+    scan_context.max_radius: 80.0  # 描述子覆盖的最大水平半径，单位 m。
+    scan_context.downsample: 0.6  # 描述子输入体素边长，单位 m。
+    scan_context.lidar_height: 0.21  # 编码高度时加到 z 上的 IMU 离地高度，单位 m；仿真 imu_link 实测
+    scan_context.augment_count: 3  # 每帧描述子数（含原始），其余为横向平移增广。
+    scan_context.lateral_shift: 2.0  # 增广横向平移步长，单位 m。
+    scan_context.exclude_recent: 15  # 检索时排除的最近关键帧数。
+    scan_context.candidates: 6  # 进入几何验证的最多候选数；z-localization 为 15，实测 6 个已覆盖有效回环，验证开销约减 60%。
+    scan_context.search_ratio: 0.1  # 扇区键粗对齐后精搜索的列移范围占整周比例（0.1≈±18°）；1.0 为全周搜索。
+    scan_context.distance_threshold: 0.8  # 允许进入几何验证的最大描述子距离。
+    loop.candidate_max_distance: 7.0  # 候选与最新帧图估计位置的最大距离，单位 m；0 不限。
+    loop.target_keyframes: 17  # 回环目标子图最多关键帧数。
+    loop.target_radius: 12.0  # 回环目标子图空间半径，单位 m。
+    loop.target_same_pass: true  # 目标子图只取候选前后相邻关键帧并按原始里程计拼接，避免多趟未校正偏差拼花子图；false 照搬 z-localization 取空间近邻。
+    loop.source_keyframes: 4  # 回环源点云最多累计的因果关键帧数。
+    loop.cooldown_keyframes: 5  # 接受回环后再次检索所需的最少关键帧间隔。
+    loop.query_distance: 1.0  # 两次回环检索之间的最少原始里程计行程，单位 m；避免同一处密集检索叠加相关回环。
+    loop.query_interval: 5.0  # 行程不足时两次检索的最少间隔，单位 s；静止时仍低频检索以约束静止漂移，0 关闭。
+    loop.keyframe_max_interval: 2.0  # 回环模式关键帧定时触发间隔，单位 s，覆盖 keyframe.max_interval；静止时少建帧以减小全图与回环库。
+    loop.voxel_size: 0.25  # 回环库保存与配准使用的点云体素，单位 m。
+    loop.threads: 2  # 后台回环验证的 TBB 线程数，限制与主线程争抢 CPU；0 沿用 graph.num_threads。
+    loop.max_keyframes: 3000  # 回环模式全图与回环库的关键帧上限，超出后停止回环检索。
+    loop.history_size: 200  # PCM 保留的已接受回环数量。
+    loop.min_correspondences: 80  # 回环配准最少平面对应点数。
+    loop.min_correspondence_ratio: 0.5  # 回环配准最小平面对应比例。
+    loop.max_rmse: 0.25  # 回环配准点到面 RMSE 上限，单位 m。
+    loop.translation_std_floor: 0.01  # 回环测量共模平移标准差下限，单位 m；仿真真值实测回环误差约 0.5～0.8 cm。
+    loop.rotation_std_floor_deg: 0.1  # 回环测量共模旋转标准差下限，单位度；实测偏航误差约 0.06°。
+    loop.max_translation: 3.0  # 回环测量平移上限，单位 m。
+    loop.max_z: 0.5  # 原始里程计下的垂直闭合差上限，单位 m。
+    loop.max_roll_pitch_deg: 1.0  # roll/pitch 闭合残差上限，单位度；Point-LIO 横滚/俯仰由重力可观，超出多为配准倾斜失败。
+    loop.max_yaw_residual_deg: 60.0  # 几何偏航与描述子偏航差上限，单位度。
+    loop.min_overlap_ratio: 0.45  # 0.5 m 内最近点的最小重叠比例。
+    loop.pcm_enabled: true  # 启用 PCM 历史一致性与同源候选最大一致团。
+    loop.pcm_translation_threshold: 1.0  # PCM 闭合平移误差上限，单位 m。
+    loop.pcm_rotation_threshold_deg: 15.0  # PCM 闭合旋转误差上限，单位度。
+    loop.rejection_probability: 0.001  # 回环联合 NIS 卡方上尾概率低于该值则拒绝入图。

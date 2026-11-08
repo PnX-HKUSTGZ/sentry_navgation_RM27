@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""RM27 后端先验地图因子 A/B 实验：录制、漂移注入、回放资源测量与真值评估。
+"""RM27 后端全局约束 A/B 实验（先验地图/回环/纯里程计）：录制、漂移注入、回放资源测量与真值评估。
 
 子命令：
   record    无界面 Gazebo 完整导航（Point-LIO + MINCO），按路线发送目标并录制 bag。
   drift     生成注入里程计漂移的派生 bag：位姿与世界系点云同乘漂移变换，帧内几何不变。
   replay    用同一 bag 回放给独立后端进程，分别开/关地图因子，采样 CPU/RSS/PSS。
   evaluate  用 /ground_truth/odometry 与同刻 TF(base→IMU) 评估后端输出误差。
+  loops     解析回放日志中已入图的回环，按真值计算每条回环测量的平移/偏航误差。
 
 CPU 以 100% = 一个逻辑核计；真值只用于离线评分，不进入任何估计。须使用独立 ROS_DOMAIN_ID。
 """
@@ -102,15 +103,23 @@ class Sampler:
                     pss_mean=float(data[:, 2].mean()), pss_max=float(data[:, 2].max()))
 
 
-def backend_parameters(map_enabled, out_dir, seed='tf'):
-    """从仿真 MINCO 部署 YAML 取 rm27_backend 块并合并 RMUC2027 场景 profile，生成回放参数文件。"""
+def parse_override(text):
+    """把 key=value 解析为参数覆盖项，值按 YAML 标量解释。"""
+    key, value = text.split('=', 1)
+    return key.strip(), yaml.safe_load(value)
+
+
+def backend_parameters(mode, out_dir, seed='tf', overrides=()):
+    """从仿真 MINCO 部署 YAML 取 rm27_backend 块并合并 RMUC2027 场景 profile，生成回放参数文件。
+    overrides 为调参实验的 (key, value) 覆盖项，在最后合并。"""
     configuration = yaml.safe_load(CONFIG.read_text())
     params = dict(configuration['rm27_backend']['ros__parameters'])
     profile = configuration['simulation_world_profiles']['ros__parameters']['RMUC2027'].get('rm27_backend', {})
     params.update(profile)
-    params.update({'use_sim_time': True, 'prior_map.enabled': bool(map_enabled), 'prior_map.file': str(PCD),
+    params.update({'use_sim_time': True, 'constraint.mode': mode, 'prior_map.file': str(PCD),
                    'prior_map.seed_source': seed})
-    path = Path(out_dir) / f'backend_map_{"on" if map_enabled else "off"}.yaml'
+    params.update(dict(overrides))
+    path = Path(out_dir) / f'backend_{mode}.yaml'
     path.write_text(yaml.safe_dump({'rm27_backend': {'ros__parameters': params}}, sort_keys=False))
     return path
 
@@ -275,9 +284,11 @@ def replay(args):
     rclpy.init()
     results = []
     for repetition in range(args.repetitions):
-        for map_enabled in (True, False) if repetition % 2 == 0 else (False, True):
-            tag = f'{Path(args.bag).name}_map_{"on" if map_enabled else "off"}_r{repetition}'
-            params = backend_parameters(map_enabled, out)
+        # 每轮交替模式顺序，抵消机器状态随时间的系统偏差。
+        for mode in (args.modes if repetition % 2 == 0 else list(reversed(args.modes))):
+            map_enabled = mode == 'prior_map'
+            tag = f'{Path(args.bag).name}_{mode}{args.label}_r{repetition}'
+            params = backend_parameters(mode, out, overrides=[parse_override(o) for o in args.set])
             node = rclpy.create_node(f'rm27_prior_map_observer_{repetition}_{int(map_enabled)}')
             outputs, diagnostics = [], {}
 
@@ -314,7 +325,8 @@ def replay(args):
             load_seconds = time.monotonic() - load_start
             time.sleep(1.)
             play_start = time.monotonic()
-            subprocess.run(['ros2', 'bag', 'play', str(args.bag), '--clock', '100', '--topics', *REPLAY_TOPICS],
+            subprocess.run(['ros2', 'bag', 'play', str(args.bag), '--clock', '100', '--rate', str(args.rate),
+                            '--topics', *REPLAY_TOPICS],
                            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             play_seconds = time.monotonic() - play_start
             time.sleep(2.5)
@@ -323,7 +335,7 @@ def replay(args):
             stop_spin.set()
             spinner.join()
             node.destroy_node()
-            result = dict(tag=tag, bag=str(args.bag), map_enabled=map_enabled, repetition=repetition,
+            result = dict(tag=tag, bag=str(args.bag), mode=mode, map_enabled=map_enabled, repetition=repetition,
                           map_load_wall_seconds=round(load_seconds, 2) if map_enabled else None,
                           play_wall_seconds=round(play_seconds, 2), outputs=len(outputs),
                           diagnostics=dict(diagnostics), resources=resources)
@@ -331,7 +343,7 @@ def replay(args):
             results.append(result)
             print(json.dumps({k: v for k, v in result.items() if k != 'diagnostics'}), flush=True)
     rclpy.shutdown()
-    summary = out / f'{Path(args.bag).name}_replay.json'
+    summary = out / f'{Path(args.bag).name}{args.label}_replay.json'
     summary.write_text(json.dumps(results, indent=2))
 
 
@@ -433,6 +445,52 @@ def evaluate(args):
     Path(args.output).write_text(json.dumps(report, indent=2))
 
 
+def loops(args):
+    """解析回放日志中的“loop accepted”行，按两端时间戳的真值 IMU 位姿计算回环测量误差。
+    平移误差表示在候选端真值 IMU 系再转到世界系（x/y 水平、z 竖直），偏航误差单位度。"""
+    import re
+    from scipy.spatial.transform import Rotation, Slerp
+    truth_t, truth_p, truth_q, base, buffer = load_truth(args.truth_bag)
+    slerp = Slerp(truth_t, Rotation.from_quat(truth_q))
+    pattern = re.compile(r'loop accepted (\S+) from_ns=(\d+) to_ns=(\d+) rel=([-\d.e,]+) nis=([-\d.e]+)')
+
+    def truth_at(t):
+        """时刻 t 的真值 world←IMU。"""
+        return pose_matrix([np.interp(t, truth_t, truth_p[:, i]) for i in range(3)],
+                           slerp([t]).as_quat()[0]) @ transform_at(buffer, base, args.imu_frame, t)
+    report = []
+    for log in sorted(Path(args.replay).glob('*.log')):
+        rows = []
+        for line in log.read_text().splitlines():
+            m = pattern.search(line)
+            if not m:
+                continue
+            a, b = int(m.group(2)) * 1e-9, int(m.group(3)) * 1e-9
+            v = [float(x) for x in m.group(4).split(',')]
+            measured = pose_matrix(v[:3], v[3:])
+            ta, tb = truth_at(a), truth_at(b)
+            truth = np.linalg.inv(ta) @ tb
+            error = np.linalg.inv(truth) @ measured
+            world = ta[:3, :3] @ (measured[:3, 3] - truth[:3, 3])
+            yaw = np.degrees(Rotation.from_matrix(ta[:3, :3] @ error[:3, :3] @ ta[:3, :3].T).as_euler('zyx')[0])
+            rows.append([b - truth_t[0], b - a, *world, yaw, float(m.group(5))])
+        if not rows:
+            continue
+        d = np.array(rows)
+        item = dict(run=log.stem, loops=len(d), span_s_median=round(float(np.median(d[:, 1])), 1),
+                    mean_xyz_cm=[round(float(x) * 100, 2) for x in d[:, 2:5].mean(0)],
+                    std_xyz_cm=[round(float(x) * 100, 2) for x in d[:, 2:5].std(0)],
+                    xy_rms_cm=round(float(np.sqrt((d[:, 2:4] ** 2).sum(1).mean())) * 100, 2),
+                    yaw_mean_deg=round(float(d[:, 5].mean()), 3), yaw_std_deg=round(float(d[:, 5].std()), 3),
+                    nis_mean=round(float(d[:, 6].mean()), 2))
+        if args.verbose:
+            item['loops_detail'] = [[round(float(x), 4) for x in r] for r in d]
+        report.append(item)
+        print(json.dumps(item), flush=True)
+    if args.output:
+        Path(args.output).write_text(json.dumps(report, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -454,7 +512,20 @@ def main():
     p.add_argument('--output', required=True)
     p.add_argument('--domain', type=int, default=92)
     p.add_argument('--repetitions', type=int, default=3)
+    p.add_argument('--modes', nargs='+', default=['prior_map', 'odometry'],
+                   choices=['prior_map', 'loop', 'odometry'])
+    p.add_argument('--set', action='append', default=[], metavar='KEY=VALUE',
+                   help='覆盖后端参数，可重复，用于调参实验')
+    p.add_argument('--label', default='', help='结果文件名后缀，区分不同参数组')
+    p.add_argument('--rate', type=float, default=1., help='回放倍速；资源对比须用 1')
     p.set_defaults(func=replay)
+    p = sub.add_parser('loops')
+    p.add_argument('--replay', required=True)
+    p.add_argument('--truth-bag', required=True)
+    p.add_argument('--imu-frame', default='imu_link')
+    p.add_argument('--output')
+    p.add_argument('--verbose', action='store_true')
+    p.set_defaults(func=loops)
     p = sub.add_parser('evaluate')
     p.add_argument('--replay', required=True)
     p.add_argument('--truth-bag', required=True)

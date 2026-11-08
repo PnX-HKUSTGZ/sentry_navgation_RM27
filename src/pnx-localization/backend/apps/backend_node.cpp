@@ -1,5 +1,6 @@
 #include "rm27_backend/cloud_store.hpp"
 #include "rm27_backend/keyframe_manager.hpp"
+#include "rm27_backend/loop_closer.hpp"
 #include "rm27_backend/map_localizer.hpp"
 #include "rm27_backend/pointlio_adapter.hpp"
 #include <chrono>
@@ -74,7 +75,15 @@ public:
     s.queue_size = positive("storage.queue_size", 4);
     s.disk_bytes = positive("storage.disk_mb", 1024) * 1024ULL * 1024;
     s.directory = declare_parameter("storage.directory", std::string(""));
-    const bool map_enabled = declare_parameter("prior_map.enabled", false);
+    // 全局约束三选一，照搬 z-localization：先验地图与回环互斥，回环模式使用全图。
+    constraint_mode_ =
+        declare_parameter("constraint.mode", std::string("odometry"));
+    if (constraint_mode_ != "odometry" && constraint_mode_ != "prior_map" &&
+        constraint_mode_ != "loop")
+      throw std::invalid_argument(
+          "constraint.mode must be odometry, prior_map or loop");
+    const bool map_enabled = constraint_mode_ == "prior_map";
+    const bool loop_enabled = constraint_mode_ == "loop";
     const auto map_file = declare_parameter("prior_map.file", std::string(""));
     const auto map_transform = declare_parameter(
         "prior_map.transform", std::vector<double>(6, 0.));
@@ -129,6 +138,69 @@ public:
         declare_parameter("prior_map.continuity_timeout", lc.continuity_timeout);
     source_keyframes_ = lc.source_keyframes;
     source_max_distance_ = lc.source_max_distance;
+    ScanContextConfig sc;
+    sc.num_rings = int(positive("scan_context.num_rings", sc.num_rings));
+    sc.num_sectors = int(positive("scan_context.num_sectors", sc.num_sectors));
+    sc.max_radius = declare_parameter("scan_context.max_radius", sc.max_radius);
+    sc.downsample = declare_parameter("scan_context.downsample", sc.downsample);
+    sc.lidar_height = declare_parameter("scan_context.lidar_height", sc.lidar_height);
+    sc.augment_count = int(positive("scan_context.augment_count", sc.augment_count));
+    sc.search_ratio = declare_parameter("scan_context.search_ratio", sc.search_ratio);
+    sc.lateral_shift = declare_parameter("scan_context.lateral_shift", sc.lateral_shift);
+    sc.exclude_recent = int(positive("scan_context.exclude_recent", sc.exclude_recent));
+    sc.candidates = int(positive("scan_context.candidates", sc.candidates));
+    sc.distance_threshold =
+        declare_parameter("scan_context.distance_threshold", sc.distance_threshold);
+    LoopConfig loop;
+    loop.target_keyframes = int(positive("loop.target_keyframes", loop.target_keyframes));
+    loop.target_radius = declare_parameter("loop.target_radius", loop.target_radius);
+    loop.target_same_pass =
+        declare_parameter("loop.target_same_pass", loop.target_same_pass);
+    loop.cooldown_keyframes = int(declare_parameter<std::int64_t>(
+        "loop.cooldown_keyframes", loop.cooldown_keyframes));
+    loop.query_distance = declare_parameter("loop.query_distance", loop.query_distance);
+    loop.query_interval = declare_parameter("loop.query_interval", loop.query_interval);
+    const double loop_keyframe_interval =
+        declare_parameter("loop.keyframe_max_interval", k.max_interval);
+    loop.candidate_max_distance =
+        declare_parameter("loop.candidate_max_distance", loop.candidate_max_distance);
+    loop.source_keyframes = int(positive("loop.source_keyframes", loop.source_keyframes));
+    loop.cloud_voxel = declare_parameter("loop.voxel_size", loop.cloud_voxel);
+    loop.threads = int(declare_parameter<std::int64_t>("loop.threads", loop.threads));
+    loop.max_keyframes = positive("loop.max_keyframes", loop.max_keyframes);
+    loop.history_size = positive("loop.history_size", loop.history_size);
+    loop.max_translation = declare_parameter("loop.max_translation", loop.max_translation);
+    loop.max_z = declare_parameter("loop.max_z", loop.max_z);
+    loop.max_roll_pitch = declare_parameter("loop.max_roll_pitch_deg", 10.) * M_PI / 180.;
+    loop.max_yaw_residual =
+        declare_parameter("loop.max_yaw_residual_deg", 60.) * M_PI / 180.;
+    loop.min_overlap = declare_parameter("loop.min_overlap_ratio", loop.min_overlap);
+    loop.pcm = declare_parameter("loop.pcm_enabled", loop.pcm);
+    loop.pcm_translation =
+        declare_parameter("loop.pcm_translation_threshold", loop.pcm_translation);
+    loop.pcm_rotation =
+        declare_parameter("loop.pcm_rotation_threshold_deg", 15.) * M_PI / 180.;
+    loop.rejection_probability =
+        declare_parameter("loop.rejection_probability", loop.rejection_probability);
+    // 回环配准门限照搬 z-localization 的 registration 配置。
+    MatcherConfig lm;
+    lm.map_voxel = lm.source_voxel = loop.cloud_voxel;
+    lm.min_inliers = int(positive("loop.min_correspondences", 80));
+    lm.min_inlier_ratio = declare_parameter("loop.min_correspondence_ratio", .5);
+    lm.max_rmse = declare_parameter("loop.max_rmse", .25);
+    lm.min_coverage_sectors = int(declare_parameter<std::int64_t>("loop.min_coverage_sectors", 6));
+    lm.translation_std_floor = declare_parameter("loop.translation_std_floor", .005);
+    lm.rotation_std_floor =
+        declare_parameter("loop.rotation_std_floor_deg", .02) * M_PI / 180.;
+    lm.overlap_distance = declare_parameter("loop.overlap_distance", lm.overlap_distance);
+    g.loop_cauchy_size = declare_parameter("graph.loop_cauchy_size", .5);
+    if (loop_enabled) {
+      // 回环需要历史节点仍在图中：关闭时间滞后，仅以回环库上限约束节点数。
+      g.lag_seconds = 0;
+      g.max_states = loop.max_keyframes;
+      // 全图不靠定时关键帧维持窗口；静止时少建帧，节点、回环库和图更新开销随之下降。
+      k.max_interval = loop_keyframe_interval;
+    }
     const auto threads = positive("graph.num_threads", 2);
     const auto depth = positive("input.queue_depth", 3);
     if (depth > 32 || g.max_states > 5000 || a.max_input_points > 1000000 ||
@@ -151,6 +223,8 @@ public:
           "/run_" + std::to_string(run) + "_" + std::to_string(getpid());
     }
     store_ = std::make_unique<CloudStore>(s);
+    if (loop_enabled)
+      loop_ = std::make_unique<LoopCloser>(loop, sc, lm);
     if (map_enabled) {
       if (map_transform.size() != 6 ||
           (seed_source_ != "tf" && seed_source_ != "parameter"))
@@ -178,8 +252,8 @@ public:
     timer_ =
         create_wall_timer(std::chrono::seconds(1), [this] { diagnostics(); });
     RCLCPP_INFO(get_logger(),
-                "iSAM2 backend ready; prior_map=%s, output=%s, no TF; archive=%s",
-                map_enabled ? map_file.c_str() : "disabled",
+                "iSAM2 backend ready; constraint=%s, prior_map=%s, output=%s, no TF; archive=%s",
+                constraint_mode_.c_str(), map_enabled ? map_file.c_str() : "disabled",
                 output_frame_.c_str(),
                 s.directory.empty() ? "disabled" : s.directory.c_str());
   }
@@ -281,6 +355,8 @@ private:
       }
       if (localizer_)
         localizer_->syncSegment(manager_->segment());
+      if (loop_)
+        loop_->syncSegment(manager_->segment());
       last_stamp_ = m.odometry.header.stamp;
       ++accepted_;
       if (f.degraded)
@@ -291,6 +367,28 @@ private:
         if (outcome.graph_failure) {
           manager_->breakSegment();
           localizer_->resetSegment();
+          ++graph_failures_;
+        } else if (outcome.accepted && manager_->latest()) {
+          last_covariance_ = manager_->graph().covariance(manager_->latest()->id);
+        }
+      }
+      // 提交后台已验证的回环；图异常时断段并清空回环库。
+      if (loop_) {
+        const auto outcome = loop_->apply(*manager_);
+        for (const auto &r : loop_->takeAccepted()) {
+          // 单行记录便于离线按时间戳与真值比对回环测量误差。
+          const auto &t = r.measurement.relative.translation();
+          const Eigen::Quaterniond q(r.measurement.relative.linear());
+          RCLCPP_INFO(get_logger(),
+                      "loop accepted %s from_ns=%ld to_ns=%ld "
+                      "rel=%.5f,%.5f,%.5f,%.7f,%.7f,%.7f,%.7f nis=%.3f rmse=%.4f overlap=%.3f",
+                      r.measurement.measurement_id.c_str(), long(r.from_stamp_ns),
+                      long(r.to_stamp_ns), t.x(), t.y(), t.z(), q.x(), q.y(), q.z(), q.w(),
+                      r.nis, r.rmse, r.overlap);
+        }
+        if (outcome.graph_failure) {
+          manager_->breakSegment();
+          loop_->syncSegment(manager_->segment());
           ++graph_failures_;
         } else if (outcome.accepted && manager_->latest()) {
           last_covariance_ = manager_->graph().covariance(manager_->latest()->id);
@@ -334,11 +432,13 @@ private:
         nav_msgs::msg::Path path;
         path.header.stamp = last_stamp_;
         path.header.frame_id = graphFrame();
-        for (const auto &[id, p] : manager_->graph().estimates()) {
+        // 关键帧估计已在提交时整体同步，直接读取元数据，避免逐节点查询图。
+        path.poses.reserve(manager_->keyframes().size());
+        for (const auto &[id, keyframe] : manager_->keyframes()) {
           geometry_msgs::msg::PoseStamped item;
           item.header = path.header;
-          item.header.stamp = rclcpp::Time(manager_->graph().stamp(id));
-          poseMessage(p, item.pose);
+          item.header.stamp = rclcpp::Time(keyframe.frame.stamp_ns);
+          poseMessage(keyframe.estimate, item.pose);
           path.poses.push_back(item);
         }
         path_pub_->publish(path);
@@ -348,11 +448,17 @@ private:
           const auto [source, frames] = trackingSource(k, cloud);
           localizer_->requestTracking(k, k.estimate, source, frames);
         }
+        // 回环：登记描述子与降采样点云，再为最新关键帧检索并排队验证。
+        if (loop_) {
+          loop_->addKeyframe(k, *cloud);
+          loop_->request(*manager_);
+        }
       }
       if (manager_->latest()) {
         const auto &k = *manager_->latest();
         const Pose delta = k.frame.odom.inverse() * f.odom;
-        const Pose estimated = manager_->graph().estimate(k.id) * delta;
+        // 最新关键帧估计在每次图更新后已同步，无需再次回代。
+        const Pose estimated = k.estimate * delta;
         nav_msgs::msg::Odometry out;
         out.header.stamp = last_stamp_;
         out.header.frame_id = graphFrame();
@@ -456,6 +562,33 @@ private:
     const bool anchored = mapMode() && localizer_->anchored();
     put("global_anchor", anchored);
     put("output_frame", graphFrame());
+    put("constraint_mode", constraint_mode_);
+    if (loop_) {
+      const auto l = loop_->stats();
+      put("loop_reason", loop_->reason());
+      put("loop_keyframes", l.keyframes);
+      put("loop_descriptor_bytes", l.descriptor_bytes);
+      put("loop_cloud_bytes", l.cloud_bytes);
+      put("loop_queries", l.queries);
+      put("loop_candidates", l.candidates);
+      put("loop_verified", l.verified);
+      put("loop_accepted", l.accepted);
+      put("loop_registration_rejects", l.registration_rejects);
+      put("loop_geometry_rejects", l.geometry_rejects);
+      put("loop_pcm_rejects", l.pcm_rejects);
+      put("loop_nis_rejects", l.nis_rejects);
+      put("loop_busy_skips", l.busy_skips);
+      put("loop_stale", l.stale);
+      put("loop_last_nis", l.last_nis);
+      put("loop_last_rmse", l.last_rmse);
+      put("loop_last_overlap", l.last_overlap);
+      put("loop_last_edge", std::to_string(l.last_from) + "->" + std::to_string(l.last_to));
+      put("loop_verify_ms", l.last_ms);
+      put("loop_verify_ms_max", l.max_ms);
+      put("loop_verify_ms_total", l.total_ms);
+      put("loop_nis_ms_max", l.nis_ms_max);
+      put("loop_update_ms_max", l.update_ms_max);
+    }
     if (localizer_) {
       const auto m = localizer_->stats();
       if (localizer_->state() == MapState::Failed)
@@ -494,6 +627,8 @@ private:
   int source_keyframes_ = 3;
   double source_max_distance_ = 1.5;
   std::unique_ptr<MapLocalizer> localizer_;
+  std::unique_ptr<LoopCloser> loop_;
+  std::string constraint_mode_;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr

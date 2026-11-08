@@ -24,6 +24,7 @@ struct MatcherConfig {
   double translation_std_floor = .01;    // 共模平移标准差下限
   double rotation_std_floor = .001745;   // 共模旋转标准差下限
   double max_condition = 100.;           // 平衡 Hessian 条件数门限，更弱方向不提供信息
+  double overlap_distance = .5;          // 重叠率统计的最近点距离
 };
 /// 单次配准结果；pose 为 map←IMU，sqrt_information 为 rank×6 局部右扰动 [平移, 旋转]。
 struct MatchResult {
@@ -36,6 +37,7 @@ struct MatchResult {
   int iterations = 0;
   std::size_t source_points = 0, inliers = 0;
   double inlier_ratio = 0, rmse = 0, condition = 0;
+  double overlap_ratio = 0; // 对齐后最近点距离不超过 overlap_distance 的源点比例
   int coverage_sectors = 0;
   double milliseconds = 0;
 };

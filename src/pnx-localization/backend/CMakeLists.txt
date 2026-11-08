@@ -37,7 +37,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 add_library(rm27_backend_core src/pose_graph.cpp src/keyframe_manager.cpp src/cloud_store.cpp
-  src/measurement.cpp)
+  src/measurement.cpp src/scan_context.cpp)
 target_include_directories(rm27_backend_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include> ${PCL_INCLUDE_DIRS})
@@ -55,7 +55,8 @@ FetchContent_Declare(rm27_small_gicp
   SOURCE_SUBDIR rm27_headers_only)
 FetchContent_MakeAvailable(rm27_small_gicp)
 # 地图定位库不导出，small_gicp 不进入下游 CMake 接口。
-add_library(rm27_map_localization STATIC src/map_matcher.cpp src/map_localizer.cpp)
+add_library(rm27_map_localization STATIC src/map_matcher.cpp src/map_localizer.cpp
+  src/loop_closer.cpp)
 target_include_directories(rm27_map_localization SYSTEM PRIVATE
   ${rm27_small_gicp_SOURCE_DIR}/include)
 target_link_libraries(rm27_map_localization PUBLIC rm27_backend_core)
@@ -77,6 +78,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_backend rm27_pointlio_adapter)
   ament_add_gtest(test_prior_map test/test_prior_map.cpp TIMEOUT 300)
   target_link_libraries(test_prior_map rm27_map_localization)
+  ament_add_gtest(test_loop test/test_loop.cpp TIMEOUT 300)
+  target_link_libraries(test_loop rm27_map_localization)
 endif()
 
 install(FILES README.md VALIDATION.md DESTINATION share/${PROJECT_NAME})
