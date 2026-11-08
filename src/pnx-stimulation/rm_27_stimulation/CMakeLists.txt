@@ -82,6 +82,24 @@ if(BUILD_TESTING)
   set_tests_properties(test_sentry_collision_geometry PROPERTIES
     ENVIRONMENT "OPENBLAS_NUM_THREADS=1")
 
+  ament_add_gtest(test_sentry_collision_physics test/test_sentry_collision_physics.cpp TIMEOUT 60)
+  if(TARGET test_sentry_collision_physics)
+    set(collision_test_world "${CMAKE_CURRENT_BINARY_DIR}/sentry_collision_test.sdf")
+    add_custom_command(OUTPUT "${collision_test_world}"
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/make_sentry_collision_world.py
+        --output "${collision_test_world}"
+        --cache-plugin "$<TARGET_FILE:rm27_cad_collision_cache_system>"
+      DEPENDS rm27_cad_collision_cache_system test/make_sentry_collision_world.py
+        urdf/simulation_waking_robot.xacro urdf/mid360.xacro launch/spawn_robot.launch.py
+        meshes/rm27_sentry_collision/parts.xacro meshes/rm27_sentry_collision/geometry.json
+        meshes/RM27_battlefield_collision/model.sdf)
+    add_custom_target(sentry_collision_test_world DEPENDS "${collision_test_world}")
+    add_dependencies(test_sentry_collision_physics sentry_collision_test_world)
+    target_compile_definitions(test_sentry_collision_physics PRIVATE
+      RM27_COLLISION_TEST_WORLD="${collision_test_world}")
+    target_link_libraries(test_sentry_collision_physics gz-sim8::gz-sim8 gz-msgs10::gz-msgs10)
+  endif()
+
   ament_add_gtest(test_ground_truth_odometry test/test_ground_truth_odometry.cpp)
   if(TARGET test_ground_truth_odometry)
     target_include_directories(test_ground_truth_odometry PRIVATE include)
