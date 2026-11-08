@@ -75,19 +75,27 @@ python3 src/pnx-stimulation/rm_27_stimulation/tools/import_rm27_robot_cad.py --f
 Xacro 默认 `use_cad_visual:=true`、
 `cad_visual_scale:=1.0`，不再显示旧方盒/圆柱占位外观。
 
-当前仿真使用 240 mm 车高版本；轮子和水平尺寸保留 CAD 提取值，上部视觉网格在 Xacro 中压低：
+当前入口使用 `articulated_metadata.json` 对应的 `饼922.zip` 分组资产，折叠姿态名义车高
+240 mm；轮子、水平尺寸、关节及质量/惯量保持现用值。碰撞与视觉分开维护：
 
 - 四个轮心位于 `(+/-0.218, +/-0.218) m`，含滚子的等效接触半径为 `0.080 m`。
-- 车体用缩小后的中心圆柱和上层方盒近似碰撞，轮地接触用四个球体；
-  高面数视觉 STL 不参与 Bullet 碰撞。
-  上层方盒覆盖轮轴上方 `0.12..0.16 m`，最高碰撞点离地 `0.240 m`。
-  倾斜的传感器碰撞盒缩为 `0.076 x 0.048 x 0.040 m`，避免它超过车身顶部；不能用整车宽度
-  外加更高的方盒代替，否则车体倾斜时会挂住南侧坡口横梁。
-- Nav2 与 MINCO 使用同一个 CAD 凸包外扩 15 mm 的 16 点安全轮廓，最大半径为
-  `0.392 m`。
+- 车体碰撞由现用视觉 STL 的分件凸体并集构成，不再把整组底盘、四块分离装甲或云台
+  合成一个大凸包。生成器先精确裁切跨高度层的三角面，再按连通表面生成凸体；当前共
+  46 个，预算 64 个。四个轮组各保留一个凸体，视觉高面数 STL 不直接参与物理碰撞。
+- 碰撞体外留 0.5 mm 的轴向余量，且受原整组平面外包络约束；浮点舍入之外的最大
+  欧氏外扩为约 0.87 mm。保存后重新验证全部裁切面片的包含关系，同时保留已知空隙探针。
+  这个余量界相对分件的未膨胀凸包，不是到原始凹 CAD 表面的距离界；此检查覆盖源表面，
+  不代表所有凹结构的体积误差都有证明。
+- `parts.xacro` 同时生成实际 collision 和缓存文件清单，防止 Bullet 把分件重新合包，
+  也避免安装目录残留的旧 STL 被当作当前碰撞资产。原有 1 mm Bullet 接触余量保留。
+- 本次修正不改变导航 footprint。MINCO 的 48 点轮廓包含 yaw 整圈、roll 0..90°
+  扫掠，水平尺寸约 `0.62435 x 0.62435 m`；legacy 保留其原有 16 点轮廓。
+- 仿真 MINCO 的原始 PGM 足迹允许重叠面积比例为 `11%`，最大重叠深度仍为 `0.16 m`，
+  两项必须同时满足；深度指二维足迹核心检查，不是 Gazebo 的物理穿透深度。
 - Mid360 相对 `base_link` 恢复为 `[0.0, 0.126, 0.130] m`，roll 为 `-30 deg`，
   雷达原点离地高度约 `0.210 m`；
-  ROG 折叠车高为 `0.24 m`，自身点云过滤顶面加余量低于 `0.25 m`，保留低洞顶回波。
+  名义折叠车高为 `0.24 m`。ROG 源参数的 `projection.vehicle_height=0.040` 是另一个
+  已知配置差异，本次没有通过降低车体尺寸、碰撞门限或改变感知参数来消除物理接触。
 - 仿真 `MincoPlanner.priormap.static_clearance_mode: polygon` 根据当前物理车身 yaw
   旋转同一套安全多边形，再检查完整障碍栅格和 5 cm 栅格余量。
   全局不再把 0.443 m 外接圆作为所有朝向的通行边界；局部仍检查实际轨迹的车身和 yaw。
@@ -99,6 +107,27 @@ Xacro 默认 `use_cad_visual:=true`、
 - STL 不包含密度、整车质量、质心或轮胎摩擦。当前保留已验证的 `10.2 kg` 总质量和
   `0.05` 全向底盘等效滑动摩擦，惯量按 CAD 尺寸重新计算。拿到称重与推行试验数据后，
   集中修改 Xacro 顶部的 `body_mass`、`wheel_mass`、`omni_friction`，并重新验证控制器力限幅。
+
+更新现用视觉网格后，重新生成并检查碰撞资产：
+
+```bash
+python3 src/pnx-stimulation/rm_27_stimulation/tools/generate_sentry_collision_geometry.py
+python3 src/pnx-stimulation/rm_27_stimulation/tools/generate_sentry_collision_geometry.py --check
+```
+
+`test_sentry_collision_geometry` 验证完整源表面、缩放后的装配、空隙和旋转包络；
+`test_sentry_collision_physics` 使用实际 spawn SDF、Bullet Featherstone 和 RMUC2027
+洞口横梁，验证空隙无接触、实体有接触、250 mm 原洞口及降低 20 mm 后的反例。
+这些测试不替代完整导航验收。
+
+启动前在仓库根目录加载本工作区，并核对 `ros2 pkg prefix rm_27_stimulation` 指向本仓库
+`install/rm_27_stimulation`。其他工作区的旧模型仍可能包含顶面高于 250 mm 的方盒：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/local_setup.bash
+ros2 pkg prefix rm_27_stimulation
+```
 
 ## 启动
 
@@ -207,7 +236,7 @@ ros2 launch rm_27_stimulation sim_with_nav.launch.py world:=RMUC2027 slam:=False
 - 默认 `physics_engine:=gz-physics-bullet-featherstone-plugin`。Bullet Featherstone 能加载
   场地的凸 STL 碰撞代理；底盘控制器只施加平面力和偏航力矩，`z/roll/pitch` 由重力
   和真实地形接触决定。DART 不支持从当前 SDF 创建这些 mesh collision，不能用于该场地。
-- 机器人四个球形轮面同时显式配置 ODE/Bullet 摩擦系数 `0.05`，导入器也会把场地源模型
+- 机器人四个轮组碰撞体同时显式配置 ODE/Bullet 摩擦系数 `0.05`，导入器也会把场地源模型
   的 ODE 摩擦系数 `0.8` 同步到 Bullet。URDF 的 `mu1/mu2` 只会生成 ODE 参数；如果遗漏
   Bullet 参数，Bullet 会使用自身默认摩擦，使低速 `/cmd_vel` 存在但机器人无法起步。
   四个 `base_to_wheel*` 固定关节设置 `preserveFixedJoint=true`：Bullet Featherstone

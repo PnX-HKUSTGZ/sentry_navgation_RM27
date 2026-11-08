@@ -47,7 +47,8 @@
       <material name="${material}" />
     </visual>
   </xacro:macro>
-  <!-- 凸包由全部可视 CAD 顶点生成，外留 0.5 mm；更新网格后运行几何校验工具。 -->
+  <xacro:include filename="../meshes/rm27_sentry_collision/parts.xacro" />
+  <!-- 分件凸体覆盖完整 CAD 表面；禁止把整组重新合成凸包填满机构空隙。 -->
   <xacro:macro name="cad_collision" params="mesh offset_x:=0.0 offset_y:=0.0 offset_z:=0.0">
     <collision name="${mesh}_collision">
       <origin xyz="${(float('$(arg cad_visual_scale)') - 1.0) * offset_x} ${(float('$(arg cad_visual_scale)') - 1.0) * offset_y} ${(float('$(arg cad_visual_scale)') - 1.0) * offset_z}" />
@@ -59,7 +60,7 @@
   </xacro:macro>
   <!-- 可视轮网格位于底盘系，碰撞网格已转换至各轮固定关节系。 -->
   <xacro:macro name="cad_wheel_collision" params="index sx sy yaw">
-    <xacro:cad_collision mesh="wheel_${index}"
+    <xacro:cad_collision mesh="wheel_${index}_000"
       offset_x="${cos(PI/2) * wheel_center_offset * (sx * cos(yaw) + sy * sin(yaw))}"
       offset_y="${wheel_center_offset * (-sx * sin(yaw) + sy * cos(yaw))}"
       offset_z="${sin(PI/2) * wheel_center_offset * (sx * cos(yaw) + sy * sin(yaw))}" />
@@ -101,9 +102,8 @@
         </material>
       </visual>
     </xacro:unless>
-    <!-- 底盘与装甲分别外包，保留真实角点，不以大圆柱代替。 -->
-    <xacro:cad_collision mesh="chassis_body" />
-    <xacro:cad_collision mesh="chassis_armor" />
+    <xacro:cad_chassis_body_collisions />
+    <xacro:cad_chassis_armor_collisions />
     <!-- STL has no material density. Preserve the validated 10.2 kg total
          mass, but derive the inertia from the CAD body envelope. -->
     <xacro:box_inertial mass="${body_mass}" x="0.54" y="0.54" z="${0.20 * cad_body_z_scale}"
@@ -122,8 +122,8 @@
       <xacro:cad_visual mesh="yaw_body" material="cad_body" />
       <xacro:cad_visual mesh="yaw_sensors" material="cad_sensors" />
     </xacro:if>
-    <xacro:cad_collision mesh="yaw_body" />
-    <xacro:cad_collision mesh="yaw_sensors" />
+    <xacro:cad_yaw_body_collisions />
+    <xacro:cad_yaw_sensors_collisions />
     <xacro:box_inertial mass="2.4" x="0.298" y="0.378" z="0.155837"
                        ox="-0.073114" oy="-0.031" oz="0.082082"/>
   </link>
@@ -140,7 +140,7 @@
     <xacro:if value="$(arg use_cad_visual)">
       <xacro:cad_visual mesh="roll_body" material="cad_body" />
     </xacro:if>
-    <xacro:cad_collision mesh="roll_body" />
+    <xacro:cad_roll_body_collisions />
     <xacro:box_inertial mass="0.8" x="0.246119" y="0.297858" z="0.125430"
                        ox="0.151083" oy="-0.064732" oz="-0.000066"/>
   </link>
@@ -283,6 +283,7 @@
   <gazebo>
     <plugin filename="librm27_cad_collision_cache_system.so" name="rm_27_stimulation::CadCollisionCacheSystem">
       <mesh_directory>$(find rm_27_stimulation)/meshes/rm27_sentry_collision</mesh_directory>
+      <xacro:cad_collision_cache_files />
     </plugin>
     <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
       <joint_name>gimbal_yaw_joint</joint_name><topic>/sim/gimbal/yaw_position</topic>
