@@ -147,7 +147,7 @@ install(DIRECTORY include/rm_27_stimulation
   DESTINATION include
 )
 
-install(PROGRAMS scripts/spawn_from_rviz.py scripts/gimbal_control.py scripts/gimbal_panel.py scripts/wait_for_sim_clock.py
+install(PROGRAMS scripts/gimbal_control.py scripts/gimbal_panel.py scripts/wait_for_sim_clock.py
   DESTINATION lib/${PROJECT_NAME})
 install(FILES scripts/gimbal_state.py DESTINATION lib/${PROJECT_NAME})
 

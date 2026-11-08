@@ -14,7 +14,6 @@ PnX RoboMaster RM27 导航工作区，基于 PolarBear/PB2025 导航框架继续
 | --- | --- | --- |
 | 默认仿真 | `slam:=false use_ground_truth_odom:=true navigation_mode:=legacy` | Gazebo 真值定位，旧版 Nav2 规划控制；用于导航与物理仿真检查 |
 | Point-LIO 导航 | `slam:=false use_ground_truth_odom:=false` | Point-LIO + 局部 GICP 先验匹配；导航可选 `legacy` 或 `minco` |
-| 全局初始化 | `tools/global_relocalization/navigate.bash` | RMUC2027、MINCO、原始 LiDAR/IMU 全局检索、停车确认、同时间戳位姿交接，再开放导航 |
 | 在线建图 | `slam:=true use_ground_truth_odom:=false navigation_mode:=legacy` | Point-LIO + slam_toolbox；保存二维地图及 Point-LIO 点云 |
 | 独立后端 | YAML 中 `rm27_backend.enabled: true` | Point-LIO 原子扫描、关键帧、有界 iSAM2 里程计图；当前旁路输出，不发布 TF |
 
@@ -27,13 +26,12 @@ PnX RoboMaster RM27 导航工作区，基于 PolarBear/PB2025 导航框架继续
 | 目录 | 内容 |
 | --- | --- |
 | `src/pnx-launch/` | `launch_bringup` 启动、四份导航配置、地图/PCD、BT、RViz；`pnx_sentry_nav` 功能集合包；机器人描述与 `ros_interfaces` |
-| `src/pnx-localization/` | Point-LIO、局部重定位管理器、全局重定位及 action 接口、里程计转换、扫描生成、独立后端及原子帧接口 |
+| `src/pnx-localization/` | Point-LIO、局部重定位管理器、里程计转换、扫描生成、独立后端及原子帧接口 |
 | `src/pnx-navigation/` | `minco_planner`、`minco_controller`、`fake_vel_transform`；旧版控制器子模块 |
 | `src/pnx-perception/` | ROG-map、terrain 节点；Nav2 插件及点云转扫描子模块 |
 | `src/pnx-stimulation/` | `rm_27_stimulation` Harmonic 仿真、`ign_sim_pointcloud_tool` 点云转换、`rm27_rendering` 渲染辅助 |
 | `src/livox_ros_driver2/` | Livox 驱动子模块 |
 | `src/tools/map_edit/` | 地图编辑 ROS 包 |
-| `tools/global_relocalization/` | 独立构建/启动、地图来源审计、采集、回放、评估及 station submaps 实验 |
 | `tools/mapping/` | Point-LIO 导出、ERASOR2、CAD 点云与对齐检查；不属于默认 colcon 构建 |
 | `tools/stimulation/` | 仿真、初始化、里程计和后端基准脚本；目录名保留项目现有拼写 |
 | `docs/` | 架构、调参、历史验证及地图来源记录 |
@@ -47,9 +45,6 @@ flowchart TD
   I --> S[sensor_scan_generation]
   I --> R[relocalization_manager]
   P --> B[rm27_backend 旁路图]
-  RAW[原始 LiDAR + IMU] --> G[global_relocalization 可选初始化]
-  G --> H[协调器 /initialpose 同时间戳交接]
-  H --> R
   I --> T[terrain legacy]
   P --> M[ROG-map + MINCO]
   T --> N[Nav2 legacy]
@@ -68,7 +63,7 @@ flowchart TD
 - Point-LIO：`/aft_mapped_to_init`、`/cloud_registered`、`/cloud_registered_full`、`/point_lio/diagnostics`。
 - 导航适配：`/lidar_odometry`、`/registered_scan`、`/odometry`、`/sensor_scan`。
 - 原子后端输入：`/point_lio/backend_frame`，类型 `rm27_localization_interfaces/msg/FrontendFrame`；后端输出 `~/odometry`、`~/keyframes`、`~/diagnostics`。
-- 速度主链：`/cmd_vel_controller → /cmd_vel_nav2_result → /cmd_vel`。全局初始化期间由协调器临时接管速度，交接完成后释放。
+- 速度主链：`/cmd_vel_controller → /cmd_vel_nav2_result → /cmd_vel`。
 
 ## 3. 环境与构建
 
@@ -91,7 +86,7 @@ rosdep install --from-paths src --ignore-src --rosdistro jazzy -r -y
 - 安装 ROS 2 Jazzy 与 Gazebo Harmonic/`ros_gz` 依赖。仿真 CMake 明确依赖 `gz-sim8`、`gz-msgs10`、`gz-transport13`，不再使用 Gazebo Classic。
 - 四个子模块由 [.gitmodules](.gitmodules) 管理。按 Livox 子模块自身说明准备 Livox SDK2 和 ROS 2 驱动；确认 colcon 能发现驱动包。
 - `rm27_backend` 需要 GTSAM 4.2、TBB、Eigen、PCL；Point-LIO 联合初始化还需要 yaml-cpp、nanoflann、glog。GTSAM 可按 [后端依赖说明](src/pnx-localization/backend/README.md) 安装。用户目录 bootstrap 仅支持 Noble amd64，不是跨平台安装器。
-- `relocalization_manager` 与 `global_relocalization` 通过 CMake FetchContent 获取 small_gicp，首次配置需要访问源码。全局包固定提交，管理器目前跟踪 `master`；正常构建无需再手动安装一份 small_gicp，但两处版本尚未统一。
+- `relocalization_manager` 通过 CMake FetchContent 获取 small_gicp，首次配置需要访问源码，目前跟踪 `master`；正常构建无需再手动安装一份 small_gicp。
 - 检查 rosdep 的失败项；`-r` 仅继续处理其他依赖，不表示失败项可以忽略。
 
 ```bash
@@ -110,7 +105,7 @@ source install/setup.bash
 
 | 资源 | 当前状态 |
 | --- | --- |
-| RMUC2026 历史点云 | 保留旧 PCD/manifest 和冻结的全局实验资源供复现 |
+| RMUC2026 历史点云 | 保留旧 PCD/manifest 供复现；原全局重定位实验资源已删除 |
 | RMUL2027 | 已跟踪 PGM/YAML、PCD 与世界配置，支持独立仿真和普通导航入口 |
 | RMUC2027 | 从当前 RM27 仿真网格生成的 PCD/manifest，约 5.98 MB；默认场景、PGM/YAML 与点云统一使用 `RMUC2027` |
 | 实车 highbay/highbay2 | 有二维地图；实车 PCD 目录只有占位文件，需要提供实际先验 |
@@ -149,20 +144,7 @@ ros2 launch launch_bringup rm_navigation_simulation_launch.py \
 
 普通 GICP 管理器只做局部校准，需要 YAML `init_pose` 或 RViz **2D Pose Estimate** 提供接近真实位姿的初值。定位就绪后，通过 **Nav2 Goal** 发送导航目标。默认真值模式运行成功不能作为 Point-LIO 精度验证。
 
-### 4.2 全局重定位后导航
-
-```bash
-bash tools/global_relocalization/build.bash
-bash tools/global_relocalization/navigate.bash
-```
-
-该脚本加载 `tools/global_relocalization/.build/ros/install` 独立 overlay，默认 `ROS_DOMAIN_ID=87`、独立 `GZ_PARTITION`，并配置大点云 DDS transport；基础导航依赖仍须先构建。自定义 ROS 安装或外部依赖 overlay 可通过 `GLOBAL_RELOCALIZATION_ROS_SETUP`、`GLOBAL_RELOCALIZATION_DEPENDENCY_INSTALL` 指定，见 [environment.bash](tools/global_relocalization/environment.bash)。
-
-在 RViz 用 **2D Pose Estimate** 选择出生位置和朝向；此选点用于生成机器人，不直接当作定位结果。系统执行原始 LiDAR/IMU 检索、自转准备、比赛开始及三帧停车确认，通过原始时间戳完成 `map → odom` 交接，再恢复朝向并激活导航。随后使用 **Nav2 Goal**。
-
-此接入仅支持 RMUC2027、`slam:=false` 和 MINCO；比赛配置搜索 `x<0` 半场，初次使用应选择该半场开放位置。参数及活动云台/实车限制见 [全局接入](docs/simulation_global_navigation.md)。可追加 `stationary_relocalization:=false` 关闭初始化后的停车修正；普通启动默认未启用全局流程。
-
-### 4.3 建图
+### 4.2 建图
 
 ```bash
 ros2 launch rm_27_stimulation sim_with_nav.launch.py \
@@ -179,9 +161,9 @@ ros2 run nav2_map_server map_saver_cli -f /tmp/my_map \
   --ros-args -p use_sim_time:=true
 ```
 
-Point-LIO 建图时启用 `pcd_save.pcd_save_en`，退出时将累计点云写入源码下 `src/pnx-localization/point_lio/PCD/scans.pcd`；该路径由编译时 `ROOT_DIR` 决定。点云保存条件、源路径可写性和退出日志需单独确认，二维地图保存成功不表示 PCD 已保存。更完整的导出、去动态与来源审计在 `tools/mapping/`、`tools/global_relocalization/`，不属于上述最小建图流程。
+Point-LIO 建图时启用 `pcd_save.pcd_save_en`，退出时将累计点云写入源码下 `src/pnx-localization/point_lio/PCD/scans.pcd`；该路径由编译时 `ROOT_DIR` 决定。点云保存条件、源路径可写性和退出日志需单独确认，二维地图保存成功不表示 PCD 已保存。更完整的导出、去动态与来源审计在 `tools/mapping/`，不属于上述最小建图流程。
 
-### 4.4 实车
+### 4.3 实车
 
 先配置 [MID360 网络与补偿](src/pnx-launch/launch_bringup/config/reality/mid360_user_config.json)、外参、机器人 TF、实车地图和先验。示例显式关闭内置机器人描述，适用于完整机器人系统已经提供 TF 的情况：
 
@@ -224,9 +206,7 @@ ros2 launch launch_bringup rm_navigation_reality_launch.py --show-args
 | `gui` / `use_rviz` | 组合仿真默认 `false` / `true`；无显示环境将两者均设为 `false` |
 | `use_robot_state_pub` | 仅实车入口，源码默认 `true`；已有 TF 发布者时显式关闭 |
 | `enable_legacy_terrain` | `auto`：legacy 开、MINCO 关 |
-| `autostart` / `use_composition` / `use_respawn` | `true` / `false` / `false`；全局流程延后激活 |
-| `global_relocalization` | 仿真默认 `false`，需配套 PCD、manifest、全局包和协调器 |
-| `stationary_relocalization` | 默认 `true`；控制全局初始化后的停车修正 |
+| `autostart` / `use_composition` / `use_respawn` | `true` / `false` / `false` |
 
 四份导航配置位于 [config](src/pnx-launch/launch_bringup/config)。launch 还会应用场景 profile、Point-LIO 输入 profile 并生成临时 YAML；调试时检查最终传入节点的参数，而不只看原文件。
 
@@ -243,28 +223,21 @@ colcon test --packages-select point_lio rm27_backend rog_map \
 colcon test-result --verbose
 ```
 
-全局链另有独立检查：
+仿真/后端性能测试入口在 `tools/stimulation/benchmark_*.py`；使用独立 ROS domain 和输出目录，并记录地图、参数、定位模式、仿真时间及墙钟时间。
 
-```bash
-bash tools/global_relocalization/check.bash
-```
-
-该命令会构建全局包、执行 CTest、工具 pytest 和 station submaps 合同检查，不是单纯 lint。仿真/后端性能测试入口在 `tools/stimulation/benchmark_*.py`；使用独立 ROS domain 和输出目录，并记录地图、参数、定位模式、仿真时间及墙钟时间。
-
-2026-11-05 文档审查在当前环境复跑：工具及 station submaps **169 项通过**；指定的启动/交接/渲染测试 **91 项通过、17 项失败**。CAD 可选测试因系统 Python 缺少 `shapely` 未完成。17 项失败包含配置断言及碰撞结构不一致，不能一律视为可忽略的旧测试；本次仅更新文档，未调整运动参数或放宽断言。复现命令、影响及优先级见 [审查记录](docs/repository_review_2026-11-05.md)。本次未进行全新完整构建、Gazebo 导航验收或实车测试。
+2026-11-05 文档审查在当前环境复跑：工具及 station submaps **169 项通过**；指定的启动/交接/渲染测试 **91 项通过、17 项失败**（全局重定位及其工具、交接测试此后已删除，这组数字仅作历史记录）。CAD 可选测试因系统 Python 缺少 `shapely` 未完成。17 项失败包含配置断言及碰撞结构不一致，不能一律视为可忽略的旧测试；本次仅更新文档，未调整运动参数或放宽断言。复现命令、影响及优先级见 [审查记录](docs/repository_review_2026-11-05.md)。本次未进行全新完整构建、Gazebo 导航验收或实车测试。
 
 还需注意：
 
 - 仿真 MINCO 的 `projection.vehicle_height` 当前为 `0.040 m`，与模型 `folded_vehicle_height=0.240 m` 不一致。净空测试也在失败；不能将现状当作整车低顶通行已验证。
 - 后端与联合初始化的合成/仿真结果不替代实车验证；固定非零 LiDAR–IMU 外参路径还有已记录的坐标一致性风险。
 - `tools/reality/start_nav.bash`、`tools/stimulation/start_nav_stimulation.bash` 保留机器绝对路径与宽泛进程清理；优先使用本文直接 launch 命令。
-- 根 Dockerfile 从远端重新 clone 源码，并沿用 Humble；旧上游容器不代表当前 checkout。CI 也未覆盖当前完整启动、全局定位和后端链。
+- 根 Dockerfile 从远端重新 clone 源码，并沿用 Humble；旧上游容器不代表当前 checkout。CI 也未覆盖当前完整启动和后端链。
 
 ## 7. 进一步阅读与许可
 
 - [定位模块索引](src/pnx-localization/README.md)、[局部 GICP 管理器](src/pnx-localization/relocalization_manager/README.md)、[原子帧接口](src/pnx-localization/localization_interfaces/README.md)。
 - [ROG/MINCO 架构](docs/rog_minco_navigation_architecture.md)、[调参与排障](docs/rog_minco_tuning_debug_guide.md)：包含历史章节，当前模式和参数以源码为准。
-- [全局算法说明](docs/global_relocalization.md)、[接入及移植验证](docs/global_relocalization_merge_20261102.md)、[station submaps 实验](tools/global_relocalization/station_submaps/README.md)。
 - [仿真包](src/pnx-stimulation/rm_27_stimulation/README.md)、[RMUL2027 场地](docs/rmul2027_simulation_world.md)、[云台控制](docs/simulation_gimbal_controls.md)。
 
 根目录 [LICENSE](LICENSE) 为 Apache-2.0；各组件及数据仍遵循自身许可。尤其 Point-LIO 的联合初始化核心带有 [GPL-2.0-only 来源与许可](src/pnx-localization/point_lio/third_party/zlio_startup/README.md)，官方 CAD 派生数据有单独来源和使用条款，不能将整仓所有内容统一视为 Apache-2.0。感谢 PolarBear 导航、Nav2、Point-LIO、ROG-map、small_gicp、GTSAM、ZLIO 及相关上游项目。

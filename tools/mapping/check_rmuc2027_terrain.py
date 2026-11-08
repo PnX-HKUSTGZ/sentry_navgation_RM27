@@ -4,7 +4,6 @@
 import argparse
 import json
 from pathlib import Path
-import sys
 
 import numpy as np
 from PIL import Image
@@ -12,10 +11,8 @@ from scipy.ndimage import distance_transform_edt
 from scipy.spatial import cKDTree
 import yaml
 
-from generate_rmuc2027_pcd import ROOT, BRINGUP, digest, read_pcd
-
-sys.path.insert(0, str(ROOT/'tools/global_relocalization'))
 from actual_collision_support import CollisionSupportScene
+from generate_rmuc2027_pcd import ROOT, BRINGUP, digest, read_pcd
 
 
 def statistics(values):

@@ -8,10 +8,8 @@
 - `loam_interface`：将 Point-LIO 输出转换为导航使用的里程计与点云。
 - `relocalization_manager`：先验点云匹配与 `map → odom` 变换管理。
 - `sensor_scan_generation`：将雷达位姿转换为机器人里程计，发布底盘 TF 和雷达坐标系点云。
-- `global_relocalization`：原始 LiDAR/IMU 全局检索与比赛停车确认。
-- `global_relocalization_interfaces`：全局重定位 action 接口。
 
-包名、可执行文件名和 ROS 接口保持原有约定。colcon 会递归发现这些包。全局初始化为可选功能，见[接入说明](../../docs/simulation_global_navigation.md)。后端当前旁路运行，保留原导航 TF 发布链；使用和测试见 [rm27_backend](backend/README.md)。
+包名、可执行文件名和 ROS 接口保持原有约定。colcon 会递归发现这些包。后端当前旁路运行，保留原导航 TF 发布链；使用和测试见 [rm27_backend](backend/README.md)。
 
 在工作区根目录构建：
 

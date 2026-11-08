@@ -78,28 +78,6 @@ def _spawn_robot(context, *args, **kwargs):
             xacro.process_file(robot_description_file).toxml()), value_type=str)
     }
 
-    if LaunchConfiguration("rviz_spawn").perform(context).lower() in (
-        "true",
-        "1",
-        "yes",
-    ):
-        return [
-            Node(
-                package="rm_27_stimulation",
-                executable="spawn_from_rviz.py",
-                output="screen",
-                parameters=[
-                    {
-                        "use_sim_time": True,
-                        "map_yaml": LaunchConfiguration("spawn_map_yaml"),
-                        "world_name": _world_name(context),
-                        "entity": entity_name,
-                        "robot_description": robot_description["robot_description"],
-                    }
-                ],
-            )
-        ]
-
     spawn_poses = _load_yaml(config_path).get("spawn_poses", {})
     if world_name not in spawn_poses:
         valid_worlds = ", ".join(sorted(spawn_poses.keys()))
@@ -230,8 +208,6 @@ def generate_launch_description():
                 output="screen",
                 parameters=[{"use_sim_time": use_sim_time}, robot_description],
             ),
-            DeclareLaunchArgument("rviz_spawn", default_value="false"),
-            DeclareLaunchArgument("spawn_map_yaml", default_value=""),
             DeclareLaunchArgument("random_spawn", default_value="false"),
             DeclareLaunchArgument("random_seed", default_value=""),
             DeclareLaunchArgument(

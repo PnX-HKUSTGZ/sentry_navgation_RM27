@@ -43,7 +43,6 @@ def generate_launch_description():
     log_level = LaunchConfiguration("log_level")
     use_ground_truth_odom = LaunchConfiguration("use_ground_truth_odom")
 
-    global_relocalization = LaunchConfiguration("global_relocalization")
     run_gicp = UnlessCondition(use_ground_truth_odom)
     lifecycle_nodes = ["map_server"]
 
@@ -167,11 +166,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[
                     configured_params,
-                    {
-                        "prior_pcd_file": prior_pcd_file,
-                        "wait_for_initial_pose": global_relocalization,
-                        "enable_stationary_refinement": LaunchConfiguration("stationary_relocalization"),
-                    },
+                    {"prior_pcd_file": prior_pcd_file},
                 ],
                 arguments=["--ros-args", "--log-level", log_level],
                 condition=run_gicp,
@@ -207,11 +202,7 @@ def generate_launch_description():
                 name="relocalization_manager",
                 parameters=[
                     configured_params,
-                    {
-                        "prior_pcd_file": prior_pcd_file,
-                        "wait_for_initial_pose": global_relocalization,
-                        "enable_stationary_refinement": LaunchConfiguration("stationary_relocalization"),
-                    },
+                    {"prior_pcd_file": prior_pcd_file},
                 ],
                 condition=run_gicp,
             ),
@@ -249,8 +240,6 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_use_ground_truth_odom_cmd)
-    ld.add_action(DeclareLaunchArgument("global_relocalization", default_value="false"))
-    ld.add_action(DeclareLaunchArgument("stationary_relocalization", default_value="true"))
 
     # Add the actions to launch all of the localiztion nodes
     ld.add_action(start_point_lio_node)
