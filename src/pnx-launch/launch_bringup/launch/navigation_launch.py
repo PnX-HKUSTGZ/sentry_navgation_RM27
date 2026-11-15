@@ -28,7 +28,7 @@ from launch.actions import (
     SetLaunchConfiguration,
 )
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LoadComposableNodes, Node
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from nav2_common.launch import ReplaceString, RewrittenYaml
@@ -242,6 +242,9 @@ def generate_launch_description():
         "use_sim_time": use_sim_time,
         "autostart": autostart,
         "input_cmd_vel_topic": navigation_cmd_vel_output,
+        "localization_guard_enabled": PythonExpression([
+            "'", use_ground_truth_odom, "'.lower() not in ('true','1') and '",
+            LaunchConfiguration("slam"), "'.lower() not in ('true','1')"]),
     }
 
     configured_params = ParameterFile(
@@ -621,6 +624,7 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_cmd_vel_smoothed_topic_cmd)
+    ld.add_action(DeclareLaunchArgument("slam", default_value="false"))
     ld.add_action(declare_use_ground_truth_odom_cmd)
     ld.add_action(declare_deployment_cmd)
     ld.add_action(declare_navigation_mode_cmd)

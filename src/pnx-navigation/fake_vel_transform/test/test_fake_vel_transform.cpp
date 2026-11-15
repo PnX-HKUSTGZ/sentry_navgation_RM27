@@ -390,4 +390,174 @@ TEST_F(FakeVelTransformFixture, LegacyModeStillWaitsForSynchronizedLocalPlan)
   EXPECT_NEAR(outputs_.back().linear.y, -1.0, 1e-6);
 }
 
+/// 定位失效和 heartbeat 断流都停车，恢复必须等待新的规划时间戳。
+TEST_F(FakeVelTransformFixture, LocalizationRequiresFreshStatusAndNewPlan)
+{
+  createNodes(
+    true, 2.,
+    {rclcpp::Parameter("localization_guard_enabled", true),
+     rclcpp::Parameter("localization_timeout", .3), rclcpp::Parameter("enable_cmd_spin", false)});
+  auto status = test_node_->create_publisher<rm27_localization_interfaces::msg::LocalizationStatus>(
+    "/rm27_backend/localization_status", rclcpp::QoS(1).reliable().transient_local());
+  auto plan = test_node_->create_publisher<nav_msgs::msg::Path>("/plan", 10);
+  ASSERT_TRUE(spinUntil(
+    [&] { return status->get_subscription_count() > 0 && plan->get_subscription_count() > 0; },
+    std::chrono::seconds(2)));
+  odom_pub_->publish(makeOdometry(0, test_node_->now()));
+  spinFor(std::chrono::milliseconds(30));
+  geometry_msgs::msg::Twist command;
+  command.linear.x = .3;
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(30));
+  ASSERT_FALSE(outputs_.empty());
+  EXPECT_DOUBLE_EQ(outputs_.back().linear.x, 0.);
+  rm27_localization_interfaces::msg::LocalizationStatus message;
+  message.header.stamp = test_node_->now();
+  message.pose_stamp = message.header.stamp;
+  message.global_trusted = true;
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(30));
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(20));
+  EXPECT_DOUBLE_EQ(outputs_.back().linear.x, 0.);
+  nav_msgs::msg::Path path;
+  path.header.stamp = test_node_->now();
+  path.poses.resize(1);
+  path.poses[0].pose.orientation.w = 1.;
+  plan->publish(path);
+  spinFor(std::chrono::milliseconds(20));
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(20));
+  EXPECT_NEAR(outputs_.back().linear.x, .3, 1e-6);
+  // 即使中间不可信消息丢失，新工作代次也必须重新等待规划。
+  message.generation = 2;
+  message.header.stamp = test_node_->now();
+  message.pose_stamp = message.header.stamp;
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(20));
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(20));
+  EXPECT_DOUBLE_EQ(outputs_.back().linear.x, 0.);
+  path.header.stamp = test_node_->now();
+  plan->publish(path);
+  spinFor(std::chrono::milliseconds(20));
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(20));
+  EXPECT_NEAR(outputs_.back().linear.x, .3, 1e-6);
+  spinFor(std::chrono::milliseconds(350));
+  EXPECT_DOUBLE_EQ(outputs_.back().linear.x, 0.);
+  message.header.stamp = test_node_->now();
+  message.pose_stamp = message.header.stamp;
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(20));
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(20));
+  EXPECT_DOUBLE_EQ(outputs_.back().linear.x, 0.);
+}
+
+/// 同代 NORMAL 的短暂 TF 等待暂停速度，恢复后不要求改变 MINCO 固定会话 token。
+TEST_F(FakeVelTransformFixture, SameGenerationTfPauseDoesNotLatchPlan)
+{
+  createNodes(
+    true, 2.,
+    {rclcpp::Parameter("localization_guard_enabled", true),
+     rclcpp::Parameter("localization_timeout", .5), rclcpp::Parameter("enable_cmd_spin", false)});
+  auto status = test_node_->create_publisher<rm27_localization_interfaces::msg::LocalizationStatus>(
+    "/rm27_backend/localization_status", rclcpp::QoS(1).reliable().transient_local());
+  auto plan = test_node_->create_publisher<nav_msgs::msg::Path>("/plan", 10);
+  ASSERT_TRUE(spinUntil(
+    [&] { return status->get_subscription_count() > 0 && plan->get_subscription_count() > 0; },
+    std::chrono::seconds(2)));
+  odom_pub_->publish(makeOdometry(0, test_node_->now()));
+  rm27_localization_interfaces::msg::LocalizationStatus message;
+  message.state = "NORMAL";
+  message.instance_id = "continuous";
+  message.generation = 1;
+  message.header.stamp = message.pose_stamp = test_node_->now();
+  message.global_trusted = true;
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(30));
+  nav_msgs::msg::Path path;
+  path.header.stamp = test_node_->now();
+  path.poses.resize(1);
+  path.poses[0].pose.orientation.w = 1.;
+  plan->publish(path);
+  spinFor(std::chrono::milliseconds(30));
+  geometry_msgs::msg::Twist command;
+  command.linear.x = .3;
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(30));
+  ASSERT_FALSE(outputs_.empty());
+  EXPECT_NEAR(outputs_.back().linear.x, .3, 1e-6);
+  message.global_trusted = false;
+  message.header.stamp = message.pose_stamp = test_node_->now();
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(40));
+  EXPECT_DOUBLE_EQ(outputs_.back().linear.x, 0.);
+  message.global_trusted = true;
+  message.header.stamp = message.pose_stamp = test_node_->now();
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(30));
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(30));
+  EXPECT_NEAR(outputs_.back().linear.x, .3, 1e-6);
+  message.generation = 2;
+  message.header.stamp = message.pose_stamp = test_node_->now();
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(30));
+  plan->publish(path);
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(30));
+  EXPECT_DOUBLE_EQ(outputs_.back().linear.x, 0.);
+}
+
+/// MINCO 保持固定 Path token 时，更新后的 PoseStamped 时间仍能重新放行恢复后的速度。
+TEST_F(FakeVelTransformFixture, RecoveryPlanUsesPoseStampWhenHeaderTokenIsStable)
+{
+  createNodes(
+    true, 2.,
+    {rclcpp::Parameter("localization_guard_enabled", true),
+     rclcpp::Parameter("localization_timeout", .5), rclcpp::Parameter("enable_cmd_spin", false)});
+  auto status = test_node_->create_publisher<rm27_localization_interfaces::msg::LocalizationStatus>(
+    "/rm27_backend/localization_status", rclcpp::QoS(1).reliable().transient_local());
+  auto plan = test_node_->create_publisher<nav_msgs::msg::Path>("/plan", 10);
+  ASSERT_TRUE(spinUntil(
+    [&] { return status->get_subscription_count() > 0 && plan->get_subscription_count() > 0; },
+    std::chrono::seconds(2)));
+  const auto base = test_node_->now();
+  rm27_localization_interfaces::msg::LocalizationStatus message;
+  message.state = "NORMAL";
+  message.instance_id = "recovery";
+  message.generation = 3;
+  message.header.stamp = message.pose_stamp = base;
+  message.global_trusted = true;
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(30));
+  nav_msgs::msg::Path path;
+  path.header.stamp = base;
+  path.poses.resize(1);
+  path.poses.front().header.stamp = base;
+  path.poses.front().pose.orientation.w = 1.;
+  plan->publish(path);
+  spinFor(std::chrono::milliseconds(30));
+  message.global_trusted = false;
+  message.header.stamp = message.pose_stamp = test_node_->now();
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(30));
+  message.global_trusted = true;
+  message.header.stamp = message.pose_stamp = test_node_->now();
+  status->publish(message);
+  spinFor(std::chrono::milliseconds(30));
+  path.poses.front().header.stamp = test_node_->now();
+  plan->publish(path);
+  spinFor(std::chrono::milliseconds(30));
+  odom_pub_->publish(makeOdometry(0, test_node_->now()));
+  geometry_msgs::msg::Twist command;
+  command.linear.x = .3;
+  cmd_pub_->publish(command);
+  spinFor(std::chrono::milliseconds(30));
+  ASSERT_FALSE(outputs_.empty());
+  EXPECT_NEAR(outputs_.back().linear.x, .3, 1e-6);
+}
+
 }  // namespace

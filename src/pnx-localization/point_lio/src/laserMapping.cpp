@@ -1,3 +1,4 @@
+#include <rm27_localization_interfaces/srv/reset_frontend.hpp>
 // #include <so3_math.h>
 #include <algorithm>
 #include <cmath>
@@ -905,6 +906,18 @@ int main(int argc, char ** argv)
     backend_frame_publisher = nh->create_publisher<BackendFrame>(
       "point_lio/backend_frame", rclcpp::SensorDataQoS().keep_last(3));
   }
+  using ResetFrontend = rm27_localization_interfaces::srv::ResetFrontend;
+  std::uint64_t last_reset_request = 0;
+  // 同一执行器串行受理，响应仅表示排队；新 epoch 原子帧才证明重置完成。
+  auto reset_service = nh->create_service<ResetFrontend>("point_lio/reset",
+    [&](const std::shared_ptr<ResetFrontend::Request> request,
+        std::shared_ptr<ResetFrontend::Response> response) {
+      response->accepted = request->instance_id == backend_instance && request->epoch == backend_epoch &&
+        request->request_id > last_reset_request && !flg_reset;
+      response->next_epoch = backend_epoch + 1;
+      response->reason = response->accepted ? "queued at next synchronized scan boundary" : "stale identity or pending reset";
+      if(response->accepted){last_reset_request=request->request_id;flg_reset=true;}
+    });
   auto tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(nh);
 
   //------------------------------------------------------------------------------------------------------

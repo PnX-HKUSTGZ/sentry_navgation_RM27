@@ -155,19 +155,16 @@ class ROGMapROS : public ROGMap {
                                  1.0 - 2.0 * (qy * qy + qz * qz));
       if (std::isfinite(transform.tx) && std::isfinite(transform.ty) &&
           std::isfinite(transform.tz) && std::isfinite(transform.roll) &&
-          std::isfinite(transform.pitch) && std::isfinite(transform.yaw) &&
-          std::abs(transform.roll) <= cfg_.prior_map_horizontal_tolerance &&
-          std::abs(transform.pitch) <= cfg_.prior_map_horizontal_tolerance) {
+          std::isfinite(transform.pitch) && std::isfinite(transform.yaw)) {
         return true;
       }
       RCLCPP_WARN_THROTTLE(
           node_logging_->get_logger(), *node_clock_->get_clock(), 2000,
-          "[ROGMap] prior map TF from '%s' to '%s' is non-finite or "
-          "non-horizontal "
-          "(roll=%.6f pitch=%.6f tolerance=%.6f); ground support is "
-          "fail-closed",
+          "[ROGMap] prior map TF from '%s' to '%s' is non-finite "
+          "(roll=%.6f pitch=%.6f); ground support is fail-closed; "
+          "vehicle obstacle transform remains available",
           cfg_.frame_id.c_str(), cfg_.prior_map_frame.c_str(), transform.roll,
-          transform.pitch, cfg_.prior_map_horizontal_tolerance);
+          transform.pitch);
       return false;
     } catch (const tf2::TransformException &error) {
       RCLCPP_WARN_THROTTLE(

@@ -27,6 +27,7 @@ namespace fake_vel_transform
 constexpr double EPSILON = 1e-5;
 constexpr double CONTROLLER_TIMEOUT = 0.5;
 
+/// 声明并校验参数，建立输入、输出和定时执行门。
 FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
 : Node("fake_vel_transform", options)
 {
@@ -81,6 +82,39 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
     throw std::invalid_argument("fake_vel_transform.init_spin_speed must be finite");
   }
 
+  localization_guard_enabled_ = declare_parameter("localization_guard_enabled", false);
+  localization_timeout_ = declare_parameter("localization_timeout", .5);
+  if (!std::isfinite(localization_timeout_) || localization_timeout_ <= 0)
+    throw std::invalid_argument("localization_timeout must be positive");
+  if (localization_guard_enabled_) {
+    localization_sub_ = create_subscription<rm27_localization_interfaces::msg::LocalizationStatus>(
+      "/rm27_backend/localization_status", rclcpp::QoS(1).reliable().transient_local(),
+      [this](rm27_localization_interfaces::msg::LocalizationStatus::ConstSharedPtr msg) {
+        localizationCallback(*msg);
+      });
+    recovery_plan_sub_ = create_subscription<nav_msgs::msg::Path>(
+      "/plan", 10, [this](nav_msgs::msg::Path::ConstSharedPtr msg) {
+        std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
+        rclcpp::Time stamp(msg->header.stamp, get_clock()->get_clock_type());
+        // MINCO 的 Path.header.stamp 是会话 token，重规划时可能保持不变。
+        // PoseStamped 的源时间才反映本次规划是否在恢复之后生成。
+        for (const auto & pose : msg->poses) {
+          const rclcpp::Time pose_stamp(pose.header.stamp, get_clock()->get_clock_type());
+          if (pose_stamp > stamp) {
+            stamp = pose_stamp;
+          }
+        }
+        const auto received = std::chrono::steady_clock::now();
+        const bool plan_stamp_fresh = stamp > localization_recovered_stamp_ && stamp <= now();
+        // 某些仿真路径沿用固定 ROS token，或与状态消息落在同一个 /clock
+        // tick。订阅回调本身在恢复状态之后到达时，也视为新的规划会话内容。
+        const bool plan_received_after_recovery = received >= localization_recovered_;
+        if (
+          localization_trusted_ && !msg->poses.empty() &&
+          (plan_stamp_fresh || plan_received_after_recovery))
+          localization_replanned_ = true;
+      });
+  }
   current_robot_base_angle_ = 0.0;
   last_controller_activate_time_ = this->now();
 
@@ -116,8 +150,8 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
     // Legacy unstamped commands use the local path stamp as a proxy.
     sync_ = std::make_unique<message_filters::Synchronizer<SyncPolicy>>(
       SyncPolicy(100), odom_sub_filter_, local_plan_sub_filter_);
-    sync_->registerCallback(
-      std::bind(&FakeVelTransform::syncCallback, this, std::placeholders::_1, std::placeholders::_2));
+    sync_->registerCallback(std::bind(
+      &FakeVelTransform::syncCallback, this, std::placeholders::_1, std::placeholders::_2));
   }
 
   // 50Hz Timer to send transform from `robot_base_frame` to `fake_robot_base_frame`
@@ -125,6 +159,59 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
     std::chrono::milliseconds(20), std::bind(&FakeVelTransform::publishTransform, this));
 }
 
+/// 定位可信许可同时检查 ROS 数据时间和单调接收时间，断流不能保持运动。
+bool FakeVelTransform::localizationReady() const
+{
+  if (!localization_guard_enabled_) return true;
+  return localization_trusted_ && localization_replanned_ &&
+         std::chrono::duration<double>(std::chrono::steady_clock::now() - localization_received_)
+             .count() <= localization_timeout_;
+}
+/// 恢复时清除旧轨迹许可，新规划到达后才允许下游速度通过。
+void FakeVelTransform::localizationCallback(
+  const rm27_localization_interfaces::msg::LocalizationStatus & m)
+{
+  std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
+  if (
+    m.instance_id == localization_instance_ &&
+    (m.epoch < localization_epoch_ ||
+     (m.epoch == localization_epoch_ && m.generation < localization_generation_))) {
+    return;
+  }
+  const auto current = now();
+  const double age =
+    (current - rclcpp::Time(m.header.stamp, get_clock()->get_clock_type())).seconds();
+  const double pose_age =
+    (current - rclcpp::Time(m.pose_stamp, get_clock()->get_clock_type())).seconds();
+  const bool trusted = m.global_trusted && age >= 0 && age <= localization_timeout_ &&
+                       pose_age >= 0 && pose_age <= localization_timeout_;
+  const bool stale =
+    std::chrono::duration<double>(std::chrono::steady_clock::now() - localization_received_)
+      .count() > localization_timeout_;
+  const bool changed = m.generation != localization_generation_ || m.epoch != localization_epoch_ ||
+                       m.instance_id != localization_instance_;
+  localization_generation_ = m.generation;
+  localization_epoch_ = m.epoch;
+  localization_instance_ = m.instance_id;
+  const bool continuous = !changed && !stale &&
+                          (m.state == "NORMAL" || m.state == "OBS_DEGRADED") &&
+                          (localization_trusted_ || localization_continuous_);
+  if (trusted && ((!localization_trusted_ && !continuous) || stale || changed)) {
+    localization_recovered_ = std::chrono::steady_clock::now();
+    localization_recovered_stamp_ = current;
+    localization_replanned_ = false;
+  }
+  localization_trusted_ = trusted;
+  localization_continuous_ = trusted || continuous;
+  localization_received_ = std::chrono::steady_clock::now();
+  if (!trusted) {
+    if (!continuous) localization_replanned_ = false;
+    publishStop();
+    motion_command_active_ = false;
+  }
+}
+
+/// 验收可选自旋速度，非有限值清零。
 void FakeVelTransform::cmdSpinCallback(const example_interfaces::msg::Float32::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
@@ -136,6 +223,7 @@ void FakeVelTransform::cmdSpinCallback(const example_interfaces::msg::Float32::S
   spin_speed_ = msg->data;
 }
 
+/// 过滤无效或过期里程计后保存当前朝向。
 void FakeVelTransform::odometryCallback(const nav_msgs::msg::Odometry::ConstSharedPtr & msg)
 {
   const auto now = this->now();
@@ -148,9 +236,9 @@ void FakeVelTransform::odometryCallback(const nav_msgs::msg::Odometry::ConstShar
 
   std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
   const rclcpp::Time stamp(msg->header.stamp, get_clock()->get_clock_type());
-  if (use_latest_odom_for_cmd_ && has_latest_odom_stamp_ &&
-    stamp <= latest_odom_stamp_ && odometryFresh(now))
-  {
+  if (
+    use_latest_odom_for_cmd_ && has_latest_odom_stamp_ && stamp <= latest_odom_stamp_ &&
+    odometryFresh(now)) {
     RCLCPP_WARN_THROTTLE(
       get_logger(), *get_clock(), 1000, "Ignoring duplicate or out-of-order odometry");
     return;
@@ -166,6 +254,7 @@ void FakeVelTransform::odometryCallback(const nav_msgs::msg::Odometry::ConstShar
   }
 }
 
+/// 接收地形更新的时间用于新鲜度门。
 void FakeVelTransform::terrainMapCallback(
   const sensor_msgs::msg::PointCloud2::ConstSharedPtr & /*msg*/)
 {
@@ -174,6 +263,7 @@ void FakeVelTransform::terrainMapCallback(
   has_latest_terrain_ = true;
 }
 
+/// 将速度转换到机体并通过统一执行许可。
 void FakeVelTransform::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
@@ -212,6 +302,7 @@ void FakeVelTransform::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr
   }
 }
 
+/// 记录旧控制链的局部规划输入。
 void FakeVelTransform::localPlanCallback(const nav_msgs::msg::Path::ConstSharedPtr & /*msg*/)
 {
   std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
@@ -219,6 +310,7 @@ void FakeVelTransform::localPlanCallback(const nav_msgs::msg::Path::ConstSharedP
   last_controller_activate_time_ = this->now();
 }
 
+/// 在旧同步链中使用匹配的路径与里程计。
 void FakeVelTransform::syncCallback(
   const nav_msgs::msg::Odometry::ConstSharedPtr & odom_msg,
   const nav_msgs::msg::Path::ConstSharedPtr & /*local_plan_msg*/)
@@ -254,11 +346,25 @@ void FakeVelTransform::syncCallback(
   publishGuardedVelocity(aft_tf_vel, now);
 }
 
+/// 维护超时停车并发布辅助坐标变换。
 void FakeVelTransform::publishTransform()
 {
+  // 独立定时器在状态断流时主动停车，不能等待下一条速度消息。
+
   std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
 
   const auto now = this->now();
+  if (!localizationReady()) {
+    publishStop();
+    motion_command_active_ = false;
+    if (
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - localization_received_)
+        .count() > localization_timeout_) {
+      localization_replanned_ = false;
+      localization_trusted_ = false;
+      localization_continuous_ = false;
+    }
+  }
   if (use_latest_odom_for_cmd_ && !odometryFresh(now)) {
     if (motion_command_active_) {
       publishStop();
@@ -295,6 +401,7 @@ void FakeVelTransform::publishTransform()
   tf_broadcaster_->sendTransform(t);
 }
 
+/// 验收里程计数值、时间和有效偏航。
 bool FakeVelTransform::validOdometry(
   const nav_msgs::msg::Odometry & odometry, const rclcpp::Time & now, double & yaw,
   const char *& reason) const
@@ -322,6 +429,7 @@ bool FakeVelTransform::validOdometry(
   return true;
 }
 
+/// 检查最近有效里程计是否超时。
 bool FakeVelTransform::odometryFresh(const rclcpp::Time & now) const
 {
   if (!has_latest_odom_stamp_) {
@@ -333,6 +441,7 @@ bool FakeVelTransform::odometryFresh(const rclcpp::Time & now) const
     stamp, now.nanoseconds(), odom_timeout_, odom_future_tolerance_);
 }
 
+/// 检查启用的地形观察是否新鲜。
 bool FakeVelTransform::terrainMapFresh(const rclcpp::Time & now) const
 {
   if (!terrain_guard_enabled_) {
@@ -345,9 +454,15 @@ bool FakeVelTransform::terrainMapFresh(const rclcpp::Time & now) const
   return std::isfinite(age) && age >= 0.0 && age <= terrain_timeout_;
 }
 
+/// 定位及地形不可信时主动停止，否则发布已变换速度。
 bool FakeVelTransform::publishGuardedVelocity(
   const geometry_msgs::msg::Twist & command, const rclcpp::Time & now)
 {
+  if (!localizationReady()) {
+    publishStop();
+    motion_command_active_ = false;
+    return false;
+  }
   const bool is_motion =
     std::abs(command.linear.x) >= EPSILON || std::abs(command.linear.y) >= EPSILON ||
     std::abs(command.linear.z) >= EPSILON || std::abs(command.angular.x) >= EPSILON ||
@@ -368,8 +483,10 @@ bool FakeVelTransform::publishGuardedVelocity(
   return true;
 }
 
+/// 向最终底盘接口发送零速度。
 void FakeVelTransform::publishStop() { cmd_vel_chassis_pub_->publish(geometry_msgs::msg::Twist{}); }
 
+/// 将平面线速度旋转到机体系并处理自旋项。
 geometry_msgs::msg::Twist FakeVelTransform::transformVelocity(
   const geometry_msgs::msg::Twist::SharedPtr & twist, double yaw_diff)
 {

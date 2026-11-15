@@ -538,10 +538,11 @@ def test_minco_uses_one_complete_deployment_profile():
         base = yaml.safe_load(
             (BRINGUP_DIR / "config" / deployment / "nav2_params.yaml").read_text()
         )
+        assert "relocalization_manager" not in profile
+        assert "relocalization_manager" not in base
         for node in (
             "point_lio",
             "map_server",
-            "relocalization_manager",
             "velocity_smoother",
         ):
             assert profile[node] == base[node]
@@ -1262,11 +1263,12 @@ def test_rmuc2027_prior_is_not_translated_twice(filename):
     try:
         original = yaml.safe_load(source.read_text())
         data = yaml.safe_load(resolved.read_text())
-        params = data["relocalization_manager"]["ros__parameters"]
-        assert params["prior_pcd_transform"] == [0.0] * 6
-        assert params["transform_prior_map_with_lidar_offset"] is False
-        for gate in ["max_mean_error", "min_inlier_ratio", "min_inliers", "max_delta_xy", "max_delta_z", "max_delta_yaw"]:
-            assert params[gate] == original["relocalization_manager"]["ros__parameters"][gate]
+        params = data["rm27_backend"]["ros__parameters"]
+        assert params["prior_map.transform"] == [0.0] * 6
+        assert "relocalization_manager" not in original
+        assert "relocalization_manager" not in data
+        for gate in ["prior_map.max_rmse", "prior_map.min_inlier_ratio", "prior_map.min_inliers"]:
+            assert params[gate] == original["rm27_backend"]["ros__parameters"][gate]
         assert data["point_lio"] == original["point_lio"]
     finally:
         resolved.unlink()

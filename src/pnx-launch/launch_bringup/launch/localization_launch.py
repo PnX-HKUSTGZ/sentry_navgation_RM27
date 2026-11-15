@@ -158,20 +158,6 @@ def generate_launch_description():
                 arguments=["--ros-args", "--log-level", log_level],
             ),
             Node(
-                package="relocalization_manager",
-                executable="relocalization_manager_node",
-                name="relocalization_manager",
-                output="screen",
-                respawn=use_respawn,
-                respawn_delay=2.0,
-                parameters=[
-                    configured_params,
-                    {"prior_pcd_file": prior_pcd_file},
-                ],
-                arguments=["--ros-args", "--log-level", log_level],
-                condition=run_gicp,
-            ),
-            Node(
                 package="nav2_lifecycle_manager",
                 executable="lifecycle_manager",
                 name="lifecycle_manager_localization",
@@ -195,16 +181,6 @@ def generate_launch_description():
                 plugin="nav2_map_server::MapServer",
                 name="map_server",
                 parameters=[configured_params],
-            ),
-            ComposableNode(
-                package="relocalization_manager",
-                plugin="relocalization_manager::RelocalizationManagerNode",
-                name="relocalization_manager",
-                parameters=[
-                    configured_params,
-                    {"prior_pcd_file": prior_pcd_file},
-                ],
-                condition=run_gicp,
             ),
             ComposableNode(
                 package="nav2_lifecycle_manager",
@@ -243,18 +219,21 @@ def generate_launch_description():
 
     # Add the actions to launch all of the localiztion nodes
     ld.add_action(start_point_lio_node)
+    # 后端链接重定位计算库，同一进程内调度，禁止第二个 TF 发布者。
     def start_backend(context):
         with open(params_file.perform(context), encoding="utf-8") as stream:
             configuration = yaml.safe_load(stream) or {}
         enabled = configuration.get("rm27_backend", {}).get("ros__parameters", {}).get("enabled", False)
         if not isinstance(enabled, bool):
             raise ValueError("rm27_backend.enabled must be a YAML boolean")
-        if not enabled:
+        if LaunchConfiguration("use_ground_truth_odom").perform(context).lower() in {"true", "1"}:
             return []
+        if not enabled:
+            raise ValueError("Point-LIO navigation requires rm27_backend.enabled=true")
         return [Node(
             package="rm27_backend", executable="rm27_backend_node", name="rm27_backend",
-            # 与 relocalization_manager 使用同一份先验 PCD，供地图配准因子加载。
-            output="screen", parameters=[configured_params, {"prior_map.file": prior_pcd_file}],
+            # 预处理地图包默认位于 prior_pcd_file + .rm27，也可由 YAML 显式指定。
+            output="screen", parameters=[configured_params, {"prior_map.file": prior_pcd_file, "constraint.mode": "prior_map", "output.publish_tf": True, "recovery.navigation_grid": map_yaml_file}],
             arguments=["--ros-args", "--log-level", log_level],
             condition=UnlessCondition(use_ground_truth_odom),
         )]

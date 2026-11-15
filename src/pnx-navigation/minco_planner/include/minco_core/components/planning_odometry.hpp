@@ -61,16 +61,38 @@ inline bool planarVelocity(
       reason = "ODOMETRY_TRANSFORM_UNAVAILABLE";
       return false;
     }
+    geometry_msgs::msg::TransformStamped transform;
     try {
-      const auto transform = transforms->lookupTransform(
+      transform = transforms->lookupTransform(
         planning_frame, odometry.header.frame_id, rclcpp::Time(odometry.header.stamp));
       if (!normalizedQuaternion(transform.transform.rotation, planning_from_parent)) {
         reason = "INVALID_ODOMETRY_TRANSFORM";
         return false;
       }
     } catch (const tf2::TransformException & exception) {
-      reason = "ODOMETRY_TRANSFORM_UNAVAILABLE: " + std::string(exception.what());
-      return false;
+      // 传感器里程计和 map→odom 由不同回调发布，严格同刻查询可能落后一个
+      // 发布周期。使用最近已完成的 TF 仍需通过有限年龄门，避免混用陈旧坐标。
+      try {
+        const auto latest = transforms->lookupTransform(
+          planning_frame, odometry.header.frame_id, tf2::TimePointZero);
+        const double odom_stamp =
+          static_cast<double>(odometry.header.stamp.sec) +
+          static_cast<double>(odometry.header.stamp.nanosec) * 1.0e-9;
+        const double tf_stamp =
+          static_cast<double>(latest.header.stamp.sec) +
+          static_cast<double>(latest.header.stamp.nanosec) * 1.0e-9;
+        if (!std::isfinite(odom_stamp) || !std::isfinite(tf_stamp) ||
+          tf_stamp <= 0.0 || odom_stamp - tf_stamp > 0.20 ||
+          tf_stamp - odom_stamp > 0.05 ||
+          !normalizedQuaternion(latest.transform.rotation, planning_from_parent)) {
+          reason = "ODOMETRY_TRANSFORM_UNAVAILABLE: " + std::string(exception.what());
+          return false;
+        }
+        transform = latest;
+      } catch (const tf2::TransformException &) {
+        reason = "ODOMETRY_TRANSFORM_UNAVAILABLE: " + std::string(exception.what());
+        return false;
+      }
     }
   }
 

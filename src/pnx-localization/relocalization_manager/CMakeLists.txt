@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.11)
 project(relocalization_manager)
 
-## Use C++14
-set(CMAKE_CXX_STANDARD 14)
+## 公共几何与恢复接口使用 C++17
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ## By adding -Wall and -Werror, the compiler does not ignore warnings anymore,
@@ -29,7 +29,7 @@ include(FetchContent)
 fetchcontent_declare(
   small_gicp
   GIT_REPOSITORY https://github.com/koide3/small_gicp.git
-  GIT_TAG "master"
+  GIT_TAG fa0cfc983417c044b6036f71dfa448038bb9c820
 )
 fetchcontent_makeavailable(small_gicp)
 set_target_properties(small_gicp PROPERTIES EXPORT_COMPILE_COMMANDS OFF)
@@ -39,7 +39,7 @@ set_target_properties(small_gicp PROPERTIES EXPORT_COMPILE_COMMANDS OFF)
 ###########
 
 ament_auto_add_library(${PROJECT_NAME} SHARED
-  DIRECTORY src
+  src/relocalization_manager.cpp
 )
 
 target_link_directories(${PROJECT_NAME} PRIVATE ${FLANN_LIBRARY_DIRS})
@@ -56,6 +56,25 @@ rclcpp_components_register_node(${PROJECT_NAME}
   PLUGIN relocalization_manager::RelocalizationManagerNode
   EXECUTABLE ${PROJECT_NAME}_node
 )
+
+# 无 ROS 状态和 TF 写入权的公共几何与恢复计算库，由后端在同一进程调用。
+find_package(TBB REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(yaml-cpp REQUIRED)
+add_library(rm27_relocalization SHARED src/measurement.cpp src/scan_context.cpp
+  src/map_matcher.cpp src/recovery_engine.cpp)
+target_include_directories(rm27_relocalization PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS})
+target_link_directories(rm27_relocalization PUBLIC ${FLANN_LIBRARY_DIRS})
+target_link_libraries(rm27_relocalization PUBLIC Eigen3::Eigen ${PCL_LIBRARIES} TBB::tbb yaml-cpp PRIVATE small_gicp OpenSSL::Crypto)
+add_executable(recovery_probe src/recovery_probe.cpp)
+target_link_libraries(recovery_probe rm27_relocalization)
+install(TARGETS recovery_probe DESTINATION lib/${PROJECT_NAME})
+install(TARGETS rm27_relocalization EXPORT rm27_relocalization_targets
+  LIBRARY DESTINATION lib ARCHIVE DESTINATION lib RUNTIME DESTINATION bin)
+ament_export_targets(rm27_relocalization_targets HAS_LIBRARY_TARGET)
+ament_export_dependencies(Eigen3 PCL TBB yaml-cpp)
 
 #############
 ## Testing ##

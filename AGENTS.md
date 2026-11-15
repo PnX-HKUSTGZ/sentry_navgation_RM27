@@ -32,9 +32,9 @@ source install/setup.bash
 全新工作区没有 `install/` 时省略对应 source。`--packages-up-to` 会带上依赖，`--packages-select` 只适用于依赖已构建的环境。不要仅凭当前 shell 中其他工作区的安装产物声称干净构建成功；检查 `ros2 pkg prefix <package>`、CMake cache 与 overlay 顺序。
 
 - 包名以 `package.xml` 为准：`src/pnx-localization/backend` 是 `rm27_backend`；`localization_interfaces` 是 `rm27_localization_interfaces`。
-- 主要代码为 C++17、Python 3、ament/colcon；`relocalization_manager` 的 CMake 当前声明 C++14，修改时检查该目标实际编译设置。
+- 主要代码为 C++17、Python 3、ament/colcon；`relocalization_manager` 的公共计算库采用 C++17。
 - GTSAM 4.2、TBB 用于独立后端；Point-LIO 联合初始化使用 yaml-cpp、nanoflann、glog。不要因为前端依赖共享消息而让它依赖后端求解器。
-- small_gicp 由 FetchContent 获取：`relocalization_manager` 当前跟踪 `master`。离线缓存必须符合调用脚本的版本检查；不要悄悄升级算法依赖。
+- small_gicp 由 FetchContent 获取：`relocalization_manager` 固定到 `fa0cfc983417c044b6036f71dfa448038bb9c820`。离线缓存必须符合调用脚本的版本检查；不要悄悄升级算法依赖。
 - `.pre-commit-config.yaml` 含会修改文件的 Ruff/clang-format hooks。只检查任务范围，避免全仓自动格式化第三方代码和参数。
 
 ## 3. 按任务定位代码
@@ -44,7 +44,7 @@ source install/setup.bash
 | 启动、模式选择、参数路由 | `src/pnx-launch/launch_bringup/launch/`，特别是 `bringup_launch.py`、`navigation_launch.py`、`rm_navigation_*_launch.py` |
 | 实车/仿真参数 | `src/pnx-launch/launch_bringup/config/{reality,simulation}/{nav2_params,minco_params}.yaml` |
 | LIO、初始化、IMU 数值更新 | `src/pnx-localization/point_lio/src/`、`include/`、`test/`；联合核心在 `third_party/zlio_startup/` |
-| 局部先验匹配、`map → odom` | `src/pnx-localization/relocalization_manager/` |
+| 地图几何匹配与全局恢复 | `src/pnx-localization/relocalization_manager/`，作为计算库由后端调用 |
 | 前端原子帧、关键帧、位姿图 | `src/pnx-localization/localization_interfaces/`、`backend/`；读后端 README 和 VALIDATION |
 | 里程计、点云坐标转换 | `src/pnx-localization/{loam_interface,sensor_scan_generation}/` |
 | 占据、地形、净空、动态障碍 | `src/pnx-perception/rog_map/`，尤其 `projection_layer.cpp`、先验与查询模块 |
@@ -74,7 +74,7 @@ source install/setup.bash
 
 这些是跨包合同；改动任何一项都要检查上下游。
 
-- 普通 Point-LIO 定位模式的 `map → odom` 由 `relocalization_manager` 发布；GT 模式由 `rm27_ground_truth_localizer` 发布；SLAM 模式由 slam_toolbox 发布。每种模式只保留一个所有者，不能再补一条静态 TF。
+- 普通 Point-LIO 定位模式的 `map → odom` 由 `rm27_backend` 发布；GT 模式由 `rm27_ground_truth_localizer` 发布；SLAM 模式由 slam_toolbox 发布。每种模式只保留一个所有者，不能再补一条静态 TF。
 - Point-LIO 输出原生世界系 `camera_init` 和 IMU 状态 `body`；`loam_interface` 建立导航 `odom` 对齐并发布 `/registered_scan`、`/lidar_odometry`。`sensor_scan_generation` 利用同刻机械 TF 发布底盘 TF 与 `/odometry`，不能仅改 frame 字符串冒充坐标变换。
 - `/lidar_odometry`、`/odometry`、`/aft_mapped_to_init` 描述的参考点和速度坐标不同。杆臂、固定安装角和活动云台必须按实际 TF 处理；保留 twist 与协方差语义。
 - 仿真雷达当前挂在 `gimbal_yaw`，默认 `[0,0.126,0.130] m`、roll `-30°`。实车固定模型与驱动 JSON 是另一套配置，不能复制仿真参数。驱动补偿与 TF 不能重复施加同一旋转。
@@ -82,7 +82,7 @@ source install/setup.bash
 - 时间判断区分传感器 stamp、ROS 仿真时间和单调墙钟。处理回退、重复、乱序、未来时间与接收超时，不能用增加 timeout 掩盖时间合同错误。
 - 原子 `FrontendFrame` 的里程计和完整世界系点云必须来自同一扫描、同时间戳，保留 instance/epoch/sequence。后端拒绝重复、旧代和乱序，连续性中断创建新 segment，不能跨重置连接里程计边。
 - 后端局部协方差使用 RIGHT 扰动 `[rho,phi]`，GTSAM 使用 `[phi,rho]`；前端位置与旋转误差的参考系不同，按现有适配器转换。
-- 后端现在只做旁路图，默认导航不消费其估计，不广播 TF。全局约束由 `constraint.mode` 三选一：先验地图因子（锚定后图在 `map` 系，入图前经质量、校正上限和 NIS 检验）或 Scan Context 回环因子（全图，经几何、PCM 与联合 NIS 检验），两者互斥。增加约束时须实现实际测量生产、几何验收、身份匹配和资源边界，接管 `map → odom` 前须先在旁路对比并保持单一 TF 所有者。
+- 后端采用两个包、同一进程、后台几何计算。普通导航强制 `constraint.mode=prior_map` 和后端 TF；独立节点仍支持旁路 odometry/loop。先验地图与回环互斥，五状态机统一验收恢复锚和正常地图因子。地图包由 `tools/mapping/prepare_relocalization_map.py` 从 PCD/PGM 生成，需核对哈希、坐标、视点覆盖与真实可辨识性。旧管理器不再由导航 launch 启动；不能把 NORMAL 或配准收敛本身当作全局定位正确的证据。
 
 ## 6. 控制、地图与资源边界
 
@@ -110,7 +110,7 @@ git diff --check
 | 改动 | 至少关注的测试 |
 | --- | --- |
 | LIO/IMU/初始化 | `point_lio/test/` 的 adaptive、joint startup、IMU 更新测试；需要时使用初始化/里程计基准 |
-| 前后端原子帧/图 | `backend/test/test_backend.cpp`、Point-LIO 测试、`verify_rm27_backend_contract.py`；按需运行后端基准 |
+| 前后端原子帧/图 | `backend/test/test_backend.cpp`、`test_recovery.cpp`、`test_localization_state.cpp`、Point-LIO 测试、`verify_rm27_backend_contract.py`；按需运行后端基准 |
 | 坐标/速度/时间 | loam、sensor_scan_generation、fake_vel_transform 包测试 |
 | 地图/净空/动态障碍 | `rog_map/test/`、`launch_bringup/test/`、仿真碰撞几何测试 |
 | MINCO/MPC/授权 | planner 的 session/lease/safety/optimizer 测试，controller 的 input/session/MPC/recovery 测试 |

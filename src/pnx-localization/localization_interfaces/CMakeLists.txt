@@ -4,7 +4,9 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-rosidl_generate_interfaces(${PROJECT_NAME} "msg/FrontendFrame.msg"
-  DEPENDENCIES nav_msgs sensor_msgs)
+find_package(std_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
+rosidl_generate_interfaces(${PROJECT_NAME} "msg/FrontendFrame.msg" "msg/LocalizationStatus.msg" "srv/ResetFrontend.srv"
+  DEPENDENCIES nav_msgs sensor_msgs std_msgs builtin_interfaces)
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()

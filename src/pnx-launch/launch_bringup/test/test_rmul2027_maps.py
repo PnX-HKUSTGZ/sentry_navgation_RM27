@@ -67,15 +67,16 @@ def test_rmul_registration_profile_is_applied_without_changing_other_worlds(file
         assert not any(isinstance(token,yaml.tokens.AliasToken) for token in yaml.scan(resolved.read_text()))
         original=yaml.safe_load(source.read_text())
         data=yaml.safe_load(resolved.read_text())
-        params=data['relocalization_manager']['ros__parameters']
-        assert params['prior_pcd_transform']==[0.0]*6
-        # Initial pose is user tuning; verify the world override is applied
-        # instead of pinning every deployment to the original centre spawn.
+        params=data['rm27_backend']['ros__parameters']
+        # 标准导航使用后端启动先验；旧定位模块不再出现在场景覆盖中。
         profile=original['simulation_world_profiles']['ros__parameters']['RMUL2027']
-        assert params['init_pose']==profile['relocalization_manager']['init_pose']
-        assert params['global_leaf_size']==.05
-        for gate in ['max_mean_error','min_inlier_ratio','min_inliers']:
-            assert params[gate]==original['relocalization_manager']['ros__parameters'][gate]
+        assert 'relocalization_manager' not in profile
+        assert params['prior_map.transform']==[0.0]*6
+        assert params['startup_pose.enabled'] is True
+        assert params['startup_pose.map_from_base']==profile['rm27_backend']['startup_pose.map_from_base']
+        assert params['prior_map.seed_source']=='none'
+        assert 'relocalization_manager' not in original
+        assert 'relocalization_manager' not in data
         assert data['controller_server']==original['controller_server']
         assert data['point_lio']['ros__parameters']['filter_size_map']==.08
         assert data['point_lio']['ros__parameters']['preprocess']['scan_line']==192
@@ -83,3 +84,19 @@ def test_rmul_registration_profile_is_applied_without_changing_other_worlds(file
         assert data['ign_sim_pointcloud_tool']['ros__parameters']['instantaneous_scan']
     finally:
         resolved.unlink()
+
+
+@pytest.mark.parametrize('filename', ['minco_params.yaml', 'nav2_params.yaml'])
+@pytest.mark.parametrize('world', ['RMUL2027', 'RMUC2027'])
+def test_backend_startup_profiles_use_spawn_reference_and_same_schema(filename, world):
+    """固定出生区先验引用正确底盘参考点，模式切换不得丢失后端覆盖。"""
+    profile = yaml.safe_load((BRINGUP/'config/simulation'/filename).read_text())[
+        'simulation_world_profiles']['ros__parameters'][world]
+    spawn_file = BRINGUP.parents[1]/'pnx-stimulation/rm_27_stimulation/config/spawn_poses.yaml'
+    spawn = yaml.safe_load(spawn_file.read_text())['spawn_poses'][world]
+    backend = profile['rm27_backend']
+    assert set(backend) == {'startup_pose.enabled', 'startup_pose.map_from_base', 'prior_map.transform'}
+    assert backend['startup_pose.enabled'] is True
+    assert backend['startup_pose.map_from_base'] == [spawn[k] for k in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']]
+    assert backend['prior_map.transform'] == [0.0]*6
+    assert 'relocalization_manager' not in profile

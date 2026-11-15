@@ -3631,8 +3631,31 @@ bool MincoPlanner::checkGoalReached(
   if (latest_global_path_.empty()) {
     return false;
   }
-
-  const auto &goal = latest_global_path_.back().pose.position;
+  if (!tf_ || current_pose.header.frame_id.empty() ||
+      !std::isfinite(current_pose.pose.position.x) ||
+      !std::isfinite(current_pose.pose.position.y)) {
+    return false;
+  }
+  geometry_msgs::msg::PoseStamped goal_pose = latest_global_path_.back();
+  if (goal_pose.header.frame_id.empty()) {
+    RCLCPP_WARN_THROTTLE(
+        logger_, *clock_, 1000,
+        "[MincoPlanner] Cannot evaluate goal reached: goal frame is empty");
+    return false;
+  }
+  if (goal_pose.header.frame_id != current_pose.header.frame_id) {
+    try {
+      goal_pose = tf_->transform(goal_pose, current_pose.header.frame_id);
+    } catch (const tf2::TransformException &error) {
+      // TF 不可用时保持未到达，不能把旧坐标系的路径点直接与当前位姿比较。
+      RCLCPP_WARN_THROTTLE(
+          logger_, *clock_, 1000,
+          "[MincoPlanner] Goal transform unavailable; withholding success: %s",
+          error.what());
+      return false;
+    }
+  }
+  const auto &goal = goal_pose.pose.position;
   const double dx = current_pose.pose.position.x - goal.x;
   const double dy = current_pose.pose.position.y - goal.y;
   const double dist = std::hypot(dx, dy);

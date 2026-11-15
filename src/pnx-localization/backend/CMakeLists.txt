@@ -7,6 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(action_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
@@ -15,6 +19,7 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(rm27_localization_interfaces REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(relocalization_manager REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io filters)
 find_package(Threads REQUIRED)
 find_package(TBB REQUIRED)
@@ -37,43 +42,37 @@ if(UNIX AND NOT APPLE)
 endif()
 
 add_library(rm27_backend_core src/pose_graph.cpp src/keyframe_manager.cpp src/cloud_store.cpp
-  src/measurement.cpp src/scan_context.cpp)
+  src/localization_state.cpp)
 target_include_directories(rm27_backend_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include> ${PCL_INCLUDE_DIRS})
-target_link_libraries(rm27_backend_core PUBLIC Eigen3::Eigen gtsam ${PCL_LIBRARIES} Threads::Threads TBB::tbb)
+target_link_libraries(rm27_backend_core PUBLIC relocalization_manager::rm27_relocalization Eigen3::Eigen gtsam ${PCL_LIBRARIES} Threads::Threads TBB::tbb)
 add_library(rm27_pointlio_adapter src/pointlio_adapter.cpp)
 target_link_libraries(rm27_pointlio_adapter PUBLIC rm27_backend_core)
 ament_target_dependencies(rm27_pointlio_adapter PUBLIC rm27_localization_interfaces sensor_msgs)
-# 先验地图配准只使用 small_gicp 头文件模板，固定到与定位管理器当前拉取相同的提交；
-# SOURCE_SUBDIR 指向不存在的目录，使 FetchContent 只下载源码而不构建或安装其库目标。
-# 离线环境可用 -DFETCHCONTENT_SOURCE_DIR_RM27_SMALL_GICP=<同一提交的源码目录>。
-include(FetchContent)
-FetchContent_Declare(rm27_small_gicp
-  GIT_REPOSITORY https://github.com/koide3/small_gicp.git
-  GIT_TAG fa0cfc983417c044b6036f71dfa448038bb9c820
-  SOURCE_SUBDIR rm27_headers_only)
-FetchContent_MakeAvailable(rm27_small_gicp)
-# 地图定位库不导出，small_gicp 不进入下游 CMake 接口。
-add_library(rm27_map_localization STATIC src/map_matcher.cpp src/map_localizer.cpp
-  src/loop_closer.cpp)
-target_include_directories(rm27_map_localization SYSTEM PRIVATE
-  ${rm27_small_gicp_SOURCE_DIR}/include)
+# 匹配算法位于 relocalization_manager，后端保留图提交和异步调度。
+add_library(rm27_map_localization STATIC src/map_localizer.cpp src/loop_closer.cpp
+  src/localization_controller.cpp src/motion_recovery.cpp)
 target_link_libraries(rm27_map_localization PUBLIC rm27_backend_core)
 add_executable(rm27_backend_node apps/backend_node.cpp)
 target_link_libraries(rm27_backend_node rm27_pointlio_adapter rm27_map_localization)
 ament_target_dependencies(rm27_backend_node rclcpp nav_msgs diagnostic_msgs
-  geometry_msgs tf2_ros tf2_eigen)
+  geometry_msgs tf2_ros tf2_eigen std_srvs action_msgs nav2_msgs visualization_msgs)
 
 install(TARGETS rm27_backend_core rm27_pointlio_adapter EXPORT rm27_backend_targets
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 install(TARGETS rm27_backend_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include PATTERN ".gitkeep" EXCLUDE)
 ament_export_targets(rm27_backend_targets HAS_LIBRARY_TARGET)
-ament_export_dependencies(Eigen3 GTSAM PCL Threads TBB rm27_localization_interfaces sensor_msgs)
+ament_export_dependencies(relocalization_manager Eigen3 GTSAM PCL Threads TBB rm27_localization_interfaces sensor_msgs)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(OpenSSL REQUIRED)
+  ament_add_gtest(test_recovery test/test_recovery.cpp TIMEOUT 180)
+  target_link_libraries(test_recovery rm27_map_localization OpenSSL::Crypto)
+  ament_add_gtest(test_localization_state test/test_localization_state.cpp)
+  target_link_libraries(test_localization_state rm27_backend_core)
   ament_add_gtest(test_backend test/test_backend.cpp)
   target_link_libraries(test_backend rm27_pointlio_adapter)
   ament_add_gtest(test_prior_map test/test_prior_map.cpp TIMEOUT 300)

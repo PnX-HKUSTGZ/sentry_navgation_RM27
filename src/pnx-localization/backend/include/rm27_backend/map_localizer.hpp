@@ -10,20 +10,20 @@
 namespace rm27_backend {
 /// 先验地图定位调度与验收参数；时间单位 s，距离 m，角度 rad。
 struct LocalizerConfig {
-  double correction_period = .5;          // 跟踪配准最小间隔
-  double acquisition_period = 1.;         // 初始锚定尝试最小间隔
-  int source_keyframes = 3;               // 跟踪源点云合并的最多关键帧数
-  double source_max_distance = 1.5;       // 参与合并的关键帧相对当前帧最大距离
+  double correction_period = .5;  // 跟踪配准最小间隔
+  double acquisition_period = 1.; // 初始锚定尝试最小间隔
+  int source_keyframes = 3;       // 跟踪源点云合并的最多关键帧数
+  double source_max_distance = 1.5; // 参与合并的关键帧相对当前帧最大距离
   double max_translation_correction = 1.; // 常规校正平移上限
   double max_rotation_correction = .2618; // 常规校正旋转上限
   double acquisition_max_translation = 1.5; // 锚定结果相对种子的平移上限
-  double acquisition_max_rotation = .349;   // 锚定结果相对种子的旋转上限
-  double rejection_probability = 1e-3;      // NIS 卡方上尾概率拒绝门限
-  int max_conflicts = 7;                     // 连续冲突后进入 Suspect
-  double recovery_translation = .1;          // Suspect 下连续两次对齐一致的平移容差
-  double recovery_rotation = .0349;          // Suspect 下连续两次对齐一致的旋转容差
-  double anchor_max_age = .5;                // 锚定结果外推到新帧的最大时差
-  double continuity_timeout = 2.;            // 断段后沿用上一段 map 位姿作种子的最长时差
+  double acquisition_max_rotation = .349; // 锚定结果相对种子的旋转上限
+  double rejection_probability = 1e-3; // NIS 卡方上尾概率拒绝门限
+  int max_conflicts = 7;               // 连续冲突后进入 Suspect
+  double recovery_translation = .1; // Suspect 下连续两次对齐一致的平移容差
+  double recovery_rotation = .0349; // Suspect 下连续两次对齐一致的旋转容差
+  double anchor_max_age = .5; // 锚定结果外推到新帧的最大时差
+  double continuity_timeout = 2.; // 断段后沿用上一段 map 位姿作种子的最长时差
 };
 /// 先验地图定位状态：加载、失败、等待锚定、正常跟踪、可疑（等待一致恢复）。
 enum class MapState { Loading, Failed, Waiting, Tracking, Suspect };
@@ -38,7 +38,11 @@ struct LocalizerStats {
   std::uint64_t recoveries = 0, consecutive_conflicts = 0;
   double last_rmse = 0, last_inlier_ratio = 0, last_nis = 0;
   double last_correction = 0, last_ms = 0, max_ms = 0, total_ms = 0;
-  int last_rank = 0;
+  bool motion_recovery_active = false;
+  double motion_recovery_radius = 0., motion_recovery_angle = 0.;
+  std::string motion_recovery_reason;
+  int last_rank = 0, last_attempts = 0;
+  std::uint64_t cancelled = 0; // 因新请求或截止被取消的后台任务数。
 };
 /// 调用 apply 的结果：本次接入的地图因子数，以及是否发生需要断段的图异常。
 struct ApplyOutcome {
@@ -72,7 +76,8 @@ public:
   /// 在周期与单任务约束下提交锚定配准；源点云为该帧 IMU 局部云。
   bool requestAcquisition(const Frame &frame, Cloud::ConstPtr cloud,
                           const Pose &seed);
-  /// 若已有锚定结果且与本帧同身份、时差合法，返回外推到本帧的 map 先验并标记已锚定。
+  /// 若已有锚定结果且与本帧同身份、时差合法，返回外推到本帧的 map
+  /// 先验并标记已锚定。
   std::optional<PosePrior> takeAnchor(const Frame &frame);
   /// 在周期与单任务约束下为已提交关键帧排队跟踪配准；frames 为源云合并帧数。
   bool requestTracking(const Keyframe &keyframe, const Pose &predicted,
@@ -129,7 +134,8 @@ private:
   std::optional<Result> anchor_;
   std::optional<Pose> recovery_candidate_;
   std::optional<std::pair<Pose, std::int64_t>> last_pose_;
-  std::int64_t last_acquisition_ns_ = INT64_MIN / 2, last_track_ns_ = INT64_MIN / 2;
+  std::int64_t last_acquisition_ns_ = INT64_MIN / 2,
+               last_track_ns_ = INT64_MIN / 2;
   std::thread thread_;
 };
-} // 命名空间 rm27_backend
+} // namespace rm27_backend

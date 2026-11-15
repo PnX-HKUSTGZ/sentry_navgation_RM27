@@ -114,7 +114,7 @@ def _validate_localization_inputs(context):
         raise RuntimeError(
             f"Point-LIO localization for world '{world}' requires a matching prior "
             f"PCD, but '{prior_pcd}' does not exist. Supply prior_pcd_file:=... and "
-            "a matching relocalization init_pose, or use_ground_truth_odom:=true."
+            "a matching backend map bundle/startup_pose profile, or use_ground_truth_odom:=true."
         )
     return actions
 

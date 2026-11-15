@@ -106,6 +106,21 @@ TEST(PlanningOdometry, DoesNotUseLatestTransformWhenSampleIsOutsideHistory)
   EXPECT_FALSE(velocity.allFinite());
 }
 
+TEST(PlanningOdometry, AcceptsOneCycleLatestTransformWithAgeBound)
+{
+  tf2_ros::Buffer transforms(std::make_shared<rclcpp::Clock>(RCL_ROS_TIME));
+  // 模拟 map→odom 比里程计晚一个 100 ms 发布周期。
+  ASSERT_TRUE(transforms.setTransform(frameRotation(0.0, 10), "test", false));
+  auto odom = odometry();
+  odom.header.stamp.nanosec = 100000000;
+  odom.twist.twist.linear.x = 1.0;
+  Eigen::Vector3d velocity;
+  std::string reason;
+  ASSERT_TRUE(planarVelocity(odom, "map", &transforms, 0.0, 0.0, velocity, reason)) << reason;
+  EXPECT_NEAR(velocity.x(), 1.0, 1e-9);
+  EXPECT_NEAR(velocity.y(), 0.0, 1e-9);
+}
+
 TEST(PlanningOdometry, UsesTransformAtOdometryStampNotLatest)
 {
   tf2_ros::Buffer transforms(std::make_shared<rclcpp::Clock>(RCL_ROS_TIME));
