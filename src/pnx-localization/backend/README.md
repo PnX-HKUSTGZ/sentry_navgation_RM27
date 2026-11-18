@@ -144,3 +144,29 @@ SUSPECT 与 LOST 下，若前端仍健康且同一 instance/epoch，恢复中心
 诊断含 `motion_recovery_active`、`motion_recovery_radius_m`、
 `motion_recovery_angle_deg` 与 `motion_recovery_reason`。验证记录见
 `docs/motion_recovery_completion_2026-11-13.md`。
+
+
+## 同刻底盘 TF 等待与回调调度（2026-11-18）
+
+原子前端帧可能先于 `loam_interface → sensor_scan_generation` 生成的同刻底盘 TF
+到达。后端保留最多 8 条估计/原子帧元数据，不缓存点云；只在队列非空时每 20 ms
+墙钟重试，选择最新且同刻 TF 已齐的条目发布。后端里程计、map→odom、对齐消息和
+恢复参考始终使用这条原子帧的源时间，不能用最新 TF 或重新盖时间戳替代。
+
+等待最多 0.5 墙钟秒，且不能落后最新接纳帧超过 0.5 源时间秒。实例、epoch、图段或
+定位代次改变会清理队列；人工恢复、前端重置和不可信状态也使旧输出失效。已发布的
+一致输出可以在同代且仍新鲜时保持可信，不再要求其 stamp 等于刚收到但 TF 尚未到齐的
+最新帧；其墙钟、源时间和 ROS 时间年龄仍受检查，下游停车保护继续生效。冻结和人工
+预览已发布的 TF 时间水位不能被延迟估计倒退覆盖。
+
+诊断增加 `navigation_tf_pending`、`navigation_tf_expired`、`navigation_tf_overflow`、
+`navigation_output_stamp_ns`、`navigation_output_wall_age`，用于区分短暂等待与持续积压。
+
+`loam_interface_node` 和 `sensor_scan_generation_node` 独立可执行程序各使用两个执行
+线程，将里程计与点云置于不同的互斥回调组。传感器扫描节点用独立订阅发布底盘反馈，
+同步器仅处理点云路径；LOAM 对齐变换用短锁复制快照，点云转换期间不持锁。
+若改为组件部署，需使用多线程容器才能获得同样的回调并发效果。
+
+回归测试：`test_navigation_output_queue` 验证持续晚一帧、等待补发、资源/时间上限及
+代次隔离；`sensor_scan_generation/test_callback_isolation` 阻塞两个适配节点实际点云
+订阅所属回调组，验证底盘反馈仍能发布。它们不代表整机仿真实时率已经得到改善。

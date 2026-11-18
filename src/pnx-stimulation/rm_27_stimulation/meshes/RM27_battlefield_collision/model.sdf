@@ -2,6 +2,12 @@
 <sdf version="1.9">
   <model name="RM27_battlefield_collision">
     <static>true</static>
+    <!-- 这些局部件已验证为闭合凸体；缓存原网格，避免体素化及普通网格的 10 mm 余量。 -->
+    <plugin filename="librm27_cad_collision_cache_system.so" name="rm_27_stimulation::CadCollisionCacheSystem">
+      <mesh_directory>/home/pnx/nav_ws/sentry-navigation-RM27/install/rm_27_stimulation/share/rm_27_stimulation/meshes/RM27_battlefield_collision/meshes/collision</mesh_directory>
+      <mesh_names>collision_060 collision_101 collision_106 collision_190 collision_283 collision_285 collision_028 collision_059 collision_069 collision_073 collision_081 collision_156 collision_158 collision_271 collision_273</mesh_names>
+      <uri_prefix>model://RM27_battlefield_collision/meshes/collision/</uri_prefix>
+    </plugin>
     <link name="field">
       <collision name="field__collision__ground">
         <pose rotation_format="quat_xyzw">0 0 -0.1 0 0 0 1</pose>
@@ -615,7 +621,7 @@
       <collision name="field__collision__planar_0058">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_028.stl</uri>
           </mesh>
         </geometry>
@@ -1266,7 +1272,7 @@
       <collision name="field__collision__barrier_0028">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_059.stl</uri>
           </mesh>
         </geometry>
@@ -1287,7 +1293,7 @@
       <collision name="field__collision__barrier_0029">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_060.stl</uri>
           </mesh>
         </geometry>
@@ -1476,7 +1482,7 @@
       <collision name="field__collision__barrier_0046">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_069.stl</uri>
           </mesh>
         </geometry>
@@ -1560,7 +1566,7 @@
       <collision name="field__collision__barrier_0050">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_073.stl</uri>
           </mesh>
         </geometry>
@@ -1728,7 +1734,7 @@
       <collision name="field__collision__barrier_0058">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_081.stl</uri>
           </mesh>
         </geometry>
@@ -2148,7 +2154,7 @@
       <collision name="field__collision__barrier_0080">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_101.stl</uri>
           </mesh>
         </geometry>
@@ -2253,7 +2259,7 @@
       <collision name="field__collision__barrier_0085">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_106.stl</uri>
           </mesh>
         </geometry>
@@ -3303,7 +3309,7 @@
       <collision name="field__collision__barrier_0142">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_156.stl</uri>
           </mesh>
         </geometry>
@@ -3345,7 +3351,7 @@
       <collision name="field__collision__barrier_0144">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_158.stl</uri>
           </mesh>
         </geometry>
@@ -4017,7 +4023,7 @@
       <collision name="field__collision__barrier_0183">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_190.stl</uri>
           </mesh>
         </geometry>
@@ -6201,7 +6207,7 @@
       <collision name="field__collision__planar_0000_tunnel_cut_0">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_271.stl</uri>
           </mesh>
         </geometry>
@@ -6243,7 +6249,7 @@
       <collision name="field__collision__planar_0003_tunnel_cut_0">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_273.stl</uri>
           </mesh>
         </geometry>
@@ -6453,7 +6459,7 @@
       <collision name="field__collision__planar_0014_tunnel_cut_0">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_283.stl</uri>
           </mesh>
         </geometry>
@@ -6495,7 +6501,7 @@
       <collision name="field__collision__planar_0017_tunnel_cut_0">
         <pose rotation_format="quat_xyzw">-0.02 -1.624344 1.641344 0 0 0 1</pose>
         <geometry>
-          <mesh>
+          <mesh optimization="convex_hull">
             <uri>model://RM27_battlefield_collision/meshes/collision/collision_285.stl</uri>
           </mesh>
         </geometry>

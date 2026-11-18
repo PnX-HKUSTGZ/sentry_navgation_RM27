@@ -2,6 +2,7 @@
 #include "rm27_backend/keyframe_manager.hpp"
 #include "rm27_backend/localization_controller.hpp"
 #include "rm27_backend/loop_closer.hpp"
+#include "rm27_backend/navigation_output_queue.hpp"
 #include "rm27_backend/pointlio_adapter.hpp"
 #include <action_msgs/srv/cancel_goal.hpp>
 #include <algorithm>
@@ -410,6 +411,7 @@ public:
             preview_base_.reset();
             manual_active_ = false;
             localizer_->manual(std::nullopt);
+            clearPendingNavigation();
           }
           publishStatus();
         });
@@ -426,6 +428,12 @@ public:
                                   : "frontend unavailable or reset already "
                                     "attempted for this epoch";
         });
+    // 与图写入共用串行执行器；只在等待同刻 TF 时启用快速重试。
+    navigation_retry_ = create_wall_timer(std::chrono::milliseconds(20), [this] {
+      flushNavigationOutputs();
+      publishStatus();
+    });
+    navigation_retry_->cancel();
     maintenance_ = create_wall_timer(std::chrono::milliseconds(100),
                                      [this] { maintain(); });
     estimate_pub_ = create_publisher<nav_msgs::msg::Odometry>("~/odometry", 10);
@@ -616,6 +624,7 @@ private:
     manual_phase_ = "WAITING TF";
     localizer_->manual(std::nullopt, std::nullopt, true);
     tf_trusted_ = false;
+    clearPendingNavigation();
     publishStatus();
     cancelNavigation();
     // 仅预览允许使用已完成源帧的底盘变换；实际几何初值仍查询点击的原始时刻。
@@ -690,7 +699,7 @@ private:
     last_tf_stamp_ = stamp;
   }
   /// 仅对当前身份发起一次重置；服务受理不代表完成，新 epoch 数据才解除等待。
-  bool requestReset() {
+  bool requestReset(const char *reason = "manual reset service") {
     if (!localizer_ || !latest_frame_ || !reset_client_->service_is_ready() ||
         reset_pending_ ||
         (reset_attempted_ && *reset_attempted_ == latest_frame_->identity))
@@ -705,7 +714,12 @@ private:
     reset_pending_ = true;
     reset_started_ = std::chrono::steady_clock::now();
     reset_expected_epoch_ = request->epoch + 1;
+    RCLCPP_WARN(get_logger(),
+                "Frontend reset requested: reason=%s epoch=%lu sequence=%lu",
+                reason, static_cast<unsigned long>(request->epoch),
+                static_cast<unsigned long>(latest_frame_->sequence));
     localizer_->resetSegment();
+    clearPendingNavigation();
     reset_client_->async_send_request(
         request, [this, identity = *reset_attempted_](
                      rclcpp::Client<Service>::SharedFuture future) {
@@ -783,27 +797,110 @@ private:
         std::chrono::duration<double>(std::chrono::steady_clock::now() -
                                       *last_receive_)
                 .count() > input_timeout_) {
+      const auto wall_now = std::chrono::steady_clock::now();
+      const double admitted_age =
+          std::chrono::duration<double>(wall_now - *last_receive_).count();
+      const double callback_age = last_raw_receive_
+          ? std::chrono::duration<double>(wall_now - *last_raw_receive_).count()
+          : -1.0;
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "Frontend admitted-frame timeout: admitted_wall_age=%.3f "
+          "callback_wall_age=%.3f threshold=%.3f last_reason=%s",
+          admitted_age, callback_age, input_timeout_, last_reason_.c_str());
       localizer_->inputTimedOut();
       if (auto_reset_)
-        requestReset();
+        requestReset("admitted-frame timeout");
     }
-    if (latest_frame_ && localizer_ && (last_output_pose_ || preview_base_) &&
-        (!localizer_->state().trusted() ||
-         last_output_stamp_ == latest_frame_->stamp_ns))
-      publishNavigation(*latest_frame_,
-                        last_output_pose_.value_or(Pose::Identity()));
-    if (pending_output_ && latest_frame_ &&
-        pending_output_stamp_ == latest_frame_->stamp_ns &&
-        publishNavigation(*latest_frame_, *pending_output_pose_)) {
-      estimate_pub_->publish(*pending_output_);
-      last_output_pose_ = *pending_output_pose_;
-      last_output_stamp_ = pending_output_stamp_;
-      pending_output_.reset();
-      pending_output_pose_.reset();
-      pending_output_stamp_ = 0;
+    if (localizer_ && (!localizer_->state().trusted() || reset_pending_)) {
+      clearPendingNavigation();
+      if (latest_frame_ && (last_output_pose_ || preview_base_))
+        publishNavigation(*latest_frame_,
+                          last_output_pose_.value_or(Pose::Identity()));
+    } else {
+      flushNavigationOutputs();
     }
     publishRecoveryMarkers();
     publishStatus();
+  }
+  /// 队列身份同时约束前端坐标、图段和定位状态机代次。
+  NavigationOutputQueue<nav_msgs::msg::Odometry>::Context navigationContext() const {
+    return {latest_frame_->identity, manager_->segment(),
+            localizer_ ? localizer_->state().generation() : 0};
+  }
+  void clearPendingNavigation() {
+    pending_navigation_.clear();
+    tf_trusted_ = false;
+    if (navigation_retry_)
+      navigation_retry_->cancel();
+  }
+  /// 发布的是同刻估计，后到的最新原子帧不要求把这条输出冒充为最新时刻。
+  bool navigationOutputTrusted() const {
+    if (reset_pending_ || manual_active_ || !latest_frame_ || !localizer_ ||
+        !localizer_->anchored() || !localizer_->state().trusted() ||
+        !last_output_context_ || !last_output_frame_ ||
+        !(*last_output_context_ == navigationContext()) ||
+        !pending_navigation_.fresh(last_output_received_, last_output_stamp_,
+                                   std::chrono::steady_clock::now(),
+                                   latest_frame_->stamp_ns))
+      return false;
+    const double source_age =
+        (now() - rclcpp::Time(last_output_stamp_, get_clock()->get_clock_type()))
+            .seconds();
+    if (source_age < 0 || source_age > .5)
+      return false;
+    return !publish_tf_ ||
+           (tf_current_ && tf_trusted_ && last_output_stamp_ == last_tf_stamp_);
+  }
+  /// TF 和后端里程计完成后一起提交水位；对齐消息与恢复参考也沿用该帧时间。
+  void publishEstimate(const Frame &f, const Pose &estimated,
+                       const nav_msgs::msg::Odometry &out,
+                       std::chrono::steady_clock::time_point received) {
+    estimate_pub_->publish(out);
+    last_output_pose_ = estimated;
+    last_output_stamp_ = f.stamp_ns;
+    last_output_frame_ = f;
+    last_output_received_ = received;
+    last_output_context_ = navigationContext();
+    if (!publish_tf_ && manual_active_ && localizer_ &&
+        localizer_->state().trusted())
+      completeManual();
+    if (mapMode() && localizer_->anchored()) {
+      localizer_->rememberPose(estimated, f.stamp_ns);
+      geometry_msgs::msg::TransformStamped alignment;
+      alignment.header.stamp = out.header.stamp;
+      alignment.header.frame_id = map_frame_;
+      alignment.child_frame_id = sensor_world_frame_;
+      alignment.transform = tf2::eigenToTransform(
+          Eigen::Isometry3d(estimated * f.odom.inverse())).transform;
+      alignment_pub_->publish(alignment);
+      last_reason_ = f.degraded ? "degraded odometry; map anchored"
+                                : localizer_->reason();
+    } else {
+      last_reason_ = f.degraded ? "degraded odometry"
+                                : "odometry only; globally unanchored";
+    }
+  }
+  void flushNavigationOutputs() {
+    if (!publish_tf_ || !latest_frame_ || !localizer_ || reset_pending_ ||
+        !localizer_->state().trusted()) {
+      clearPendingNavigation();
+      return;
+    }
+    pending_navigation_.synchronize(navigationContext());
+    pending_navigation_.publishNewestReady(
+        std::chrono::steady_clock::now(), latest_frame_->stamp_ns,
+        last_tf_stamp_, [this](const auto &sample) {
+          if (sample.frame.stamp_ns > now().nanoseconds())
+            return false;
+          if (!publishNavigation(sample.frame, sample.estimate))
+            return false;
+          publishEstimate(sample.frame, sample.estimate, sample.payload,
+                          sample.received);
+          return true;
+        });
+    if (!pending_navigation_.size())
+      navigation_retry_->cancel();
   }
   /// 发布结构化可信状态；导航还需检查 heartbeat 与 pose_stamp 的新鲜度。
   void publishStatus() {
@@ -824,12 +921,7 @@ private:
         localizer_ ? localizer_->state().generation() : manager_->segment();
     m.segment = manager_->segment();
     m.map_ready = localizer_ && localizer_->ready();
-    m.global_trusted = !reset_pending_ && latest_frame_ && !manual_active_ &&
-                       last_output_stamp_ == latest_frame_->stamp_ns &&
-                       last_tf_stamp_ == latest_frame_->stamp_ns &&
-                       localizer_ && localizer_->anchored() &&
-                       localizer_->state().trusted() &&
-                       (!publish_tf_ || (tf_current_ && tf_trusted_));
+    m.global_trusted = navigationOutputTrusted();
     m.tf_published = publish_tf_ && tf_current_ && last_tf_stamp_ > 0;
     m.frozen = localizer_ && !localizer_->state().trusted() &&
                (last_trusted_base_.has_value() || preview_base_.has_value());
@@ -855,12 +947,15 @@ private:
   /// 用同刻 world←odom 与 IMU 位姿建立导航
   /// TF；恢复冻结采用底盘参考点而非活动雷达。
   bool publishNavigation(const Frame &f, const Pose &estimated) {
-    // 本帧 TF 查询失败时清除上一帧状态，避免旧 TF 被当作当前一致输出。
-    tf_current_ = false;
-    tf_trusted_ = false;
+    // 尚未到齐的新帧不作废同代已发布的一致输出；可信状态另验原始时间和年龄。
+    // 不可信阶段仍可发布冻结 TF，但不能继承正常输出许可。
+    if (!localizer_ || !localizer_->state().trusted())
+      tf_trusted_ = false;
     if (!publish_tf_ || !localizer_ ||
         (!localizer_->anchored() && !last_trusted_base_ && !preview_base_))
       return !publish_tf_;
+    if (f.stamp_ns < last_tf_stamp_)
+      return false;
     try {
       const auto stamp =
           rclcpp::Time(f.stamp_ns, get_clock()->get_clock_type());
@@ -899,7 +994,9 @@ private:
       last_tf_stamp_ = f.stamp_ns;
       return true;
     } catch (const tf2::TransformException &e) {
-      RCLCPP_DEBUG(get_logger(), "Navigation TF pending: %s", e.what());
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                           "Navigation TF pending at %.6f: %s",
+                           f.stamp_ns * 1e-9, e.what());
       return false;
     }
   }
@@ -937,6 +1034,7 @@ private:
   /// 利用最近图锚投影当前帧并传播协方差；图提交异常会断段，其他异常记录为输入拒绝。
   void receive(const PointlioAdapter::Message &m) {
     const auto start = std::chrono::steady_clock::now();
+    last_raw_receive_ = start;
     ++received_;
     try {
       Frame f = adapter_->decode(m);
@@ -944,6 +1042,9 @@ private:
       if (admission == Admission::Rejected) {
         ++rejected_;
         last_reason_ = manager_->reason();
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                             "Rejected backend frame admission: %s",
+                             last_reason_.c_str());
         return;
       }
       if (admission == Admission::NewSegment &&
@@ -969,18 +1070,15 @@ private:
         manual_active_ = false;
         cached_odom_base_.reset();
         tf_current_ = tf_trusted_ = false;
+        last_tf_stamp_ = -1;
+        last_output_frame_.reset();
+        clearPendingNavigation();
       }
       odom_history_.push_back(f);
       while (odom_history_.size() > 100)
         odom_history_.pop_front();
       latest_frame_ = f;
       last_receive_ = std::chrono::steady_clock::now();
-      if (pending_output_ && f.stamp_ns > pending_output_stamp_) {
-        // 源帧已经前进，旧帧不能跨时间补发；当前帧会重新建立一致输出。
-        pending_output_.reset();
-        pending_output_pose_.reset();
-        pending_output_stamp_ = 0;
-      }
       Cloud::ConstPtr local_cloud;
       if (localizer_) {
         local_cloud = adapter_->cloud(m, f);
@@ -1143,43 +1241,16 @@ private:
             for (int c = 0; c < 6; ++c)
               out.pose.covariance[r * 6 + c] = world(r, c);
         }
-        const bool navigation_output_ready = publishNavigation(f, estimated);
-        if (publish_tf_ && !navigation_output_ready) {
-          // 后端里程计和 map→odom 必须来自同一原子帧；TF 未完成时暂不发布
-          // 这条估计，维护回调会在同一源时刻补齐后再发布。
-          pending_output_ = out;
-          pending_output_pose_ = estimated;
-          pending_output_stamp_ = f.stamp_ns;
-          publishStatus();
-          finishTiming(start);
-          return;
-        }
-        estimate_pub_->publish(out);
-        last_output_pose_ = estimated;
-        last_output_stamp_ = f.stamp_ns;
-        if (!publish_tf_ && manual_active_ && localizer_ &&
-            localizer_->state().trusted())
-          completeManual();
-        publishStatus();
-        if (mapMode() && localizer_->anchored()) {
-          // 发布 map←前端世界系对齐，等价于后续可接管的 map→odom 估计，但不广播
-          // TF。
-          localizer_->rememberPose(estimated, f.stamp_ns);
-          geometry_msgs::msg::TransformStamped alignment;
-          alignment.header.stamp = last_stamp_;
-          alignment.header.frame_id = map_frame_;
-          alignment.child_frame_id = sensor_world_frame_;
-          alignment.transform =
-              tf2::eigenToTransform(
-                  Eigen::Isometry3d(estimated * f.odom.inverse()))
-                  .transform;
-          alignment_pub_->publish(alignment);
-          last_reason_ = f.degraded ? "degraded odometry; map anchored"
-                                    : localizer_->reason();
+        if (publish_tf_) {
+          pending_navigation_.synchronize(navigationContext());
+          pending_navigation_.push(f, estimated, out, *last_receive_);
+          flushNavigationOutputs();
+          if (pending_navigation_.size() && navigation_retry_->is_canceled())
+            navigation_retry_->reset();
         } else {
-          last_reason_ = f.degraded ? "degraded odometry"
-                                    : "odometry only; globally unanchored";
+          publishEstimate(f, estimated, out, *last_receive_);
         }
+        publishStatus();
       }
     } catch (const std::exception &e) {
       ++rejected_;
@@ -1216,6 +1287,14 @@ private:
       v.value = o.str();
       s.values.push_back(v);
     };
+    put("navigation_tf_pending", pending_navigation_.size());
+    put("navigation_tf_expired", pending_navigation_.expired());
+    put("navigation_tf_overflow", pending_navigation_.overflow());
+    put("navigation_output_stamp_ns", last_output_stamp_);
+    put("navigation_output_wall_age", last_output_frame_
+            ? std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                           last_output_received_).count()
+            : -1.);
     put("received", received_);
     put("accepted", accepted_);
     put("rejected", rejected_);
@@ -1348,10 +1427,14 @@ private:
   std::deque<Frame> odom_history_;
   std::optional<geometry_msgs::msg::PoseWithCovarianceStamped> pending_hint_;
   std::optional<Pose> last_trusted_base_, last_output_pose_;
-  std::optional<Pose> pending_output_pose_;
-  std::optional<nav_msgs::msg::Odometry> pending_output_;
-  std::int64_t pending_output_stamp_ = 0;
+  using NavigationQueue = NavigationOutputQueue<nav_msgs::msg::Odometry>;
+  NavigationQueue pending_navigation_;
+  std::optional<NavigationQueue::Context> last_output_context_;
+  std::optional<Frame> last_output_frame_;
+  std::chrono::steady_clock::time_point last_output_received_;
+  rclcpp::TimerBase::SharedPtr navigation_retry_;
   std::optional<std::chrono::steady_clock::time_point> last_receive_;
+  std::optional<std::chrono::steady_clock::time_point> last_raw_receive_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   rclcpp::Publisher<rm27_localization_interfaces::msg::LocalizationStatus>::
       SharedPtr status_pub_;

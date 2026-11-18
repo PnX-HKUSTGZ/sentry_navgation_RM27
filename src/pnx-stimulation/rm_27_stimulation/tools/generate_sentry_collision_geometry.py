@@ -22,13 +22,31 @@ PIVOT = np.array([0.005862518, 0.015803345, 0.087848857])
 WHEELS = [(1, -1), (-1, 1), (-1, -1), (1, 1)]
 
 
-def vertices(path):
+def triangles(path):
+    """读取完整三角面，供后续分块切割使用。"""
     data = path.read_bytes()
+    if len(data) < 84:
+        raise ValueError(f'STL 文件过短：{path}')
+
     count = struct.unpack_from('<I', data, 80)[0]
     if len(data) != 84 + 50 * count:
         raise ValueError(f'需要二进制 STL：{path}')
-    dtype = np.dtype([('normal', '<f4', (3,)), ('v', '<f4', (3, 3)), ('attr', '<u2')])
-    return np.unique(np.frombuffer(data, dtype, count, 84)['v'].reshape(-1, 3), axis=0).astype(float)
+
+    dtype = np.dtype([
+        ('normal', '<f4', (3,)),
+        ('v', '<f4', (3, 3)),
+        ('attr', '<u2'),
+    ])
+    records = np.frombuffer(data, dtype, count, 84)
+
+    # 返回形状为 [三角面数量, 3个顶点, xyz] 的数组。
+    return records['v'].astype(float)
+
+
+def vertices(path):
+    """保留已有的去重顶点接口。"""
+    faces = triangles(path)
+    return np.unique(faces.reshape(-1, 3), axis=0)
 
 
 def source_groups():

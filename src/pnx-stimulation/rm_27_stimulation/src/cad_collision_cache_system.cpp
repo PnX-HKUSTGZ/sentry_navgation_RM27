@@ -4,6 +4,8 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <sstream>
+#include <vector>
 
 #include <gz/common/Console.hh>
 #include <gz/common/Mesh.hh>
@@ -22,8 +24,21 @@ public:
     gz::sim::EntityComponentManager &, gz::sim::EventManager &) override
   {
     const auto directory = _sdf->Get<std::string>("mesh_directory");
-    const std::array<std::string, 9> names = {"chassis_body", "chassis_armor", "yaw_body",
+    std::vector<std::string> names = {"chassis_body", "chassis_armor", "yaw_body",
       "yaw_sensors", "roll_body", "wheel_1", "wheel_2", "wheel_3", "wheel_4"};
+    // 未指定时保留机器人原有九个部件；场地可显式指定已经验证为凸形的局部件。
+    if (_sdf->HasElement("mesh_names"))
+    {
+      names.clear();
+      std::istringstream input(_sdf->Get<std::string>("mesh_names"));
+      for (std::string name; input >> name; )
+        names.push_back(name);
+      if (names.empty())
+        throw std::runtime_error("mesh_names must not be empty");
+    }
+    const auto uriPrefix = _sdf->HasElement("uri_prefix")
+      ? _sdf->Get<std::string>("uri_prefix")
+      : std::string("model://rm_27_stimulation/meshes/rm27_sentry_collision/");
     auto &manager = *gz::common::MeshManager::Instance();
     for (const auto &name : names)
     {
@@ -32,10 +47,11 @@ public:
       if (!source)
         throw std::runtime_error("CAD collision mesh cannot load: " + path);
       // gz-physics7 的 convex_hull 分支首先查询这个缓存名。
-      // 这里只缓存生成工具已经验证过的凸包；不修改赛场网格或其他模型。
-      const std::array<std::string, 3> aliases = {source->Name(),
-        "model://rm_27_stimulation/meshes/rm27_sentry_collision/" + name + ".stl",
-        "package://rm_27_stimulation/meshes/rm27_sentry_collision/" + name + ".stl"};
+      // 仅缓存指定的凸网格，不进行二次体素化。
+      std::vector<std::string> aliases = {source->Name(), uriPrefix + name + ".stl"};
+      if (!_sdf->HasElement("uri_prefix"))
+        aliases.push_back("package://rm_27_stimulation/meshes/rm27_sentry_collision/" +
+          name + ".stl");
       for (const auto &alias : aliases)
       {
         const auto cacheName = alias + "__CONVEX_1_200000";
@@ -48,8 +64,9 @@ public:
         manager.AddMesh(exact.release());
       }
     }
-    gzmsg << "[CadCollision] registered 9 exact CAD convex meshes; "
-          << "Bullet margin=1 mm, no voxel simplification." << std::endl;
+    gzmsg << "[CadCollision] registered " << names.size()
+          << " exact CAD convex meshes from " << directory
+          << "; Bullet margin=1 mm, no voxel simplification." << std::endl;
   }
 };
 }  // namespace rm_27_stimulation

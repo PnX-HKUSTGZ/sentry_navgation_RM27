@@ -45,17 +45,32 @@ LoamInterfaceNode::LoamInterfaceNode(const rclcpp::NodeOptions & options)
   pcd_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("registered_scan", 5);
   odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("lidar_odometry", 5);
 
+  // 点云转换不占用里程计回调组；共享对齐只在复制快照时短暂加锁。
+  odometry_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  cloud_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  rclcpp::SubscriptionOptions cloud_options, odometry_options;
+  cloud_options.callback_group = cloud_group_;
+  odometry_options.callback_group = odometry_group_;
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
     registered_scan_topic_, rclcpp::SensorDataQoS().keep_last(2),
-    std::bind(&LoamInterfaceNode::pointCloudCallback, this, std::placeholders::_1));
+    std::bind(&LoamInterfaceNode::pointCloudCallback, this, std::placeholders::_1), cloud_options);
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
     state_estimation_topic_, 5,
-    std::bind(&LoamInterfaceNode::odometryCallback, this, std::placeholders::_1));
+    std::bind(&LoamInterfaceNode::odometryCallback, this, std::placeholders::_1), odometry_options);
 }
 
 void LoamInterfaceNode::pointCloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
 {
-  if (!base_frame_to_lidar_initialized_) {
+  tf2::Transform alignment;
+  bool initialized;
+  {
+    std::lock_guard<std::mutex> lock(alignment_mutex_);
+    initialized = base_frame_to_lidar_initialized_;
+    if (initialized) {
+      alignment = tf_odom_to_lidar_odom_;
+    }
+  }
+  if (!initialized) {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(), *this->get_clock(), 2000,
       "Waiting for odometry before publishing registered_scan in odom frame.");
@@ -65,7 +80,7 @@ void LoamInterfaceNode::pointCloudCallback(const sensor_msgs::msg::PointCloud2::
   // NOTE: Input point cloud message is based on the `lidar_odom`
   // Here we transform it to the REAL `odom` frame
   auto out = std::make_shared<sensor_msgs::msg::PointCloud2>();
-  pcl_ros::transformPointCloud(odom_frame_, tf_odom_to_lidar_odom_, *msg, *out);
+  pcl_ros::transformPointCloud(odom_frame_, alignment, *msg, *out);
   pcd_pub_->publish(*out);
 }
 
@@ -75,26 +90,38 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
   tf2::fromMsg(msg->pose.pose, tf_lidar_odom_to_lidar);
   // NOTE: Input odometry message is based on the `lidar_odom`
   // Here we transform it to the `odom` frame
-  if (!base_frame_to_lidar_initialized_) {
+  tf2::Transform alignment;
+  bool initialized;
+  {
+    std::lock_guard<std::mutex> lock(alignment_mutex_);
+    initialized = base_frame_to_lidar_initialized_;
+    if (initialized) {
+      alignment = tf_odom_to_lidar_odom_;
+    }
+  }
+  if (!initialized) {
     try {
       auto tf_stamped = tf_buffer_->lookupTransform(
         base_frame_, lidar_frame_, msg->header.stamp, rclcpp::Duration::from_seconds(0.5));
       tf2::Transform tf_base_frame_to_lidar;
       tf2::fromMsg(tf_stamped.transform, tf_base_frame_to_lidar);
-      tf_odom_to_lidar_odom_ = initialWorldAlignment(
-        tf_base_frame_to_lidar, tf_lidar_odom_to_lidar);
-      base_frame_to_lidar_initialized_ = true;
+      alignment = initialWorldAlignment(tf_base_frame_to_lidar, tf_lidar_odom_to_lidar);
 
       if (!msg->header.frame_id.empty() && msg->header.frame_id != odom_frame_) {
         geometry_msgs::msg::TransformStamped transform;
         transform.header.stamp = msg->header.stamp;
         transform.header.frame_id = odom_frame_;
         transform.child_frame_id = msg->header.frame_id;
-        transform.transform = tf2::toMsg(tf_odom_to_lidar_odom_);
+        transform.transform = tf2::toMsg(alignment);
         static_tf_broadcaster_->sendTransform(transform);
         RCLCPP_INFO(
           this->get_logger(), "Published static transform %s -> %s",
           transform.header.frame_id.c_str(), transform.child_frame_id.c_str());
+      }
+      {
+        std::lock_guard<std::mutex> lock(alignment_mutex_);
+        tf_odom_to_lidar_odom_ = alignment;
+        base_frame_to_lidar_initialized_ = true;
       }
     } catch (tf2::TransformException & ex) {
       RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s Retrying...", ex.what());
@@ -103,7 +130,7 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
   }
 
   // Transform the odometry_msg (based lidar_odom) to the odom frame
-  tf2::Transform tf_odom_to_lidar = tf_odom_to_lidar_odom_ * tf_lidar_odom_to_lidar;
+  tf2::Transform tf_odom_to_lidar = alignment * tf_lidar_odom_to_lidar;
 
   nav_msgs::msg::Odometry out;
   out.header.stamp = msg->header.stamp;
@@ -115,8 +142,7 @@ void LoamInterfaceNode::odometryCallback(const nav_msgs::msg::Odometry::ConstSha
   out.pose.pose.position.y = origin.y();
   out.pose.pose.position.z = origin.z();
   out.pose.pose.orientation = tf2::toMsg(tf_odom_to_lidar.getRotation());
-  out.pose.covariance = tf2::transformCovariance(
-    msg->pose.covariance, tf_odom_to_lidar_odom_);
+  out.pose.covariance = tf2::transformCovariance(msg->pose.covariance, alignment);
 
   // Point-LIO publishes twist in its child body frame. In the current robot
   // model body/imu_link and left_mid360 are co-oriented, so the components are

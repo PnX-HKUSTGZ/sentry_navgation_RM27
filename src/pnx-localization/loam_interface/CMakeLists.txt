@@ -27,10 +27,8 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   DIRECTORY src
 )
 
-rclcpp_components_register_node(${PROJECT_NAME}
-  PLUGIN loam_interface::LoamInterfaceNode
-  EXECUTABLE ${PROJECT_NAME}_node
-)
+rclcpp_components_register_nodes(${PROJECT_NAME} "loam_interface::LoamInterfaceNode")
+ament_auto_add_executable(${PROJECT_NAME}_node apps/node_main.cpp)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)

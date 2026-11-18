@@ -71,6 +71,10 @@ private:
 
   message_filters::Subscriber<nav_msgs::msg::Odometry> odometry_sub_;
   message_filters::Subscriber<sensor_msgs::msg::PointCloud2> laser_cloud_sub_;
+  // 独立轻量订阅不经过同步器，点云配对/转换只能占用 cloud_group_。
+  rclcpp::CallbackGroup::SharedPtr odometry_group_;
+  rclcpp::CallbackGroup::SharedPtr cloud_group_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr feedback_sub_;
 
   using SyncPolicy = message_filters::sync_policies::ApproximateTime<
     nav_msgs::msg::Odometry, sensor_msgs::msg::PointCloud2>;

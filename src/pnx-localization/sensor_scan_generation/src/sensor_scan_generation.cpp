@@ -50,13 +50,20 @@ SensorScanGenerationNode::SensorScanGenerationNode(const rclcpp::NodeOptions & o
     RMW_QOS_LIVELINESS_LEASE_DURATION_DEFAULT,
     false};
 
-  odometry_sub_.subscribe(this, "lidar_odometry", qos_profile);
+  odometry_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  cloud_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+  rclcpp::SubscriptionOptions feedback_options, cloud_options;
+  feedback_options.callback_group = odometry_group_;
+  cloud_options.callback_group = cloud_group_;
   // Publish chassis feedback as soon as its sensor pose arrives. ApproximateTime
   // may wait for a subsequent cloud before releasing a pair; that delay must not
   // hold back the controller's state or stamp it with a different scan time.
-  odometry_sub_.registerCallback(
-    std::bind(&SensorScanGenerationNode::odometryHandler, this, std::placeholders::_1));
-  laser_cloud_sub_.subscribe(this, "registered_scan", qos_profile);
+  feedback_sub_ = create_subscription<nav_msgs::msg::Odometry>(
+    "lidar_odometry", rclcpp::SensorDataQoS().keep_last(1),
+    std::bind(&SensorScanGenerationNode::odometryHandler, this, std::placeholders::_1),
+    feedback_options);
+  odometry_sub_.subscribe(this, "lidar_odometry", qos_profile, cloud_options);
+  laser_cloud_sub_.subscribe(this, "registered_scan", qos_profile, cloud_options);
 
   sync_ = std::make_unique<message_filters::Synchronizer<SyncPolicy>>(
     SyncPolicy(100), odometry_sub_, laser_cloud_sub_);

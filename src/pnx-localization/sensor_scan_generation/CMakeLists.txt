@@ -27,10 +27,8 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   DIRECTORY src
 )
 
-rclcpp_components_register_node(${PROJECT_NAME}
-  PLUGIN sensor_scan_generation::SensorScanGenerationNode
-  EXECUTABLE ${PROJECT_NAME}_node
-)
+rclcpp_components_register_nodes(${PROJECT_NAME} "sensor_scan_generation::SensorScanGenerationNode")
+ament_auto_add_executable(${PROJECT_NAME}_node apps/node_main.cpp)
 
 #############
 ## Testing ##
@@ -49,6 +47,11 @@ if(BUILD_TESTING)
   target_include_directories(test_odometry_pipeline PRIVATE include)
   target_link_libraries(test_odometry_pipeline ${PROJECT_NAME})
   ament_target_dependencies(test_odometry_pipeline rclcpp tf2_ros tf2_geometry_msgs sensor_msgs nav_msgs)
+
+  find_package(loam_interface REQUIRED)
+  ament_add_gtest(test_callback_isolation test/test_callback_isolation.cpp)
+  target_link_libraries(test_callback_isolation ${PROJECT_NAME})
+  ament_target_dependencies(test_callback_isolation loam_interface rclcpp tf2_ros nav_msgs)
 
   set(ament_cmake_clang_format_CLANG_FORMAT_VERSION 21)
   set(ament_cmake_clang_format_CONFIG_FILE "${CMAKE_SOURCE_DIR}/.clang-format")

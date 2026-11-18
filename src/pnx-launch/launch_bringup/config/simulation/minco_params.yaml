@@ -264,8 +264,8 @@ planner_server:
       lidar_offset_y: 0.0
       safety:
         # 仅针对原始 PGM：侵入面积比例和深度必须同时达标；实测障碍独立检查。
-        static_overlap_max_ratio: 0.08
-        static_overlap_max_depth: 0.16
+        static_overlap_max_ratio: 0.15
+        static_overlap_max_depth: 0.20
         # 足迹边缘的低净空 ESDF 插值容差，单位：米；内部命中及墙体仍阻挡。
         dynamic_edge_overlap_tolerance: 0.04
         # 矩形尺寸仅作兼容回退，正常检查使用下方多边形。
@@ -1071,7 +1071,7 @@ rm27_backend:
     cloud.voxel_size: 0.15  # 关键帧局部点云体素边长，单位 m；0 关闭。
     cloud.max_points: 12000  # 体素滤波前等间隔采样的最大点数。
     cloud.min_points: 30  # 滤波后关键帧最少有效点数。
-    quality.minimum_effective_points: 20  # 前端有效匹配少于此值标记降级。
+    quality.minimum_effective_points: 15  # 前端有效匹配少于此值标记降级。
     quality.degraded_noise_multiplier: 10.0  # 区间降级或缺帧时里程计方差倍率。
     odom_noise.translation_per_second: 0.0005  # 平移过程方差系数，单位 m²/s，待实车标定。
     odom_noise.translation_per_meter: 0.0002  # 净位移附加方差系数，单位 m²/m。
@@ -1101,7 +1101,7 @@ rm27_backend:
     recovery.motion.max_linear_speed: 6.0  # 相邻 IMU 位移隐含速度超限则解除约束，米每秒；不超过 input 的限制。
     recovery.motion.max_angular_speed_deg: 180.0  # 相邻 IMU 转角隐含角速度超限则解除约束，度每秒。
     recovery.motion.max_age: 15.0  # 最后可信锚的源时间或墙钟年龄上限，秒；超限解除约束。
-    recovery.motion.base_radius: 1.5  # 连续性恢复初始位置误差包络半径，米。
+    recovery.motion.base_radius: 1.8  # 连续性恢复初始位置误差包络半径，米。
     recovery.motion.max_radius: 8.0  # 位置包络超过此值即解除约束，米。
     recovery.motion.drift_per_second: 0.15  # 位置包络随失去可信锚的时间增长，米每秒。
     recovery.motion.drift_per_meter: 0.08  # 位置包络随累计前端路程增长，米每米。
@@ -1132,8 +1132,8 @@ rm27_backend:
     state.input_timeout: 1.0  # 原子帧接收超时后撤销全局可信输出，墙钟秒。
     state.recovery_failures_before_lost: 3  # 可疑阶段实际恢复失败次数，达到后转全局搜索。
     state.reset_on_frontend_timeout: true  # 前端断流时每个 epoch 最多请求一次协调重置。
-    state.reset_timeout: 5.0  # 重置受理后等待新 epoch 数据的最长墙钟秒数。
-    output.odom_frame: odom  # 导航连续里程计坐标系。
+    state.reset_timeout: 8.0  # 重置受理后等待新 epoch 数据的最长墙钟秒数。
+    output.odom_frame: odom  
     output.base_frame: base_footprint  # 人工初值与冻结输出使用的底盘参考点。
     output.publish_tf: false  # 先验地图定位接管 map→odom；回环和纯里程计旁路关闭。
     prior_map.map_frame: map  # 先验地图坐标系，锚定后后端估计与对齐输出使用该坐标系。
@@ -1154,7 +1154,7 @@ rm27_backend:
     prior_map.translation_std_floor: 0.01  # 地图因子共模平移标准差下限，单位 m，防止大量相关点导致过度自信。
     prior_map.rotation_std_floor_deg: 0.1  # 地图因子共模旋转标准差下限，单位度。
     prior_map.max_condition: 100.0  # 平衡 Hessian 条件数门限，更弱的退化方向不提供约束。
-    prior_map.max_translation_correction: 1.0  # 常规校正相对图估计的平移上限，单位 m；超出计为冲突。
+    prior_map.max_translation_correction: 1.2  # 常规校正相对图估计的平移上限，单位 m；超出计为冲突。
     prior_map.max_rotation_correction_deg: 15.0  # 常规校正旋转上限，单位度。
     prior_map.rejection_probability: 0.001  # NIS 卡方上尾概率低于该值则拒绝入图。
     prior_map.max_conflicts: 7  # 连续冲突次数达到后进入 suspect，需两次一致满秩配准才恢复。

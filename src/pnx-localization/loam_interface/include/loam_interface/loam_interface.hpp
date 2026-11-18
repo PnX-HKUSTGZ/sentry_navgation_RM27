@@ -16,6 +16,7 @@
 #define LOAM_INTERFACE__LOAM_INTERFACE_HPP_
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "nav_msgs/msg/odometry.hpp"
@@ -39,6 +40,8 @@ private:
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  rclcpp::CallbackGroup::SharedPtr odometry_group_;
+  rclcpp::CallbackGroup::SharedPtr cloud_group_;
 
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_pub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
@@ -54,6 +57,7 @@ private:
   std::string base_frame_;
 
   bool base_frame_to_lidar_initialized_;
+  std::mutex alignment_mutex_;
   tf2::Transform tf_odom_to_lidar_odom_;
 };
 
