@@ -1267,7 +1267,11 @@ def test_rmuc2027_prior_is_not_translated_twice(filename):
         assert params["prior_map.transform"] == [0.0] * 6
         assert "relocalization_manager" not in original
         assert "relocalization_manager" not in data
-        for gate in ["prior_map.max_rmse", "prior_map.min_inlier_ratio", "prior_map.min_inliers"]:
+        for gate in [
+            "prior_map.max_rmse", "prior_map.min_inlier_ratio", "prior_map.min_inliers",
+            "prior_map.rmse_failures_before_suspect",
+            "recovery.allow_unbounded_auto_recovery",
+        ]:
             assert params[gate] == original["rm27_backend"]["ros__parameters"][gate]
         assert data["point_lio"] == original["point_lio"]
     finally:

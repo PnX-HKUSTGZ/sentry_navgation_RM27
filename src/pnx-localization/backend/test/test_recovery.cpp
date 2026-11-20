@@ -635,7 +635,190 @@ TEST(RecoveryController, LostRecoveryUsesMovingContinuityAnchor) {
   f.stamp_ns += 100000000LL;
   manager.observe(f);
   controller.observe(f, observe(room(), truth * f.odom, 10, rng));
-  ASSERT_TRUE(controller.requestRecovery(f));
+  EXPECT_FALSE(controller.requestRecovery(f));
   EXPECT_FALSE(controller.stats().motion_recovery_active);
+  EXPECT_NE(controller.reason().find("unbounded automatic recovery blocked"),
+            std::string::npos);
+  controller.manual(std::nullopt);
+  ASSERT_TRUE(controller.requestRecovery(f));
   controller.waitIdle();
+}
+
+/// 真正执行点到面匹配和图提交，避免仅测试一个与实现相同的计数器。
+class RecoveryPolicyTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    auto m = matcher();
+    m.point_to_plane = true;
+    m.max_rmse = .05;
+    ControllerConfig config;
+    config.rmse_failures_before_suspect = rmseLimit();
+    config.tracking.correction_period = .01;
+    config.tracking.acquisition_period = .01;
+    controller = std::make_unique<LocalizationController>(
+        config, m, ScanContextConfig{}, bundle.path.string(), Pose::Identity());
+    controller->waitIdle();
+    controller->syncSegment(manager.segment());
+    controller->manual(truth);
+    for (int i = 0; i < 2; ++i) {
+      manager.observe(frame(i));
+      controller->observe(frame(i), observe(room(), truth, 10, rng));
+    }
+    ASSERT_TRUE(controller->requestRecovery(frame(1)));
+    controller->waitIdle();
+    controller->apply(manager);
+    auto prior = controller->takeAnchor(frame(1));
+    ASSERT_TRUE(prior) << controller->reason();
+    manager.commit(frame(1), prior);
+    controller->confirmAnchor();
+    controller->rememberPose(truth, frame(1).stamp_ns);
+  }
+
+  virtual int rmseLimit() const { return 3; }
+
+  void track(bool noisy) {
+    latest = frame(next++);
+    ASSERT_NE(manager.observe(latest), Admission::Rejected);
+    auto cloud = observe(room(), truth, 10, rng);
+    if (noisy) {
+      std::normal_distribution<double> error(0., .3);
+      for (auto &p : *cloud) {
+        p.x += error(rng);
+        p.y += error(rng);
+        p.z += error(rng);
+      }
+    }
+    controller->observe(latest, cloud);
+    const auto key = manager.commit(latest);
+    ASSERT_TRUE(controller->requestTracking(key, key.estimate, cloud, 1));
+    controller->waitIdle();
+    accepted = controller->apply(manager).accepted;
+  }
+
+  Bundle bundle;
+  KeyframeManager manager{[] {
+    KeyframeConfig config;
+    config.min_interval = 0.;
+    config.max_interval = .05;
+    return config;
+  }()};
+  std::unique_ptr<LocalizationController> controller;
+  Pose truth = pose(0, .3, .4, 0);
+  std::mt19937 rng{912};
+  Frame latest;
+  int next = 2;
+  std::size_t accepted = 0;
+};
+
+TEST_F(RecoveryPolicyTest,
+       ThirdRmseRejectionTriggersSuspectAndBoundedRecovery) {
+  for (int i = 1; i <= 3; ++i) {
+    track(true);
+    EXPECT_EQ(accepted, 0U);
+    EXPECT_EQ(controller->stats().consecutive_rmse_failures, i);
+    EXPECT_EQ(controller->state().trusted(), i < 3);
+    // 同一结果不能因再次 apply 而重复计数。
+    controller->apply(manager);
+    EXPECT_EQ(controller->stats().consecutive_rmse_failures, i);
+  }
+  EXPECT_EQ(controller->state().status(), LocalizationStatus::Suspect);
+  // 健康前端仍有运动包络，关闭无范围恢复不应封死附近恢复。
+  // 使用后续独立正常扫描刷新恢复窗口，不把故意加噪的跟踪云当作恢复源。
+  for (int i = 0; i < 5; ++i) {
+    latest = frame(next++);
+    manager.observe(latest);
+    controller->observe(latest, observe(room(), truth, 10, rng));
+  }
+  ASSERT_TRUE(controller->requestRecovery(latest));
+  EXPECT_TRUE(controller->stats().motion_recovery_active);
+  controller->waitIdle();
+  controller->apply(manager);
+  auto prior = controller->takeAnchor(latest);
+  ASSERT_TRUE(prior) << controller->reason();
+  manager.commit(latest, prior);
+  controller->confirmAnchor();
+  EXPECT_TRUE(controller->state().trusted());
+  EXPECT_EQ(controller->stats().consecutive_rmse_failures, 0U);
+}
+
+TEST_F(RecoveryPolicyTest, AcceptedMapFactorAndNewSegmentClearRmseFailures) {
+  track(true);
+  track(true);
+  ASSERT_EQ(controller->stats().consecutive_rmse_failures, 2U);
+  track(false);
+  ASSERT_EQ(accepted, 1U);
+  EXPECT_EQ(controller->stats().consecutive_rmse_failures, 0U);
+  track(true);
+  track(true);
+  EXPECT_TRUE(controller->state().trusted());
+  manager.breakSegment();
+  controller->syncSegment(manager.segment());
+  EXPECT_EQ(controller->stats().consecutive_rmse_failures, 0U);
+}
+
+TEST_F(RecoveryPolicyTest, ManualRequestClearsFailureEvidence) {
+  track(true);
+  controller->manual(truth);
+  EXPECT_EQ(controller->stats().consecutive_rmse_failures, 0U);
+  EXPECT_FALSE(controller->state().trusted());
+}
+
+TEST_F(RecoveryPolicyTest, TimeoutClearsFailureEvidence) {
+  track(true);
+  ASSERT_EQ(controller->stats().consecutive_rmse_failures, 1U);
+  controller->inputTimedOut();
+  EXPECT_EQ(controller->stats().consecutive_rmse_failures, 0U);
+  EXPECT_FALSE(controller->state().trusted());
+}
+
+class ImmediateRmsePolicyTest : public RecoveryPolicyTest {
+protected:
+  int rmseLimit() const override { return 1; }
+};
+
+TEST_F(ImmediateRmsePolicyTest, ThresholdOneRetainsImmediateRejection) {
+  track(true);
+  EXPECT_EQ(controller->stats().consecutive_rmse_failures, 1U);
+  EXPECT_EQ(controller->state().status(), LocalizationStatus::Suspect);
+}
+
+TEST(RecoveryController, UnboundedAutomaticRecoveryRequiresOptIn) {
+  Bundle bundle;
+  std::mt19937 rng(913);
+  const auto cloud = observe(room(), pose(0, .3, .4, 0), 10, rng);
+  for (bool allow : {false, true}) {
+    ControllerConfig config;
+    config.allow_unbounded_auto_recovery = allow;
+    LocalizationController controller(config, matcher(), {},
+                                      bundle.path.string(), Pose::Identity());
+    controller.waitIdle();
+    KeyframeManager manager;
+    controller.syncSegment(manager.segment());
+    for (int i = 0; i < 2; ++i) {
+      manager.observe(frame(i));
+      controller.observe(frame(i), cloud);
+    }
+    EXPECT_EQ(controller.requestRecovery(frame(1)), allow);
+    if (!allow) {
+      EXPECT_EQ(controller.stats().requests, 0U);
+      EXPECT_NE(
+          controller.reason().find("unbounded automatic recovery blocked"),
+          std::string::npos);
+    }
+    // 显式无提示服务保留全图入口，不能被自动恢复策略误禁用。
+    controller.manual(std::nullopt);
+    controller.waitIdle();
+    ASSERT_TRUE(controller.requestRecovery(frame(1)));
+    controller.waitIdle();
+  }
+}
+
+TEST(RecoveryController, RejectsInvalidRmseFailureThreshold) {
+  for (int limit : {0, -1}) {
+    ControllerConfig config;
+    config.rmse_failures_before_suspect = limit;
+    EXPECT_THROW(LocalizationController(config, matcher(), {}, "unused",
+                                        Pose::Identity()),
+                 std::invalid_argument);
+  }
 }

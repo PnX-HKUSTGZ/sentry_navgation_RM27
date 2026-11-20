@@ -139,7 +139,15 @@ SUSPECT 与 LOST 下，若前端仍健康且同一 instance/epoch，恢复中心
 
 低质量、前端重置、图异常、断流、时间回退或不合理运动会解除约束；显式人工初值也解除，
 使用户能纠正错误定位或处理被搬动的机器人。无提示的恢复服务可继续利用有效连续性。
-无可靠运动范围时保留全局搜索和对称解拒绝，不会永远限定在旧半场。
+默认 `recovery.allow_unbounded_auto_recovery=false`：无可靠运动范围时停止自动恢复并保持未定位，
+等待人工初值或显式无提示恢复服务；后者仍执行全图候选及对称解验收。设为 true 才允许
+无初值自动全图搜索，包括无启动先验的首次定位。实车无固定出生先验时需提供人工初值。
+`prior_map.rmse_failures_before_suspect=3` 按实际验收的跟踪结果累计 RMSE 超限，
+前三次中的前两次只拒绝地图因子，不撤销健康前端的可信传播，第三次进入 SUSPECT。
+成功地图因子入图、恢复锚确认、人工请求、断段或输入超时清零；身份不匹配或过期结果不计数，
+其他质量拒绝不清零，位姿校正越界和输入故障仍立即处理。
+诊断 `map_consecutive_rmse_failures` 显示累计次数；禁止自动全图恢复时原因包含
+`unbounded automatic recovery blocked`。参数修改后重启节点生效。
 参数见完整配置中的 `recovery.motion.*`，增长量是工程误差包络，不是统计标定的协方差。
 诊断含 `motion_recovery_active`、`motion_recovery_radius_m`、
 `motion_recovery_angle_deg` 与 `motion_recovery_reason`。验证记录见

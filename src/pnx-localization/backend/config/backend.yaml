@@ -43,6 +43,7 @@ rm27_backend:
     initialpose.tf_wait_timeout: 1.0  # 人工初值等待原始时刻 TF 的最长墙钟秒数。
     initialpose.max_translation: 2.0  # 提示协方差三倍标准差的平移范围上限，米；下限 0.5 米。
     initialpose.max_rotation_deg: 60.0  # 提示协方差三倍标准差的转角范围上限，度；下限 10 度。
+    recovery.allow_unbounded_auto_recovery: false  # 无有效运动包络时禁止自动全图恢复；人工恢复入口仍可显式请求。
     recovery.motion.enabled: true  # 自动恢复使用最后可信 IMU 位姿与同代前端运动约束候选。
     recovery.motion.max_linear_speed: 6.0  # 相邻 IMU 位移隐含速度超限则解除约束，米每秒；不超过 input 的限制。
     recovery.motion.max_angular_speed_deg: 180.0  # 相邻 IMU 转角隐含角速度超限则解除约束，度每秒。
@@ -104,6 +105,7 @@ rm27_backend:
     prior_map.max_translation_correction: 1.0  # 常规校正平移上限，单位 m；超出计为冲突。
     prior_map.max_rotation_correction_deg: 15.0  # 常规校正旋转上限，单位度。
     prior_map.rejection_probability: 0.001  # NIS 卡方上尾概率低于该值则拒绝入图。
+    prior_map.rmse_failures_before_suspect: 3  # 地图跟踪 RMSE 超限累计三次后进入 SUSPECT；成功入图、恢复或断段清零。
     prior_map.max_conflicts: 7  # 连续冲突次数达到后进入 suspect。
     prior_map.acquisition_max_translation: 1.5  # 锚定配准相对种子的平移上限，单位 m。
     prior_map.acquisition_max_rotation_deg: 20.0  # 锚定配准相对种子的旋转上限，单位度。

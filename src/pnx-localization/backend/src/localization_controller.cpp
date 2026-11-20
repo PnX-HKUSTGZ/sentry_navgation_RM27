@@ -11,7 +11,8 @@ LocalizationController::LocalizationController(ControllerConfig c,
     : config_(c), motion_(c.motion) {
   if (c.source_min_frames < 1 || c.source_max_frames < c.source_min_frames ||
       c.source_max_frames > 20 || c.failures_before_lost < 1 ||
-      c.degraded_frames_before_suspect < 1 || !std::isfinite(c.source_span) ||
+      c.degraded_frames_before_suspect < 1 ||
+      c.rmse_failures_before_suspect < 1 || !std::isfinite(c.source_span) ||
       c.source_span <= 0 || !std::isfinite(c.result_max_age) ||
       c.result_max_age <= 0 || !std::isfinite(c.input_timeout) ||
       c.input_timeout <= 0)
@@ -238,6 +239,13 @@ bool LocalizationController::requestRecovery(const Frame &f) {
     stats_.motion_recovery_reason = motion_.reason(f);
     stats_.motion_recovery_radius = job.region ? job.region->radius : 0.;
     stats_.motion_recovery_angle = job.region ? job.region->angle : 0.;
+    if (!job.hint && !job.region && !manual_global_recovery_ &&
+        !config_.allow_unbounded_auto_recovery) {
+      recovery_blocked_reason_ = "unbounded automatic recovery blocked: " +
+                                 stats_.motion_recovery_reason;
+      return false;
+    }
+    recovery_blocked_reason_.clear();
   }
   if (!enqueue(std::move(job)))
     return false;
@@ -320,9 +328,11 @@ ApplyOutcome LocalizationController::apply(KeyframeManager &manager) {
     if (!state_.trusted() || !manager.graph().contains(r.job.key))
       continue;
     if (!r.estimate.found) {
-      if (r.estimate.match.reason == "point-to-plane RMSE above threshold")
-        state_.suspect("tracking residual outside valid basin");
       std::lock_guard<std::mutex> lock(mutex_);
+      if (r.estimate.match.reason == "point-to-plane RMSE above threshold" &&
+          ++stats_.consecutive_rmse_failures >=
+              static_cast<std::uint64_t>(config_.rmse_failures_before_suspect))
+        state_.suspect("tracking residual outside valid basin");
       ++stats_.quality_rejects;
       continue;
     }
@@ -371,6 +381,7 @@ ApplyOutcome LocalizationController::apply(KeyframeManager &manager) {
         std::lock_guard<std::mutex> lock(mutex_);
         ++stats_.accepted;
         stats_.consecutive_conflicts = 0;
+        stats_.consecutive_rmse_failures = 0;
       }
     } catch (const std::exception &e) {
       state_.lost(e.what());
@@ -420,7 +431,10 @@ void LocalizationController::confirmAnchor() {
   hint_.reset();
   hint_odom_.reset();
   anchored_ = true;
+  manual_global_recovery_ = false;
   std::lock_guard<std::mutex> lock(mutex_);
+  stats_.consecutive_rmse_failures = 0;
+  recovery_blocked_reason_.clear();
   if (stats_.anchors > 0)
     ++stats_.recoveries;
   ++stats_.anchors;
@@ -451,6 +465,7 @@ void LocalizationController::manual(const std::optional<Pose> &hint,
     motion_.invalidate("explicit manual pose overrides continuity");
   waiting_hint_ = wait_for_hint;
   recovery_paused_ = false;
+  manual_global_recovery_ = !hint && !wait_for_hint;
   retry_pose_.reset();
   hint_limits_ = HintLimits{};
   state_.requestRecovery();
@@ -462,7 +477,10 @@ void LocalizationController::manual(const std::optional<Pose> &hint,
 /// 取消几何任务时只更新原子身份，配准在迭代边界自行退出。
 void LocalizationController::cancelWork() {
   ++cancellation_;
+  manual_global_recovery_ = false;
   std::lock_guard<std::mutex> lock(mutex_);
+  stats_.consecutive_rmse_failures = 0;
+  recovery_blocked_reason_.clear();
   stats_.stale += results_.size();
   pending_.reset();
   results_.clear();
@@ -514,7 +532,10 @@ LocalizerStats LocalizationController::stats() const {
 /// 读取加载失败或状态机原因。
 std::string LocalizationController::reason() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  return error_.empty() ? state_.reason() : error_;
+  if (!error_.empty())
+    return error_;
+  return recovery_blocked_reason_.empty() ? state_.reason()
+                                          : recovery_blocked_reason_;
 }
 /// 测试等待加载和当前任务完成。
 void LocalizationController::waitIdle() const {

@@ -36,6 +36,7 @@ struct LocalizerStats {
   std::uint64_t accepted = 0, anchors = 0, acquisition_failures = 0;
   std::uint64_t quality_rejects = 0, correction_rejects = 0, nis_rejects = 0;
   std::uint64_t recoveries = 0, consecutive_conflicts = 0;
+  std::uint64_t consecutive_rmse_failures = 0;
   double last_rmse = 0, last_inlier_ratio = 0, last_nis = 0;
   double last_correction = 0, last_ms = 0, max_ms = 0, total_ms = 0;
   bool motion_recovery_active = false;

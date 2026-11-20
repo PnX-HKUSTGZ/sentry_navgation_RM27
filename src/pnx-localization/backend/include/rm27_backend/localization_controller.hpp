@@ -12,6 +12,10 @@ struct ControllerConfig {
   RecoveryConfig recovery;
   int source_min_frames = 2, source_max_frames = 5, failures_before_lost = 3;
   int degraded_frames_before_suspect = 10; // 持续前端低质量撤销可信传播。
+  int rmse_failures_before_suspect =
+      3; // 成功地图因子提交之间的 RMSE 超限次数。
+  bool allow_unbounded_auto_recovery =
+      false; // 无运动包络时仅允许显式人工恢复。
   double source_span = .5, result_max_age = 8., input_timeout = 1.;
   double ambiguity_retry_period = 3.; // 静止歧义场景的墙钟重试间隔，s。
   double retry_translation = .3,
@@ -114,6 +118,8 @@ private:
   std::atomic<bool> loaded_{false}, failed_{false};
   std::atomic<std::uint64_t> cancellation_{0};
   bool waiting_hint_ = false, recovery_paused_ = false;
+  bool manual_global_recovery_ = false;
+  std::string recovery_blocked_reason_;
   HintLimits hint_limits_;
   std::optional<Pose> retry_pose_;
   std::chrono::steady_clock::time_point retry_after_;

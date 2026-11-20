@@ -249,6 +249,10 @@ public:
     }
     ControllerConfig cc;
     cc.tracking = lc;
+    cc.rmse_failures_before_suspect =
+        int(positive("prior_map.rmse_failures_before_suspect", 3));
+    cc.allow_unbounded_auto_recovery =
+        declare_parameter("recovery.allow_unbounded_auto_recovery", false);
     cc.degraded_frames_before_suspect =
         int(positive("state.degraded_frames_before_suspect", 10));
     cc.recovery.source_pcd = map_file;
@@ -1373,6 +1377,7 @@ private:
       put("map_nis_rejects", m.nis_rejects);
       put("map_recoveries", m.recoveries);
       put("map_consecutive_conflicts", m.consecutive_conflicts);
+      put("map_consecutive_rmse_failures", m.consecutive_rmse_failures);
       put("map_last_rmse", m.last_rmse);
       put("map_last_inlier_ratio", m.last_inlier_ratio);
       put("map_last_rank", m.last_rank);
