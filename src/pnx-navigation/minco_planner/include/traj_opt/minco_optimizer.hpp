@@ -55,6 +55,8 @@ public:
     double decay_power{2.0};
     double guide_lateral_weight{0.0};
     double guide_lateral_tolerance{0.01};
+    double guide_lateral_max_tolerance{0.0};
+    double inflation_cost_weight{0.0};
     double obstacle_slowdown_distance{0.0};
     double obstacle_max_velocity{1.0};
 
@@ -82,7 +84,6 @@ public:
     opt_vars_.smooth_eps = cfg_.smooth_eps;
     opt_vars_.integral_res = cfg_.integral_res;
     opt_vars_.guide_lateral_weight = cfg_.guide_lateral_weight;
-    opt_vars_.guide_lateral_tolerance = cfg_.guide_lateral_tolerance;
   }
 
   // === Core Planning Interfaces ===
@@ -99,16 +100,19 @@ public:
     opt_vars_.smooth_eps = cfg_.smooth_eps;
     opt_vars_.integral_res = cfg_.integral_res;
     opt_vars_.guide_lateral_weight = cfg_.guide_lateral_weight;
-    opt_vars_.guide_lateral_tolerance = cfg_.guide_lateral_tolerance;
   }
 
   void setInitPsAndTs(const vec_Vec3f & init_ps, const VecDf & init_ts);
 
   void setMap(const std::shared_ptr<rog_map::MapQueryInterface> & map) { opt_vars_.map = map; }
+  void setInflationMap(const std::shared_ptr<rog_map::MapQueryInterface> & map)
+  {
+    inflation_map_ = map;
+  }
 
   int lastIterationCount() const { return last_iteration_count_; }
   int lastReturnCode() const { return last_return_code_; }
-  // L-BFGS objective before the feasibility-preserving time stretch.
+  // L-BFGS objective of the selected iterate before retiming.
   double lastObjectiveTotal() const { return last_objective_total_; }
   uint64_t lastQueryFailureCount() const { return last_query_failure_count_; }
   int lastTimeAllocationIterations() const { return last_time_allocation_iterations_; }
@@ -126,6 +130,20 @@ public:
     double hard_velocity_limit);
 
 private:
+  // A frozen cost field keeps each line search independent of costmap updates.
+  struct InflationGrid
+  {
+    void capture(const std::shared_ptr<rog_map::MapQueryInterface> & map);
+    double sample(const Eigen::Vector2d & point, Eigen::Vector2d & gradient) const;
+    bool traversable(const Eigen::Vector2d & point) const;
+    bool empty() const { return cells.empty(); }
+
+    std::vector<unsigned char> cells;
+    Eigen::Vector2d first_center{Eigen::Vector2d::Zero()};
+    double resolution{0.0};
+    unsigned int width{0U}, height{0U};
+  };
+
   // === Internal Types ===
   // --- Optimization Runtime Variables ---
   struct OptVars
@@ -138,7 +156,10 @@ private:
     double smooth_eps;
     double integral_res;
     double guide_lateral_weight{0.0};
-    double guide_lateral_tolerance{0.01};
+    double guide_lateral_tolerance{0.0};
+    Eigen::Matrix<double, 2, Eigen::Dynamic> guide_side_offsets;
+    InflationGrid inflation;
+    double inflation_cost_weight{0.0};
     bool default_init{true};
 
     // Environment map pointer.
@@ -147,6 +168,8 @@ private:
     VecDf magnitudeBounds;
     VecDf penaltyWeights;
     VecDf local_magnitudes;
+    double continuation_velocity_limit{0.0};
+    double continuation_velocity_weight{0.0};
 
     Eigen::Matrix3d headPVA;
     Eigen::Matrix3d tailPVA;
@@ -159,6 +182,7 @@ private:
     // Optimization variables.
     VecDf times;
     Mat3Df points;
+    double position_scale{1.0};
     VecDf x;
 
     // Gradient cache.
@@ -192,25 +216,15 @@ private:
   static double costFunctional(void * ptr, const VecDf & x, VecDf & g);
 
   // --- Constraint and Barrier Functions ---
-  static void constraintsFunctional(const VecDf & T,
+  static void constraintsFunctional(OptVars & vars, const VecDf & T,
     const MatD3f & coeffs,
-    const Mat3Df & waypoint_attractor,
-    const std::shared_ptr<rog_map::MapQueryInterface> & map,
-    const double & smooth_eps,
-    const int & integral_res,
-    const VecDf & magnitudeBounds,
-    const VecDf & local_magnitudes,
-    const VecDf & penaltyWeights,
-    double guide_lateral_weight, double guide_lateral_tolerance,
     double & cost,
     VecDf & partialGradByTimes,
-    MatD3f & partialGradByCoeffs,
-    VecDf & penalty_log,
-    uint64_t & query_failure_count);
+    MatD3f & partialGradByCoeffs);
+  void prepareInflationCost();
 
   static void computeTimeBarrier(const OptVars & opt_vars,
     const VecDf & times,
-    const VecDf & magnitudeBounds,
     double & cost,
     VecDf & gradByTimes,
     VecDf & penalty_log);
@@ -221,6 +235,7 @@ private:
 
   // === State Variables & Caches ===
   OptVars opt_vars_;
+  std::shared_ptr<rog_map::MapQueryInterface> inflation_map_;
   int last_iteration_count_{0};
   int last_return_code_{0};
   double last_objective_total_{std::numeric_limits<double>::quiet_NaN()};

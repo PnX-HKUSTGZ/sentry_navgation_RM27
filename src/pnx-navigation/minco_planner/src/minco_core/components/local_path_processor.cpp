@@ -236,6 +236,19 @@ LocalPathSeed LocalPathProcessor::buildSeed(
   seed.stop_at_local_end = seed.local_end_is_goal || seed.observed_prefix_clipped;
   const double shortcut_sample_step =
     std::max(1e-3, 0.5 * mode_context.dynamicQuery()->resolution());
+  const auto footprint_safe_along =
+    [&footprint_is_safe, initial_yaw, shortcut_sample_step](
+      const Eigen::Vector3d & a, const Eigen::Vector3d & b) {
+      const int samples = std::max(1, static_cast<int>(std::ceil(
+        (b - a).head<2>().norm() / shortcut_sample_step)));
+      for (int sample = 0; sample <= samples; ++sample) {
+        const double ratio = static_cast<double>(sample) / static_cast<double>(samples);
+        if (!footprint_is_safe(a + ratio * (b - a), initial_yaw)) {
+          return false;
+        }
+      }
+      return true;
+    };
   std::vector<Eigen::Vector3d> sparse_input = seed.dense_path;
   size_t connector_end = 0U;
   const auto global_query = mode_context.sparsifyQuery();
@@ -264,35 +277,58 @@ LocalPathSeed LocalPathProcessor::buildSeed(
     max_vel_,
     max_acc_,
     seed.stop_at_local_end,
-    [this, &mode_context, &footprint_is_safe, &seed, initial_yaw, shortcut_sample_step](
+    [this, &global_query, &footprint_safe_along, &seed](
       const Eigen::Vector3d & a, const Eigen::Vector3d & b) {
-      if (!isLineFree(mode_context.sparsifyQuery(), a, b)) {
+      if (!isLineFree(global_query, a, b)) {
         return false;
       }
       // SMAC deliberately routes through the lower-cost side of Nav2's
       // inflation field. Do not let waypoint sparsification erase that choice
       // merely because a geometrically shorter segment is not yet lethal.
       if (!shortcutRespectsCostEnvelope(
-          mode_context.sparsifyQuery(), seed.dense_path, a, b,
+          global_query, seed.dense_path, a, b,
           shortcut_peak_cost_slack_, shortcut_mean_cost_slack_))
       {
         return false;
       }
       // A static line-of-sight shortcut must not erase a dynamic detour or cut
       // the rectangular footprint across an unobserved corner.
-      const int samples = std::max(1, static_cast<int>(std::ceil(
-        (b - a).head<2>().norm() / shortcut_sample_step)));
-      for (int sample = 0; sample <= samples; ++sample) {
-        const double ratio = static_cast<double>(sample) / static_cast<double>(samples);
-        if (!footprint_is_safe(a + ratio * (b - a), initial_yaw)) {
-          return false;
-        }
-      }
-      return true;
+      return footprint_safe_along(a, b);
     });
   if (connector_end > 0U && !seed.sparse_waypoints.empty()) {
     seed.sparse_waypoints.insert(seed.sparse_waypoints.begin(),
       seed.dense_path.begin(), seed.dense_path.begin() + connector_end);
+  }
+
+  // Remove grid-scale corners where both replacement edges have a safe
+  // footprint and preserve the inflation cost envelope. Keep the measured
+  // start, any snap connector and the checked local endpoint in place.
+  if (global_query) {
+    auto & points = seed.sparse_waypoints;
+    for (size_t i = connector_end + 1U; i + 1U < points.size(); ++i) {
+      const Eigen::Vector3d & a = points[i - 1U];
+      const Eigen::Vector3d & b = points[i + 1U];
+      const Eigen::Vector3d chord = b - a;
+      if (chord.squaredNorm() <= 1.0e-12) {
+        continue;
+      }
+      const double fraction = std::clamp((points[i] - a).dot(chord) / chord.squaredNorm(), 0.0, 1.0);
+      const Eigen::Vector3d correction = a + fraction * chord - points[i];
+      const double deviation = correction.norm();
+      if (deviation <= 1.0e-6) {
+        continue;
+      }
+      const Eigen::Vector3d rounded = points[i] +
+        std::min(0.5, 0.5 * global_query->resolution() / deviation) * correction;
+      const std::vector<Eigen::Vector3d> rounded_edges{a, rounded, b};
+      const CostProfile current = samplePolylineCosts(global_query, points, i - 1U, i + 1U);
+      const CostProfile candidate = samplePolylineCosts(global_query, rounded_edges, 0U, 2U);
+      if (current.valid && candidate.valid && candidate.peak <= current.peak &&
+          candidate.mean <= current.mean &&
+          footprint_safe_along(a, rounded) && footprint_safe_along(rounded, b)) {
+        points[i] = rounded;
+      }
+    }
   }
 
   // MINCO is allowed to move its intermediate control points.  A long sparse

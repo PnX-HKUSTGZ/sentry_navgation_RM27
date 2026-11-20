@@ -232,6 +232,8 @@ void MincoPlanner::rebuildModeDependentQueries() {
   }
   if (minco_optimizer_) {
     minco_optimizer_->setMap(mode_context_->dynamicQuery());
+    minco_optimizer_->setInflationMap(mode_context_->mode() == PlannerMode::PRIORMAP
+        ? mode_context_->globalQuery() : nullptr);
   }
   if (corridor_gen_) {
     corridor_gen_->setMap(mode_context_->dynamicQuery());
@@ -978,6 +980,8 @@ void MincoPlanner::configure(
     segment_obstacle_slowdown_);
   for (const auto & entry : std::vector<std::pair<std::string, double *>>{
     {"guide_lateral_weight", &minco_config.guide_lateral_weight},
+    {"guide_lateral_max_tolerance", &minco_config.guide_lateral_max_tolerance},
+    {"inflation_cost_weight", &minco_config.inflation_cost_weight},
     {"terminal_tangent_lookahead", &minco_config.terminal_tangent_lookahead},
     {"obstacle_slowdown_distance", &minco_config.obstacle_slowdown_distance},
     {"obstacle_max_velocity", &minco_config.obstacle_max_velocity},
@@ -1197,6 +1201,9 @@ void MincoPlanner::configure(
   minco_optimizer_ = std::make_unique<MincoOptimizer>(minco_config);
   minco_optimizer_->setMap(mode_context_ ? mode_context_->dynamicQuery()
                                          : nullptr);
+  if (mode_context_ && mode_context_->mode() == PlannerMode::PRIORMAP) {
+    minco_optimizer_->setInflationMap(mode_context_->globalQuery());
+  }
 
   corridor_gen_ = std::make_shared<SimpleCorridorGenerator>();
   corridor_gen_->setMap(mode_context_ ? mode_context_->dynamicQuery()
@@ -1600,6 +1607,8 @@ rcl_interfaces::msg::SetParametersResult MincoPlanner::onSetParameters(
            param_name == name_ + ".minco_optimizer.safe_dist" ||
            param_name == name_ + ".minco_optimizer.collision_dist" ||
            param_name == name_ + ".minco_optimizer.guide_lateral_weight" ||
+           param_name == name_ + ".minco_optimizer.guide_lateral_max_tolerance" ||
+           param_name == name_ + ".minco_optimizer.inflation_cost_weight" ||
            param_name ==
                name_ + ".minco_optimizer.terminal_tangent_lookahead" ||
            param_name ==
@@ -2305,7 +2314,7 @@ bool MincoPlanner::ReplanLocal(
   if (N > 0) {
     vec_Vec3f init_ps;
     VecDf init_ts(N);
-    PTAllocation(sparse_path, start_state, stop_at_local_end,
+    PTAllocation(sparse_path, start_state, end_state.col(1).head<2>().norm(),
                  trajectory_max_velocity, init_ps, init_ts, local_vmaxs);
 
     minco_optimizer_->setInitPsAndTs(init_ps, init_ts);
@@ -2351,7 +2360,7 @@ bool MincoPlanner::ReplanLocal(
     if (N > 0) {
       vec_Vec3f fallback_init_ps;
       VecDf fallback_init_ts(N);
-      PTAllocation(sparse_path, start_state, true, trajectory_max_velocity,
+      PTAllocation(sparse_path, start_state, 0.0, trajectory_max_velocity,
                    fallback_init_ps, fallback_init_ts, local_vmaxs);
       minco_optimizer_->setInitPsAndTs(fallback_init_ps, fallback_init_ts);
     }
@@ -2565,7 +2574,7 @@ bool MincoPlanner::ReplanLocal(
 
 void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
                                 const Eigen::Matrix3d &start_state,
-                                bool stop_at_local_end,
+                                double terminal_speed,
                                 double trajectory_max_velocity,
                                 vec_Vec3f &init_ps, VecDf &init_ts,
                                 VecDf &local_vmaxs) const {
@@ -2581,8 +2590,6 @@ void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
       std::clamp(trajectory_max_velocity, 1.0e-3, minco_config.max_vel);
   const double amax = std::max(1e-3, minco_config.max_acc);
   const double kMinSegTime = 0.1;
-  const double kBrakeSafety = 1.2;
-  const double max_brake_dist = (global_vmax * global_vmax) / (2.0 * amax);
 
   local_vmaxs.resize(N);
   local_vmaxs.setConstant(global_vmax);
@@ -2600,8 +2607,10 @@ void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
 
   std::vector<double> seg_len(static_cast<size_t>(N), 0.0);
   for (int i = 0; i < N; ++i) {
+    const Eigen::Vector3d segment_start =
+      i == 0 ? Eigen::Vector3d(start_state.col(0)) : sparse_path[static_cast<size_t>(i)];
     const double dis = (sparse_path[static_cast<size_t>(i + 1)] -
-                        sparse_path[static_cast<size_t>(i)])
+                        segment_start)
                            .head<2>()
                            .norm();
     seg_len[static_cast<size_t>(i)] =
@@ -2642,28 +2651,15 @@ void MincoPlanner::PTAllocation(const std::vector<Eigen::Vector3d> &sparse_path,
     v_curr = 0.0;
   }
 
-  const double local_goal_remain = stop_at_local_end ? 0.0 : max_brake_dist;
+  const double terminal_braking_distance = terminal_speed * terminal_speed / (2.0 * amax);
   for (int i = 0; i < N; ++i) {
     const bool is_last = (i == N - 1);
     const double L = seg_len[static_cast<size_t>(i)];
     const double remain =
-        remain_after[static_cast<size_t>(i)] + local_goal_remain;
-
-    if (L <= 1e-6) {
-      init_ts(i) = kMinSegTime;
-      continue;
-    }
-
-    if (is_last && stop_at_local_end) {
-      const double t_stop = v_curr / amax;
-      const double t_dist = L / std::max(v_curr, 0.1);
-      init_ts(i) = std::max({kMinSegTime, t_dist, kBrakeSafety * t_stop});
-      v_curr = 0.0;
-      continue;
-    }
+        remain_after[static_cast<size_t>(i)] + terminal_braking_distance;
 
     const double local_vmax = local_vmax_vec[static_cast<size_t>(i)];
-    const double v_next =
+    const double v_next = is_last ? terminal_speed :
         utils::ComputeNextSpeed(v_curr, L, remain, amax, local_vmax);
     init_ts(i) = utils::ComputeSegmentTime(L, v_curr, v_next, local_vmax, amax,
                                            kMinSegTime);
