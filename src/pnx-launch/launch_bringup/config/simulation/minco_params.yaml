@@ -194,11 +194,11 @@ global_costmap:
         obstacle_marking_max_range: 3.0
         footprint_clearing_enabled: true
       # 静态膨胀区仅在完整车体可通过时作为软代价；实测障碍保持硬约束。
+      # 延长全局软膨胀带，让代价在外沿衰减，减少沿高代价边界绕行。
       inflation_layer:
-        cost_scaling_factor: 4.0
-        inflation_radius: 0.60
-
         plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.80
       use_sim_time: true
       update_frequency: 5.0
       publish_frequency: 2.0
@@ -530,8 +530,8 @@ planner_server:
         robot_radius: 0.379036
         extra_margin: 0.05
       smac_2d:
-        # 线性膨胀代价引导路径离障碍稍远，同时保留窄洞通行。
-        cost_penalty: 2.0
+        # 加强对线性膨胀代价的权衡，让全局路径在有空间时远离障碍。
+        cost_penalty: 4.0
         use_quadratic_cost_penalty: false
         # 全局拓扑使用静态代价地图；滚动 ROG 场仅参与局部约束，避免未知边缘诱发绕行。
         use_esdf_cost: false
@@ -593,9 +593,13 @@ planner_server:
         penalty_weight_acc: 1500.0
         # 约束多项式贴近已检查的引导点，减少洞口切角。
         penalty_weight_att: 800.0
-        # 约束节点间的横向偏离；这是软代价，不是碰撞容差。
-        guide_lateral_weight: 1000000.0
-        guide_lateral_tolerance: 0.003
+        # 给轨迹留出亚栅格平滑空间，完整足迹仍按原门限验证。
+        guide_lateral_weight: 100000.0
+        guide_lateral_tolerance: 0.025
+        # 引导线两侧分别按全局代价地图检查横移空间，单位：米。
+        guide_lateral_max_tolerance: 0.20
+        # 对轨迹经过的膨胀代价按弧长积分。
+        inflation_cost_weight: 900.0
         penalty_weight_time_barrier: 50.0
       recovery_server:
         # 连续规划失败后启动已验证的脱困，避免等到 Nav2 无进展超时。

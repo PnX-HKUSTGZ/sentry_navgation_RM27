@@ -132,7 +132,7 @@ private:
 
   void PTAllocation(const std::vector<Eigen::Vector3d> & sparse_path,
     const Eigen::Matrix3d & start_state,
-    bool stop_at_local_end,
+                    double terminal_speed,
     double trajectory_max_velocity,
     vec_Vec3f & init_ps,
     VecDf & init_ts,

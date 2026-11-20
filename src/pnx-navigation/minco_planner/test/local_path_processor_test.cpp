@@ -430,6 +430,32 @@ TEST(LocalPathProcessorTest, UniformlyInflatedNarrowPassageStillAllowsShortcut)
   EXPECT_TRUE(seed.sparse_waypoints.back().isApprox(Eigen::Vector3d(1.20, 0.0, 0.0)));
 }
 
+TEST(LocalPathProcessorTest, RoundsGridCornerOnlyWhenReplacementFootprintFits)
+{
+  auto query = std::make_shared<TestGridQuery>(
+    [](double, double) {return nav2_costmap_2d::FREE_SPACE;});
+  auto context = makeContext(query);
+  auto processor = makeProcessor();
+  const auto start = pose(0.0, 0.0);
+  const std::vector<geometry_msgs::msg::PoseStamped> path{
+    start, pose(0.20, 0.08), pose(0.40, 0.0)};
+  const auto open = processor.buildSeed(path, start, context,
+    [](const Eigen::Vector3d &, double) {return true;});
+  ASSERT_TRUE(open.valid);
+  ASSERT_EQ(open.sparse_waypoints.size(), 3U);
+  EXPECT_NEAR(open.sparse_waypoints[1].y(), 0.055, 1.0e-9);
+
+  const auto constrained = processor.buildSeed(path, start, context,
+    [](const Eigen::Vector3d & point, double) {
+      return std::abs(point.x() - 0.20) >= 0.025 || point.y() >= 0.067;
+    });
+  ASSERT_TRUE(constrained.valid);
+  ASSERT_EQ(constrained.sparse_waypoints.size(), 3U);
+  EXPECT_NEAR(constrained.sparse_waypoints[1].y(), 0.08, 1.0e-9);
+  EXPECT_TRUE(constrained.sparse_waypoints.front().isApprox(open.sparse_waypoints.front()));
+  EXPECT_TRUE(constrained.sparse_waypoints.back().isApprox(open.sparse_waypoints.back()));
+}
+
 TEST(LocalPathProcessorTest, SparseRepairNeverAppendsUncheckedCornerOrGoal)
 {
   const std::vector<Eigen::Vector3d> path{

@@ -22,6 +22,7 @@
 #include "traj_opt/minco_optimizer.hpp"
 #include "minco_core/components/start_guide_pruning.hpp"
 #include "minco_core/components/segment_speed_limit.hpp"
+#include "minco_core/components/map_query_adapters.hpp"
 #include "minco_core/minco_utils.hpp"
 
 namespace minco_planner
@@ -70,6 +71,14 @@ TEST(SegmentSpeedLimit, HolonomicTurnTuningKeepsGentleCornersMoving)
   EXPECT_LT(sharp, gentle);
   EXPECT_LT(sharp, 1.2);
   EXPECT_DOUBLE_EQ(utils::calCurvatureDecay(0.10, 1.8, 0.20, 1.57, 0.65, 1.0), 1.8);
+}
+
+TEST(SegmentTimeAllocation, ShortStopFromRestUsesAccelerationInsteadOfCrawl)
+{
+  EXPECT_NEAR(utils::ComputeSegmentTime(0.25, 0.0, 0.0, 1.8, 2.0, 0.1),
+    std::sqrt(0.5), 1.0e-9);
+  EXPECT_NEAR(utils::ComputeSegmentTime(1.0, 1.6, 0.0, 1.8, 2.0, 0.1),
+    1.0 + 0.02 / 1.8, 1.0e-9);
 }
 
 MincoOptimizer::Config makeConfig()
@@ -396,6 +405,102 @@ TEST(MincoOptimizerDynamicsTest, DenseRollingGuideKeepsShortDurationWithBoundary
     EXPECT_LE(trajectory.getMaxAccRate(), config.max_acc * 1.02);
     EXPECT_TRUE(trajectory.getAcc(0.0).isApprox(start.col(2), 1.0e-6));
     EXPECT_TRUE(trajectory.getVel(trajectory.getTotalDuration()).isApprox(end.col(1), 1.0e-6));
+  }
+}
+
+TEST(MincoOptimizerDynamicsTest, MovingStopMeetsDurationBudgetWithLocalSlowdown)
+{
+  auto config = makeConfig();
+  config.max_vel = 1.8;
+  config.max_acc = 2.0;
+  config.max_trajectory_duration = 1.95;
+  config.magnitudeBounds << 0.35, config.max_vel, config.max_acc;
+  config.penaltyWeights(3) = 800.0;
+  config.guide_lateral_weight = 1000000.0;
+  config.guide_lateral_tolerance = 0.003;
+  config.opt_accuracy = 1.0e-5;
+  MincoOptimizer optimizer(config);
+
+  constexpr int pieces = 11;
+  VecDf limits(pieces), times(pieces);
+  vec_Vec3f knots;
+  std::vector<Eigen::Vector3d> waypoints{Eigen::Vector3d::Zero()};
+  double x = 0.0;
+  for (int i = 1; i <= pieces; ++i) {
+    const double length = 0.13 + (i % 3) * 0.035;
+    x += length;
+    waypoints.emplace_back(x, 0.0, 0.0);
+    if (i < pieces) {
+      knots.push_back(waypoints.back());
+    }
+    limits(i - 1) = i <= 6 ? 1.35 : config.max_vel;
+    times(i - 1) = i == pieces ? 0.65 : length / 1.4;
+  }
+  optimizer.setInitPsAndTs(knots, times);
+
+  Eigen::Matrix3d start = Eigen::Matrix3d::Zero(), end = Eigen::Matrix3d::Zero();
+  start.col(1).x() = 1.6;
+  end.col(0) = waypoints.back();
+  geometry_utils::Trajectory trajectory;
+  ASSERT_TRUE(std::isfinite(optimizer.optimize(
+    waypoints, start, end, limits, trajectory, config.max_vel)));
+  const double duration = trajectory.getTotalDuration();
+  EXPECT_LE(duration, config.max_trajectory_duration);
+  EXPECT_LE(trajectory.getMaxVelRate(), config.max_vel * 1.001);
+  EXPECT_LE(trajectory.getMaxAccRate(), config.max_acc * 1.001);
+  EXPECT_TRUE(trajectory.getVel(0.0).isApprox(start.col(1), 1.0e-6));
+  EXPECT_TRUE(trajectory.getPos(duration).isApprox(end.col(0), 1.0e-6));
+  EXPECT_NEAR(trajectory.getVel(duration).norm(), 0.0, 1.0e-6);
+}
+
+TEST(MincoOptimizerDynamicsTest, InflationCostMovesTheCurveWhereTheGuideHasRoom)
+{
+  auto config = makeConfig();
+  config.guide_lateral_weight = 100000.0;
+  config.guide_lateral_tolerance = 0.015;
+  config.guide_lateral_max_tolerance = 0.15;
+  config.inflation_cost_weight = 900.0;
+  MincoOptimizer optimizer(config);
+
+  nav2_costmap_2d::Costmap2D grid(60, 30, 0.05, -0.5, -0.6, 0);
+  const auto map = std::make_shared<Nav2CostmapQuery>(&grid);
+  optimizer.setInflationMap(map);
+  const std::vector<Eigen::Vector3d> guide{
+    {0.0, 0.0, 0.0}, {0.5, 0.0, 0.0}, {1.0, 0.0, 0.0}, {1.5, 0.0, 0.0}, {2.0, 0.0, 0.0}};
+  const Eigen::Matrix3d start = Eigen::Matrix3d::Zero();
+  Eigen::Matrix3d end = Eigen::Matrix3d::Zero();
+  end.col(0) = guide.back();
+  const VecDf limits = VecDf::Constant(4, config.max_vel);
+
+  for (bool narrow : {false, true}) {
+    SCOPED_TRACE(narrow);
+    for (unsigned int iy = 0; iy < grid.getSizeInCellsY(); ++iy) {
+      double x = 0.0, y = 0.0;
+      grid.mapToWorld(0, iy, x, y);
+      // The guide runs beside a wall in both cases. The second case adds a
+      // wall on the opposite side, leaving a two-cell-wide passage.
+      const unsigned char cost = y < -0.05 || (narrow && y > 0.05) ?
+        nav2_costmap_2d::LETHAL_OBSTACLE :
+        static_cast<unsigned char>(std::clamp(100.0 - 220.0 * y, 0.0, 252.0));
+      for (unsigned int ix = 0; ix < grid.getSizeInCellsX(); ++ix) {
+        grid.setCost(ix, iy, cost);
+      }
+    }
+
+    geometry_utils::Trajectory trajectory;
+    optimizer.setInitPsAndTs({}, {});
+    ASSERT_TRUE(std::isfinite(
+      optimizer.optimize(guide, start, end, limits, trajectory, config.max_vel)));
+    const double duration = trajectory.getTotalDuration();
+    EXPECT_TRUE(trajectory.getPos(0.0).isApprox(guide.front(), 1.0e-6));
+    EXPECT_TRUE(trajectory.getPos(duration).isApprox(guide.back(), 1.0e-6));
+    if (narrow) {
+      for (int i = 0; i <= 100; ++i) {
+        EXPECT_LT(std::abs(trajectory.getPos(duration * i / 100.0).y()), 0.05);
+      }
+    } else {
+      EXPECT_GT(trajectory.getPos(0.5 * duration).y(), 0.08);
+    }
   }
 }
 

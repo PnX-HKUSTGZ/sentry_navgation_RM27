@@ -753,36 +753,27 @@ double ComputeSegmentTime(
   double seg_len, double v_curr, double v_next, double local_vmax, double amax, double min_seg_time)
 {
   const double t_min = std::max(1e-3, min_seg_time);
-  double t = 0.0;
-  const double v_sum = v_curr + v_next;
-  if (v_sum > 1e-3) {
-    t = 2.0 * seg_len / v_sum;
-  } else {
-    t = seg_len / 0.1;
-  }
-
   const double a_safe = std::max(1e-3, std::abs(amax));
-  const double required_dist = std::abs(v_curr * v_curr - v_next * v_next) / (2.0 * a_safe);
-  if (seg_len >= required_dist) {
-    const double t_kinematic = std::abs(v_curr - v_next) / a_safe;
-    t = std::max(t, t_kinematic);
-  }
-  if (local_vmax > 1e-6 && std::abs(v_next - local_vmax) < 1e-6 && v_curr < local_vmax - 1e-6) {
-    const double d_acc = (local_vmax * local_vmax - v_curr * v_curr) / (2.0 * a_safe);
-    if (std::isfinite(d_acc) && d_acc > 0.0 && seg_len > d_acc) {
-      const double t_acc = (local_vmax - v_curr) / a_safe;
-      const double t_cruise = (seg_len - d_acc) / local_vmax;
-      const double t_alt = t_acc + t_cruise;
-      if (std::isfinite(t_alt) && t_alt > 0.0) {
-        t = std::max(t, t_alt);
-      }
-    }
-  }
-
-  if (!std::isfinite(t) || t < t_min) {
+  if (!(seg_len > 0.0)) {
     return t_min;
   }
-  return t;
+
+  // A segment starting above its soft limit needs room to decelerate. If
+  // the transition cannot fit in this piece, seed its time from the boundary
+  // speeds and let the joint solve distribute the transition over the guide.
+  const double boundary_speed = std::max(v_curr, v_next);
+  const double boundary_speed_squared = v_curr * v_curr + v_next * v_next;
+  const double transition_distance = std::abs(v_curr * v_curr - v_next * v_next) /
+    (2.0 * a_safe);
+  if (seg_len < transition_distance) {
+    return std::max(t_min, 2.0 * seg_len / (v_curr + v_next));
+  }
+
+  const double triangular_peak = std::sqrt(a_safe * seg_len + 0.5 * boundary_speed_squared);
+  const double peak = std::min(triangular_peak, std::max({1.0e-3, local_vmax, boundary_speed}));
+  const double ramp_distance = (2.0 * peak * peak - boundary_speed_squared) / (2.0 * a_safe);
+  const double ramp_time = (2.0 * peak - v_curr - v_next) / a_safe;
+  return std::max(t_min, ramp_time + std::max(0.0, seg_len - ramp_distance) / peak);
 }
 
 void VelPropogation(const std::vector<double> & seg_len, double amax, std::vector<double> & local_vmaxs)
